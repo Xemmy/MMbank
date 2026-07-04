@@ -71,58 +71,81 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # Every run block below uses `set -o pipefail` so that a Gradle failure
+      # piped through `tee` is not masked by tee's own (always-zero) exit code.
+
       - name: Build Debug APK - Attempt 1
         id: build_attempt_1
         continue-on-error: true
         run: |
-          echo "🔨 Building APK (Attempt 1)..."
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -50
+          set -o pipefail
+          echo "Building APK (Attempt 1)..."
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_attempt_1.log
+
+      - name: Show Attempt 1 failure output
+        if: steps.build_attempt_1.outcome == 'failure'
+        run: tail -n 150 build_attempt_1.log
 
       - name: Clean gradle and retry - Attempt 2
         id: build_attempt_2
         if: steps.build_attempt_1.outcome == 'failure'
         continue-on-error: true
         run: |
-          echo "🔄 Cleaning and rebuilding (Attempt 2)..."
+          set -o pipefail
+          echo "Cleaning and rebuilding (Attempt 2)..."
           ./gradlew clean --no-daemon
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tail -50
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_attempt_2.log
+
+      - name: Show Attempt 2 failure output
+        if: steps.build_attempt_2.outcome == 'failure'
+        run: tail -n 150 build_attempt_2.log
 
       - name: Stop daemon and retry - Attempt 3
         id: build_attempt_3
         if: steps.build_attempt_2.outcome == 'failure'
         continue-on-error: true
         run: |
-          echo "🛑 Stopping daemon and rebuilding (Attempt 3)..."
+          set -o pipefail
+          echo "Stopping daemon and rebuilding (Attempt 3)..."
           ./gradlew --stop
           sleep 5
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tail -50
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_attempt_3.log
+
+      - name: Show Attempt 3 failure output
+        if: steps.build_attempt_3.outcome == 'failure'
+        run: tail -n 150 build_attempt_3.log
 
       - name: Full reset and retry - Attempt 4
         id: build_attempt_4
         if: steps.build_attempt_3.outcome == 'failure'
         continue-on-error: true
         run: |
-          echo "♻️  Full reset and rebuild (Attempt 4)..."
+          set -o pipefail
+          echo "Full reset and rebuild (Attempt 4)..."
           rm -rf ~/.gradle
           ./gradlew clean --no-daemon
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tail -50
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_attempt_4.log
+
+      - name: Show Attempt 4 failure output
+        if: steps.build_attempt_4.outcome == 'failure'
+        run: tail -n 150 build_attempt_4.log
 
       - name: Verify build success
         run: |
           if [ "${{ steps.build_attempt_1.outcome }}" = "success" ]; then
-            echo "✅ Build succeeded on Attempt 1"
+            echo "Build succeeded on Attempt 1"
             exit 0
           elif [ "${{ steps.build_attempt_2.outcome }}" = "success" ]; then
-            echo "✅ Build succeeded on Attempt 2"
+            echo "Build succeeded on Attempt 2"
             exit 0
           elif [ "${{ steps.build_attempt_3.outcome }}" = "success" ]; then
-            echo "✅ Build succeeded on Attempt 3"
+            echo "Build succeeded on Attempt 3"
             exit 0
           elif [ "${{ steps.build_attempt_4.outcome }}" = "success" ]; then
-            echo "✅ Build succeeded on Attempt 4"
+            echo "Build succeeded on Attempt 4"
             exit 0
           else
-            echo "❌ Build failed on all 4 attempts"
+            echo "Build failed on all 4 attempts"
             echo "Attempt 1: ${{ steps.build_attempt_1.outcome }}"
             echo "Attempt 2: ${{ steps.build_attempt_2.outcome }}"
             echo "Attempt 3: ${{ steps.build_attempt_3.outcome }}"
@@ -134,10 +157,10 @@ jobs:
         run: |
           APK_PATH=$(find app/build/outputs -name "app-debug.apk" -type f | head -1)
           if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found"
+            echo "APK not found"
             exit 1
           fi
-          echo "✅ APK found at: $APK_PATH"
+          echo "APK found at: $APK_PATH"
           ls -lh "$APK_PATH"
 
       - name: Upload Debug APK
@@ -148,12 +171,22 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-logs
+          path: build_attempt_*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Build Release APK
         id: build_release
         continue-on-error: true
         run: |
-          echo "📦 Building Release APK..."
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tail -30
+          set -o pipefail
+          echo "Building Release APK..."
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build_release.log
 
       - name: Upload Release APK
         if: steps.build_release.outcome == 'success'
@@ -168,7 +201,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## 📱 APK Build Report"
+            echo "## APK Build Report"
             echo ""
             echo "### Build Attempts"
             echo "| Attempt | Status |"
@@ -180,10 +213,10 @@ jobs:
             echo ""
             if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
               SIZE=$(stat -c%s app/build/outputs/apk/debug/app-debug.apk)
-              echo "### ✅ Success"
+              echo "### Success"
               echo "Debug APK: **$(numfmt --to=iec-i --suffix=B $SIZE 2>/dev/null || echo "$SIZE bytes")**"
             else
-              echo "### ❌ Failed"
+              echo "### Failed"
               echo "APK not found after all attempts"
             fi
           } >> $GITHUB_STEP_SUMMARY
@@ -198,9 +231,9 @@ jobs:
       - name: Check overall build status
         run: |
           if [ "${{ needs.build-apk.result }}" = "success" ]; then
-            echo "✅ MMbank APK built successfully!"
+            echo "MMbank APK built successfully!"
             exit 0
           else
-            echo "❌ MMbank APK build failed"
+            echo "MMbank APK build failed"
             exit 1
           fi
