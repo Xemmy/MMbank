@@ -182,6 +182,29 @@ class TransactionParserTest {
     }
 
     @Test
+    fun `amount 1 AED with account marker is not mistaken for the account number`() {
+        // Regression: the fallback bare rule used to capture "617" (from *617)
+        // as the amount. The amount must be 1.00 and the account must be 617.
+        val debit = parser.parse(
+            sms("Dear Customer, AED 1.00 was debited from your account *617. Your available account balance is AED 46122.24")
+        )
+        assertNotNull(debit)
+        assertEquals(BigDecimal("1.00"), debit!!.amount)
+        assertEquals("AED", debit.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, debit.direction)
+        assertEquals("617", debit.accountNumberSuffix)
+
+        val credit = parser.parse(
+            sms("Dear Customer, AED 1.00 was credited to your account *963. Your available account balance is AED 5961.60")
+        )
+        assertNotNull(credit)
+        assertEquals(BigDecimal("1.00"), credit!!.amount)
+        assertEquals("AED", credit.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, credit.direction)
+        assertEquals("963", credit.accountNumberSuffix)
+    }
+
+    @Test
     fun `rule compiler rejects invalid patterns`() {
         assertNull(RuleCompiler.compile(ParsingRule(name = "bad", pattern = "([", direction = TransactionDirection.DEBIT)))
         assertNull(RuleCompiler.compile(ParsingRule(name = "no-amount", pattern = "spent \\d+", direction = TransactionDirection.DEBIT)))

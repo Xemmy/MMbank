@@ -3,9 +3,11 @@ package com.xemmy.mmbank.data.repository
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
+import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
+import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.data.remote.forex.ForexApi
@@ -15,6 +17,7 @@ import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
+import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -50,6 +53,17 @@ class ParsingRuleRepositoryImpl(private val dao: ParsingRuleDao) : ParsingRuleRe
     override suspend fun save(rule: ParsingRule): Long = dao.upsert(rule.toEntity())
 
     override suspend fun delete(id: Long) = dao.deleteById(id)
+}
+
+class SenderLabelRepositoryImpl(private val dao: SenderLabelDao) : SenderLabelRepository {
+
+    override fun observeLabels(): Flow<Map<String, String>> =
+        dao.observeAll().map { list -> list.associate { it.sender to it.label } }
+
+    override suspend fun setLabel(sender: String, label: String) =
+        dao.upsert(SenderLabelEntity(sender = sender, label = label))
+
+    override suspend fun clearLabel(sender: String) = dao.delete(sender)
 }
 
 class RatesRepositoryImpl(

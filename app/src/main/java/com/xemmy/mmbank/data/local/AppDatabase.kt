@@ -11,11 +11,13 @@ import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
+import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
+import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 
 @Database(
@@ -25,8 +27,9 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
         ParsingRuleEntity::class,
         AssetBalanceEntity::class,
         ExchangeRateEntity::class,
+        SenderLabelEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -37,6 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun parsingRuleDao(): ParsingRuleDao
     abstract fun assetBalanceDao(): AssetBalanceDao
     abstract fun exchangeRateDao(): ExchangeRateDao
+    abstract fun senderLabelDao(): SenderLabelDao
 
     companion object {
         /**
@@ -51,9 +55,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v2 -> v3: bank details + loan fields on accounts, and a user-editable
+         * sender-label table so "com.adib.mobile" can display as "ADIB".
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN bankName TEXT")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN accountTitle TEXT")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN iban TEXT")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN swift TEXT")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN outstandingBalance TEXT")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN nextInstallmentAmount TEXT")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN dueDayOfMonth INTEGER")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN profitRatePa REAL")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN maturityDateMillis INTEGER")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN loanNotes TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sender_labels " +
+                        "(sender TEXT NOT NULL PRIMARY KEY, label TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

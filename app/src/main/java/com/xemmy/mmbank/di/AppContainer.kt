@@ -11,11 +11,13 @@ import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
 import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
+import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
+import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import kotlinx.serialization.json.Json
@@ -71,6 +73,9 @@ class AppContainer(context: Context) {
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao())
+    }
+    val senderLabelRepository: SenderLabelRepository by lazy {
+        SenderLabelRepositoryImpl(database.senderLabelDao())
     }
     val portfolioRepository: PortfolioRepository by lazy {
         PortfolioRepositoryImpl(binanceApi, database, database.assetBalanceDao())

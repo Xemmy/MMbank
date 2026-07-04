@@ -10,6 +10,7 @@ import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
+import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
@@ -115,6 +116,19 @@ interface ParsingRuleDao {
 
     @Query("SELECT * FROM parsing_rules WHERE id = :id")
     suspend fun getById(id: Long): ParsingRuleEntity?
+}
+
+@Dao
+interface SenderLabelDao {
+
+    @Query("SELECT * FROM sender_labels")
+    fun observeAll(): Flow<List<SenderLabelEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SenderLabelEntity)
+
+    @Query("DELETE FROM sender_labels WHERE sender = :sender")
+    suspend fun delete(sender: String)
 }
 
 @Dao

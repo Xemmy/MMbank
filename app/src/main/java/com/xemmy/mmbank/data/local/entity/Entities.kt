@@ -26,6 +26,24 @@ data class AccountEntity(
     val notes: String? = null,
     val createdAt: Long,
     val accountNumber: String? = null,
+    val bankName: String? = null,
+    val accountTitle: String? = null,
+    val iban: String? = null,
+    val swift: String? = null,
+    val outstandingBalance: BigDecimal? = null,
+    val nextInstallmentAmount: BigDecimal? = null,
+    val dueDayOfMonth: Int? = null,
+    val profitRatePa: Double? = null,
+    val maturityDateMillis: Long? = null,
+    val loanNotes: String? = null,
+)
+
+@Entity(tableName = "sender_labels")
+data class SenderLabelEntity(
+    /** SMS originating address or notification package name, e.g. "com.adib.mobile". */
+    @PrimaryKey val sender: String,
+    /** User-facing name, e.g. "ADIB". */
+    val label: String,
 )
 
 @Entity(
@@ -96,8 +114,20 @@ data class ExchangeRateEntity(
 
 // --- Entity <-> domain mappers ---
 
-fun AccountEntity.toDomain() = Account(id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber)
-fun Account.toEntity() = AccountEntity(id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber)
+fun AccountEntity.toDomain() = Account(
+    id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
+    bankName, accountTitle, iban, swift,
+    outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
+)
+
+fun Account.toEntity() = AccountEntity(
+    id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
+    bankName, accountTitle, iban, swift,
+    outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
+)
+
+fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)
+fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sender, label)
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,

@@ -18,6 +18,10 @@ private val dateTimeFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.US)
 
 fun Long.asDateTime(): String = dateTimeFormat.format(Date(this))
 
+private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.US)
+
+fun Long.asDate(): String = dateFormat.format(Date(this))
+
 /**
  * Converts amounts into the app's base currency using Forex rates fetched with
  * that base ("how many quote units per 1 base unit").

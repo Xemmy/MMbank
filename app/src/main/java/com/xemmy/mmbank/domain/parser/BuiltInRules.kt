@@ -92,9 +92,12 @@ object BuiltInRules {
         rule("builtin.en.credit.af.amt-cur", "$AMT\\s?$CUR\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
 
         // --- No currency in the message: fall back to the default currency (priority 0) ---
-        rule("builtin.en.debit.bare", "$KW_DEBIT_EN.{0,20}?$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 0),
-        rule("builtin.en.credit.bare", "$KW_CREDIT_EN.{0,20}?$AMT$MERCHANT_EN", TransactionDirection.CREDIT, 0),
-        rule("builtin.ar.debit.bare", "(?:$KW_DEBIT_AR).{0,20}?$AMT$MERCHANT_AR", TransactionDirection.DEBIT, 0),
-        rule("builtin.ar.credit.bare", "(?:$KW_CREDIT_AR).{0,20}?$AMT$MERCHANT_AR", TransactionDirection.CREDIT, 0),
+        // The (?<!\*) guard stops the fallback from grabbing a "*617" account
+        // marker as the amount when the real amount had a currency the message
+        // put elsewhere (handled by the amount-first rules above).
+        rule("builtin.en.debit.bare", "$KW_DEBIT_EN.{0,20}?(?<!\\*)$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 0),
+        rule("builtin.en.credit.bare", "$KW_CREDIT_EN.{0,20}?(?<!\\*)$AMT$MERCHANT_EN", TransactionDirection.CREDIT, 0),
+        rule("builtin.ar.debit.bare", "(?:$KW_DEBIT_AR).{0,20}?(?<!\\*)$AMT$MERCHANT_AR", TransactionDirection.DEBIT, 0),
+        rule("builtin.ar.credit.bare", "(?:$KW_CREDIT_AR).{0,20}?(?<!\\*)$AMT$MERCHANT_AR", TransactionDirection.CREDIT, 0),
     )
 }

@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SenderLabel
 import com.xemmy.mmbank.domain.model.Transaction
 import kotlinx.coroutines.flow.Flow
 
@@ -34,6 +35,13 @@ interface ParsingRuleRepository {
     suspend fun getById(id: Long): ParsingRule?
     suspend fun save(rule: ParsingRule): Long
     suspend fun delete(id: Long)
+}
+
+interface SenderLabelRepository {
+    /** sender -> user label. */
+    fun observeLabels(): Flow<Map<String, String>>
+    suspend fun setLabel(sender: String, label: String)
+    suspend fun clearLabel(sender: String)
 }
 
 interface PortfolioRepository {

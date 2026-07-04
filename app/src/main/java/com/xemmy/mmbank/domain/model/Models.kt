@@ -48,7 +48,31 @@ data class Account(
      * Captured transactions whose message reveals a matching number are auto-assigned here.
      */
     val accountNumber: String? = null,
-)
+    // --- Bank details (populated manually or via the bulk-paste importer) ---
+    val bankName: String? = null,
+    val accountTitle: String? = null,
+    val iban: String? = null,
+    val swift: String? = null,
+    // --- Loan / financing details (relevant for LOAN and CREDIT_CARD types) ---
+    val outstandingBalance: BigDecimal? = null,
+    val nextInstallmentAmount: BigDecimal? = null,
+    /** Day of month (1-31) the installment is due. */
+    val dueDayOfMonth: Int? = null,
+    /** Annual profit / interest rate as a percentage, e.g. 5.49. */
+    val profitRatePa: Double? = null,
+    val maturityDateMillis: Long? = null,
+    /** Free text: add-ons, early-settlement terms, penalties, etc. */
+    val loanNotes: String? = null,
+) {
+    /**
+     * Rough early-settlement guidance. Most UAE lenders cap the early-settlement
+     * fee at 1% of the outstanding balance (or 3 months' profit). If the profit
+     * you would still pay over the remaining term clearly exceeds that fee,
+     * settling early tends to pay off.
+     */
+    val earlySettlementFeeEstimate: BigDecimal?
+        get() = outstandingBalance?.let { it.multiply(BigDecimal("0.01")) }
+}
 
 data class Transaction(
     val id: Long = 0,
@@ -89,6 +113,28 @@ data class ParsingRule(
     val sampleText: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )
+
+/** User-defined friendly name for a transaction sender (SMS short code or app package). */
+data class SenderLabel(
+    val sender: String,
+    val label: String,
+)
+
+/**
+ * Bank account details extracted from pasted text by [com.xemmy.mmbank.domain.parser.BankDetailsParser].
+ * Every field is optional; the importer fills in whatever it can recognise.
+ */
+data class ParsedBankDetails(
+    val bankName: String? = null,
+    val accountTitle: String? = null,
+    val accountNumber: String? = null,
+    val iban: String? = null,
+    val swift: String? = null,
+    val currencyCode: String? = null,
+) {
+    val hasAnything: Boolean
+        get() = listOfNotNull(bankName, accountTitle, accountNumber, iban, swift, currencyCode).isNotEmpty()
+}
 
 /** A spot balance pulled from Binance via the read-only API key. */
 data class AssetBalance(
