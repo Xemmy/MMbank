@@ -1,0 +1,57 @@
+package com.xemmy.mmbank.service
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.provider.Telephony
+import android.util.Log
+import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.TransactionSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/**
+ * SMS capture channel. Multipart messages are re-assembled into one body
+ * before parsing. Work is handed off with goAsync() so the ~10s broadcast
+ * budget covers the Room round-trip.
+ */
+class SmsReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
+        if (parts.isEmpty()) return
+
+        val body = parts.joinToString(separator = "") { it.messageBody.orEmpty() }
+        if (body.isBlank()) return
+        val sender = parts.first().displayOriginatingAddress
+        val timestamp = parts.first().timestampMillis
+
+        val message = CapturedMessage(
+            source = TransactionSource.SMS,
+            sender = sender,
+            title = null,
+            body = body,
+            timestampMillis = timestamp,
+        )
+
+        val container = (context.applicationContext as MMBankApp).container
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                container.ingestCapturedMessage(message)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Ingest failed for SMS from $sender", t)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private companion object {
+        const val TAG = "SmsReceiver"
+    }
+}

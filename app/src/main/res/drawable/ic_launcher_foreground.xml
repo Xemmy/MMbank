@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple "MM" ledger glyph -->
+    <path
+        android:fillColor="#4FC3F7"
+        android:pathData="M30,72 L30,38 L38,38 L45,54 L52,38 L60,38 L60,72 L53,72 L53,52 L47,66 L43,66 L37,52 L37,72 Z" />
+    <path
+        android:fillColor="#81D4FA"
+        android:pathData="M64,72 L64,50 L70,50 L74,60 L78,50 L84,50 L84,72 L79,72 L79,60 L75,69 L73,69 L69,60 L69,72 Z" />
+</vector>

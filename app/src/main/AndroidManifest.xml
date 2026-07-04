@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Automated capture: SMS channel -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <!-- Network: Forex rates + Binance read-only API -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".MMBankApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MMbank"
+        tools:targetApi="34">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Push-notification capture channel.
+            NOTE (sideload trap): on Android 13+ the Notification Access toggle is
+            greyed out behind "Restricted settings" for sideloaded apps. The user must
+            open Settings > Apps > MMbank > (⋮) > "Allow restricted settings" first.
+            The Settings screen in-app walks through this.
+        -->
+        <service
+            android:name=".service.BankNotificationListener"
+            android:exported="false"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- SMS capture channel. Protected by BROADCAST_SMS so only the system can trigger it. -->
+        <receiver
+            android:name=".service.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
