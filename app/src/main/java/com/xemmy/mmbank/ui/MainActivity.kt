@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -27,6 +28,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
+import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
@@ -51,6 +53,7 @@ private val topLevelDestinations = listOf(
     TopLevelDestination("dashboard", "Home", Icons.Filled.Dashboard),
     TopLevelDestination("transactions", "Activity", Icons.AutoMirrored.Filled.ReceiptLong),
     TopLevelDestination("accounts", "Accounts", Icons.Filled.AccountBalanceWallet),
+    TopLevelDestination("cashback", "Rewards", Icons.Filled.Redeem),
     TopLevelDestination("rules", "Rules", Icons.Filled.Tune),
     TopLevelDestination("settings", "Settings", Icons.Filled.Settings),
 )
@@ -89,6 +92,7 @@ fun MMbankApp() {
             composable("dashboard") { DashboardScreen() }
             composable("transactions") { TransactionsScreen() }
             composable("accounts") { AccountsScreen() }
+            composable("cashback") { CashbackScreen() }
             composable("rules") {
                 RulesScreen(
                     onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },
