@@ -82,12 +82,29 @@ class TransactionRepositoryImpl(
 
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
 
-    private suspend fun detectAccountByNumber(accountNumber: String, currencyCode: String): Long? {
-        val allAccounts = database.accountDao().getActive()
-        return allAccounts.find { account ->
-            accountNumber.endsWith(account.id.toString().takeLast(3)) ||
-            accountNumber.contains(account.id.toString().takeLast(4))
-        }?.id
+    /**
+     * Matches the account/card number pulled from a bank message (e.g. "*617",
+     * "XXX810001") against the identifying number the user configured on each
+     * account. Comparison is on digits only, tolerating masking characters and
+     * differing lengths by matching on a shared suffix. When several accounts
+     * share the same trailing digits, currency is used to disambiguate.
+     */
+    private suspend fun detectAccountByNumber(detected: String, currencyCode: String): Long? {
+        val detectedDigits = detected.filter(Char::isDigit)
+        if (detectedDigits.isEmpty()) return null
+
+        val candidates = database.accountDao().getActive().filter { account ->
+            val accountDigits = account.accountNumber?.filter(Char::isDigit).orEmpty()
+            accountDigits.length >= 3 &&
+                (detectedDigits.endsWith(accountDigits) || accountDigits.endsWith(detectedDigits))
+        }
+
+        return when {
+            candidates.isEmpty() -> null
+            candidates.size == 1 -> candidates.first().id
+            else -> candidates.firstOrNull { it.currencyCode.equals(currencyCode, ignoreCase = true) }?.id
+                ?: candidates.first().id
+        }
     }
 
     companion object {

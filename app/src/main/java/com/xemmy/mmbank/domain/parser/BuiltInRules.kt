@@ -7,6 +7,12 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
  * message layouts. They run at low priority so user-defined rules (default
  * priority 100) always win. All patterns match against [TextNormalizer]
  * output, so digits are already ASCII regardless of the source script.
+ *
+ * Every rule ends with [ACCTAIL], an optional trailing scan that pulls the
+ * account/card number out of the message (e.g. "*617" or "حساب رقم XXX810001")
+ * without affecting whether the rule matches. The extracted number is later
+ * matched against each account's configured number to auto-assign the
+ * transaction to the right account/card.
  */
 object BuiltInRules {
 
@@ -18,22 +24,32 @@ object BuiltInRules {
 
     private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
 
-    private const val MERCHANT_EN = "(?:\\s+(?:at|to|@|in)\\s+(?<merchant>[^.,;\\n]{2,40}))?"
-    private const val MERCHANT_AR = "(?:\\s+(?:في|لدى|من|إلى)\\s+(?<merchant>[^.,;\\n]{2,40}))?"
+    // Merchant capture stops at punctuation and at "*" so a trailing "*617"
+    // account marker is left for ACCTAIL rather than swallowed into the name.
+    private const val MERCHANT_EN = "(?:\\s+(?:at|to|@|in)\\s+(?<merchant>[^.,;\\n*]{2,40}))?"
+    private const val MERCHANT_AR = "(?:\\s+(?:في|لدى|من|إلى)\\s+(?<merchant>[^.,;\\n*]{2,40}))?"
 
-    // Account number patterns: *617, *963 (last 3-4 digits), or XXX810001, XXX####
-    private const val ACCOUNT_EN = "(?:\\*(?<accountNumberSuffix>\\d{3,4}))"
-    private const val ACCOUNT_AR = "(?:رقم\\s*(?<accountNumberSuffix>\\w+\\d+))""
+    /**
+     * Optional, greedy account-number tail. Being a *greedy* optional group it
+     * tries to find a number first and only falls back to matching nothing, so
+     * it captures "*617", "account *963" (English) and "حساب(ك) رقم XXX810001"
+     * (Arabic) when present, and stays out of the way otherwise.
+     */
+    private const val ACCTAIL =
+        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,9}))?"
 
     private const val KW_DEBIT_EN =
-        "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase))\\b"
+        "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase)|dr)\\b"
     private const val KW_CREDIT_EN =
-        "\\b(?:received|credited|credit|deposit(?:ed)?(?:\\s+of)?|refund(?:ed)?|salary|transfer\\s+(?:in|received)|incoming\\s+transfer)\\b"
+        "\\b(?:received|credited|credit|deposit(?:ed)?(?:\\s+of)?|refund(?:ed)?|salary|transfer\\s+(?:in|received)|incoming\\s+transfer|cr)\\b"
 
     private const val KW_DEBIT_AR =
         "(?:تم\\s+)?(?:خصم|دفع|سحب|شراء)|عملية\\s+شراء|مدين"
     private const val KW_CREDIT_AR =
         "(?:تم\\s+)?(?:إيداع|استلام|إضافة)|تحويل\\s+وارد|حوالة\\s+واردة|دائن|راتب"
+
+    // Arabic account markers for the transfer rules below.
+    private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})"
 
     private fun rule(name: String, pattern: String, direction: TransactionDirection, priority: Int) =
         CompiledRule(
@@ -47,29 +63,33 @@ object BuiltInRules {
         )
 
     val all: List<CompiledRule> = listOf(
-        // --- English, explicit currency (priority 10) ---
-        rule("builtin.en.debit.cur-amt", "$KW_DEBIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.DEBIT, 10),
-        rule("builtin.en.debit.amt-cur", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.DEBIT, 10),
-        rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.CREDIT, 10),
-        rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.CREDIT, 10),
+        // --- English, keyword before amount, explicit currency (priority 10) ---
+        rule("builtin.en.debit.cur-amt", "$KW_DEBIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL", TransactionDirection.DEBIT, 10),
+        rule("builtin.en.debit.amt-cur", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.DEBIT, 10),
+        rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
+        rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
 
-        // --- English without account number ---
-        rule("builtin.en.debit.cur-amt.noacc", "$KW_DEBIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 10),
-        rule("builtin.en.debit.amt-cur.noacc", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN", TransactionDirection.DEBIT, 10),
-        rule("builtin.en.credit.cur-amt.noacc", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN", TransactionDirection.CREDIT, 10),
-        rule("builtin.en.credit.amt-cur.noacc", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN", TransactionDirection.CREDIT, 10),
+        // --- Arabic, keyword before amount, explicit currency (priority 10) ---
+        rule("builtin.ar.debit.amt-cur", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR$ACCTAIL", TransactionDirection.DEBIT, 10),
+        rule("builtin.ar.debit.cur-amt", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR$ACCTAIL", TransactionDirection.DEBIT, 10),
+        rule("builtin.ar.credit.amt-cur", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
+        rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
 
-        // --- Arabic, explicit currency (priority 10) ---
-        rule("builtin.ar.debit.amt-cur", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.DEBIT, 10),
-        rule("builtin.ar.debit.cur-amt", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.DEBIT, 10),
-        rule("builtin.ar.credit.amt-cur", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.CREDIT, 10),
-        rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.CREDIT, 10),
+        // --- Arabic transfers: amount then "from/to account رقم …" (priority 12) ---
+        // Tried before the generic keyword rules so the account number is
+        // extracted instead of being swallowed by the Arabic merchant group.
+        // Outgoing transfer / deduction: "… AED45000.00 من حسابك رقم XXX810001"
+        rule("builtin.ar.transfer.out", "$CUR\\s?$AMT.{0,40}?من\\s+$ACC_AR", TransactionDirection.DEBIT, 12),
+        // Incoming transfer / salary / credit: "… AED62350.00 إلى/على حسابك رقم XXX810001"
+        rule("builtin.ar.transfer.in", "$CUR\\s?$AMT.{0,40}?(?:إلى|على)\\s+$ACC_AR", TransactionDirection.CREDIT, 12),
 
-        // --- Arabic without account number ---
-        rule("builtin.ar.debit.amt-cur.noacc", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR", TransactionDirection.DEBIT, 10),
-        rule("builtin.ar.debit.cur-amt.noacc", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR", TransactionDirection.DEBIT, 10),
-        rule("builtin.ar.credit.amt-cur.noacc", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR", TransactionDirection.CREDIT, 10),
-        rule("builtin.ar.credit.cur-amt.noacc", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR", TransactionDirection.CREDIT, 10),
+        // --- English, amount before keyword, explicit currency (priority 8) ---
+        // "AED 1895.00 was debited from your account *617"
+        rule("builtin.en.debit.af.cur-amt", "$CUR\\s?$AMT\\b.{0,25}?$KW_DEBIT_EN$ACCTAIL", TransactionDirection.DEBIT, 8),
+        rule("builtin.en.debit.af.amt-cur", "$AMT\\s?$CUR\\b.{0,25}?$KW_DEBIT_EN$ACCTAIL", TransactionDirection.DEBIT, 8),
+        // "AED 1.00 was credited to your account *963" / "Your AED X purchase … " handled above
+        rule("builtin.en.credit.af.cur-amt", "$CUR\\s?$AMT\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
+        rule("builtin.en.credit.af.amt-cur", "$AMT\\s?$CUR\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
 
         // --- No currency in the message: fall back to the default currency (priority 0) ---
         rule("builtin.en.debit.bare", "$KW_DEBIT_EN.{0,20}?$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 0),

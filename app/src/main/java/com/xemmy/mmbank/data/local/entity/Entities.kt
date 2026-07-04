@@ -25,6 +25,7 @@ data class AccountEntity(
     val archived: Boolean = false,
     val notes: String? = null,
     val createdAt: Long,
+    val accountNumber: String? = null,
 )
 
 @Entity(
@@ -95,8 +96,8 @@ data class ExchangeRateEntity(
 
 // --- Entity <-> domain mappers ---
 
-fun AccountEntity.toDomain() = Account(id, name, type, currencyCode, openingBalance, archived, notes, createdAt)
-fun Account.toEntity() = AccountEntity(id, name, type, currencyCode, openingBalance, archived, notes, createdAt)
+fun AccountEntity.toDomain() = Account(id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber)
+fun Account.toEntity() = AccountEntity(id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber)
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.accounts
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -81,11 +82,12 @@ fun AccountsScreen(
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val rows by viewModel.uiState.collectAsStateWithLifecycle()
-    var showAddDialog by remember { mutableStateOf(false) }
+    // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
+    var editing by remember { mutableStateOf<Account?>(null) }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(onClick = { editing = Account(name = "", type = AccountType.CHECKING, currencyCode = "USD") }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add account")
             }
         },
@@ -108,7 +110,11 @@ fun AccountsScreen(
                 }
             }
             items(rows, key = { it.account.id }) { row ->
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { editing = row.account },
+                ) {
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -116,7 +122,15 @@ fun AccountsScreen(
                         Column(Modifier.weight(1f)) {
                             Text(row.account.name, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "${row.account.type.name.replace('_', ' ')} · ${row.account.currencyCode}",
+                                buildString {
+                                    append(row.account.type.name.replace('_', ' '))
+                                    append(" · ")
+                                    append(row.account.currencyCode)
+                                    row.account.accountNumber?.takeIf { it.isNotBlank() }?.let {
+                                        append(" · ••")
+                                        append(it)
+                                    }
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -135,12 +149,13 @@ fun AccountsScreen(
         }
     }
 
-    if (showAddDialog) {
-        AddAccountDialog(
-            onDismiss = { showAddDialog = false },
-            onSave = { account ->
-                viewModel.save(account)
-                showAddDialog = false
+    editing?.let { account ->
+        AccountDialog(
+            existing = account,
+            onDismiss = { editing = null },
+            onSave = { saved ->
+                viewModel.save(saved)
+                editing = null
             },
         )
     }
@@ -148,14 +163,17 @@ fun AccountsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddAccountDialog(
+private fun AccountDialog(
+    existing: Account,
     onDismiss: () -> Unit,
     onSave: (Account) -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(AccountType.CHECKING) }
-    var currency by remember { mutableStateOf("USD") }
-    var openingBalance by remember { mutableStateOf("0") }
+    val isNew = existing.id == 0L
+    var name by remember { mutableStateOf(existing.name) }
+    var type by remember { mutableStateOf(existing.type) }
+    var currency by remember { mutableStateOf(existing.currencyCode) }
+    var openingBalance by remember { mutableStateOf(existing.openingBalance.toPlainString()) }
+    var accountNumber by remember { mutableStateOf(existing.accountNumber.orEmpty()) }
     var typeMenuOpen by remember { mutableStateOf(false) }
 
     val opening = openingBalance.toBigDecimalOrNull()
@@ -163,7 +181,7 @@ private fun AddAccountDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New account") },
+        title = { Text(if (isNew) "New account" else "Edit account") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
@@ -205,6 +223,15 @@ private fun AddAccountDialog(
                     label = { Text("Opening balance (negative for debt)") },
                     singleLine = true,
                 )
+                OutlinedTextField(
+                    value = accountNumber,
+                    onValueChange = { accountNumber = it },
+                    label = { Text("Account/card number (last digits, e.g. 617)") },
+                    supportingText = {
+                        Text("Used to auto-assign captured transactions to this account.")
+                    },
+                    singleLine = true,
+                )
             }
         },
         confirmButton = {
@@ -212,11 +239,12 @@ private fun AddAccountDialog(
                 enabled = valid,
                 onClick = {
                     onSave(
-                        Account(
+                        existing.copy(
                             name = name.trim(),
                             type = type,
                             currencyCode = currency.trim().uppercase(),
                             openingBalance = opening ?: BigDecimal.ZERO,
+                            accountNumber = accountNumber.trim().takeIf { it.isNotBlank() },
                         )
                     )
                 },

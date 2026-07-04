@@ -43,6 +43,11 @@ data class Account(
     val archived: Boolean = false,
     val notes: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * The identifying digits of the real bank account or card (e.g. "617", "810001", "963").
+     * Captured transactions whose message reveals a matching number are auto-assigned here.
+     */
+    val accountNumber: String? = null,
 )
 
 data class Transaction(

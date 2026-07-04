@@ -95,6 +95,92 @@ class TransactionParserTest {
         assertNull(p.parse(sms("TXN:42.50/EUR ref 998", sender = "OTHER")))
     }
 
+    // --- Account-number extraction: real-world message formats ---
+
+    @Test
+    fun `english amount-first debit extracts account number`() {
+        val r = parser.parse(
+            sms("Dear Customer, AED 1895.00 was debited from your account *617. Your available account balance is AED 46120.85")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("1895.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("617", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `english amount-first credit extracts account number`() {
+        val r = parser.parse(
+            sms("Dear Customer, AED 1.00 was credited to your account *963. Your available account balance is AED 5961.60")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("1.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("963", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `tabby spend parses as debit with merchant and no account`() {
+        val r = parser.parse(
+            sms("You spent AED 32.95 at CARREFOUR-MAF MKT YAS. Your available Tabby Cash balance is now AED 1675.59.")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("32.95"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("CARREFOUR-MAF MKT YAS", r.merchant)
+        assertNull(r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `tabby installment purchase parses as debit`() {
+        val r = parser.parse(
+            sms("Your AED 2575.63 purchase at SHEIN is confirmed. To pay as low as 205.46/month, extend your payment plan in the app")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("2575.63"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+    }
+
+    @Test
+    fun `arabic outgoing transfer parses as debit with account`() {
+        val r = parser.parse(
+            sms("تم بنجاح تسجيل طلبك للتحويل النقدي عن طريق خدمة الإنترنت المصرفية الشخصية ل AED45000.00 من حسابك رقمXXX810001 بتاريخ. Jun 28 2026 7:08PM")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("45000.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("XXX810001", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `arabic salary credit parses with account`() {
+        val r = parser.parse(
+            sms("لقد تمّ تحويل راتبك AED62350.00 إلى حسابك رقم XXX810001 بتاريخ Jun 25 2026 6:23AM. الرصيد المتوفر 106494.95.")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("62350.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("XXX810001", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `arabic Cr operation parses as credit with account`() {
+        val r = parser.parse(
+            sms("تمت عملية Cr بمبلغ AED1880.39 على حسابك رقم XXX810001 بنجاح. رصيد حسابك الحالي AED44081.95")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("1880.39"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("XXX810001", r.accountNumberSuffix)
+    }
+
     @Test
     fun `rule compiler rejects invalid patterns`() {
         assertNull(RuleCompiler.compile(ParsingRule(name = "bad", pattern = "([", direction = TransactionDirection.DEBIT)))
