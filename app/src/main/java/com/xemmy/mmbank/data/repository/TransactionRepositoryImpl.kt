@@ -51,6 +51,12 @@ class TransactionRepositoryImpl(
         if (existing != null) {
             IngestResult.Duplicate(existing.id)
         } else {
+            val detectedAccountId = if (parsed.accountNumberSuffix != null) {
+                detectAccountByNumber(parsed.accountNumberSuffix, parsed.currencyCode)
+            } else {
+                null
+            }
+
             val id = dao.insert(
                 TransactionEntity(
                     amount = parsed.amount,
@@ -63,6 +69,8 @@ class TransactionRepositoryImpl(
                     matchedRuleName = parsed.matchedRuleName,
                     timestamp = message.timestampMillis,
                     createdAt = System.currentTimeMillis(),
+                    accountNumberSuffix = parsed.accountNumberSuffix,
+                    accountId = detectedAccountId,
                 )
             )
             IngestResult.Inserted(id)
@@ -73,6 +81,14 @@ class TransactionRepositoryImpl(
         dao.assignAccount(transactionId, accountId)
 
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
+
+    private suspend fun detectAccountByNumber(accountNumber: String, currencyCode: String): Long? {
+        val allAccounts = database.accountDao().getActive()
+        return allAccounts.find { account ->
+            accountNumber.endsWith(account.id.toString().takeLast(3)) ||
+            accountNumber.contains(account.id.toString().takeLast(4))
+        }?.id
+    }
 
     companion object {
         /** ±2 minutes, per the dedup strategy. */

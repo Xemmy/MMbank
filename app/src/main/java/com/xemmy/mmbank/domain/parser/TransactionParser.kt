@@ -44,12 +44,17 @@ class TransactionParser(
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
 
+            val accountNumberSuffix = match.groupOrNull(RuleCompiler.ACCOUNT_NUMBER_GROUP)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+
             return ParsedTransaction(
                 amount = amount,
                 currencyCode = currency,
                 direction = rule.direction,
                 merchant = merchant,
                 matchedRuleName = rule.name,
+                accountNumberSuffix = accountNumberSuffix,
             )
         }
         return null

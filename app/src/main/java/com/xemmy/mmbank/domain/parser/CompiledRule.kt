@@ -20,6 +20,7 @@ object RuleCompiler {
     const val AMOUNT_GROUP = "amount"
     const val CURRENCY_GROUP = "currency"
     const val MERCHANT_GROUP = "merchant"
+    const val ACCOUNT_NUMBER_GROUP = "accountNumberSuffix"
 
     /**
      * Compiles a user-defined rule. Returns null when the pattern is invalid or

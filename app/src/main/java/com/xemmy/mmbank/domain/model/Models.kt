@@ -31,6 +31,7 @@ data class ParsedTransaction(
     val direction: TransactionDirection,
     val merchant: String?,
     val matchedRuleName: String,
+    val accountNumberSuffix: String? = null,
 )
 
 data class Account(
@@ -58,6 +59,8 @@ data class Transaction(
     /** Event time (SMS timestamp / notification post time), used by the dedup window. */
     val timestampMillis: Long,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Account number suffix extracted from the message (last 3-4 digits like *617 or XXX810001). */
+    val accountNumberSuffix: String? = null,
 )
 
 /**

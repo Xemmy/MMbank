@@ -58,6 +58,7 @@ data class TransactionEntity(
     /** Event time (SMS timestamp / notification post time) — the dedup axis. */
     val timestamp: Long,
     val createdAt: Long,
+    val accountNumberSuffix: String? = null,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -99,7 +100,7 @@ fun Account.toEntity() = AccountEntity(id, name, type, currencyCode, openingBala
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
-    rawMessage, matchedRuleName, timestamp, createdAt,
+    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

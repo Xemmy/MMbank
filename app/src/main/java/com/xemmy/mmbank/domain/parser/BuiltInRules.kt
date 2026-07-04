@@ -21,6 +21,10 @@ object BuiltInRules {
     private const val MERCHANT_EN = "(?:\\s+(?:at|to|@|in)\\s+(?<merchant>[^.,;\\n]{2,40}))?"
     private const val MERCHANT_AR = "(?:\\s+(?:في|لدى|من|إلى)\\s+(?<merchant>[^.,;\\n]{2,40}))?"
 
+    // Account number patterns: *617, *963 (last 3-4 digits), or XXX810001, XXX####
+    private const val ACCOUNT_EN = "(?:\\*(?<accountNumberSuffix>\\d{3,4}))"
+    private const val ACCOUNT_AR = "(?:رقم\\s*(?<accountNumberSuffix>\\w+\\d+))""
+
     private const val KW_DEBIT_EN =
         "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase))\\b"
     private const val KW_CREDIT_EN =
@@ -44,16 +48,28 @@ object BuiltInRules {
 
     val all: List<CompiledRule> = listOf(
         // --- English, explicit currency (priority 10) ---
-        rule("builtin.en.debit.cur-amt", "$KW_DEBIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 10),
-        rule("builtin.en.debit.amt-cur", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN", TransactionDirection.DEBIT, 10),
-        rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN", TransactionDirection.CREDIT, 10),
-        rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN", TransactionDirection.CREDIT, 10),
+        rule("builtin.en.debit.cur-amt", "$KW_DEBIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.DEBIT, 10),
+        rule("builtin.en.debit.amt-cur", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.DEBIT, 10),
+        rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.CREDIT, 10),
+        rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN.{0,40}?$ACCOUNT_EN", TransactionDirection.CREDIT, 10),
+
+        // --- English without account number ---
+        rule("builtin.en.debit.cur-amt.noacc", "$KW_DEBIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 10),
+        rule("builtin.en.debit.amt-cur.noacc", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN", TransactionDirection.DEBIT, 10),
+        rule("builtin.en.credit.cur-amt.noacc", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN", TransactionDirection.CREDIT, 10),
+        rule("builtin.en.credit.amt-cur.noacc", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN", TransactionDirection.CREDIT, 10),
 
         // --- Arabic, explicit currency (priority 10) ---
-        rule("builtin.ar.debit.amt-cur", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR", TransactionDirection.DEBIT, 10),
-        rule("builtin.ar.debit.cur-amt", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR", TransactionDirection.DEBIT, 10),
-        rule("builtin.ar.credit.amt-cur", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR", TransactionDirection.CREDIT, 10),
-        rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR", TransactionDirection.CREDIT, 10),
+        rule("builtin.ar.debit.amt-cur", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.DEBIT, 10),
+        rule("builtin.ar.debit.cur-amt", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.DEBIT, 10),
+        rule("builtin.ar.credit.amt-cur", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.CREDIT, 10),
+        rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR.{0,40}?$ACCOUNT_AR", TransactionDirection.CREDIT, 10),
+
+        // --- Arabic without account number ---
+        rule("builtin.ar.debit.amt-cur.noacc", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR", TransactionDirection.DEBIT, 10),
+        rule("builtin.ar.debit.cur-amt.noacc", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR", TransactionDirection.DEBIT, 10),
+        rule("builtin.ar.credit.amt-cur.noacc", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR", TransactionDirection.CREDIT, 10),
+        rule("builtin.ar.credit.cur-amt.noacc", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR", TransactionDirection.CREDIT, 10),
 
         // --- No currency in the message: fall back to the default currency (priority 0) ---
         rule("builtin.en.debit.bare", "$KW_DEBIT_EN.{0,20}?$AMT$MERCHANT_EN", TransactionDirection.DEBIT, 0),

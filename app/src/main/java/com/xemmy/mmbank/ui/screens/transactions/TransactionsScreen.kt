@@ -126,6 +126,13 @@ private fun TransactionCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (tx.accountNumberSuffix != null) {
+                        Text(
+                            "Account: ${tx.accountNumberSuffix}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Text(
                     (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
