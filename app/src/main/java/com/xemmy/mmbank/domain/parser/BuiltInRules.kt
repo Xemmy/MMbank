@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.parser
 
+import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 
 /**
@@ -29,6 +30,14 @@ object BuiltInRules {
     private const val MERCHANT_EN = "(?:\\s+(?:at|to|@|in)\\s+(?<merchant>[^.,;\\n*]{2,40}))?"
     private const val MERCHANT_AR = "(?:\\s+(?:في|لدى|من|إلى)\\s+(?<merchant>[^.,;\\n*]{2,40}))?"
 
+    // Tabby's "Transaction of ... At {merchant} was successful." / "At
+    // {merchant}. Your Tabby Card limit is now ..." layout: a lazy merchant
+    // capture that stops right before either terminator, so it never runs on
+    // into the following sentence (and never swallows a second amount later
+    // in the message, which is what let a previous rule mis-fire on it).
+    private const val MERCHANT_TABBY =
+        "(?<merchant>[^.,;\\n*]{2,40}?)(?=\\s+was\\s+successful\\b|\\.)"
+
     /**
      * Optional, greedy account-number tail. Being a *greedy* optional group it
      * tries to find a number first and only falls back to matching nothing, so
@@ -51,7 +60,13 @@ object BuiltInRules {
     // Arabic account markers for the transfer rules below.
     private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})"
 
-    private fun rule(name: String, pattern: String, direction: TransactionDirection, priority: Int) =
+    private fun rule(
+        name: String,
+        pattern: String,
+        direction: TransactionDirection,
+        priority: Int,
+        category: TransactionCategory = TransactionCategory.NORMAL,
+    ) =
         CompiledRule(
             ruleId = null,
             name = name,
@@ -60,6 +75,7 @@ object BuiltInRules {
             direction = direction,
             defaultCurrency = null,
             priority = priority,
+            category = category,
         )
 
     val all: List<CompiledRule> = listOf(
@@ -68,6 +84,30 @@ object BuiltInRules {
         rule("builtin.en.debit.amt-cur", "$KW_DEBIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.DEBIT, 10),
         rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
         rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
+
+        // --- Tabby purchase confirmations (priority 10) ---
+        // "Transaction of AED 20.00 At Tips and Toes was successful. Your
+        // available Tabby Card limit is AED 6676.12." / "...At Sephora ME.
+        // Your Tabby Card limit is now AED 6813.02. You can now split your
+        // purchase into 8 months." Must outrank the priority-8 "af" rules
+        // below, which otherwise mis-fire on the second shape: the word
+        // "purchase" later in the message falls inside their keyword window
+        // and lets them grab the *remaining card limit* as the amount instead
+        // of the real purchase amount.
+        rule("builtin.en.debit.tabby.purchase", "Transaction\\s+of\\s+$CUR\\s?$AMT\\s+At\\s+$MERCHANT_TABBY$ACCTAIL", TransactionDirection.DEBIT, 10),
+
+        // --- Tabby cashback-earned notifications (priority 10) ---
+        // "You earned AED 1.00! You got cashback with Tabby+. Your cashback
+        // will be processed after next statement is paid." Tagged so the
+        // Rewards tab can show real earned cashback separately from ordinary
+        // credits (refunds, salary, transfers-in, etc).
+        rule(
+            "builtin.en.credit.tabby.cashback",
+            "You\\s+earned\\s+$CUR\\s?$AMT$ACCTAIL",
+            TransactionDirection.CREDIT,
+            10,
+            category = TransactionCategory.CASHBACK_EARNED,
+        ),
 
         // --- Arabic, keyword before amount, explicit currency (priority 10) ---
         rule("builtin.ar.debit.amt-cur", "(?:$KW_DEBIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR$ACCTAIL", TransactionDirection.DEBIT, 10),

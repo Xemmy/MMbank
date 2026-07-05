@@ -11,6 +11,7 @@ import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
@@ -78,6 +79,7 @@ data class TransactionEntity(
     val timestamp: Long,
     val createdAt: Long,
     val accountNumberSuffix: String? = null,
+    val category: TransactionCategory = TransactionCategory.NORMAL,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -131,7 +133,7 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
-    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
+    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

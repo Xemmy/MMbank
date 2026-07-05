@@ -18,6 +18,20 @@ android {
         versionName = "0.1.0"
     }
 
+    // A fixed debug keystore (committed, standard well-known debug password)
+    // so every CI-built debug APK shares one signing key. Without this, each
+    // GitHub Actions run auto-generates a fresh random key, and Android
+    // refuses to install an APK as an update over a different certificate —
+    // forcing an uninstall before every new build.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             // Personal sideloaded build: keep minification off so stack traces

@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.parser
 
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 
 /** A parsing rule with its regexes compiled, ready for matching. */
@@ -13,6 +14,8 @@ data class CompiledRule(
     val direction: TransactionDirection,
     val defaultCurrency: String?,
     val priority: Int,
+    /** Internal-only tag; custom user rules always compile to NORMAL. */
+    val category: TransactionCategory = TransactionCategory.NORMAL,
 )
 
 object RuleCompiler {

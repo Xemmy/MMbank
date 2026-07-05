@@ -55,6 +55,7 @@ class TransactionParser(
                 merchant = merchant,
                 matchedRuleName = rule.name,
                 accountNumberSuffix = accountNumberSuffix,
+                category = rule.category,
             )
         }
         return null

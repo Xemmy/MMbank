@@ -71,6 +71,7 @@ class TransactionRepositoryImpl(
                     createdAt = System.currentTimeMillis(),
                     accountNumberSuffix = parsed.accountNumberSuffix,
                     accountId = detectedAccountId,
+                    category = parsed.category,
                 )
             )
             IngestResult.Inserted(id)

@@ -15,15 +15,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,11 +37,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -106,6 +112,16 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                 }
         }
     }
+
+    fun delete(account: Account) {
+        viewModelScope.launch {
+            runCatching { container.accountRepository.delete(account) }
+                .onFailure {
+                    container.recordError("AccountsViewModel.delete", it)
+                    lastError.value = "Couldn't delete account: ${it.message}"
+                }
+        }
+    }
 }
 
 @Composable
@@ -156,7 +172,7 @@ fun AccountsScreen(
                 AccountCard(
                     row = row,
                     onEdit = { editing = row.account },
-                    onArchive = { viewModel.archive(row.account) },
+                    onDelete = { viewModel.delete(row.account) },
                 )
             }
         }
@@ -178,9 +194,10 @@ fun AccountsScreen(
 private fun AccountCard(
     row: AccountWithBalance,
     onEdit: () -> Unit,
-    onArchive: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val a = row.account
+    var confirmingDelete by remember { mutableStateOf(false) }
     Card(
         Modifier
             .fillMaxWidth()
@@ -210,8 +227,8 @@ private fun AccountCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
                 )
-                IconButton(onClick = onArchive) {
-                    Icon(Icons.Filled.Archive, contentDescription = "Archive account")
+                IconButton(onClick = { confirmingDelete = true }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete account")
                 }
             }
 
@@ -239,6 +256,20 @@ private fun AccountCard(
                 }
             }
         }
+    }
+
+    if (confirmingDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("Delete this account?") },
+            text = {
+                Text("“${a.name}” will be removed from your accounts list. Its captured transactions are kept but unlinked from it.")
+            },
+            confirmButton = {
+                TextButton(onClick = { onDelete(); confirmingDelete = false }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -292,10 +323,33 @@ private fun AccountDialog(
     var loanNotes by remember { mutableStateOf(existing.loanNotes.orEmpty()) }
     var typeMenuOpen by remember { mutableStateOf(false) }
     var showPaste by remember { mutableStateOf(false) }
+    var showCopy by remember { mutableStateOf(false) }
 
     val opening = openingBalance.toBigDecimalOrNull()
     val valid = name.isNotBlank() && currency.trim().length == 3 && opening != null
     val showLoanFields = type == AccountType.LOAN || type == AccountType.CREDIT_CARD
+
+    // Live field list for "Copy details" — reflects whatever is currently
+    // typed/pasted in this dialog, not just the last-saved account.
+    val copyFields: List<Pair<String, String>> = buildList {
+        if (name.isNotBlank()) add("Name" to name)
+        add("Type" to type.name.replace('_', ' '))
+        if (currency.isNotBlank()) add("Currency" to currency)
+        if (openingBalance.isNotBlank()) add("Opening balance" to openingBalance)
+        if (accountNumber.isNotBlank()) add("Account/card number" to accountNumber)
+        if (bankName.isNotBlank()) add("Bank name" to bankName)
+        if (accountTitle.isNotBlank()) add("Account title" to accountTitle)
+        if (iban.isNotBlank()) add("IBAN" to iban)
+        if (swift.isNotBlank()) add("SWIFT/BIC" to swift)
+        if (showLoanFields) {
+            if (outstanding.isNotBlank()) add("Outstanding balance" to outstanding)
+            if (nextInstallment.isNotBlank()) add("Next installment amount" to nextInstallment)
+            if (dueDay.isNotBlank()) add("Installment due day" to dueDay)
+            if (profitRate.isNotBlank()) add("Profit rate % p.a." to profitRate)
+            if (maturity.isNotBlank()) add("Maturity date" to maturity)
+            if (loanNotes.isNotBlank()) add("Loan notes" to loanNotes)
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -307,9 +361,15 @@ private fun AccountDialog(
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                OutlinedButton(onClick = { showPaste = true }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.ContentPaste, contentDescription = null)
-                    Text("  Paste bank details")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { showPaste = true }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.ContentPaste, contentDescription = null)
+                        Text("  Paste")
+                    }
+                    OutlinedButton(onClick = { showCopy = true }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                        Text("  Copy details")
+                    }
                 }
                 OutlinedTextField(
                     value = name,
@@ -470,6 +530,10 @@ private fun AccountDialog(
             },
         )
     }
+
+    if (showCopy) {
+        CopyDetailsDialog(fields = copyFields, onDismiss = { showCopy = false })
+    }
 }
 
 @Composable
@@ -503,6 +567,72 @@ private fun PasteDetailsDialog(
                 enabled = text.isNotBlank(),
                 onClick = { onParsed(BankDetailsParser.parse(text)) },
             ) { Text("Fill fields") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun CopyDetailsDialog(
+    fields: List<Pair<String, String>>,
+    onDismiss: () -> Unit,
+) {
+    val clipboard = LocalClipboardManager.current
+    // Default: everything checked, so "copy all" is the zero-tap path;
+    // unchecking individual rows is how you copy just a subset.
+    val checked = remember(fields) {
+        mutableStateMapOf<String, Boolean>().apply { fields.forEach { (label, _) -> put(label, true) } }
+    }
+    val allChecked = fields.isNotEmpty() && fields.all { checked[it.first] == true }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Copy details") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        val next = !allChecked
+                        fields.forEach { (label, _) -> checked[label] = next }
+                    },
+                ) {
+                    Checkbox(
+                        checked = allChecked,
+                        onCheckedChange = { v -> fields.forEach { (label, _) -> checked[label] = v } },
+                    )
+                    Text("Select all", style = MaterialTheme.typography.bodyMedium)
+                }
+                HorizontalDivider()
+                fields.forEach { (label, value) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { checked[label] = !(checked[label] ?: false) },
+                    ) {
+                        Checkbox(
+                            checked = checked[label] ?: false,
+                            onCheckedChange = { v -> checked[label] = v },
+                        )
+                        Text("$label: $value", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = fields.any { checked[it.first] == true },
+                onClick = {
+                    val text = fields.filter { checked[it.first] == true }
+                        .joinToString("\n") { (label, value) -> "$label: $value" }
+                    clipboard.setText(AnnotatedString(text))
+                    onDismiss()
+                },
+            ) { Text("Copy") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

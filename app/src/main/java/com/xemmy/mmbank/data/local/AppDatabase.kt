@@ -29,7 +29,7 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -78,9 +78,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 -> v4: tags captured transactions that represent cashback payouts
+         * (e.g. Tabby+ "You earned AED X!" messages) so the Rewards tab can
+         * surface real earned cashback separately from ordinary credits.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'NORMAL'")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
                 .fallbackToDestructiveMigrationOnDowngrade()

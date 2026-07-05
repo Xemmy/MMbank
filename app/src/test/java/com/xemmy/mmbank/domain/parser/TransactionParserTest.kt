@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.parser
 
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
@@ -202,6 +203,120 @@ class TransactionParserTest {
         assertEquals("AED", credit.currencyCode)
         assertEquals(TransactionDirection.CREDIT, credit.direction)
         assertEquals("963", credit.accountNumberSuffix)
+    }
+
+    // --- Tabby purchase confirmations ("Transaction of ... At {merchant} ...") ---
+
+    @Test
+    fun `tabby purchase confirmation - was successful shape`() {
+        val r = parser.parse(
+            sms(
+                "Transaction of AED 20.00 At Tips and Toes was successful. Your available Tabby Card limit is AED 6676.12.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("20.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("Tips and Toes", r.merchant)
+    }
+
+    @Test
+    fun `tabby purchase confirmation - careem ride`() {
+        val r = parser.parse(
+            sms(
+                "Transaction of AED 44.65 At CAREEM RIDE was successful. Your available Tabby Card limit is AED 6696.12.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("44.65"), r!!.amount)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("CAREEM RIDE", r.merchant)
+    }
+
+    @Test
+    fun `tabby purchase confirmation - patchi llc`() {
+        val r = parser.parse(
+            sms(
+                "Transaction of AED 72.25 At PATCHI LLC was successful. Your available Tabby Card limit is AED 6740.77.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("72.25"), r!!.amount)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("PATCHI LLC", r.merchant)
+    }
+
+    @Test
+    fun `tabby purchase confirmation with split-purchase suffix - regression for card-limit mis-fire`() {
+        // Regression: a lower-priority rule used to match "purchase" later in
+        // this message and wrongly grab the *remaining card limit* (6813.02)
+        // as the amount, with no merchant. The real purchase is 1553.00 at
+        // Sephora ME.
+        val r = parser.parse(
+            sms(
+                "Transaction of AED 1553.00 At Sephora ME. Your Tabby Card limit is now AED 6813.02. " +
+                    "You can now split your purchase into 8 months.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("1553.00"), r!!.amount)
+        assertEquals("Sephora ME", r.merchant)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+    }
+
+    // --- Tabby cashback-earned notifications ---
+
+    @Test
+    fun `tabby cashback earned parses as credit tagged with cashback category`() {
+        val r = parser.parse(
+            sms(
+                "You earned AED 1.00! You got cashback with Tabby+. Your cashback will be processed after next statement is paid.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("1.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals(TransactionCategory.CASHBACK_EARNED, r.category)
+    }
+
+    @Test
+    fun `tabby cashback earned - decimal amount`() {
+        val r = parser.parse(
+            sms(
+                "You earned AED 2.23! You got cashback with Tabby+. Your cashback will be processed after next statement is paid.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("2.23"), r!!.amount)
+        assertEquals(TransactionCategory.CASHBACK_EARNED, r.category)
+    }
+
+    @Test
+    fun `tabby cashback earned - larger amount`() {
+        val r = parser.parse(
+            sms(
+                "You earned AED 77.65! You got cashback with Tabby+. Your cashback will be processed after next statement is paid.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("77.65"), r!!.amount)
+        assertEquals(TransactionCategory.CASHBACK_EARNED, r.category)
+    }
+
+    @Test
+    fun `ordinary transactions default to NORMAL category`() {
+        val r = parser.parse(sms("You spent AED 250.75 at CARREFOUR DUBAI. Avl bal AED 1,200"))
+        assertNotNull(r)
+        assertEquals(TransactionCategory.NORMAL, r!!.category)
     }
 
     @Test

@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
@@ -24,15 +25,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.cashback.CashbackCatalog
 import com.xemmy.mmbank.domain.cashback.CashbackEngine
 import com.xemmy.mmbank.domain.cashback.CashbackSpendCodec
+import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.YearMonth
+import java.time.ZoneId
 import java.util.Locale
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+
+data class RealCashbackUiState(
+    val totalsByCurrencyAllTime: Map<String, BigDecimal> = emptyMap(),
+    val totalsByCurrencyThisMonth: Map<String, BigDecimal> = emptyMap(),
+    val recent: List<Transaction> = emptyList(),
+)
 
 class CashbackViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -44,6 +66,29 @@ class CashbackViewModel(private val container: AppContainer) : ViewModel() {
         val decoded = spendText.mapNotNull { (k, v) -> v.toBigDecimalOrNull()?.let { k to it } }.toMap()
         container.preferences.cashbackSpendRaw = CashbackSpendCodec.encode(decoded)
     }
+
+    /** Real cashback actually captured from bank/fintech messages (e.g. Tabby+ payouts). */
+    val realCashback: StateFlow<RealCashbackUiState> =
+        container.transactionRepository.observeTransactions()
+            .map { txns ->
+                val earned = txns.filter { it.category == TransactionCategory.CASHBACK_EARNED }
+                val currentMonth = YearMonth.now(ZoneId.systemDefault())
+                val thisMonth = earned.filter {
+                    YearMonth.from(Instant.ofEpochMilli(it.timestampMillis).atZone(ZoneId.systemDefault())) == currentMonth
+                }
+                RealCashbackUiState(
+                    totalsByCurrencyAllTime = earned.groupBy { it.currencyCode }
+                        .mapValues { (_, v) -> v.sumOf { it.amount } },
+                    totalsByCurrencyThisMonth = thisMonth.groupBy { it.currencyCode }
+                        .mapValues { (_, v) -> v.sumOf { it.amount } },
+                    recent = earned.sortedByDescending { it.timestampMillis }.take(10),
+                )
+            }
+            .catch { e ->
+                container.recordError("CashbackViewModel", e)
+                emit(RealCashbackUiState())
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RealCashbackUiState())
 }
 
 @Composable
@@ -53,6 +98,7 @@ fun CashbackScreen(
     val spendText = remember { mutableStateMapOf<String, String>().apply { putAll(viewModel.loadSpendText()) } }
     val spendMap = spendText.entries.mapNotNull { (k, v) -> v.toBigDecimalOrNull()?.let { k to it } }.toMap()
     val plan = CashbackEngine.compute(CashbackCatalog.cards, CashbackCatalog.categories, spendMap)
+    val real by viewModel.realCashback.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -84,6 +130,47 @@ fun CashbackScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                     )
+                }
+            }
+        }
+
+        if (real.totalsByCurrencyAllTime.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Real cashback earned", style = MaterialTheme.typography.bodySmall)
+                        real.totalsByCurrencyAllTime.forEach { (cur, total) ->
+                            Text("All-time: ${total.asMoney(cur)}", style = MaterialTheme.typography.labelSmall)
+                        }
+                        real.totalsByCurrencyThisMonth.forEach { (cur, total) ->
+                            Text(
+                                "This month: ${total.asMoney(cur)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            items(real.recent, key = { "cashback_${it.id}" }) { tx ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                BankNames.displayName(tx.sender) ?: "Unknown",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                tx.timestampMillis.asDate(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(tx.amount.asMoney(tx.currencyCode), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }

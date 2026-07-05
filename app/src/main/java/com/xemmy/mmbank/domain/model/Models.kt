@@ -7,6 +7,9 @@ enum class TransactionSource { SMS, PUSH_NOTIFICATION, MANUAL, BINANCE_SYNC }
 
 enum class TransactionDirection { DEBIT, CREDIT }
 
+/** Semantic tag on top of [TransactionDirection], for rows that aren't an ordinary spend/receive. */
+enum class TransactionCategory { NORMAL, CASHBACK_EARNED }
+
 /**
  * Ledger types managed by the app. Balances are computed uniformly
  * (opening + credits - debits); liability accounts (CREDIT_CARD, LOAN)
@@ -32,6 +35,7 @@ data class ParsedTransaction(
     val merchant: String?,
     val matchedRuleName: String,
     val accountNumberSuffix: String? = null,
+    val category: TransactionCategory = TransactionCategory.NORMAL,
 )
 
 data class Account(
@@ -90,6 +94,7 @@ data class Transaction(
     val createdAt: Long = System.currentTimeMillis(),
     /** Account number suffix extracted from the message (last 3-4 digits like *617 or XXX810001). */
     val accountNumberSuffix: String? = null,
+    val category: TransactionCategory = TransactionCategory.NORMAL,
 )
 
 /**

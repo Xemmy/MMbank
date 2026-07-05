@@ -8,6 +8,7 @@ import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
@@ -55,6 +56,7 @@ data class BackupTransaction(
     val timestamp: Long,
     val createdAt: Long,
     val accountNumberSuffix: String?,
+    val category: String = "NORMAL",
 )
 
 @Serializable
@@ -157,11 +159,13 @@ class BackupManager(
     private fun TransactionEntity.toBackup() = BackupTransaction(
         id, accountId, amount.toPlainString(), currencyCode, direction.name, merchant,
         source.name, sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
+        category.name,
     )
 
     private fun BackupTransaction.toEntity() = TransactionEntity(
         id, accountId, BigDecimal(amount), currencyCode, TransactionDirection.valueOf(direction), merchant,
         TransactionSource.valueOf(source), sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
+        TransactionCategory.valueOf(category),
     )
 
     private fun ParsingRuleEntity.toBackup() = BackupRule(
