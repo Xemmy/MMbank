@@ -548,7 +548,9 @@ private fun PasteDetailsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "Paste a block like:\nBank Name: ADIB\nAccount Number: 17525963\nIBAN: AE90...\nSWIFT: ABDIAEADXXX\nCurrency: AED",
+                    // Fictional example values — never real account details.
+                    "Paste a block like:\nBank Name: ADIB\nAccount Title: FATIMA SALEM ALSUWAIDI\n" +
+                        "Account Number: 12345678\nIBAN: AE35...\nSWIFT: ABDIAEADXXX\nCurrency: AED",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

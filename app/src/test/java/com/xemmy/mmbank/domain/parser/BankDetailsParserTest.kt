@@ -12,17 +12,17 @@ class BankDetailsParserTest {
         val r = BankDetailsParser.parse(
             """
             Bank Name: Abu Dhabi Commercial Bank PJSC
-            Account Title: AHMED SAEED SULAIMAN B ALMAKHZOUMI
-            Account Number: 14362927810001
-            IBAN: AE060030014362927810001
+            Account Title: MOHAMED KHALIFA RASHED ALSHAMSI
+            Account Number: 13579246810001
+            IBAN: AE210030013579246810001
             Currency: AED
             SWIFT code: ADCBAEAA
             """.trimIndent()
         )
         assertEquals("Abu Dhabi Commercial Bank PJSC", r.bankName)
-        assertEquals("AHMED SAEED SULAIMAN B ALMAKHZOUMI", r.accountTitle)
-        assertEquals("14362927810001", r.accountNumber)
-        assertEquals("AE060030014362927810001", r.iban)
+        assertEquals("MOHAMED KHALIFA RASHED ALSHAMSI", r.accountTitle)
+        assertEquals("13579246810001", r.accountNumber)
+        assertEquals("AE210030013579246810001", r.iban)
         assertEquals("AED", r.currencyCode)
         assertEquals("ADCBAEAA", r.swift)
     }
@@ -32,17 +32,17 @@ class BankDetailsParserTest {
         val r = BankDetailsParser.parse(
             """
             Bank Name: ADIB
-            Account Holder Name: AHMED SAEED SULAIMAN BINZAYED ALMAKHZOUMI
-            Account Number: 17525963
-            IBAN: AE900500000000017525963
+            Account Holder Name: FATIMA SALEM JUMA ALSUWAIDI
+            Account Number: 24681357
+            IBAN: AE350500000000024681357
             SWIFT: ABDIAEADXXX
             Currency: AED
             """.trimIndent()
         )
         assertEquals("ADIB", r.bankName)
-        assertEquals("AHMED SAEED SULAIMAN BINZAYED ALMAKHZOUMI", r.accountTitle)
-        assertEquals("17525963", r.accountNumber)
-        assertEquals("AE900500000000017525963", r.iban)
+        assertEquals("FATIMA SALEM JUMA ALSUWAIDI", r.accountTitle)
+        assertEquals("24681357", r.accountNumber)
+        assertEquals("AE350500000000024681357", r.iban)
         assertEquals("ABDIAEADXXX", r.swift)
         assertEquals("AED", r.currencyCode)
     }
@@ -50,9 +50,9 @@ class BankDetailsParserTest {
     @Test
     fun `recovers iban and swift without labels`() {
         val r = BankDetailsParser.parse(
-            "My ADCB account, IBAN is AE060030014362927810001 and the bic ADCBAEAA, in AED."
+            "My ADCB account, IBAN is AE210030013579246810001 and the bic ADCBAEAA, in AED."
         )
-        assertEquals("AE060030014362927810001", r.iban)
+        assertEquals("AE210030013579246810001", r.iban)
         assertEquals("ADCBAEAA", r.swift)
         assertEquals("AED", r.currencyCode)
     }
