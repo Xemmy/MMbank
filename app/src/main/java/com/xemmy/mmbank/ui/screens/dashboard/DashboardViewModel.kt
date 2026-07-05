@@ -62,6 +62,12 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             )
         }
 
+        // Dust/zero balances are noise on the dashboard; show holdings only,
+        // biggest first (unpriced assets sink to the bottom).
+        val visibleCrypto = crypto
+            .filter { it.total.signum() > 0 }
+            .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
+
         val cryptoTotalUsd = crypto.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
         val cryptoInBase = CurrencyMath.toBase(cryptoTotalUsd, "USD", base, ratesFromBase)
 
@@ -73,7 +79,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         DashboardUiState(
             baseCurrency = base,
             accounts = accountRows,
-            cryptoBalances = crypto,
+            cryptoBalances = visibleCrypto,
             cryptoTotalUsd = cryptoTotalUsd,
             recent = recent,
             netWorthInBase = fiatInBase + (cryptoInBase ?: 0.0),

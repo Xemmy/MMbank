@@ -105,24 +105,33 @@ fun DashboardScreen(
 
             if (state.cryptoBalances.isNotEmpty()) {
                 item { SectionTitle("Crypto (Binance spot) — ${state.cryptoTotalUsd.asMoney("USD")}") }
-                items(state.cryptoBalances, key = { "crypto_${it.asset}" }) { asset ->
+                // One grouped card: assets arrive pre-sorted by USD value with
+                // zero balances already filtered out by the view model.
+                item(key = "crypto_group") {
                     Card(Modifier.fillMaxWidth()) {
-                        Row(
-                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(asset.asset, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    asset.total.asQuantity(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            state.cryptoBalances.forEachIndexed { index, asset ->
+                                Row(
+                                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(asset.asset, style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            asset.total.asQuantity(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        asset.valueUsd?.toDouble()?.asMoney("USD") ?: "—",
+                                        style = MaterialTheme.typography.titleSmall,
+                                    )
+                                }
+                                if (index < state.cryptoBalances.lastIndex) {
+                                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                                }
                             }
-                            Text(
-                                asset.valueUsd?.toDouble()?.asMoney("USD") ?: "—",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
                         }
                     }
                 }
