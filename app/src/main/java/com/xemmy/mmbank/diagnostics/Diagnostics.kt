@@ -22,6 +22,8 @@ object Diagnostics {
     private const val CRASH_FILE = "last_crash.txt"
     private const val ERRORS_FILE = "recent_errors.txt"
     private const val MAX_ERRORS_BYTES = 40_000
+    private const val PREFS_NAME = "mmbank_diagnostics"
+    private const val KEY_CRASH_STREAK = "crash_streak"
 
     private val stamp: String
         get() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
@@ -32,6 +34,27 @@ object Diagnostics {
             throwable.printStackTrace(PrintWriter(sw))
             crashFile(context).writeText("Crash at $stamp on thread $threadName\n\n$sw")
         }
+        runCatching { bumpCrashStreak(context) }
+    }
+
+    /**
+     * Tracks consecutive crashes so the app can break a crash loop: if it just
+     * crashed, the next launch skips Home (whose data pipeline or rendering
+     * caused the crash) and opens Settings instead, so the user is never
+     * permanently locked out. Uses commit() (synchronous) since this runs in
+     * the uncaught-exception handler, moments before the process dies.
+     */
+    private fun bumpCrashStreak(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(KEY_CRASH_STREAK, prefs.getInt(KEY_CRASH_STREAK, 0) + 1).commit()
+    }
+
+    fun crashStreak(context: Context): Int =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getInt(KEY_CRASH_STREAK, 0)
+
+    /** Call once a launch has stayed up for a few seconds — a genuinely successful run. */
+    fun clearCrashStreak(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putInt(KEY_CRASH_STREAK, 0).apply()
     }
 
     /** Records a non-fatal exception caught in place of a crash; safe to call from any thread. */

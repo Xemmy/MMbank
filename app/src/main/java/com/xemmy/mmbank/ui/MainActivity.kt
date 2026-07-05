@@ -10,6 +10,8 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -17,11 +19,17 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -30,6 +38,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
@@ -38,6 +47,7 @@ import com.xemmy.mmbank.ui.screens.rules.RulesScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,9 +73,25 @@ private val topLevelDestinations = listOf(
 
 @Composable
 fun MMbankApp() {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    // Crash-loop breaker: if the app crashed on its last run, Home is the
+    // prime suspect (it's whatever loaded first). Skip straight to Settings
+    // instead — where Diagnostics, Backup/Export, and account editing are
+    // still reachable — rather than repeating the same crash on every launch.
+    val recoveredFromCrash = remember { Diagnostics.crashStreak(context) > 0 }
+    val startDestination = if (recoveredFromCrash) "settings" else "dashboard"
+
+    LaunchedEffect(Unit) {
+        // Only clear the streak after staying up a while — a launch that
+        // crashes again within this window keeps the counter alive so the
+        // next launch also opens Settings, instead of alternating.
+        delay(4_000)
+        Diagnostics.clearCrashStreak(context)
+    }
 
     Scaffold(
         bottomBar = {
@@ -93,28 +119,61 @@ fun MMbankApp() {
             }
         },
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = "dashboard",
-            modifier = Modifier.padding(innerPadding),
+        Column(
+            Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
         ) {
-            composable("dashboard") { DashboardScreen() }
-            composable("transactions") { TransactionsScreen() }
-            composable("accounts") { AccountsScreen() }
-            composable("cashback") { CashbackScreen() }
-            composable("rules") {
-                RulesScreen(
-                    onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },
-                    onNewRule = { navController.navigate("rule_editor?ruleId=-1") },
-                )
+            if (recoveredFromCrash) {
+                Card(
+                    Modifier.padding(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                ) {
+                    Text(
+                        "The app crashed last time it opened, so Home was skipped this launch. " +
+                            "Check Diagnostics below and share the log so this can be fixed for good.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
             }
-            composable(
-                route = "rule_editor?ruleId={ruleId}",
-                arguments = listOf(navArgument("ruleId") { type = NavType.LongType; defaultValue = -1L }),
-            ) {
-                RuleEditorScreen(onDone = { navController.popBackStack() })
-            }
-            composable("settings") { SettingsScreen() }
+            AppNavHost(
+                navController = navController,
+                startDestination = startDestination,
+                modifier = Modifier.weight(1f),
+            )
         }
+    }
+}
+
+@Composable
+private fun AppNavHost(
+    navController: androidx.navigation.NavHostController,
+    startDestination: String,
+    modifier: Modifier = Modifier,
+) {
+    NavHost(
+        navController = navController,
+        startDestination = startDestination,
+        modifier = modifier,
+    ) {
+        composable("dashboard") { DashboardScreen() }
+        composable("transactions") { TransactionsScreen() }
+        composable("accounts") { AccountsScreen() }
+        composable("cashback") { CashbackScreen() }
+        composable("rules") {
+            RulesScreen(
+                onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },
+                onNewRule = { navController.navigate("rule_editor?ruleId=-1") },
+            )
+        }
+        composable(
+            route = "rule_editor?ruleId={ruleId}",
+            arguments = listOf(navArgument("ruleId") { type = NavType.LongType; defaultValue = -1L }),
+        ) {
+            RuleEditorScreen(onDone = { navController.popBackStack() })
+        }
+        composable("settings") { SettingsScreen() }
     }
 }
