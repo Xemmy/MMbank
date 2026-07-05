@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -139,7 +140,10 @@ fun DashboardScreen(
                 }
             } else {
                 items(state.recent, key = { "recent_${it.id}" }) { tx ->
-                    RecentTransactionRow(tx)
+                    // User-defined label wins, then the built-in bank map — so
+                    // "com.adib.mobile" shows as "ADIB", not the raw package.
+                    val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
+                    RecentTransactionRow(tx, bankName)
                     HorizontalDivider()
                 }
             }
@@ -194,8 +198,14 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-fun RecentTransactionRow(tx: Transaction) {
+fun RecentTransactionRow(tx: Transaction, bankName: String? = null) {
     val isCredit = tx.direction == TransactionDirection.CREDIT
+    val title = tx.merchant ?: bankName ?: tx.sender ?: tx.source.name
+    val subtitle = listOfNotNull(
+        bankName?.takeIf { it != title },
+        tx.source.name.lowercase().replace('_', ' '),
+        tx.timestampMillis.asDateTime(),
+    ).joinToString(" · ")
     Row(
         Modifier
             .fillMaxWidth()
@@ -204,11 +214,11 @@ fun RecentTransactionRow(tx: Transaction) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                tx.merchant ?: tx.sender ?: tx.source.name,
+                title,
                 style = MaterialTheme.typography.bodyLarge,
             )
             Text(
-                "${tx.source.name.lowercase().replace('_', ' ')} · ${tx.timestampMillis.asDateTime()}",
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
