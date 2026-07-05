@@ -1,8 +1,11 @@
 package com.xemmy.mmbank.ui.screens.settings
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -156,6 +159,7 @@ fun SettingsScreen(
 
     var notificationAccessGranted by remember { mutableStateOf(false) }
     var smsGranted by remember { mutableStateOf(false) }
+    var batteryExempt by remember { mutableStateOf(false) }
 
     fun refreshPermissionState() {
         notificationAccessGranted = NotificationManagerCompat
@@ -163,6 +167,8 @@ fun SettingsScreen(
             .contains(context.packageName)
         smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
             PackageManager.PERMISSION_GRANTED
+        batteryExempt = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+            .isIgnoringBatteryOptimizations(context.packageName)
     }
 
     // Re-check whenever the user comes back from system settings.
@@ -227,6 +233,28 @@ fun SettingsScreen(
             description = "Required to parse bank SMS messages.",
             buttonLabel = "Grant SMS permission",
             onClick = { smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) },
+        )
+
+        PermissionCard(
+            title = "Battery optimization exemption",
+            granted = batteryExempt,
+            description = "Some phones kill notification access in the background to save power, " +
+                "which silently stops transaction capture. MMbank does no background polling, " +
+                "so exempting it keeps capture alive at negligible battery cost.",
+            buttonLabel = "Exempt from battery optimization",
+            onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.fromParts("package", context.packageName, null),
+                        )
+                    )
+                }.recoverCatching {
+                    // Some OEM builds don't handle the direct request intent.
+                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            },
         )
 
         Text("Ledger", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)

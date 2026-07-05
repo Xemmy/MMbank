@@ -21,7 +21,11 @@ import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.parser.CompiledRuleCache
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -36,6 +40,9 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 class AppContainer(context: Context) {
 
     private val appContext = context.applicationContext
+
+    /** App-lifetime scope for hot flows like the rule cache; never cancelled. */
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val preferences by lazy { AppPreferences(appContext) }
     val credentialStore by lazy { SecureCredentialStore(appContext) }
@@ -90,9 +97,13 @@ class AppContainer(context: Context) {
         BackupManager(database, preferences)
     }
 
+    private val compiledRuleCache by lazy {
+        CompiledRuleCache(parsingRuleRepository, applicationScope)
+    }
+
     val ingestCapturedMessage: IngestCapturedMessageUseCase by lazy {
         IngestCapturedMessageUseCase(
-            ruleRepository = parsingRuleRepository,
+            customRules = compiledRuleCache,
             transactionRepository = transactionRepository,
             fallbackCurrencyProvider = { preferences.defaultCurrency },
         )

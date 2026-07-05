@@ -6,6 +6,13 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <!-- Network: Forex rates + Binance read-only API -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+        Lets Settings offer a one-tap "exempt from battery optimization" prompt.
+        The app has no background polling; the exemption only stops aggressive
+        OEM battery managers from killing the notification listener (which
+        would silently end transaction capture).
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".MMBankApp"
