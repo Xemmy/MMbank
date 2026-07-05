@@ -192,7 +192,7 @@ private fun AccountCard(
                         val due = a.dueDayOfMonth?.let { d -> " · due day $d" }.orEmpty()
                         LoanLine("Next installment", it.asMoney(a.currencyCode) + due)
                     }
-                    a.profitRatePa?.let { LoanLine("Profit rate", "%.2f%% p.a.".format(it)) }
+                    a.profitRatePa?.let { LoanLine("Profit rate", String.format(java.util.Locale.US, "%.2f%% p.a.", it)) }
                     a.maturityDateMillis?.let { LoanLine("Maturity", it.asDate()) }
                     a.earlySettlementFeeEstimate?.let {
                         LoanLine("Est. early-settlement fee", "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)")

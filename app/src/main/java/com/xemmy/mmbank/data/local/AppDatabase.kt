@@ -81,6 +81,9 @@ abstract class AppDatabase : RoomDatabase() {
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                // Sideloaded test builds get installed out of order; reinstalling
+                // an older APK over a newer DB must not hard-crash at launch.
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }
 }

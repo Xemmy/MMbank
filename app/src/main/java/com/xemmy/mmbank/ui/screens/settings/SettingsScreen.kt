@@ -250,6 +250,67 @@ fun SettingsScreen(
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
+
+        DiagnosticsSection()
+    }
+}
+
+/**
+ * Shows the stack trace recorded by [com.xemmy.mmbank.MMBankApp]'s crash
+ * recorder, so a crash can be reported by screenshot or copy-paste instead of
+ * requiring adb/logcat.
+ */
+@Composable
+private fun DiagnosticsSection() {
+    val context = LocalContext.current
+    var crashText by remember { mutableStateOf<String?>(null) }
+    var refreshKey by remember { mutableStateOf(0) }
+
+    LifecycleResumeEffect(refreshKey) {
+        val file = java.io.File(context.filesDir, "last_crash.txt")
+        crashText = if (file.exists()) file.readText().take(6000) else null
+        onPauseOrDispose { }
+    }
+
+    Text("Diagnostics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    if (crashText == null) {
+        Text(
+            "No crash recorded. If the app ever crashes, the details will appear here.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Last crash",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(
+                        crashText.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                        ),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, crashText)
+                        }
+                        context.startActivity(Intent.createChooser(send, "Share crash log"))
+                    }) { Text("Share") }
+                    OutlinedButton(onClick = {
+                        java.io.File(context.filesDir, "last_crash.txt").delete()
+                        refreshKey++
+                    }) { Text("Clear") }
+                }
+            }
+        }
     }
 }
 

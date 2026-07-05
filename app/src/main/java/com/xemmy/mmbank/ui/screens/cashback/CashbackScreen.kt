@@ -32,6 +32,7 @@ import com.xemmy.mmbank.domain.cashback.CashbackSpendCodec
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.asMoney
+import java.util.Locale
 
 class CashbackViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -56,62 +57,70 @@ fun CashbackScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Cashback optimizer", style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        "Net ${plan.netMonthly.asMoney("AED")}/mo · ${plan.netAnnual.asMoney("AED")}/yr",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = if (plan.netMonthly.signum() < 0) LedgerColors.debit else MaterialTheme.colorScheme.onPrimaryContainer,
+                        "NET CASHBACK",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                     )
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            plan.netMonthly.asMoney("AED"),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = if (plan.netMonthly.signum() < 0) LedgerColors.debit else MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            " /month",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        )
+                    }
                     Text(
-                        "Gross ${plan.grossMonthly.asMoney("AED")}/mo − fees ${plan.monthlyFees.asMoney("AED")}/mo",
+                        "${plan.netAnnual.asMoney("AED")} /year · gross ${plan.grossMonthly.asMoney("AED")} − fees ${plan.monthlyFees.asMoney("AED")}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                     )
                 }
             }
         }
 
-        if (plan.alerts.isNotEmpty()) {
-            item {
-                Card {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Alerts & tips", style = MaterialTheme.typography.titleSmall)
-                        plan.alerts.forEach { alert ->
-                            Text(
-                                (if (alert.ok) "• " else "⚠ ") + alert.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (alert.ok) MaterialTheme.colorScheme.onSurfaceVariant else LedgerColors.debit,
-                            )
-                        }
-                    }
-                }
+        val warnings = plan.alerts.filter { !it.ok }
+        if (warnings.isNotEmpty()) {
+            items(warnings, key = { it.message }) { alert ->
+                Text(
+                    "⚠ ${alert.message}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LedgerColors.debit,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
             }
         }
 
         item {
             Text(
-                "Enter your monthly spend per category. Each is routed to the card that pays most.",
+                "Monthly spend per category — each is routed to the card that pays the most.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
             )
         }
 
         items(plan.routings, key = { it.category.key }) { routing ->
             val cat = routing.category
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(cat.label, style = MaterialTheme.typography.titleSmall)
+                        Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                            Text(cat.label, style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 cat.examples,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                             )
                         }
                         OutlinedTextField(
@@ -120,16 +129,17 @@ fun CashbackScreen(
                                 spendText[cat.key] = v.filter { it.isDigit() || it == '.' }
                                 viewModel.persist(spendText)
                             },
-                            label = { Text("AED/mo") },
+                            placeholder = { Text("0", style = MaterialTheme.typography.bodyMedium) },
+                            textStyle = MaterialTheme.typography.bodyMedium,
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.width(120.dp),
+                            modifier = Modifier.width(100.dp),
                         )
                     }
                     if (routing.card != null && routing.spend.signum() > 0) {
                         Text(
-                            "→ ${routing.card.name} · ${"%.1f".format(routing.rate * 100)}% · ${routing.cashback.asMoney("AED")}/mo",
-                            style = MaterialTheme.typography.labelMedium,
+                            "→ ${routing.card.name} · ${formatRate(routing.rate)} · ${routing.cashback.asMoney("AED")}/mo",
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 4.dp),
                         )
@@ -138,20 +148,42 @@ fun CashbackScreen(
             }
         }
 
-        item {
-            Card {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Cards in the plan", style = MaterialTheme.typography.titleSmall)
-                    plan.cardSummaries.forEach { s ->
-                        Text(
-                            "${s.card.name}: ${s.cappedCashback.asMoney("AED")}/mo" +
-                                (if (s.monthlyFee.signum() > 0) " (fee ${s.monthlyFee.asMoney("AED")}/mo)" else ""),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+        if (plan.cardSummaries.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("Cards in the plan", style = MaterialTheme.typography.bodyMedium)
+                        plan.cardSummaries.forEach { s ->
+                            Row(Modifier.fillMaxWidth()) {
+                                Text(
+                                    s.card.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    s.cappedCashback.asMoney("AED") +
+                                        (if (s.monthlyFee.signum() > 0) " − fee ${s.monthlyFee.asMoney("AED")}" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+
+        item {
+            Text(
+                "Pay every card in full monthly — interest wipes out all cashback. " +
+                    "Use a 0% FX card for foreign currency.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
     }
 }
+
+private fun formatRate(rate: Double): String =
+    String.format(Locale.US, "%.1f%%", rate * 100)
