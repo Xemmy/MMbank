@@ -46,6 +46,7 @@ import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -64,12 +65,15 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         container.senderLabelRepository.observeLabels(),
     ) { transactions, accounts, senderLabels ->
         TransactionsUiState(transactions, accounts, senderLabels)
+    }.catch { e ->
+        container.recordError("TransactionsViewModel", e)
+        emit(TransactionsUiState())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
 
     private fun safeWrite(what: String, block: suspend () -> Unit) {
         viewModelScope.launch {
             runCatching { block() }
-                .onFailure { android.util.Log.e("TransactionsVM", "$what failed", it) }
+                .onFailure { container.recordError("TransactionsViewModel.$what", it) }
         }
     }
 

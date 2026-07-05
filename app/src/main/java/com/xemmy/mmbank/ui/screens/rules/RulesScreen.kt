@@ -34,18 +34,23 @@ import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class RulesViewModel(private val container: AppContainer) : ViewModel() {
 
     val rules: StateFlow<List<ParsingRule>> = container.parsingRuleRepository.observeAll()
+        .catch { e ->
+            container.recordError("RulesViewModel", e)
+            emit(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun toggleEnabled(rule: ParsingRule) {
         viewModelScope.launch {
             runCatching { container.parsingRuleRepository.save(rule.copy(enabled = !rule.enabled)) }
-                .onFailure { android.util.Log.e("RulesVM", "toggle failed", it) }
+                .onFailure { container.recordError("RulesViewModel.toggleEnabled", it) }
         }
     }
 }

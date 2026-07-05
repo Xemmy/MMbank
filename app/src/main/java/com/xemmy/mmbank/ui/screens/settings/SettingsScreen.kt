@@ -361,59 +361,78 @@ private fun BackupSection(viewModel: SettingsViewModel) {
 }
 
 /**
- * Shows the stack trace recorded by [com.xemmy.mmbank.MMBankApp]'s crash
- * recorder, so a crash can be reported by screenshot or copy-paste instead of
- * requiring adb/logcat.
+ * Shows what [com.xemmy.mmbank.diagnostics.Diagnostics] has recorded: the last
+ * fatal (uncaught) crash, and any non-fatal errors that a screen caught and
+ * recovered from instead of crashing. Lets a crash be reported by screenshot
+ * or copy-paste instead of requiring adb/logcat.
  */
 @Composable
 private fun DiagnosticsSection() {
     val context = LocalContext.current
     var crashText by remember { mutableStateOf<String?>(null) }
+    var errorsText by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
 
     LifecycleResumeEffect(refreshKey) {
-        val file = java.io.File(context.filesDir, "last_crash.txt")
-        crashText = if (file.exists()) file.readText().take(6000) else null
+        crashText = com.xemmy.mmbank.diagnostics.Diagnostics.readCrash(context)
+        errorsText = com.xemmy.mmbank.diagnostics.Diagnostics.readErrors(context)
         onPauseOrDispose { }
     }
 
     Text("Diagnostics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-    if (crashText == null) {
+    if (crashText == null && errorsText == null) {
         Text(
-            "No crash recorded. If the app ever crashes, the details will appear here.",
+            "Nothing recorded. If the app ever crashes or a screen fails to load, the details will appear here.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    } else {
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    }
+    crashText?.let {
+        DiagnosticsLogCard(
+            title = "Last crash",
+            text = it,
+            onClear = {
+                com.xemmy.mmbank.diagnostics.Diagnostics.clearCrash(context)
+                refreshKey++
+            },
+        )
+    }
+    errorsText?.let {
+        DiagnosticsLogCard(
+            title = "Recent recovered errors",
+            text = it,
+            onClear = {
+                com.xemmy.mmbank.diagnostics.Diagnostics.clearErrors(context)
+                refreshKey++
+            },
+        )
+    }
+}
+
+@Composable
+private fun DiagnosticsLogCard(title: String, text: String, onClear: () -> Unit) {
+    val context = LocalContext.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
+            androidx.compose.foundation.text.selection.SelectionContainer {
                 Text(
-                    "Last crash",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.error,
+                    text,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                    ),
                 )
-                androidx.compose.foundation.text.selection.SelectionContainer {
-                    Text(
-                        crashText.orEmpty(),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontSize = MaterialTheme.typography.labelSmall.fontSize,
-                        ),
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, crashText)
-                        }
-                        context.startActivity(Intent.createChooser(send, "Share crash log"))
-                    }) { Text("Share") }
-                    OutlinedButton(onClick = {
-                        java.io.File(context.filesDir, "last_crash.txt").delete()
-                        refreshKey++
-                    }) { Text("Clear") }
-                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, text)
+                    }
+                    context.startActivity(Intent.createChooser(send, "Share log"))
+                }) { Text("Share") }
+                OutlinedButton(onClick = onClear) { Text("Clear") }
             }
         }
     }

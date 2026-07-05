@@ -10,6 +10,7 @@ import com.xemmy.mmbank.ui.util.CurrencyMath
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -76,11 +77,16 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             netWorthInBase = fiatInBase + (cryptoInBase ?: 0.0),
             hasUnconvertedAmounts = hasUnconverted,
         )
+    }.catch { e ->
+        // Never let a bad row (or a rates/DB hiccup) take the whole app down —
+        // surface it as a dismissible message instead of crashing on launch.
+        container.recordError("DashboardViewModel", e)
+        emit(DashboardUiState(message = "Dashboard couldn't load: ${e.message}"))
     }
 
     val uiState: StateFlow<DashboardUiState> =
         combine(ledgerState, refreshing, message) { state, busy, msg ->
-            state.copy(refreshing = busy, message = msg)
+            state.copy(refreshing = busy, message = msg ?: state.message)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     /** Pulls fresh Forex rates and, when keys are configured, Binance spot balances. */

@@ -14,6 +14,7 @@ import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
 import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
+import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
@@ -96,4 +97,7 @@ class AppContainer(context: Context) {
             fallbackCurrencyProvider = { preferences.defaultCurrency },
         )
     }
+
+    /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */
+    fun recordError(tag: String, throwable: Throwable) = Diagnostics.recordError(appContext, tag, throwable)
 }
