@@ -157,18 +157,16 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
 
-    var notificationAccessGranted by remember { mutableStateOf(false) }
-    var smsGranted by remember { mutableStateOf(false) }
-    var batteryExempt by remember { mutableStateOf(false) }
+    // Initialized with the real system state so re-entering Settings never
+    // flashes a red "not granted" frame before the resume effect runs.
+    var notificationAccessGranted by remember { mutableStateOf(isNotificationAccessGranted(context)) }
+    var smsGranted by remember { mutableStateOf(isSmsGranted(context)) }
+    var batteryExempt by remember { mutableStateOf(isBatteryExempt(context)) }
 
     fun refreshPermissionState() {
-        notificationAccessGranted = NotificationManagerCompat
-            .getEnabledListenerPackages(context)
-            .contains(context.packageName)
-        smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
-            PackageManager.PERMISSION_GRANTED
-        batteryExempt = (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .isIgnoringBatteryOptimizations(context.packageName)
+        notificationAccessGranted = isNotificationAccessGranted(context)
+        smsGranted = isSmsGranted(context)
+        batteryExempt = isBatteryExempt(context)
     }
 
     // Re-check whenever the user comes back from system settings.
@@ -465,6 +463,17 @@ private fun DiagnosticsLogCard(title: String, text: String, onClear: () -> Unit)
         }
     }
 }
+
+private fun isNotificationAccessGranted(context: Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+private fun isSmsGranted(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
+        PackageManager.PERMISSION_GRANTED
+
+private fun isBatteryExempt(context: Context): Boolean =
+    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+        .isIgnoringBatteryOptimizations(context.packageName)
 
 @Composable
 private fun PermissionCard(
