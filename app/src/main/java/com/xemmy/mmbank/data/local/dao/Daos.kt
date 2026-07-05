@@ -12,6 +12,7 @@ import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
+import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
@@ -185,6 +186,19 @@ interface AssetBalanceDao {
     suspend fun insertAll(entities: List<AssetBalanceEntity>)
 
     @Query("DELETE FROM asset_balances")
+    suspend fun clear()
+}
+
+@Dao
+interface WalletBalanceDao {
+
+    @Query("SELECT * FROM wallet_balances ORDER BY valueUsd DESC")
+    fun observeAll(): Flow<List<WalletBalanceEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<WalletBalanceEntity>)
+
+    @Query("DELETE FROM wallet_balances")
     suspend fun clear()
 }
 

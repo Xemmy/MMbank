@@ -141,6 +141,17 @@ data class ParsedBankDetails(
         get() = listOfNotNull(bankName, accountTitle, accountNumber, iban, swift, currencyCode).isNotEmpty()
 }
 
+/**
+ * Total value of one Binance wallet (Spot, Funding, Earn, Trading Bots, …),
+ * as reported BTC-valued by Binance and converted to USD at sync time.
+ */
+data class WalletBalance(
+    val walletName: String,
+    val balanceBtc: BigDecimal,
+    val valueUsd: BigDecimal?,
+    val updatedAt: Long,
+)
+
 /** A spot balance pulled from Binance via the read-only API key. */
 data class AssetBalance(
     val asset: String,

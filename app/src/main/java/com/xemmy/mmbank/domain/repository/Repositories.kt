@@ -9,6 +9,7 @@ import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SenderLabel
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.WalletBalance
 import kotlinx.coroutines.flow.Flow
 
 interface TransactionRepository {
@@ -46,7 +47,13 @@ interface SenderLabelRepository {
 
 interface PortfolioRepository {
     fun observeBalances(): Flow<List<AssetBalance>>
-    /** Pulls spot balances + USD prices from Binance. Returns the number of assets stored. */
+    /** Per-wallet totals (Spot, Funding, Earn, Trading Bots, …). */
+    fun observeWallets(): Flow<List<WalletBalance>>
+    /**
+     * Pulls spot balances + USD prices from Binance, plus a best-effort
+     * per-wallet overview (Earn/Funding/Bots…). Returns the number of spot
+     * assets stored.
+     */
     suspend fun syncSpotBalances(): Result<Int>
 }
 

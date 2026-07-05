@@ -87,7 +87,7 @@ class AppContainer(context: Context) {
         SenderLabelRepositoryImpl(database.senderLabelDao())
     }
     val portfolioRepository: PortfolioRepository by lazy {
-        PortfolioRepositoryImpl(binanceApi, database, database.assetBalanceDao())
+        PortfolioRepositoryImpl(binanceApi, database, database.assetBalanceDao(), database.walletBalanceDao())
     }
     val ratesRepository: RatesRepository by lazy {
         RatesRepositoryImpl(forexApi, database.exchangeRateDao())

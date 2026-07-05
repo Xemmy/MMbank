@@ -22,6 +22,15 @@ data class BinanceTickerPriceDto(
     val price: String,
 )
 
+@Serializable
+data class BinanceWalletBalanceDto(
+    val activate: Boolean = false,
+    /** Wallet total valued in BTC by Binance. */
+    val balance: String = "0",
+    /** "Spot", "Funding", "Earn", "Trading Bots", "Cross Margin", … */
+    val walletName: String = "",
+)
+
 interface BinanceApi {
 
     /**
@@ -31,6 +40,15 @@ interface BinanceApi {
     @Headers("${BinanceSigningInterceptor.SIGNED_HEADER}: true")
     @GET("api/v3/account")
     suspend fun getAccount(): BinanceAccountDto
+
+    /**
+     * BTC-valued total of every Binance wallet (Spot, Funding, Earn, Trading
+     * Bots, Margin, Futures, Options) in one call — this is how assets parked
+     * outside Spot are picked up without one integration per product.
+     */
+    @Headers("${BinanceSigningInterceptor.SIGNED_HEADER}: true")
+    @GET("sapi/v1/asset/wallet/balance")
+    suspend fun getWalletBalances(): List<BinanceWalletBalanceDto>
 
     /** Public endpoint: latest price for every trading pair. */
     @GET("api/v3/ticker/price")

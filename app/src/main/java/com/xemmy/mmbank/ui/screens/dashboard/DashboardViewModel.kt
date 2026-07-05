@@ -6,6 +6,7 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.WalletBalance
 import com.xemmy.mmbank.ui.util.CurrencyMath
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,6 +26,8 @@ data class DashboardUiState(
     val baseCurrency: String = "USD",
     val accounts: List<AccountRow> = emptyList(),
     val cryptoBalances: List<AssetBalance> = emptyList(),
+    /** Per-wallet totals (Earn, Funding, Trading Bots, …), biggest first. */
+    val cryptoWallets: List<WalletBalance> = emptyList(),
     val cryptoTotalUsd: Double = 0.0,
     val recent: List<Transaction> = emptyList(),
     /** sender -> user-defined friendly name, applied before the built-in bank map. */
@@ -41,10 +44,22 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
+    private data class CryptoData(
+        val assets: List<AssetBalance>,
+        val wallets: List<WalletBalance>,
+    )
+
+    // Merged up-front so the ledger combine below stays within the five-flow
+    // overload of combine().
+    private val cryptoFlow = combine(
+        container.portfolioRepository.observeBalances(),
+        container.portfolioRepository.observeWallets(),
+    ) { assets, wallets -> CryptoData(assets, wallets) }
+
     private val ledgerState = combine(
         container.accountRepository.observeActive(),
         container.transactionRepository.observeNetByAccount(),
-        container.portfolioRepository.observeBalances(),
+        cryptoFlow,
         container.ratesRepository.observeRates(),
         container.transactionRepository.observeRecent(10),
     ) { accounts, netByAccount, crypto, rates, recent ->
@@ -64,22 +79,31 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
         // Dust/zero balances are noise on the dashboard; show holdings only,
         // biggest first (unpriced assets sink to the bottom).
-        val visibleCrypto = crypto
+        val visibleCrypto = crypto.assets
             .filter { it.total.signum() > 0 }
             .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
+        val visibleWallets = crypto.wallets
+            .filter { it.balanceBtc.signum() > 0 }
+            .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
 
-        val cryptoTotalUsd = crypto.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
+        // The wallet overview covers Earn/Funding/Bots on top of Spot, so it
+        // is the truer total when available; spot-only is the fallback for
+        // API keys that can't read it.
+        val walletTotalUsd = crypto.wallets.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
+        val spotTotalUsd = crypto.assets.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
+        val cryptoTotalUsd = if (walletTotalUsd > 0.0) walletTotalUsd else spotTotalUsd
         val cryptoInBase = CurrencyMath.toBase(cryptoTotalUsd, "USD", base, ratesFromBase)
 
         val fiatInBase = accountRows.mapNotNull { it.balanceInBase }.sum()
         val hasUnconverted = accountRows.any { it.balanceInBase == null } ||
             (cryptoTotalUsd != 0.0 && cryptoInBase == null) ||
-            crypto.any { it.valueUsd == null && it.total.signum() > 0 }
+            crypto.assets.any { it.valueUsd == null && it.total.signum() > 0 }
 
         DashboardUiState(
             baseCurrency = base,
             accounts = accountRows,
             cryptoBalances = visibleCrypto,
+            cryptoWallets = visibleWallets,
             cryptoTotalUsd = cryptoTotalUsd,
             recent = recent,
             netWorthInBase = fiatInBase + (cryptoInBase ?: 0.0),

@@ -87,6 +87,9 @@ sender filter `MYBANK`, direction `DEBIT`.
 - Keys are stored in `EncryptedSharedPreferences` (Android Keystore-backed).
 - `GET /api/v3/account` is signed per request (HMAC-SHA256 over the query string via an
   OkHttp interceptor); `GET /api/v3/ticker/price` values holdings in USD.
+- `GET /sapi/v1/asset/wallet/balance` adds per-wallet totals (Earn, Funding, Trading
+  Bots, Margin, …), BTC-valued by Binance and converted via BTCUSDT — so assets parked
+  outside Spot still count. Best-effort: keys without that permission keep spot-only sync.
 - The app only ever calls read endpoints.
 
 ### Forex

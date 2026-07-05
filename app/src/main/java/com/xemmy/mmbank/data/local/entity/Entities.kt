@@ -14,6 +14,7 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.model.WalletBalance
 import java.math.BigDecimal
 
 @Entity(tableName = "accounts")
@@ -106,6 +107,15 @@ data class AssetBalanceEntity(
     val updatedAt: Long,
 )
 
+@Entity(tableName = "wallet_balances")
+data class WalletBalanceEntity(
+    /** "Spot", "Funding", "Earn", "Trading Bots", … as named by Binance. */
+    @PrimaryKey val walletName: String,
+    val balanceBtc: BigDecimal,
+    val valueUsd: BigDecimal? = null,
+    val updatedAt: Long,
+)
+
 @Entity(tableName = "exchange_rates", primaryKeys = ["baseCode", "quoteCode"])
 data class ExchangeRateEntity(
     val baseCode: String,
@@ -145,5 +155,7 @@ fun ParsingRule.toEntity() = ParsingRuleEntity(
 )
 
 fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, valueUsd, updatedAt)
+
+fun WalletBalanceEntity.toDomain() = WalletBalance(walletName, balanceBtc, valueUsd, updatedAt)
 
 fun ExchangeRateEntity.toDomain() = ExchangeRate(baseCode, quoteCode, rate, fetchedAt)
