@@ -66,21 +66,24 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         TransactionsUiState(transactions, accounts, senderLabels)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
 
-    fun assignAccount(transactionId: Long, accountId: Long?) {
-        viewModelScope.launch { container.transactionRepository.assignAccount(transactionId, accountId) }
+    private fun safeWrite(what: String, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            runCatching { block() }
+                .onFailure { android.util.Log.e("TransactionsVM", "$what failed", it) }
+        }
     }
 
-    fun delete(transactionId: Long) {
-        viewModelScope.launch { container.transactionRepository.delete(transactionId) }
-    }
+    fun assignAccount(transactionId: Long, accountId: Long?) =
+        safeWrite("assignAccount") { container.transactionRepository.assignAccount(transactionId, accountId) }
 
-    fun setSenderLabel(sender: String, label: String) {
-        viewModelScope.launch { container.senderLabelRepository.setLabel(sender, label) }
-    }
+    fun delete(transactionId: Long) =
+        safeWrite("delete") { container.transactionRepository.delete(transactionId) }
 
-    fun clearSenderLabel(sender: String) {
-        viewModelScope.launch { container.senderLabelRepository.clearLabel(sender) }
-    }
+    fun setSenderLabel(sender: String, label: String) =
+        safeWrite("setSenderLabel") { container.senderLabelRepository.setLabel(sender, label) }
+
+    fun clearSenderLabel(sender: String) =
+        safeWrite("clearSenderLabel") { container.senderLabelRepository.clearLabel(sender) }
 
     /** Resolved display name: user override wins, then the built-in bank map, then the raw sender. */
     fun bankNameFor(sender: String?, labels: Map<String, String>): String? {

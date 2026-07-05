@@ -78,12 +78,27 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Set when a database write fails, instead of letting the exception kill the app. */
+    val lastError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     fun save(account: Account) {
-        viewModelScope.launch { container.accountRepository.save(account) }
+        viewModelScope.launch {
+            runCatching { container.accountRepository.save(account) }
+                .onFailure {
+                    android.util.Log.e("AccountsVM", "save failed", it)
+                    lastError.value = "Couldn't save account: ${it.message}"
+                }
+        }
     }
 
     fun archive(account: Account) {
-        viewModelScope.launch { container.accountRepository.archive(account) }
+        viewModelScope.launch {
+            runCatching { container.accountRepository.archive(account) }
+                .onFailure {
+                    android.util.Log.e("AccountsVM", "archive failed", it)
+                    lastError.value = "Couldn't archive account: ${it.message}"
+                }
+        }
     }
 }
 
@@ -92,6 +107,7 @@ fun AccountsScreen(
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val rows by viewModel.uiState.collectAsStateWithLifecycle()
+    val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
 
@@ -109,6 +125,16 @@ fun AccountsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            lastError?.let { error ->
+                item {
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.clickable { viewModel.lastError.value = null },
+                    )
+                }
+            }
             if (rows.isEmpty()) {
                 item {
                     Text(

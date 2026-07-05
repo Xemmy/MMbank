@@ -70,18 +70,18 @@ fun CashbackScreen(
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             plan.netMonthly.asMoney("AED"),
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             color = if (plan.netMonthly.signum() < 0) LedgerColors.debit else MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         Text(
                             " /month",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                         )
                     }
                     Text(
                         "${plan.netAnnual.asMoney("AED")} /year · gross ${plan.grossMonthly.asMoney("AED")} − fees ${plan.monthlyFees.asMoney("AED")}",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                     )
                 }
@@ -93,7 +93,7 @@ fun CashbackScreen(
             items(warnings, key = { it.message }) { alert ->
                 Text(
                     "⚠ ${alert.message}",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = LedgerColors.debit,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
@@ -103,7 +103,7 @@ fun CashbackScreen(
         item {
             Text(
                 "Monthly spend per category — each is routed to the card that pays the most.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
             )
@@ -115,10 +115,10 @@ fun CashbackScreen(
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f).padding(end = 10.dp)) {
-                            Text(cat.label, style = MaterialTheme.typography.bodyMedium)
+                            Text(cat.label, style = MaterialTheme.typography.bodySmall)
                             Text(
                                 cat.examples,
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                             )
@@ -129,17 +129,17 @@ fun CashbackScreen(
                                 spendText[cat.key] = v.filter { it.isDigit() || it == '.' }
                                 viewModel.persist(spendText)
                             },
-                            placeholder = { Text("0", style = MaterialTheme.typography.bodyMedium) },
-                            textStyle = MaterialTheme.typography.bodyMedium,
+                            placeholder = { Text("0", style = MaterialTheme.typography.bodySmall) },
+                            textStyle = MaterialTheme.typography.bodySmall,
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.width(100.dp),
+                            modifier = Modifier.width(90.dp),
                         )
                     }
                     if (routing.card != null && routing.spend.signum() > 0) {
                         Text(
                             "→ ${routing.card.name} · ${formatRate(routing.rate)} · ${routing.cashback.asMoney("AED")}/mo",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 4.dp),
                         )
@@ -152,19 +152,19 @@ fun CashbackScreen(
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("Cards in the plan", style = MaterialTheme.typography.bodyMedium)
+                        Text("Cards in the plan", style = MaterialTheme.typography.bodySmall)
                         plan.cardSummaries.forEach { s ->
                             Row(Modifier.fillMaxWidth()) {
                                 Text(
                                     s.card.name,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
                                     s.cappedCashback.asMoney("AED") +
                                         (if (s.monthlyFee.signum() > 0) " − fee ${s.monthlyFee.asMoney("AED")}" else ""),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
                             }
                         }
@@ -177,7 +177,7 @@ fun CashbackScreen(
             Text(
                 "Pay every card in full monthly — interest wipes out all cashback. " +
                     "Use a 0% FX card for foreign currency.",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )

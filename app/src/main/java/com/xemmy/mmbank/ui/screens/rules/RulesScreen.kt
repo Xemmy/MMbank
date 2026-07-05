@@ -43,7 +43,10 @@ class RulesViewModel(private val container: AppContainer) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun toggleEnabled(rule: ParsingRule) {
-        viewModelScope.launch { container.parsingRuleRepository.save(rule.copy(enabled = !rule.enabled)) }
+        viewModelScope.launch {
+            runCatching { container.parsingRuleRepository.save(rule.copy(enabled = !rule.enabled)) }
+                .onFailure { android.util.Log.e("RulesVM", "toggle failed", it) }
+        }
     }
 }
 
