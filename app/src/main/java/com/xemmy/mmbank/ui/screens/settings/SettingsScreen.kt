@@ -1,8 +1,11 @@
 package com.xemmy.mmbank.ui.screens.settings
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -154,15 +157,16 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
 
-    var notificationAccessGranted by remember { mutableStateOf(false) }
-    var smsGranted by remember { mutableStateOf(false) }
+    // Initialized with the real system state so re-entering Settings never
+    // flashes a red "not granted" frame before the resume effect runs.
+    var notificationAccessGranted by remember { mutableStateOf(isNotificationAccessGranted(context)) }
+    var smsGranted by remember { mutableStateOf(isSmsGranted(context)) }
+    var batteryExempt by remember { mutableStateOf(isBatteryExempt(context)) }
 
     fun refreshPermissionState() {
-        notificationAccessGranted = NotificationManagerCompat
-            .getEnabledListenerPackages(context)
-            .contains(context.packageName)
-        smsGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
-            PackageManager.PERMISSION_GRANTED
+        notificationAccessGranted = isNotificationAccessGranted(context)
+        smsGranted = isSmsGranted(context)
+        batteryExempt = isBatteryExempt(context)
     }
 
     // Re-check whenever the user comes back from system settings.
@@ -227,6 +231,28 @@ fun SettingsScreen(
             description = "Required to parse bank SMS messages.",
             buttonLabel = "Grant SMS permission",
             onClick = { smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) },
+        )
+
+        PermissionCard(
+            title = "Battery optimization exemption",
+            granted = batteryExempt,
+            description = "Some phones kill notification access in the background to save power, " +
+                "which silently stops transaction capture. MMbank does no background polling, " +
+                "so exempting it keeps capture alive at negligible battery cost.",
+            buttonLabel = "Exempt from battery optimization",
+            onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.fromParts("package", context.packageName, null),
+                        )
+                    )
+                }.recoverCatching {
+                    // Some OEM builds don't handle the direct request intent.
+                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            },
         )
 
         Text("Ledger", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
@@ -437,6 +463,17 @@ private fun DiagnosticsLogCard(title: String, text: String, onClear: () -> Unit)
         }
     }
 }
+
+private fun isNotificationAccessGranted(context: Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+private fun isSmsGranted(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
+        PackageManager.PERMISSION_GRANTED
+
+private fun isBatteryExempt(context: Context): Boolean =
+    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+        .isIgnoringBatteryOptimizations(context.packageName)
 
 @Composable
 private fun PermissionCard(

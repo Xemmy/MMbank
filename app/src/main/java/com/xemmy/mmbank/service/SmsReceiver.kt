@@ -40,7 +40,7 @@ class SmsReceiver : BroadcastReceiver() {
 
         val container = (context.applicationContext as MMBankApp).container
         val pendingResult = goAsync()
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        scope.launch {
             try {
                 container.ingestCapturedMessage(message)
             } catch (t: Throwable) {
@@ -53,5 +53,9 @@ class SmsReceiver : BroadcastReceiver() {
 
     private companion object {
         const val TAG = "SmsReceiver"
+
+        // Manifest receivers are re-instantiated per broadcast; sharing one
+        // scope avoids allocating a fresh SupervisorJob for every SMS.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }

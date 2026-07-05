@@ -18,7 +18,7 @@ service/   BankNotificationListener (NotificationListenerService)
                  │  CapturedMessage
                  ▼
 domain/    IngestCapturedMessageUseCase
-           ├─ TransactionParser  ← custom rules (Room) + BuiltInRules (EN/AR)
+           ├─ TransactionParser  ← CompiledRuleCache (custom rules, in-memory) + BuiltInRules (EN/AR)
            │    TextNormalizer   (Arabic-Indic digits → ASCII, ٫→. , bidi strip)
            │    CurrencyNormalizer ($, ر.س, د.إ … → ISO codes)
            └─ TransactionRepository.recordParsed()  ← sliding-window dedup
@@ -32,6 +32,30 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
 - **UI**: 100% Jetpack Compose (Material 3), bottom navigation: Home / Activity / Accounts / Rules / Settings.
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
 - **Amounts** are `BigDecimal`, persisted as normalized plain-decimal TEXT — exact for fiat and 8-decimal crypto alike.
+
+### Battery shape & false-positive guards
+
+The ingest path runs for *every* notification on the device, so it is built to
+exit as cheaply as possible:
+
+- **Digit gate**: messages with no digits (most chat/media notifications) are
+  dropped before any rule or DB access — an amount always needs a digit
+  (Arabic-Indic digits included).
+- **Compiled-rule cache**: custom rules are compiled once and kept in memory
+  (`CompiledRuleCache`, backed by a Room `Flow`), instead of a DB read + regex
+  compile per message. Rule edits still apply instantly.
+- **Ongoing notifications** (media playback, navigation, downloads) are skipped
+  in the listener — they repost constantly and are never bank alerts.
+- **Social-app guard**: notifications from chat/social apps (Telegram, WhatsApp,
+  Instagram, TikTok, …) never run against the generic built-in rules, so a
+  Telegram channel quoting numbers can't be mis-captured as a transaction. A
+  custom rule whose sender filter matches the package still works, so an
+  intentional bot/channel feed can be mapped deliberately (`SocialApps`).
+
+There is no background polling: Forex and Binance are fetched only on demand
+from the UI. The Settings screen offers a one-tap battery-optimization
+exemption — it exists purely so aggressive OEM battery managers don't kill the
+notification listener and silently stop capture.
 
 ### Sliding-window deduplication
 
@@ -89,8 +113,11 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    1. System Settings → Apps → **MMbank**
    2. Tap the **⋮** menu (top-right) → **Allow restricted settings** → authenticate
    3. Return to Notification access and enable MMbank.
-4. (Optional) Paste Binance read-only keys and tap *Test & sync*.
-5. Set your default currency and refresh Forex rates.
+4. Tap **Exempt from battery optimization** so the system never kills the
+   notification listener (the app does no background polling, so the exemption
+   costs effectively nothing).
+5. (Optional) Paste Binance read-only keys and tap *Test & sync*.
+6. Set your default currency and refresh Forex rates.
 
 ## Repo layout
 

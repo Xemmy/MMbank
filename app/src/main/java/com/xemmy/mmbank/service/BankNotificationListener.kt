@@ -28,6 +28,10 @@ class BankNotificationListener : NotificationListenerService() {
         // Never parse our own notifications, and skip ongoing/group-summary noise.
         if (sbn.packageName == packageName) return
         if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        // Ongoing notifications (media playback, navigation, downloads) repost
+        // constantly and are never bank alerts — dropping them here saves the
+        // whole ingest round-trip each time a progress bar ticks.
+        if (sbn.isOngoing) return
 
         val extras = sbn.notification.extras
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()

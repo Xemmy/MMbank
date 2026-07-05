@@ -27,6 +27,8 @@ data class DashboardUiState(
     val cryptoBalances: List<AssetBalance> = emptyList(),
     val cryptoTotalUsd: Double = 0.0,
     val recent: List<Transaction> = emptyList(),
+    /** sender -> user-defined friendly name, applied before the built-in bank map. */
+    val senderLabels: Map<String, String> = emptyMap(),
     /** Sum of everything convertible into the base currency; liabilities negative. */
     val netWorthInBase: Double = 0.0,
     val hasUnconvertedAmounts: Boolean = false,
@@ -84,9 +86,15 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         emit(DashboardUiState(message = "Dashboard couldn't load: ${e.message}"))
     }
 
+    private val senderLabels = container.senderLabelRepository.observeLabels()
+        .catch { e ->
+            container.recordError("DashboardViewModel.senderLabels", e)
+            emit(emptyMap())
+        }
+
     val uiState: StateFlow<DashboardUiState> =
-        combine(ledgerState, refreshing, message) { state, busy, msg ->
-            state.copy(refreshing = busy, message = msg ?: state.message)
+        combine(ledgerState, senderLabels, refreshing, message) { state, labels, busy, msg ->
+            state.copy(senderLabels = labels, refreshing = busy, message = msg ?: state.message)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     /** Pulls fresh Forex rates and, when keys are configured, Binance spot balances. */
