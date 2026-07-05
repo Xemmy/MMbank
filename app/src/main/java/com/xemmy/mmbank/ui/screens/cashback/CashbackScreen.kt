@@ -90,7 +90,7 @@ fun CashbackScreen(
 
         val warnings = plan.alerts.filter { !it.ok }
         if (warnings.isNotEmpty()) {
-            items(warnings, key = { it.message }) { alert ->
+            items(warnings, key = { "warning_${it.message}" }) { alert ->
                 Text(
                     "⚠ ${alert.message}",
                     style = MaterialTheme.typography.labelSmall,
@@ -109,7 +109,7 @@ fun CashbackScreen(
             )
         }
 
-        items(plan.routings, key = { it.category.key }) { routing ->
+        items(plan.routings, key = { "routing_${it.category.key}" }) { routing ->
             val cat = routing.category
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {

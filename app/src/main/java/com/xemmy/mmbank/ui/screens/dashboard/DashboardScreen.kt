@@ -53,6 +53,13 @@ fun DashboardScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
+        // This single LazyColumn hosts three separate items() blocks (accounts,
+        // crypto, recent transactions). Compose requires keys to be unique
+        // across the WHOLE list, not just within one items() call — Account
+        // and Transaction are different Room tables with independent
+        // auto-increment ids, so an unprefixed `it.id` collides the moment an
+        // account and a transaction share the same numeric id. Every key below
+        // must stay prefixed per section.
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -70,7 +77,7 @@ fun DashboardScreen(
 
             if (state.accounts.isNotEmpty()) {
                 item { SectionTitle("Accounts") }
-                items(state.accounts, key = { it.account.id }) { row ->
+                items(state.accounts, key = { "account_${it.account.id}" }) { row ->
                     Card(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -97,7 +104,7 @@ fun DashboardScreen(
 
             if (state.cryptoBalances.isNotEmpty()) {
                 item { SectionTitle("Crypto (Binance spot) — ${state.cryptoTotalUsd.asMoney("USD")}") }
-                items(state.cryptoBalances, key = { it.asset }) { asset ->
+                items(state.cryptoBalances, key = { "crypto_${it.asset}" }) { asset ->
                     Card(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -131,7 +138,7 @@ fun DashboardScreen(
                     )
                 }
             } else {
-                items(state.recent, key = { it.id }) { tx ->
+                items(state.recent, key = { "recent_${it.id}" }) { tx ->
                     RecentTransactionRow(tx)
                     HorizontalDivider()
                 }
