@@ -107,6 +107,45 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             busy = false
         }
     }
+
+    var backupPassword by mutableStateOf("")
+
+    /** [writeBytes] runs on IO and streams the encrypted blob to the chosen document. */
+    fun exportBackup(writeBytes: suspend (ByteArray) -> Unit) {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Encrypting backup…"
+            runCatching {
+                val blob = container.backupManager.export(backupPassword.toCharArray())
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeBytes(blob) }
+            }.onSuccess {
+                statusMessage = "Backup exported (encrypted)"
+            }.onFailure {
+                statusMessage = "Export failed: ${it.message}"
+            }
+            busy = false
+        }
+    }
+
+    /** [readBytes] runs on IO and loads the chosen document. Import REPLACES current data. */
+    fun importBackup(readBytes: suspend () -> ByteArray) {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Restoring backup…"
+            runCatching {
+                val blob = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readBytes() }
+                container.backupManager.import(blob, backupPassword.toCharArray())
+            }.onSuccess { (accounts, transactions) ->
+                defaultCurrency = container.preferences.defaultCurrency
+                statusMessage = "Backup restored: $accounts accounts, $transactions transactions"
+            }.onFailure {
+                statusMessage = "Import failed: ${it.message}"
+            }
+            busy = false
+        }
+    }
 }
 
 @Composable
@@ -251,7 +290,73 @@ fun SettingsScreen(
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
 
+        BackupSection(viewModel)
+
         DiagnosticsSection()
+    }
+}
+
+@Composable
+private fun BackupSection(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportBackup { bytes ->
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: error("Couldn't open the selected file")
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importBackup {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("Couldn't read the selected file")
+            }
+        }
+    }
+
+    Text("Backup & restore", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    Text(
+        "Exports accounts, transactions, custom rules, sender names and settings into one " +
+            "AES-256 encrypted file protected by the password below. Binance keys are never " +
+            "exported. Importing REPLACES the app's current data.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+        value = viewModel.backupPassword,
+        onValueChange = { viewModel.backupPassword = it },
+        label = { Text("Backup password") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = {
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
+                    .format(java.util.Date())
+                exportLauncher.launch("mmbank-backup-$stamp.mmb")
+            },
+            enabled = viewModel.backupPassword.length >= 6 && !viewModel.busy,
+        ) { Text("Export") }
+        OutlinedButton(
+            onClick = { importLauncher.launch(arrayOf("*/*")) },
+            enabled = viewModel.backupPassword.length >= 6 && !viewModel.busy,
+        ) { Text("Import") }
+    }
+    if (viewModel.backupPassword.isNotEmpty() && viewModel.backupPassword.length < 6) {
+        Text(
+            "Password must be at least 6 characters.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 

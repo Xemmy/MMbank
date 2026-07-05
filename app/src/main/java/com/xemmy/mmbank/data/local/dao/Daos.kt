@@ -75,6 +75,17 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM transactions")
+    suspend fun getAll(): List<TransactionEntity>
+
+    @Query("DELETE FROM transactions")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<TransactionEntity>)
 }
 
 @Dao
@@ -97,6 +108,17 @@ interface AccountDao {
 
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getById(id: Long): AccountEntity?
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM accounts")
+    suspend fun getAll(): List<AccountEntity>
+
+    @Query("DELETE FROM accounts")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<AccountEntity>)
 }
 
 @Dao
@@ -116,6 +138,17 @@ interface ParsingRuleDao {
 
     @Query("SELECT * FROM parsing_rules WHERE id = :id")
     suspend fun getById(id: Long): ParsingRuleEntity?
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM parsing_rules")
+    suspend fun getAll(): List<ParsingRuleEntity>
+
+    @Query("DELETE FROM parsing_rules")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<ParsingRuleEntity>)
 }
 
 @Dao
@@ -129,6 +162,17 @@ interface SenderLabelDao {
 
     @Query("DELETE FROM sender_labels WHERE sender = :sender")
     suspend fun delete(sender: String)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM sender_labels")
+    suspend fun getAll(): List<SenderLabelEntity>
+
+    @Query("DELETE FROM sender_labels")
+    suspend fun clearAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<SenderLabelEntity>)
 }
 
 @Dao

@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.di
 
 import android.content.Context
+import com.xemmy.mmbank.data.backup.BackupManager
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.data.prefs.SecureCredentialStore
@@ -82,6 +83,10 @@ class AppContainer(context: Context) {
     }
     val ratesRepository: RatesRepository by lazy {
         RatesRepositoryImpl(forexApi, database.exchangeRateDao())
+    }
+
+    val backupManager: BackupManager by lazy {
+        BackupManager(database, preferences)
     }
 
     val ingestCapturedMessage: IngestCapturedMessageUseCase by lazy {

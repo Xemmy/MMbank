@@ -75,16 +75,21 @@ class RatesRepositoryImpl(
         dao.observeAll().map { list -> list.map(ExchangeRateEntity::toDomain) }
 
     override suspend fun refresh(baseCurrency: String): Result<Int> = runCatching {
-        val response = api.latest(baseCurrency)
-        val now = System.currentTimeMillis()
-        val entities = response.rates.map { (quote, rate) ->
-            ExchangeRateEntity(
-                baseCode = response.base.uppercase(),
-                quoteCode = quote.uppercase(),
-                rate = BigDecimal.valueOf(rate),
-                fetchedAt = now,
-            )
+        val response = api.latest(baseCurrency.trim().uppercase())
+        if (response.result != "success") {
+            error("Rate provider error: ${response.errorType ?: "unknown"} (check the currency code)")
         }
+        val now = System.currentTimeMillis()
+        val entities = response.rates
+            .filterKeys { !it.equals(response.baseCode, ignoreCase = true) }
+            .map { (quote, rate) ->
+                ExchangeRateEntity(
+                    baseCode = response.baseCode.uppercase(),
+                    quoteCode = quote.uppercase(),
+                    rate = BigDecimal.valueOf(rate),
+                    fetchedAt = now,
+                )
+            }
         dao.upsertAll(entities)
         entities.size
     }

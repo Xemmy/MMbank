@@ -24,7 +24,7 @@ domain/    IngestCapturedMessageUseCase
            └─ TransactionRepository.recordParsed()  ← sliding-window dedup
                  ▼
 data/      Room (accounts, transactions, parsing_rules, asset_balances, exchange_rates)
-           Retrofit/OkHttp: Binance (HMAC-signed read-only) + frankfurter.app Forex
+           Retrofit/OkHttp: Binance (HMAC-signed read-only) + open.er-api.com Forex
                  ▼
 ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow view models
 ```
@@ -67,10 +67,10 @@ sender filter `MYBANK`, direction `DEBIT`.
 
 ### Forex
 
-Rates come from [frankfurter.app](https://www.frankfurter.app) (ECB, no API key), fetched
-with your default currency as base and cached in Room. Dashboard net worth converts every
-account balance + crypto USD total into the default currency; unconvertible balances are
-flagged with “≈”.
+Rates come from [open.er-api.com](https://www.exchangerate-api.com/docs/free) (no API key;
+supports AED and 160+ base currencies, unlike the ECB feed), fetched with your default
+currency as base and cached in Room. Dashboard net worth converts every account balance +
+crypto USD total into the default currency; unconvertible balances are flagged with “≈”.
 
 ## Building
 
