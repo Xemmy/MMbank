@@ -63,6 +63,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -70,7 +71,6 @@ import java.time.ZoneId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -92,10 +92,9 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                 balance = account.openingBalance.toDouble() + (netByAccount[account.id] ?: 0.0),
             )
         }
-    }.catch { e ->
-        container.recordError("AccountsViewModel", e)
+    }.recoverAndRetry("AccountsViewModel", container) { e ->
         lastError.value = "Couldn't load accounts: ${e.message}"
-        emit(emptyList())
+        emptyList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun save(account: Account) {

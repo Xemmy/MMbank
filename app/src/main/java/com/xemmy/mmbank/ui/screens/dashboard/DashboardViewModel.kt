@@ -10,6 +10,7 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.WalletBalance
 import com.xemmy.mmbank.ui.util.CurrencyMath
+import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
@@ -18,7 +19,6 @@ import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -153,27 +153,20 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             netWorthInBase = fiatInBase + (cryptoInBase ?: 0.0),
             hasUnconvertedAmounts = hasUnconverted,
         )
-    }.catch { e ->
+    }.recoverAndRetry("DashboardViewModel", container) { e ->
         // Never let a bad row (or a rates/DB hiccup) take the whole app down —
-        // surface it as a dismissible message instead of crashing on launch.
-        container.recordError("DashboardViewModel", e)
-        emit(DashboardUiState(message = "Dashboard couldn't load: ${e.message}"))
+        // show a dismissible message, then resubscribe so balances stay live.
+        DashboardUiState(message = "Dashboard couldn't load: ${e.message}")
     }
 
     private val senderLabels = container.senderLabelRepository.observeLabels()
-        .catch { e ->
-            container.recordError("DashboardViewModel.senderLabels", e)
-            emit(emptyMap())
-        }
+        .recoverAndRetry("DashboardViewModel.senderLabels", container) { emptyMap() }
 
     private val statsFlow = combine(
         container.transactionRepository.observeTransactions(),
         container.ratesRepository.observeRates(),
     ) { transactions, rates -> computeStats(transactions, rates) }
-        .catch { e ->
-            container.recordError("DashboardViewModel.stats", e)
-            emit(DashboardStats())
-        }
+        .recoverAndRetry("DashboardViewModel.stats", container) { DashboardStats() }
 
     // Folded into one flow so the final combine stays within five slots.
     private val uiMeta = combine(refreshing, message, prefsState) { busy, msg, prefs ->

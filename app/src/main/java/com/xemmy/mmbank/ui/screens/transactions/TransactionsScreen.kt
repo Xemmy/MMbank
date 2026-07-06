@@ -47,10 +47,10 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.util.recoverAndRetry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -98,9 +98,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             knownPersons = persons,
             hasAnyTransactions = transactions.isNotEmpty(),
         )
-    }.catch { e ->
-        container.recordError("TransactionsViewModel", e)
-        emit(TransactionsUiState())
+    }.recoverAndRetry("TransactionsViewModel", container) {
+        TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
 
     fun setDateFilter(filter: DateFilter) {
