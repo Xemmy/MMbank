@@ -45,6 +45,7 @@ class IngestCapturedMessageUseCaseTest {
         override fun observeNetByAccount(): Flow<Map<Long, Double>> = flowOf(emptyMap())
         override suspend fun assignAccount(transactionId: Long, accountId: Long?) = Unit
         override suspend fun setPerson(transactionId: Long, person: String?) = Unit
+        override suspend fun renamePerson(from: String, to: String?) = Unit
         override suspend fun delete(transactionId: Long) = Unit
     }
 

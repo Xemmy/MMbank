@@ -28,10 +28,13 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CurrencyBitcoin
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +82,52 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
 
     var defaultPerson by mutableStateOf(container.preferences.defaultPerson.orEmpty())
+
+    /** Saved people list — the person menu's source, editable here, exported in backups. */
+    var persons by mutableStateOf(container.preferences.persons)
+        private set
+
+    fun addPersonToList(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        container.preferences.addPerson(clean)
+        persons = container.preferences.persons
+    }
+
+    fun removePersonFromList(name: String) {
+        container.preferences.persons = container.preferences.persons - name
+        if (container.preferences.defaultPerson == name) {
+            container.preferences.defaultPerson = null
+            defaultPerson = ""
+        }
+        persons = container.preferences.persons
+        statusMessage = "$name removed from the list — existing transactions keep the name"
+    }
+
+    /** Renames on the saved list AND on every transaction carrying the old name. */
+    fun renamePersonEverywhere(from: String, to: String) {
+        val clean = to.trim()
+        if (busy || clean.isEmpty() || clean == from) return
+        viewModelScope.launch {
+            busy = true
+            runCatching {
+                container.transactionRepository.renamePerson(from, clean)
+                container.preferences.persons =
+                    container.preferences.persons.map { if (it == from) clean else it }
+                if (container.preferences.defaultPerson == from) {
+                    container.preferences.defaultPerson = clean
+                    defaultPerson = clean
+                }
+                persons = container.preferences.persons
+            }.onSuccess {
+                statusMessage = "Renamed $from to $clean everywhere"
+            }.onFailure {
+                container.recordError("SettingsViewModel.renamePerson", it)
+                statusMessage = "Rename failed: ${it.message}"
+            }
+            busy = false
+        }
+    }
 
     fun saveDefaultPerson() {
         container.preferences.defaultPerson = defaultPerson
@@ -477,9 +527,108 @@ fun PreferencesSettingsScreen(
             Text("Refresh Forex rates now")
         }
 
+        PeopleSection(viewModel)
+
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
+    }
+}
+
+/** Editable saved-people list: add, rename (updates every transaction), remove. */
+@Composable
+private fun PeopleSection(viewModel: SettingsViewModel) {
+    var newPerson by remember { mutableStateOf("") }
+    var renaming by remember { mutableStateOf<String?>(null) }
+
+    Text("People", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(
+        "This list feeds the person menu on transactions and is included in backups. " +
+            "Renaming updates every transaction that carries the old name.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    if (viewModel.persons.isNotEmpty()) {
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                viewModel.persons.forEachIndexed { index, person ->
+                    Row(
+                        Modifier.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            person,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { renaming = person }) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Rename $person",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { viewModel.removePersonFromList(person) }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Remove $person",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (index < viewModel.persons.lastIndex) {
+                        HorizontalDivider(Modifier.padding(start = 16.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = newPerson,
+            onValueChange = { newPerson = it },
+            label = { Text("Add a person") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Button(
+            enabled = newPerson.isNotBlank(),
+            onClick = {
+                viewModel.addPersonToList(newPerson)
+                newPerson = ""
+            },
+        ) { Text("Add") }
+    }
+
+    renaming?.let { oldName ->
+        var newName by remember(oldName) { mutableStateOf(oldName) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename person") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Name") },
+                    supportingText = { Text("Every transaction assigned to “$oldName” will be updated.") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newName.isNotBlank() && newName.trim() != oldName,
+                    onClick = {
+                        viewModel.renamePersonEverywhere(oldName, newName)
+                        renaming = null
+                    },
+                ) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
     }
 }
 

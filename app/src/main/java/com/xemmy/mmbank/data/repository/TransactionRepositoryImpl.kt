@@ -87,6 +87,9 @@ class TransactionRepositoryImpl(
     override suspend fun setPerson(transactionId: Long, person: String?) =
         dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })
 
+    override suspend fun renamePerson(from: String, to: String?) =
+        dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() })
+
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
 
     /**

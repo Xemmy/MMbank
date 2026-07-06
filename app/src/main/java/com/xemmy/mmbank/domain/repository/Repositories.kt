@@ -22,6 +22,8 @@ interface TransactionRepository {
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
     /** Assigns/clears the person a transaction belongs to. */
     suspend fun setPerson(transactionId: Long, person: String?)
+    /** Renames a person on every transaction carrying it; null [to] clears them. */
+    suspend fun renamePerson(from: String, to: String?)
     suspend fun delete(transactionId: Long)
 }
 

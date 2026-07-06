@@ -13,9 +13,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -33,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -86,7 +89,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     ) { transactions, accounts, senderLabels, filter ->
         val cutoff = filterCutoffMillis(filter)
         val visible = if (cutoff == null) transactions else transactions.filter { it.timestampMillis >= cutoff }
+        // Saved list first (editable in Settings), then anything already on
+        // transactions so nothing in use ever disappears from the menu.
         val persons = buildList {
+            addAll(container.preferences.persons)
             container.preferences.defaultPerson?.let(::add)
             transactions.mapNotNullTo(this) { it.person }
         }.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
@@ -131,7 +137,11 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         safeWrite("assignAccount") { container.transactionRepository.assignAccount(transactionId, accountId) }
 
     fun setPerson(transactionId: Long, person: String?) =
-        safeWrite("setPerson") { container.transactionRepository.setPerson(transactionId, person) }
+        safeWrite("setPerson") {
+            // A newly typed name joins the saved list so it's reusable and exported.
+            person?.let(container.preferences::addPerson)
+            container.transactionRepository.setPerson(transactionId, person)
+        }
 
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
@@ -252,9 +262,11 @@ private fun TransactionCard(
                         modifier = Modifier.clickable(enabled = tx.sender != null) { renameOpen = true },
                     )
                     Text(
-                        tx.timestampMillis.asDateTime(),
+                        listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Text(
@@ -273,11 +285,21 @@ private fun TransactionCard(
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box {
-                    TextButton(onClick = { accountMenuOpen = true }) {
-                        Text(accountName ?: "Assign account")
-                    }
+            // Compact chip row: both chips ellipsize long names inside their
+            // half of the row instead of wrapping and blowing the card up.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+            ) {
+                Box(Modifier.weight(1f)) {
+                    SelectorChip(
+                        icon = Icons.Filled.AccountBalanceWallet,
+                        text = accountName ?: "Account",
+                        onClick = { accountMenuOpen = true },
+                    )
                     DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
                         DropdownMenuItem(
                             text = { Text("Unassigned") },
@@ -297,11 +319,12 @@ private fun TransactionCard(
                         }
                     }
                 }
-                Box {
-                    TextButton(onClick = { personMenuOpen = true }) {
-                        Icon(Icons.Filled.Person, contentDescription = null, Modifier.size(16.dp))
-                        Text(" " + (tx.person ?: "Person"))
-                    }
+                Box(Modifier.weight(1f)) {
+                    SelectorChip(
+                        icon = Icons.Filled.Person,
+                        text = tx.person ?: "Person",
+                        onClick = { personMenuOpen = true },
+                    )
                     DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
                         DropdownMenuItem(
                             text = { Text("Nobody") },
@@ -328,14 +351,13 @@ private fun TransactionCard(
                         )
                     }
                 }
-                Text(
-                    tx.matchedRuleName ?: "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete transaction")
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Delete transaction",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -366,6 +388,34 @@ private fun TransactionCard(
             },
         )
     }
+}
+
+/** Small outlined selector: fixed height, single ellipsized line, never wraps. */
+@Composable
+private fun SelectorChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    onClick: () -> Unit,
+) {
+    AssistChip(
+        onClick = onClick,
+        leadingIcon = {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        label = {
+            Text(
+                text,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    )
 }
 
 @Composable

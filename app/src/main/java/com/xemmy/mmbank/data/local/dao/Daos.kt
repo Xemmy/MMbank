@@ -77,6 +77,9 @@ interface TransactionDao {
     @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
     suspend fun setPerson(transactionId: Long, person: String?)
 
+    @Query("UPDATE transactions SET person = :to WHERE person = :from")
+    suspend fun renamePerson(from: String, to: String?)
+
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
 

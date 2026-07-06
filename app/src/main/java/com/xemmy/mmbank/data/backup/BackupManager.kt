@@ -83,6 +83,8 @@ data class BackupPayload(
     val exportedAtMillis: Long,
     val defaultCurrency: String,
     val cashbackSpendRaw: String,
+    /** Saved people list (newline-separated); default keeps old backups importable. */
+    val personsRaw: String = "",
     val accounts: List<BackupAccount>,
     val transactions: List<BackupTransaction>,
     val rules: List<BackupRule>,
@@ -110,6 +112,7 @@ class BackupManager(
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
+            personsRaw = preferences.personsRaw,
             accounts = database.accountDao().getAll().map { it.toBackup() },
             transactions = database.transactionDao().getAll().map { it.toBackup() },
             rules = database.parsingRuleDao().getAll().map { it.toBackup() },
@@ -138,6 +141,7 @@ class BackupManager(
         }
         preferences.defaultCurrency = payload.defaultCurrency
         preferences.cashbackSpendRaw = payload.cashbackSpendRaw
+        preferences.personsRaw = payload.personsRaw
         return payload.accounts.size to payload.transactions.size
     }
 
