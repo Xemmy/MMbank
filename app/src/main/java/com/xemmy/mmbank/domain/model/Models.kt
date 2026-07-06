@@ -95,6 +95,8 @@ data class Transaction(
     /** Account number suffix extracted from the message (last 3-4 digits like *617 or XXX810001). */
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    /** Person this transaction belongs to (user-assigned; defaults from Settings). */
+    val person: String? = null,
 )
 
 /**

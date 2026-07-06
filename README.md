@@ -29,7 +29,11 @@ data/      Room (accounts, transactions, parsing_rules, asset_balances, exchange
 ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow view models
 ```
 
-- **UI**: 100% Jetpack Compose (Material 3), bottom navigation: Home / Activity / Accounts / Rules / Settings.
+- **UI**: 100% Jetpack Compose (Material 3), bottom navigation: Home / Activity / Accounts / Rewards / Rules / Settings.
+- **Home extras**: hide-balances eye toggle, savings goal with months-to-target estimate,
+  and an Insights section (6-month income/spend columns + this month's spend per person).
+- **People**: every transaction can be assigned to a person (default person configurable
+  in Settings, applied to new captures); the Activity tab filters by date range.
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
 - **Amounts** are `BigDecimal`, persisted as normalized plain-decimal TEXT — exact for fiat and 8-decimal crypto alike.
 

@@ -57,6 +57,7 @@ data class BackupTransaction(
     val createdAt: Long,
     val accountNumberSuffix: String?,
     val category: String = "NORMAL",
+    val person: String? = null,
 )
 
 @Serializable
@@ -159,13 +160,13 @@ class BackupManager(
     private fun TransactionEntity.toBackup() = BackupTransaction(
         id, accountId, amount.toPlainString(), currencyCode, direction.name, merchant,
         source.name, sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
-        category.name,
+        category.name, person,
     )
 
     private fun BackupTransaction.toEntity() = TransactionEntity(
         id, accountId, BigDecimal(amount), currencyCode, TransactionDirection.valueOf(direction), merchant,
         TransactionSource.valueOf(source), sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
-        TransactionCategory.valueOf(category),
+        TransactionCategory.valueOf(category), person,
     )
 
     private fun ParsingRuleEntity.toBackup() = BackupRule(

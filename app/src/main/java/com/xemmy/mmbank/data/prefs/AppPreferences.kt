@@ -17,8 +17,35 @@ class AppPreferences(context: Context) {
         get() = prefs.getString(KEY_CASHBACK_SPEND, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CASHBACK_SPEND, value).apply()
 
+    /** Masks every amount on the dashboard until toggled back. */
+    var hideBalances: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_BALANCES, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIDE_BALANCES, value).apply()
+
+    /** Person newly captured transactions are assigned to; null = unassigned. */
+    var defaultPerson: String?
+        get() = prefs.getString(KEY_DEFAULT_PERSON, null)?.takeIf { it.isNotBlank() }
+        set(value) = prefs.edit().putString(KEY_DEFAULT_PERSON, value?.trim().orEmpty()).apply()
+
+    /** Savings goal target, in the default currency. <= 0 means no goal set. */
+    var goalTargetAmount: Double
+        get() = prefs.getFloat(KEY_GOAL_TARGET, 0f).toDouble()
+        set(value) = prefs.edit().putFloat(KEY_GOAL_TARGET, value.toFloat()).apply()
+
+    /**
+     * Planned saving per month for the goal. <= 0 means "estimate from the
+     * ledger" (average net flow of recent months).
+     */
+    var goalMonthlySaving: Double
+        get() = prefs.getFloat(KEY_GOAL_MONTHLY, 0f).toDouble()
+        set(value) = prefs.edit().putFloat(KEY_GOAL_MONTHLY, value.toFloat()).apply()
+
     private companion object {
         const val KEY_DEFAULT_CURRENCY = "default_currency"
         const val KEY_CASHBACK_SPEND = "cashback_spend"
+        const val KEY_HIDE_BALANCES = "hide_balances"
+        const val KEY_DEFAULT_PERSON = "default_person"
+        const val KEY_GOAL_TARGET = "goal_target"
+        const val KEY_GOAL_MONTHLY = "goal_monthly"
     }
 }

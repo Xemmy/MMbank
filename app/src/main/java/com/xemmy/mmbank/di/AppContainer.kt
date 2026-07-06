@@ -75,7 +75,7 @@ class AppContainer(context: Context) {
     }
 
     val transactionRepository: TransactionRepository by lazy {
-        TransactionRepositoryImpl(database, database.transactionDao())
+        TransactionRepositoryImpl(database, database.transactionDao()) { preferences.defaultPerson }
     }
     val accountRepository: AccountRepository by lazy {
         AccountRepositoryImpl(database.accountDao())

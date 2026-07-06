@@ -20,6 +20,8 @@ interface TransactionRepository {
     /** Dedup + insert; the heart of the automated capture pipeline. */
     suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
+    /** Assigns/clears the person a transaction belongs to. */
+    suspend fun setPerson(transactionId: Long, person: String?)
     suspend fun delete(transactionId: Long)
 }
 

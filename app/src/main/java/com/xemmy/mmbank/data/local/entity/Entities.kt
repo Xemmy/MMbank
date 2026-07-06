@@ -81,6 +81,7 @@ data class TransactionEntity(
     val createdAt: Long,
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    val person: String? = null,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -143,7 +144,7 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
-    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category,
+    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

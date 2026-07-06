@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.map
 class TransactionRepositoryImpl(
     private val database: AppDatabase,
     private val dao: TransactionDao,
+    /** Person newly captured transactions default to (Settings > Default person). */
+    private val defaultPersonProvider: () -> String? = { null },
 ) : TransactionRepository {
 
     override fun observeTransactions(): Flow<List<Transaction>> =
@@ -72,6 +74,7 @@ class TransactionRepositoryImpl(
                     accountNumberSuffix = parsed.accountNumberSuffix,
                     accountId = detectedAccountId,
                     category = parsed.category,
+                    person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
                 )
             )
             IngestResult.Inserted(id)
@@ -80,6 +83,9 @@ class TransactionRepositoryImpl(
 
     override suspend fun assignAccount(transactionId: Long, accountId: Long?) =
         dao.assignAccount(transactionId, accountId)
+
+    override suspend fun setPerson(transactionId: Long, person: String?) =
+        dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })
 
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
 

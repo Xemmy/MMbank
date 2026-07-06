@@ -60,6 +60,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var busy by mutableStateOf(false)
         private set
 
+    var defaultPerson by mutableStateOf(container.preferences.defaultPerson.orEmpty())
+
+    fun saveDefaultPerson() {
+        container.preferences.defaultPerson = defaultPerson
+        defaultPerson = container.preferences.defaultPerson.orEmpty()
+        statusMessage = if (defaultPerson.isBlank()) {
+            "New transactions start unassigned"
+        } else {
+            "New transactions will be assigned to $defaultPerson"
+        }
+    }
+
     fun saveDefaultCurrency() {
         val code = defaultCurrency.trim().uppercase()
         if (code.length == 3) {
@@ -269,6 +281,18 @@ fun SettingsScreen(
         }
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
             Text("Refresh Forex rates now")
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = viewModel.defaultPerson,
+                onValueChange = { viewModel.defaultPerson = it },
+                label = { Text("Default person for new transactions") },
+                supportingText = { Text("Leave empty for unassigned. Change anyone later per transaction.") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = viewModel::saveDefaultPerson) { Text("Save") }
         }
 
         Text("Binance (read-only)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)

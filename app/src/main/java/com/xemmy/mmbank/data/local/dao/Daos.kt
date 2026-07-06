@@ -74,6 +74,9 @@ interface TransactionDao {
     @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
 
+    @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
+    suspend fun setPerson(transactionId: Long, person: String?)
+
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
 

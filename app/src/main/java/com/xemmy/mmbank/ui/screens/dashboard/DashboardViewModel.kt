@@ -5,9 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.WalletBalance
 import com.xemmy.mmbank.ui.util.CurrencyMath
+import java.time.Instant
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +29,28 @@ data class AccountRow(
     val balanceInBase: Double?,
 )
 
+/** Income vs spend for one month, converted to the base currency. */
+data class MonthlyFlow(val label: String, val income: Double, val spend: Double)
+
+/** Current-month spend attributed to one person. */
+data class PersonSpend(val person: String, val amount: Double)
+
+data class DashboardStats(
+    /** Oldest -> newest, always six entries. */
+    val monthly: List<MonthlyFlow> = emptyList(),
+    val personSpends: List<PersonSpend> = emptyList(),
+    /** Average net flow of the last up-to-3 completed months with activity. */
+    val avgMonthlyNet: Double = 0.0,
+)
+
+data class GoalState(
+    val targetAmount: Double = 0.0,
+    /** 0 = estimate from the ledger's average monthly net flow. */
+    val monthlySaving: Double = 0.0,
+) {
+    val isSet: Boolean get() = targetAmount > 0.0
+}
+
 data class DashboardUiState(
     val baseCurrency: String = "USD",
     val accounts: List<AccountRow> = emptyList(),
@@ -35,6 +64,9 @@ data class DashboardUiState(
     /** Sum of everything convertible into the base currency; liabilities negative. */
     val netWorthInBase: Double = 0.0,
     val hasUnconvertedAmounts: Boolean = false,
+    val stats: DashboardStats = DashboardStats(),
+    val goal: GoalState = GoalState(),
+    val hideBalances: Boolean = false,
     val refreshing: Boolean = false,
     val message: String? = null,
 )
@@ -43,6 +75,18 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
+
+    private data class PrefsSnapshot(val hideBalances: Boolean, val goal: GoalState)
+
+    private fun readPrefs() = PrefsSnapshot(
+        hideBalances = container.preferences.hideBalances,
+        goal = GoalState(
+            targetAmount = container.preferences.goalTargetAmount,
+            monthlySaving = container.preferences.goalMonthlySaving,
+        ),
+    )
+
+    private val prefsState = MutableStateFlow(readPrefs())
 
     private data class CryptoData(
         val assets: List<AssetBalance>,
@@ -122,10 +166,91 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             emit(emptyMap())
         }
 
+    private val statsFlow = combine(
+        container.transactionRepository.observeTransactions(),
+        container.ratesRepository.observeRates(),
+    ) { transactions, rates -> computeStats(transactions, rates) }
+        .catch { e ->
+            container.recordError("DashboardViewModel.stats", e)
+            emit(DashboardStats())
+        }
+
+    // Folded into one flow so the final combine stays within five slots.
+    private val uiMeta = combine(refreshing, message, prefsState) { busy, msg, prefs ->
+        Triple(busy, msg, prefs)
+    }
+
     val uiState: StateFlow<DashboardUiState> =
-        combine(ledgerState, senderLabels, refreshing, message) { state, labels, busy, msg ->
-            state.copy(senderLabels = labels, refreshing = busy, message = msg ?: state.message)
+        combine(ledgerState, senderLabels, statsFlow, uiMeta) { state, labels, stats, (busy, msg, prefs) ->
+            state.copy(
+                senderLabels = labels,
+                stats = stats,
+                goal = prefs.goal,
+                hideBalances = prefs.hideBalances,
+                refreshing = busy,
+                message = msg ?: state.message,
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
+
+    /**
+     * Six months of income/spend plus this month's per-person spend, all in
+     * the base currency (unconvertible amounts are skipped, not guessed).
+     */
+    private fun computeStats(transactions: List<Transaction>, rates: List<ExchangeRate>): DashboardStats {
+        val base = container.preferences.defaultCurrency
+        val ratesFromBase = rates
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+        val zone = ZoneId.systemDefault()
+
+        fun inBase(tx: Transaction): Double? =
+            CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase)
+
+        val thisMonth = YearMonth.now(zone)
+        val byMonth = transactions.groupBy {
+            YearMonth.from(Instant.ofEpochMilli(it.timestampMillis).atZone(zone))
+        }
+
+        val monthly = (5 downTo 0).map { back ->
+            val month = thisMonth.minusMonths(back.toLong())
+            var income = 0.0
+            var spend = 0.0
+            byMonth[month].orEmpty().forEach { tx ->
+                val value = inBase(tx) ?: return@forEach
+                if (tx.direction == TransactionDirection.CREDIT) income += value else spend += value
+            }
+            MonthlyFlow(
+                label = month.month.getDisplayName(TextStyle.SHORT, Locale.US),
+                income = income,
+                spend = spend,
+            )
+        }
+
+        val personSpends = byMonth[thisMonth].orEmpty()
+            .filter { it.direction == TransactionDirection.DEBIT }
+            .groupBy { it.person?.trim()?.takeIf(String::isNotEmpty) ?: "Unassigned" }
+            .mapNotNull { (person, txs) ->
+                val total = txs.sumOf { inBase(it) ?: 0.0 }
+                if (total <= 0.0) null else PersonSpend(person, total)
+            }
+            .sortedByDescending { it.amount }
+
+        val priorMonths = monthly.dropLast(1).filter { it.income != 0.0 || it.spend != 0.0 }.takeLast(3)
+        val avgNet = if (priorMonths.isEmpty()) 0.0 else priorMonths.sumOf { it.income - it.spend } / priorMonths.size
+
+        return DashboardStats(monthly = monthly, personSpends = personSpends, avgMonthlyNet = avgNet)
+    }
+
+    fun toggleHideBalances() {
+        container.preferences.hideBalances = !container.preferences.hideBalances
+        prefsState.value = readPrefs()
+    }
+
+    fun saveGoal(targetAmount: Double, monthlySaving: Double) {
+        container.preferences.goalTargetAmount = targetAmount.coerceAtLeast(0.0)
+        container.preferences.goalMonthlySaving = monthlySaving.coerceAtLeast(0.0)
+        prefsState.value = readPrefs()
+    }
 
     /** Pulls fresh Forex rates and, when keys are configured, Binance spot balances. */
     fun refreshRemote() {

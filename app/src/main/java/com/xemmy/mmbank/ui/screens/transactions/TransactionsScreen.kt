@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +47,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -51,24 +55,71 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** Quick date ranges for the Activity list. */
+enum class DateFilter(val label: String) {
+    ALL("All"),
+    TODAY("Today"),
+    WEEK("7 days"),
+    MONTH("This month"),
+}
+
 data class TransactionsUiState(
     val transactions: List<Transaction> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val senderLabels: Map<String, String> = emptyMap(),
+    val dateFilter: DateFilter = DateFilter.ALL,
+    /** Every person seen so far, for the quick-assign menu. */
+    val knownPersons: List<String> = emptyList(),
+    /** True when the filter (not an empty ledger) hid everything. */
+    val hasAnyTransactions: Boolean = false,
 )
 
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
+
+    private val dateFilter = MutableStateFlow(DateFilter.ALL)
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         container.transactionRepository.observeTransactions(),
         container.accountRepository.observeActive(),
         container.senderLabelRepository.observeLabels(),
-    ) { transactions, accounts, senderLabels ->
-        TransactionsUiState(transactions, accounts, senderLabels)
+        dateFilter,
+    ) { transactions, accounts, senderLabels, filter ->
+        val cutoff = filterCutoffMillis(filter)
+        val visible = if (cutoff == null) transactions else transactions.filter { it.timestampMillis >= cutoff }
+        val persons = buildList {
+            container.preferences.defaultPerson?.let(::add)
+            transactions.mapNotNullTo(this) { it.person }
+        }.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+        TransactionsUiState(
+            transactions = visible,
+            accounts = accounts,
+            senderLabels = senderLabels,
+            dateFilter = filter,
+            knownPersons = persons,
+            hasAnyTransactions = transactions.isNotEmpty(),
+        )
     }.catch { e ->
         container.recordError("TransactionsViewModel", e)
         emit(TransactionsUiState())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
+
+    fun setDateFilter(filter: DateFilter) {
+        dateFilter.value = filter
+    }
+
+    /** Start-of-range in epoch millis; null = no lower bound. */
+    private fun filterCutoffMillis(filter: DateFilter): Long? {
+        if (filter == DateFilter.ALL) return null
+        val zone = java.time.ZoneId.systemDefault()
+        val today = java.time.LocalDate.now(zone)
+        val start = when (filter) {
+            DateFilter.TODAY -> today
+            DateFilter.WEEK -> today.minusDays(6)
+            DateFilter.MONTH -> today.withDayOfMonth(1)
+            DateFilter.ALL -> return null
+        }
+        return start.atStartOfDay(zone).toInstant().toEpochMilli()
+    }
 
     private fun safeWrite(what: String, block: suspend () -> Unit) {
         viewModelScope.launch {
@@ -79,6 +130,9 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun assignAccount(transactionId: Long, accountId: Long?) =
         safeWrite("assignAccount") { container.transactionRepository.assignAccount(transactionId, accountId) }
+
+    fun setPerson(transactionId: Long, person: String?) =
+        safeWrite("setPerson") { container.transactionRepository.setPerson(transactionId, person) }
 
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
@@ -102,32 +156,56 @@ fun TransactionsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    if (state.transactions.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "No transactions yet.\nCaptured bank messages will appear here automatically.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    Column(Modifier.fillMaxSize()) {
+        // Date-range chips: filter what's shown without touching the data.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DateFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = state.dateFilter == filter,
+                    onClick = { viewModel.setDateFilter(filter) },
+                    label = { Text(filter.label, style = MaterialTheme.typography.labelMedium) },
+                )
+            }
         }
-        return
-    }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        items(state.transactions, key = { it.id }) { tx ->
-            TransactionCard(
-                tx = tx,
-                accounts = state.accounts,
-                bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
-                onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
-                onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
-                onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                onDelete = { viewModel.delete(tx.id) },
-            )
+        if (state.transactions.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    if (state.hasAnyTransactions) {
+                        "No transactions in this period."
+                    } else {
+                        "No transactions yet.\nCaptured bank messages will appear here automatically."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            return@Column
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(state.transactions, key = { it.id }) { tx ->
+                TransactionCard(
+                    tx = tx,
+                    accounts = state.accounts,
+                    knownPersons = state.knownPersons,
+                    bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                    onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
+                    onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                    onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
+                    onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                    onDelete = { viewModel.delete(tx.id) },
+                )
+            }
         }
     }
 }
@@ -136,14 +214,18 @@ fun TransactionsScreen(
 private fun TransactionCard(
     tx: Transaction,
     accounts: List<Account>,
+    knownPersons: List<String>,
     bankName: String?,
     onAssignAccount: (Long?) -> Unit,
+    onAssignPerson: (String?) -> Unit,
     onRenameSender: (String) -> Unit,
     onResetSender: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
+    var personMenuOpen by remember { mutableStateOf(false) }
+    var newPersonOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     val accountName = accounts.firstOrNull { it.id == tx.accountId }?.name
 
@@ -216,6 +298,37 @@ private fun TransactionCard(
                         }
                     }
                 }
+                Box {
+                    TextButton(onClick = { personMenuOpen = true }) {
+                        Icon(Icons.Filled.Person, contentDescription = null, Modifier.size(16.dp))
+                        Text(" " + (tx.person ?: "Person"))
+                    }
+                    DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Nobody") },
+                            onClick = {
+                                personMenuOpen = false
+                                onAssignPerson(null)
+                            },
+                        )
+                        knownPersons.forEach { person ->
+                            DropdownMenuItem(
+                                text = { Text(person) },
+                                onClick = {
+                                    personMenuOpen = false
+                                    onAssignPerson(person)
+                                },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("New person…") },
+                            onClick = {
+                                personMenuOpen = false
+                                newPersonOpen = true
+                            },
+                        )
+                    }
+                }
                 Text(
                     tx.matchedRuleName ?: "",
                     style = MaterialTheme.typography.labelSmall,
@@ -227,6 +340,16 @@ private fun TransactionCard(
                 }
             }
         }
+    }
+
+    if (newPersonOpen) {
+        NewPersonDialog(
+            onDismiss = { newPersonOpen = false },
+            onSave = { person ->
+                onAssignPerson(person)
+                newPersonOpen = false
+            },
+        )
     }
 
     if (renameOpen && tx.sender != null) {
@@ -244,6 +367,30 @@ private fun TransactionCard(
             },
         )
     }
+}
+
+@Composable
+private fun NewPersonDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Assign person") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = { onSave(name.trim()) }) { Text("Assign") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
