@@ -9,20 +9,34 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -44,6 +60,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import kotlinx.coroutines.launch
@@ -163,14 +180,176 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Root: grouped menu, modern app style — each row opens a focused subpage.
+// ---------------------------------------------------------------------------
+
 @Composable
 fun SettingsScreen(
+    onOpen: (String) -> Unit,
     viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val context = LocalContext.current
+    var captureOk by remember { mutableStateOf(true) }
+    var crashRecorded by remember { mutableStateOf(false) }
 
-    // Initialized with the real system state so re-entering Settings never
-    // flashes a red "not granted" frame before the resume effect runs.
+    LifecycleResumeEffect(Unit) {
+        captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
+        crashRecorded = Diagnostics.readCrash(context) != null
+        onPauseOrDispose { }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+
+        MenuSectionLabel("Capture")
+        Card(Modifier.fillMaxWidth()) {
+            MenuRow(
+                icon = Icons.Filled.NotificationsActive,
+                title = "Capture & permissions",
+                subtitle = if (captureOk) "All channels enabled" else "Action needed",
+                subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
+                onClick = { onOpen("settings_capture") },
+            )
+        }
+
+        MenuSectionLabel("General")
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                MenuRow(
+                    icon = Icons.Filled.Tune,
+                    title = "Preferences",
+                    subtitle = "Currency ${viewModel.defaultCurrency}" +
+                        (viewModel.defaultPerson.takeIf { it.isNotBlank() }?.let { " · default person $it" } ?: "") +
+                        " · Forex rates",
+                    onClick = { onOpen("settings_prefs") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.CurrencyBitcoin,
+                    title = "Binance",
+                    subtitle = if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
+                    onClick = { onOpen("settings_binance") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Rule,
+                    title = "Parsing rules",
+                    subtitle = "Teach the app new bank message formats",
+                    onClick = { onOpen("rules") },
+                )
+            }
+        }
+
+        MenuSectionLabel("Data")
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                MenuRow(
+                    icon = Icons.Filled.Backup,
+                    title = "Backup & restore",
+                    subtitle = "Encrypted export and import",
+                    onClick = { onOpen("settings_backup") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.BugReport,
+                    title = "Diagnostics",
+                    subtitle = if (crashRecorded) "Crash log recorded — tap to view" else "No problems recorded",
+                    subtitleColor = if (crashRecorded) MaterialTheme.colorScheme.error else null,
+                    onClick = { onOpen("settings_diagnostics") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuSectionLabel(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+    )
+}
+
+@Composable
+private fun MenuRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    subtitleColor: Color? = null,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = subtitleColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Shared subpage chrome: back arrow + title, then scrollable content. */
+@Composable
+private fun SettingsSubpage(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(title, style = MaterialTheme.typography.titleLarge)
+        }
+        content()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Capture & permissions
+// ---------------------------------------------------------------------------
+
+@Composable
+fun CaptureSettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+
     var notificationAccessGranted by remember { mutableStateOf(isNotificationAccessGranted(context)) }
     var smsGranted by remember { mutableStateOf(isSmsGranted(context)) }
     var batteryExempt by remember { mutableStateOf(isBatteryExempt(context)) }
@@ -191,15 +370,7 @@ fun SettingsScreen(
         ActivityResultContracts.RequestPermission()
     ) { refreshPermissionState() }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Capture channels", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-
+    SettingsSubpage(title = "Capture & permissions", onBack = onBack) {
         PermissionCard(
             title = "Notification access",
             granted = notificationAccessGranted,
@@ -229,7 +400,7 @@ fun SettingsScreen(
                         context.startActivity(
                             Intent(
                                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                android.net.Uri.fromParts("package", context.packageName, null),
+                                Uri.fromParts("package", context.packageName, null),
                             )
                         )
                     }) { Text("Open this app's settings page") }
@@ -266,9 +437,19 @@ fun SettingsScreen(
                 }
             },
         )
+    }
+}
 
-        Text("Ledger", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+// ---------------------------------------------------------------------------
+// Subpage: Preferences (currency, default person, Forex)
+// ---------------------------------------------------------------------------
 
+@Composable
+fun PreferencesSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Preferences", onBack = onBack) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = viewModel.defaultCurrency,
@@ -278,9 +459,6 @@ fun SettingsScreen(
                 modifier = Modifier.weight(1f),
             )
             Button(onClick = viewModel::saveDefaultCurrency) { Text("Save") }
-        }
-        OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
-            Text("Refresh Forex rates now")
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -295,7 +473,26 @@ fun SettingsScreen(
             Button(onClick = viewModel::saveDefaultPerson) { Text("Save") }
         }
 
-        Text("Binance (read-only)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
+            Text("Refresh Forex rates now")
+        }
+
+        viewModel.statusMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Binance
+// ---------------------------------------------------------------------------
+
+@Composable
+fun BinanceSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Binance (read-only)", onBack = onBack) {
         Text(
             if (viewModel.hasBinanceKeys) {
                 "API keys are configured and stored encrypted. Only read endpoints are ever called — " +
@@ -339,12 +536,40 @@ fun SettingsScreen(
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
+    }
+}
 
+// ---------------------------------------------------------------------------
+// Subpage: Backup & restore
+// ---------------------------------------------------------------------------
+
+@Composable
+fun BackupSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Backup & restore", onBack = onBack) {
         BackupSection(viewModel)
+        viewModel.statusMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        }
+    }
+}
 
+// ---------------------------------------------------------------------------
+// Subpage: Diagnostics
+// ---------------------------------------------------------------------------
+
+@Composable
+fun DiagnosticsSettingsScreen(onBack: () -> Unit) {
+    SettingsSubpage(title = "Diagnostics", onBack = onBack) {
         DiagnosticsSection()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Shared pieces reused by the subpages
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun BackupSection(viewModel: SettingsViewModel) {
@@ -371,7 +596,6 @@ private fun BackupSection(viewModel: SettingsViewModel) {
         }
     }
 
-    Text("Backup & restore", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
     Text(
         "Exports accounts, transactions, custom rules, sender names and settings into one " +
             "AES-256 encrypted file protected by the password below. Binance keys are never " +
@@ -424,12 +648,11 @@ private fun DiagnosticsSection() {
     var refreshKey by remember { mutableStateOf(0) }
 
     LifecycleResumeEffect(refreshKey) {
-        crashText = com.xemmy.mmbank.diagnostics.Diagnostics.readCrash(context)
-        errorsText = com.xemmy.mmbank.diagnostics.Diagnostics.readErrors(context)
+        crashText = Diagnostics.readCrash(context)
+        errorsText = Diagnostics.readErrors(context)
         onPauseOrDispose { }
     }
 
-    Text("Diagnostics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
     if (crashText == null && errorsText == null) {
         Text(
             "Nothing recorded. If the app ever crashes or a screen fails to load, the details will appear here.",
@@ -442,7 +665,7 @@ private fun DiagnosticsSection() {
             title = "Last crash",
             text = it,
             onClear = {
-                com.xemmy.mmbank.diagnostics.Diagnostics.clearCrash(context)
+                Diagnostics.clearCrash(context)
                 refreshKey++
             },
         )
@@ -452,7 +675,7 @@ private fun DiagnosticsSection() {
             title = "Recent recovered errors",
             text = it,
             onClear = {
-                com.xemmy.mmbank.diagnostics.Diagnostics.clearErrors(context)
+                Diagnostics.clearErrors(context)
                 refreshKey++
             },
         )
@@ -488,17 +711,6 @@ private fun DiagnosticsLogCard(title: String, text: String, onClear: () -> Unit)
     }
 }
 
-private fun isNotificationAccessGranted(context: Context): Boolean =
-    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
-
-private fun isSmsGranted(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
-        PackageManager.PERMISSION_GRANTED
-
-private fun isBatteryExempt(context: Context): Boolean =
-    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-        .isIgnoringBatteryOptimizations(context.packageName)
-
 @Composable
 private fun PermissionCard(
     title: String,
@@ -524,3 +736,18 @@ private fun PermissionCard(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Permission checks (also drive the root menu's status subtitles)
+// ---------------------------------------------------------------------------
+
+private fun isNotificationAccessGranted(context: Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+private fun isSmsGranted(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
+        PackageManager.PERMISSION_GRANTED
+
+private fun isBatteryExempt(context: Context): Boolean =
+    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+        .isIgnoringBatteryOptimizations(context.packageName)
