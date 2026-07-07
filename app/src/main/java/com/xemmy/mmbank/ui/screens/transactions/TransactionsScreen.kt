@@ -89,13 +89,15 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     ) { transactions, accounts, senderLabels, filter ->
         val cutoff = filterCutoffMillis(filter)
         val visible = if (cutoff == null) transactions else transactions.filter { it.timestampMillis >= cutoff }
-        // Saved list first (editable in Settings), then anything already on
-        // transactions so nothing in use ever disappears from the menu.
+        // The menu is fed ONLY by the saved list (Settings > Preferences >
+        // People) so removing a person there really removes it here. Names
+        // dedupe case-insensitively to avoid "Ahmed" vs "ahmed" doubles.
         val persons = buildList {
             addAll(container.preferences.persons)
             container.preferences.defaultPerson?.let(::add)
-            transactions.mapNotNullTo(this) { it.person }
-        }.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+        }.map { it.trim() }.filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+            .sorted()
         TransactionsUiState(
             transactions = visible,
             accounts = accounts,

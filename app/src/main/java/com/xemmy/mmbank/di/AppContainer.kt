@@ -7,6 +7,7 @@ import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.data.prefs.SecureCredentialStore
 import com.xemmy.mmbank.data.remote.binance.BinanceApi
 import com.xemmy.mmbank.data.remote.binance.BinanceSigningInterceptor
+import com.xemmy.mmbank.data.remote.binance.BinanceWalletAssetsService
 import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
@@ -88,6 +89,10 @@ class AppContainer(context: Context) {
     }
     val portfolioRepository: PortfolioRepository by lazy {
         PortfolioRepositoryImpl(binanceApi, database, database.assetBalanceDao(), database.walletBalanceDao())
+    }
+    /** Logic-only Spot/Funding/Earn per-asset fetcher (zero balances filtered). */
+    val binanceWalletAssets: BinanceWalletAssetsService by lazy {
+        BinanceWalletAssetsService(binanceApi)
     }
     val ratesRepository: RatesRepository by lazy {
         RatesRepositoryImpl(forexApi, database.exchangeRateDao())

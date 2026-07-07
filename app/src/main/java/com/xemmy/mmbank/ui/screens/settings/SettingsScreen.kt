@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
@@ -67,6 +68,7 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
@@ -87,11 +89,36 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var persons by mutableStateOf(container.preferences.persons)
         private set
 
+    /** Names still on transactions but absent from the saved list (old data / deletions). */
+    var unlistedPersons by mutableStateOf<List<String>>(emptyList())
+        private set
+    private var transactionPersons: List<String> = emptyList()
+
+    init {
+        viewModelScope.launch {
+            container.transactionRepository.observeTransactions()
+                .catch { emit(emptyList()) }
+                .collect { txs ->
+                    transactionPersons = txs.mapNotNull { it.person?.trim() }
+                        .filter { it.isNotEmpty() }
+                        .distinctBy { it.lowercase() }
+                    recomputeUnlisted()
+                }
+        }
+    }
+
+    private fun recomputeUnlisted() {
+        unlistedPersons = transactionPersons
+            .filter { p -> persons.none { it.equals(p, ignoreCase = true) } }
+            .sorted()
+    }
+
     fun addPersonToList(name: String) {
         val clean = name.trim()
         if (clean.isEmpty()) return
         container.preferences.addPerson(clean)
         persons = container.preferences.persons
+        recomputeUnlisted()
     }
 
     fun removePersonFromList(name: String) {
@@ -101,10 +128,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             defaultPerson = ""
         }
         persons = container.preferences.persons
-        statusMessage = "$name removed from the list — existing transactions keep the name"
+        recomputeUnlisted()
+        statusMessage = "$name removed from the list"
     }
 
-    /** Renames on the saved list AND on every transaction carrying the old name. */
+    /**
+     * Renames on the saved list AND on every transaction carrying the old
+     * name. Also used to merge an old transaction-only name into a listed one.
+     */
     fun renamePersonEverywhere(from: String, to: String) {
         val clean = to.trim()
         if (busy || clean.isEmpty() || clean == from) return
@@ -114,17 +145,34 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 container.transactionRepository.renamePerson(from, clean)
                 container.preferences.persons =
                     container.preferences.persons.map { if (it == from) clean else it }
+                container.preferences.addPerson(clean)
                 if (container.preferences.defaultPerson == from) {
                     container.preferences.defaultPerson = clean
                     defaultPerson = clean
                 }
                 persons = container.preferences.persons
+                recomputeUnlisted()
             }.onSuccess {
                 statusMessage = "Renamed $from to $clean everywhere"
             }.onFailure {
                 container.recordError("SettingsViewModel.renamePerson", it)
                 statusMessage = "Rename failed: ${it.message}"
             }
+            busy = false
+        }
+    }
+
+    /** Strips [name] off every transaction (they become unassigned). */
+    fun clearPersonFromTransactions(name: String) {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            runCatching { container.transactionRepository.renamePerson(name, null) }
+                .onSuccess { statusMessage = "Removed $name from all transactions" }
+                .onFailure {
+                    container.recordError("SettingsViewModel.clearPerson", it)
+                    statusMessage = "Failed: ${it.message}"
+                }
             busy = false
         }
     }
@@ -602,6 +650,64 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                 newPerson = ""
             },
         ) { Text("Add") }
+    }
+
+    if (viewModel.unlistedPersons.isNotEmpty()) {
+        Text(
+            "On transactions but not in your list",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+        Text(
+            "Old names still attached to transactions. Add one back to the list (+), " +
+                "merge/rename it into another name (pencil — updates those transactions), " +
+                "or clear it off all transactions (bin).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                viewModel.unlistedPersons.forEachIndexed { index, person ->
+                    Row(
+                        Modifier.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            person,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { viewModel.addPersonToList(person) }) {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Add $person to the list",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { renaming = person }) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Merge or rename $person",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { viewModel.clearPersonFromTransactions(person) }) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Clear $person from all transactions",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (index < viewModel.unlistedPersons.lastIndex) {
+                        HorizontalDivider(Modifier.padding(start = 16.dp))
+                    }
+                }
+            }
+        }
     }
 
     renaming?.let { oldName ->
