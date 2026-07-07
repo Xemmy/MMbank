@@ -22,17 +22,31 @@ data class BinanceWalletAsset(
  * query string) is inherited from [BinanceSigningInterceptor] via the shared
  * [BinanceApi] client.
  */
-class BinanceWalletAssetsService(private val api: BinanceApi) {
+class BinanceWalletAssetsService(
+    private val api: BinanceApi,
+    /** Surfaces a failing endpoint to Diagnostics so a missing wallet is explainable. */
+    private val recordError: (String, Throwable) -> Unit = { _, _ -> },
+) {
+
+    /** Wallets whose fetch failed on the last call (e.g. "Funding", "Earn"). */
+    val lastFailedWallets = mutableListOf<String>()
 
     suspend fun fetchNonZeroAssets(): List<BinanceWalletAsset> {
         val out = mutableListOf<BinanceWalletAsset>()
+        lastFailedWallets.clear()
+
+        fun fail(wallet: String, tag: String, t: Throwable) {
+            if (wallet !in lastFailedWallets) lastFailedWallets += wallet
+            Log.w(TAG, "$tag failed", t)
+            recordError("Binance.$tag", t)
+        }
 
         runCatching {
             api.getAccount().balances.forEach { dto ->
                 val amount = dto.free.toAmount() + dto.locked.toAmount()
                 if (amount > 0.0) out += BinanceWalletAsset(WALLET_SPOT, dto.asset, amount)
             }
-        }.onFailure { Log.w(TAG, "Spot balances failed", it) }
+        }.onFailure { fail(WALLET_SPOT, "spot", it) }
 
         runCatching {
             api.getFundingAssets(EMPTY_BODY).forEach { dto ->
@@ -40,21 +54,21 @@ class BinanceWalletAssetsService(private val api: BinanceApi) {
                     dto.freeze.toAmount() + dto.withdrawing.toAmount()
                 if (amount > 0.0) out += BinanceWalletAsset(WALLET_FUNDING, dto.asset, amount)
             }
-        }.onFailure { Log.w(TAG, "Funding balances failed", it) }
+        }.onFailure { fail(WALLET_FUNDING, "funding", it) }
 
         runCatching {
             api.getFlexibleEarnPositions(size = PAGE_SIZE).rows.forEach { row ->
                 val amount = row.totalAmount.toAmount()
                 if (amount > 0.0) out += BinanceWalletAsset(WALLET_EARN, row.asset, amount)
             }
-        }.onFailure { Log.w(TAG, "Flexible Earn positions failed", it) }
+        }.onFailure { fail(WALLET_EARN, "earn-flexible", it) }
 
         runCatching {
             api.getLockedEarnPositions(size = PAGE_SIZE).rows.forEach { row ->
                 val amount = maxOf(row.amount.toAmount(), row.totalAmount.toAmount())
                 if (amount > 0.0) out += BinanceWalletAsset(WALLET_EARN, row.asset, amount)
             }
-        }.onFailure { Log.w(TAG, "Locked Earn positions failed", it) }
+        }.onFailure { fail(WALLET_EARN, "earn-locked", it) }
 
         // Same asset can appear several times (e.g. two locked positions):
         // collapse to one row per wallet+asset.

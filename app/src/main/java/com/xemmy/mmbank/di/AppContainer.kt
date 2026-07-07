@@ -90,12 +90,19 @@ class AppContainer(context: Context) {
     val senderLabelRepository: SenderLabelRepository by lazy {
         SenderLabelRepositoryImpl(database.senderLabelDao())
     }
-    val portfolioRepository: PortfolioRepository by lazy {
-        PortfolioRepositoryImpl(binanceApi, database, database.assetBalanceDao(), database.walletBalanceDao())
-    }
     /** Logic-only Spot/Funding/Earn per-asset fetcher (zero balances filtered). */
     val binanceWalletAssets: BinanceWalletAssetsService by lazy {
-        BinanceWalletAssetsService(binanceApi)
+        BinanceWalletAssetsService(binanceApi) { tag, t -> Diagnostics.recordError(appContext, tag, t) }
+    }
+    val portfolioRepository: PortfolioRepository by lazy {
+        PortfolioRepositoryImpl(
+            api = binanceApi,
+            database = database,
+            dao = database.assetBalanceDao(),
+            walletDao = database.walletBalanceDao(),
+            walletAssets = binanceWalletAssets,
+            recordError = { tag, t -> Diagnostics.recordError(appContext, tag, t) },
+        )
     }
     val ratesRepository: RatesRepository by lazy {
         RatesRepositoryImpl(forexApi, database.exchangeRateDao())

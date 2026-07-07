@@ -277,7 +277,7 @@ private fun CryptoCard(state: DashboardUiState) {
                     if (state.cryptoBalances.isNotEmpty()) {
                         HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                         Text(
-                            "SPOT HOLDINGS",
+                            "HOLDINGS (SPOT · FUNDING · EARN)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 16.dp, top = 10.dp),

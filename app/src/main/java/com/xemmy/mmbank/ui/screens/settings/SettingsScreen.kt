@@ -220,7 +220,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             busy = true
             statusMessage = "Contacting Binance…"
             container.portfolioRepository.syncSpotBalances()
-                .onSuccess { statusMessage = "Connected — $it assets synced" }
+                .onSuccess {
+                    val failed = container.binanceWalletAssets.lastFailedWallets
+                    statusMessage = if (failed.isEmpty()) {
+                        "Connected — $it holdings synced (Spot · Funding · Earn)"
+                    } else {
+                        "Synced $it holdings, but couldn't read: ${failed.joinToString(", ")}. " +
+                            "Enable those permissions on the API key."
+                    }
+                }
                 .onFailure { statusMessage = "Binance error: ${it.message}" }
             busy = false
         }

@@ -259,6 +259,11 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             if (container.credentialStore.hasBinanceCredentials) {
                 container.portfolioRepository.syncSpotBalances()
                     .onFailure { errors += "Binance: ${it.message}" }
+                // A wallet the key can't read (e.g. Earn) is a partial success —
+                // tell the user which, so it's not silently missing.
+                container.binanceWalletAssets.lastFailedWallets
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { errors += "Couldn't read: ${it.joinToString(", ")} (check API key permissions)" }
             }
 
             message.value = if (errors.isEmpty()) "Refreshed" else errors.joinToString("\n")
