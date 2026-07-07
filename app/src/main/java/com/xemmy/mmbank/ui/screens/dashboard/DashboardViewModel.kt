@@ -73,6 +73,11 @@ data class DashboardUiState(
 
 class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
+    private companion object {
+        /** Below this, a holding rounds to "$0.00" at 2-decimal money formatting. */
+        const val MIN_VISIBLE_USD = 0.005
+    }
+
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
@@ -121,13 +126,15 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             )
         }
 
-        // Dust/zero balances are noise on the dashboard; show holdings only,
-        // biggest first (unpriced assets sink to the bottom).
+        // Dust and zero-USD holdings are noise on the dashboard: a coin worth
+        // $0.002 still displays as "$0.00" at 2-decimal money formatting, and
+        // an unpriced token contributes nothing visible either. Requiring a
+        // real (roundable) USD value hides both, not just a zero token amount.
         val visibleCrypto = crypto.assets
-            .filter { it.total.signum() > 0 }
+            .filter { (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
             .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
         val visibleWallets = crypto.wallets
-            .filter { it.balanceBtc.signum() > 0 }
+            .filter { (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
             .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
 
         // The wallet overview covers Earn/Funding/Bots on top of Spot, so it
