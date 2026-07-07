@@ -53,11 +53,10 @@ class TransactionRepositoryImpl(
         if (existing != null) {
             IngestResult.Duplicate(existing.id)
         } else {
-            val detectedAccountId = if (parsed.accountNumberSuffix != null) {
-                detectAccountByNumber(parsed.accountNumberSuffix, parsed.currencyCode)
-            } else {
-                null
-            }
+            // A rule's explicit account ("default assign") wins over the
+            // number sniffed out of the message text.
+            val detectedAccountId = parsed.assignAccountId
+                ?: parsed.accountNumberSuffix?.let { detectAccountByNumber(it, parsed.currencyCode) }
 
             val id = dao.insert(
                 TransactionEntity(

@@ -72,6 +72,7 @@ data class BackupRule(
     val enabled: Boolean,
     val sampleText: String?,
     val createdAt: Long,
+    val assignAccountId: Long? = null,
 )
 
 @Serializable
@@ -175,10 +176,11 @@ class BackupManager(
 
     private fun ParsingRuleEntity.toBackup() = BackupRule(
         id, name, pattern, senderPattern, direction.name, defaultCurrency, priority, enabled, sampleText, createdAt,
+        assignAccountId,
     )
 
     private fun BackupRule.toEntity() = ParsingRuleEntity(
         id, name, pattern, senderPattern, TransactionDirection.valueOf(direction),
-        defaultCurrency, priority, enabled, sampleText, createdAt,
+        defaultCurrency, priority, enabled, sampleText, createdAt, assignAccountId,
     )
 }

@@ -96,6 +96,7 @@ data class ParsingRuleEntity(
     val enabled: Boolean = true,
     val sampleText: String? = null,
     val createdAt: Long,
+    val assignAccountId: Long? = null,
 )
 
 @Entity(tableName = "asset_balances")
@@ -149,10 +150,12 @@ fun TransactionEntity.toDomain() = Transaction(
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
+    assignAccountId,
 )
 
 fun ParsingRule.toEntity() = ParsingRuleEntity(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
+    assignAccountId,
 )
 
 fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, valueUsd, updatedAt)

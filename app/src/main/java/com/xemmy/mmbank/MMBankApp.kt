@@ -13,6 +13,7 @@ class MMBankApp : Application() {
         super.onCreate()
         installCrashRecorder()
         container = AppContainer(this)
+        container.seedDefaultRulesOnce()
     }
 
     /**

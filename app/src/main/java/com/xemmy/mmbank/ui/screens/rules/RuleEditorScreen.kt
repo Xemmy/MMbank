@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.ui.screens.rules
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +11,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -29,6 +32,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -39,6 +43,7 @@ import com.xemmy.mmbank.domain.parser.TransactionParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.asMoney
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class RuleEditorViewModel(
@@ -56,11 +61,16 @@ class RuleEditorViewModel(
     var defaultCurrency by mutableStateOf("")
     var priorityText by mutableStateOf("100")
     var sampleText by mutableStateOf("")
+    /** Account matched transactions are pinned to; null = detect from the message. */
+    var assignAccountId by mutableStateOf<Long?>(null)
+    var accounts by mutableStateOf<List<Account>>(emptyList())
+        private set
     var loaded by mutableStateOf(false)
         private set
 
     init {
         viewModelScope.launch {
+            runCatching { accounts = container.accountRepository.observeActive().first() }
             if (isEditing) {
                 container.parsingRuleRepository.getById(ruleId)?.let { rule ->
                     name = rule.name
@@ -70,11 +80,15 @@ class RuleEditorViewModel(
                     defaultCurrency = rule.defaultCurrency.orEmpty()
                     priorityText = rule.priority.toString()
                     sampleText = rule.sampleText.orEmpty()
+                    assignAccountId = rule.assignAccountId
                 }
             }
             loaded = true
         }
     }
+
+    val assignedAccountName: String?
+        get() = accounts.firstOrNull { it.id == assignAccountId }?.name
 
     val patternError: String? get() = RuleCompiler.validate(pattern)
 
@@ -104,6 +118,7 @@ class RuleEditorViewModel(
             defaultCurrency = defaultCurrency.trim().uppercase().takeIf { it.isNotEmpty() },
             priority = priorityText.toIntOrNull() ?: 100,
             sampleText = sampleText.takeIf { it.isNotBlank() },
+            assignAccountId = assignAccountId,
         )
     }
 
@@ -190,6 +205,34 @@ fun RuleEditorScreen(
             }
         }
 
+        // Default assign: pin every match of this rule to one account. Wins
+        // over the card-number detection — made for messages that never carry
+        // an account number (e.g. Tabby Card vs Tabby Cash).
+        var accountMenuOpen by remember { mutableStateOf(false) }
+        Box {
+            OutlinedButton(onClick = { accountMenuOpen = true }) {
+                Text("Assign matches to: " + (viewModel.assignedAccountName ?: "detect from message"))
+            }
+            DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Detect from message (default)") },
+                    onClick = {
+                        accountMenuOpen = false
+                        viewModel.assignAccountId = null
+                    },
+                )
+                viewModel.accounts.forEach { account ->
+                    DropdownMenuItem(
+                        text = { Text(account.name) },
+                        onClick = {
+                            accountMenuOpen = false
+                            viewModel.assignAccountId = account.id
+                        },
+                    )
+                }
+            }
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = viewModel.defaultCurrency,
@@ -234,6 +277,7 @@ fun RuleEditorScreen(
                         Text("Amount: ${result.amount.asMoney(result.currencyCode)}")
                         Text("Direction: ${result.direction.name}")
                         Text("Merchant: ${result.merchant ?: "—"}")
+                        Text("Account: ${viewModel.assignedAccountName ?: "detected from message"}")
                     }
                 }
             }

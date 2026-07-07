@@ -27,6 +27,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getString(KEY_DEFAULT_PERSON, null)?.takeIf { it.isNotBlank() }
         set(value) = prefs.edit().putString(KEY_DEFAULT_PERSON, value?.trim().orEmpty()).apply()
 
+    /** One-shot flag: the starter Tabby Card/Cash rules were inserted once. */
+    var tabbyRulesSeeded: Boolean
+        get() = prefs.getBoolean(KEY_TABBY_RULES_SEEDED, false)
+        set(value) = prefs.edit().putBoolean(KEY_TABBY_RULES_SEEDED, value).apply()
+
     /** Saved people, newline-separated. Editable in Settings, included in backups. */
     var personsRaw: String
         get() = prefs.getString(KEY_PERSONS, "") ?: ""
@@ -66,6 +71,7 @@ class AppPreferences(context: Context) {
         const val KEY_HIDE_BALANCES = "hide_balances"
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
+        const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
     }

@@ -16,6 +16,8 @@ data class CompiledRule(
     val priority: Int,
     /** Internal-only tag; custom user rules always compile to NORMAL. */
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    /** Account matched transactions are assigned to; null = detect from the message. */
+    val assignAccountId: Long? = null,
 )
 
 object RuleCompiler {
@@ -44,6 +46,7 @@ object RuleCompiler {
             direction = rule.direction,
             defaultCurrency = rule.defaultCurrency?.takeIf { it.isNotBlank() }?.uppercase(),
             priority = rule.priority,
+            assignAccountId = rule.assignAccountId,
         )
     }
 

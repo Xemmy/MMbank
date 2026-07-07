@@ -36,6 +36,8 @@ data class ParsedTransaction(
     val matchedRuleName: String,
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    /** Account the matched rule pins its transactions to; wins over detection. */
+    val assignAccountId: Long? = null,
 )
 
 data class Account(
@@ -119,6 +121,12 @@ data class ParsingRule(
     /** Last sample text used in the rule tester, persisted for convenience. */
     val sampleText: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * Account every transaction matched by this rule is assigned to (the
+     * "default assign", editable in the rule editor). Overrides card-number
+     * detection; null keeps the automatic behavior.
+     */
+    val assignAccountId: Long? = null,
 )
 
 /** User-defined friendly name for a transaction sender (SMS short code or app package). */

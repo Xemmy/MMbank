@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -116,9 +116,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v6 -> v7: rules can pin their matches to an account ("default assign"). */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE parsing_rules ADD COLUMN assignAccountId INTEGER")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
                 .fallbackToDestructiveMigrationOnDowngrade()
