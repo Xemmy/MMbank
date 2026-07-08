@@ -201,7 +201,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun setHideZeroBalances(hide: Boolean) {
+    fun updateHideZeroBalances(hide: Boolean) {
         container.preferences.hideZeroBalances = hide
         hideZeroBalances = hide
     }
@@ -602,7 +602,7 @@ fun PreferencesSettingsScreen(
             }
             Switch(
                 checked = viewModel.hideZeroBalances,
-                onCheckedChange = viewModel::setHideZeroBalances,
+                onCheckedChange = viewModel::updateHideZeroBalances,
             )
         }
 
