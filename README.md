@@ -51,6 +51,9 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
   person, date) — stored as a `MANUAL` source row that behaves like any captured one.
   Any transaction (captured or manual) can be edited in place via the ✏️ on its card;
   the same compact card carries tap-to-set account / person / category chips.
+- **Balance correction**: when a computed balance drifts from reality (a missed or
+  mis-parsed capture), an account's adjust action reconciles it — you type the real
+  balance and one auditable “Balance adjustment” entry is posted for the difference.
 - **Export**: an AES-256 encrypted `.mmb` backup (full restore) plus a plain,
   unencrypted **CSV** of every transaction for spreadsheets (Settings → Backup).
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.

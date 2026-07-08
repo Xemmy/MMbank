@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -58,6 +59,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
@@ -65,6 +70,7 @@ import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -126,6 +132,38 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                 }
         }
     }
+
+    /**
+     * Corrects a drifted balance (e.g. after a missed or mis-parsed capture) by
+     * posting a single "Balance adjustment" transaction for the gap between the
+     * computed balance and the real one, pinned to this account. It's an ordinary
+     * row, so the fix is visible in Activity and reversible (just delete it).
+     */
+    fun adjustBalance(account: Account, computedBalance: Double, targetBalance: BigDecimal) {
+        viewModelScope.launch {
+            runCatching {
+                val current = BigDecimal.valueOf(computedBalance).setScale(2, RoundingMode.HALF_UP)
+                val delta = targetBalance.setScale(2, RoundingMode.HALF_UP).subtract(current)
+                if (delta.signum() == 0) return@runCatching
+                container.transactionRepository.recordManual(
+                    Transaction(
+                        accountId = account.id,
+                        amount = delta.abs(),
+                        currencyCode = account.currencyCode,
+                        direction = if (delta.signum() > 0) TransactionDirection.CREDIT else TransactionDirection.DEBIT,
+                        merchant = "Balance adjustment",
+                        source = TransactionSource.MANUAL,
+                        timestampMillis = System.currentTimeMillis(),
+                        matchedRuleName = "Balance adjustment",
+                        spendingCategory = SpendingCategory.OTHER,
+                    )
+                )
+            }.onFailure {
+                container.recordError("AccountsViewModel.adjustBalance", it)
+                lastError.value = "Couldn't adjust balance: ${it.message}"
+            }
+        }
+    }
 }
 
 @Composable
@@ -136,6 +174,8 @@ fun AccountsScreen(
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
+    // The account row whose balance is being corrected; null = dialog closed.
+    var adjusting by remember { mutableStateOf<AccountWithBalance?>(null) }
 
     Scaffold(
         floatingActionButton = {
@@ -176,6 +216,7 @@ fun AccountsScreen(
                 AccountCard(
                     row = row,
                     onEdit = { editing = row.account },
+                    onAdjust = { adjusting = row },
                     onDelete = { viewModel.delete(row.account) },
                 )
             }
@@ -192,12 +233,24 @@ fun AccountsScreen(
             },
         )
     }
+
+    adjusting?.let { row ->
+        AdjustBalanceDialog(
+            row = row,
+            onDismiss = { adjusting = null },
+            onConfirm = { target ->
+                viewModel.adjustBalance(row.account, row.balance, target)
+                adjusting = null
+            },
+        )
+    }
 }
 
 @Composable
 private fun AccountCard(
     row: AccountWithBalance,
     onEdit: () -> Unit,
+    onAdjust: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val a = row.account
@@ -231,6 +284,9 @@ private fun AccountCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
                 )
+                IconButton(onClick = onAdjust) {
+                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance")
+                }
                 IconButton(onClick = { confirmingDelete = true }) {
                     Icon(Icons.Filled.Delete, contentDescription = "Delete account")
                 }
@@ -275,6 +331,73 @@ private fun AccountCard(
             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } },
         )
     }
+}
+
+/**
+ * Reconciles a drifted balance: the user types the account's real balance and a
+ * single "Balance adjustment" entry is posted for the difference. Nothing happens
+ * when the numbers already match.
+ */
+@Composable
+private fun AdjustBalanceDialog(
+    row: AccountWithBalance,
+    onDismiss: () -> Unit,
+    onConfirm: (BigDecimal) -> Unit,
+) {
+    val account = row.account
+    var text by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", row.balance)) }
+    val target = text.replace(",", "").trim().toBigDecimalOrNull()
+    val current = BigDecimal.valueOf(row.balance).setScale(2, RoundingMode.HALF_UP)
+    val delta = target?.setScale(2, RoundingMode.HALF_UP)?.subtract(current)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Adjust balance", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "“${account.name}” currently computes to ${row.balance.asMoney(account.currencyCode)} " +
+                        "from its opening balance and transactions. Enter the real balance and a matching " +
+                        "“Balance adjustment” entry is added so they line up.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Actual balance (${account.currencyCode})") },
+                    supportingText = { Text("Use a negative number for money owed.") },
+                    singleLine = true,
+                    isError = target == null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                when {
+                    delta == null -> Unit
+                    delta.signum() == 0 -> Text(
+                        "Already matches — no adjustment needed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    else -> {
+                        val credit = delta.signum() > 0
+                        Text(
+                            (if (credit) "Adds a credit of +" else "Adds a debit of −") +
+                                delta.abs().asMoney(account.currencyCode) + ".",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (credit) LedgerColors.credit else LedgerColors.debit,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = delta != null && delta.signum() != 0,
+                onClick = { target?.let(onConfirm) },
+            ) { Text("Adjust") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
