@@ -76,6 +76,9 @@ fun InsightsScreen(
 
         if (hasData) {
             item(key = "cashflow_card") { CashFlowCard(state) }
+            if (state.stats.categorySpends.isNotEmpty()) {
+                item(key = "category_card") { CategorySpendCard(state) }
+            }
             if (state.stats.personSpends.isNotEmpty()) {
                 item(key = "person_card") { PersonSpendCard(state) }
             }
@@ -388,6 +391,57 @@ private fun LegendDot(color: Color) {
             .size(8.dp)
             .background(color, CircleShape),
     )
+}
+
+/** This month's spend per category as proportional bars, biggest first. */
+@Composable
+private fun CategorySpendCard(state: DashboardUiState) {
+    val spends = state.stats.categorySpends
+    val hidden = state.hideBalances
+    val maxAmount = spends.maxOf { it.amount }.takeIf { it > 0.0 } ?: 1.0
+    val total = spends.sumOf { it.amount }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("This month by category", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    total.asMoneyOrMask(state.baseCurrency, hidden),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            spends.forEach { entry ->
+                Column {
+                    Row {
+                        Text(
+                            "${entry.category.emoji}  ${entry.category.label}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            entry.amount.asMoneyOrMask(state.baseCurrency, hidden),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth((entry.amount / maxAmount).toFloat().coerceIn(0.02f, 1f))
+                                .height(8.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** This month's spend per person as proportional bars, biggest first. */

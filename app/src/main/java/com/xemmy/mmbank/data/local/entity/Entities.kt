@@ -10,6 +10,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -82,6 +83,7 @@ data class TransactionEntity(
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
     val person: String? = null,
+    val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -146,6 +148,7 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
+    spendingCategory,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -164,6 +167,7 @@ fun Transaction.toEntity() = TransactionEntity(
     accountNumberSuffix = accountNumberSuffix,
     category = category,
     person = person,
+    spendingCategory = spendingCategory,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

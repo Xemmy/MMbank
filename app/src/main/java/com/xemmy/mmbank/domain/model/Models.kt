@@ -11,6 +11,29 @@ enum class TransactionDirection { DEBIT, CREDIT }
 enum class TransactionCategory { NORMAL, CASHBACK_EARNED }
 
 /**
+ * User-facing spending category, assignable per transaction (like account and
+ * person) and auto-suggested from the merchant at capture time. A fixed set —
+ * kept deliberately small so the Dashboard breakdown stays legible and no
+ * category-management screen is needed.
+ */
+enum class SpendingCategory(val label: String, val emoji: String) {
+    UNCATEGORIZED("Uncategorized", "🏷️"),
+    GROCERIES("Groceries", "🛒"),
+    DINING("Dining", "🍽️"),
+    TRANSPORT("Transport", "🚕"),
+    FUEL("Fuel", "⛽"),
+    SHOPPING("Shopping", "🛍️"),
+    UTILITIES("Utilities", "💡"),
+    ENTERTAINMENT("Entertainment", "🎬"),
+    HEALTH("Health", "🩺"),
+    TRAVEL("Travel", "✈️"),
+    TRANSFERS("Transfers", "🔁"),
+    INCOME("Income", "💰"),
+    FEES("Fees", "🏦"),
+    OTHER("Other", "•"),
+}
+
+/**
  * Ledger types managed by the app. Balances are computed uniformly
  * (opening + credits - debits); liability accounts (CREDIT_CARD, LOAN)
  * simply trend negative as spending is captured.
@@ -99,6 +122,8 @@ data class Transaction(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     /** Person this transaction belongs to (user-assigned; defaults from Settings). */
     val person: String? = null,
+    /** Spending category (auto-suggested from the merchant, user-overridable). */
+    val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
 )
 
 /**

@@ -6,6 +6,7 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.WalletBalance
@@ -35,10 +36,14 @@ data class MonthlyFlow(val label: String, val income: Double, val spend: Double)
 /** Current-month spend attributed to one person. */
 data class PersonSpend(val person: String, val amount: Double)
 
+/** Current-month spend grouped by spending category. */
+data class CategorySpend(val category: SpendingCategory, val amount: Double)
+
 data class DashboardStats(
     /** Oldest -> newest, always six entries. */
     val monthly: List<MonthlyFlow> = emptyList(),
     val personSpends: List<PersonSpend> = emptyList(),
+    val categorySpends: List<CategorySpend> = emptyList(),
     /** Average net flow of the last up-to-3 completed months with activity. */
     val avgMonthlyNet: Double = 0.0,
 )
@@ -237,10 +242,24 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             }
             .sortedByDescending { it.amount }
 
+        val categorySpends = byMonth[thisMonth].orEmpty()
+            .filter { it.direction == TransactionDirection.DEBIT }
+            .groupBy { it.spendingCategory }
+            .mapNotNull { (category, txs) ->
+                val total = txs.sumOf { inBase(it) ?: 0.0 }
+                if (total <= 0.0) null else CategorySpend(category, total)
+            }
+            .sortedByDescending { it.amount }
+
         val priorMonths = monthly.dropLast(1).filter { it.income != 0.0 || it.spend != 0.0 }.takeLast(3)
         val avgNet = if (priorMonths.isEmpty()) 0.0 else priorMonths.sumOf { it.income - it.spend } / priorMonths.size
 
-        return DashboardStats(monthly = monthly, personSpends = personSpends, avgMonthlyNet = avgNet)
+        return DashboardStats(
+            monthly = monthly,
+            personSpends = personSpends,
+            categorySpends = categorySpends,
+            avgMonthlyNet = avgNet,
+        )
     }
 
     fun toggleHideBalances() {

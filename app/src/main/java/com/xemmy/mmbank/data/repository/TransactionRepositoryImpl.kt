@@ -10,6 +10,7 @@ import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -75,6 +76,7 @@ class TransactionRepositoryImpl(
                     accountId = detectedAccountId,
                     category = parsed.category,
                     person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
+                    spendingCategory = MerchantCategorizer.categorize(parsed.merchant, message.body),
                 )
             )
             IngestResult.Inserted(id)
@@ -92,6 +94,11 @@ class TransactionRepositoryImpl(
 
     override suspend fun setPerson(transactionId: Long, person: String?) =
         dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })
+
+    override suspend fun setSpendingCategory(
+        transactionId: Long,
+        category: com.xemmy.mmbank.domain.model.SpendingCategory,
+    ) = dao.setSpendingCategory(transactionId, category)
 
     override suspend fun renamePerson(from: String, to: String?) =
         dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() })

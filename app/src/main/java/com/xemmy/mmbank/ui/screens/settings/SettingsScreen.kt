@@ -274,6 +274,24 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** [writeText] runs on IO and streams the unencrypted CSV to the chosen document. */
+    fun exportCsv(writeText: suspend (String) -> Unit) {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Exporting CSV…"
+            runCatching {
+                val csv = container.backupManager.exportCsv()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeText(csv) }
+            }.onSuccess {
+                statusMessage = "Transactions exported to CSV"
+            }.onFailure {
+                statusMessage = "CSV export failed: ${it.message}"
+            }
+            busy = false
+        }
+    }
+
     /** [readBytes] runs on IO and loads the chosen document. Import REPLACES current data. */
     fun importBackup(readBytes: suspend () -> ByteArray) {
         if (busy) return
@@ -885,6 +903,16 @@ private fun BackupSection(viewModel: SettingsViewModel) {
             }
         }
     }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportCsv { text ->
+                context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    ?: error("Couldn't open the selected file")
+            }
+        }
+    }
 
     Text(
         "Exports accounts, transactions, custom rules, sender names and settings into one " +
@@ -922,6 +950,23 @@ private fun BackupSection(viewModel: SettingsViewModel) {
             color = MaterialTheme.colorScheme.error,
         )
     }
+
+    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+    Text(
+        "Or export a plain CSV of every transaction for spreadsheets (date, amount, " +
+            "merchant, category, account, person…). This file is NOT encrypted or " +
+            "password-protected.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedButton(
+        onClick = {
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
+                .format(java.util.Date())
+            csvLauncher.launch("mmbank-$stamp.csv")
+        },
+        enabled = !viewModel.busy,
+    ) { Text("Export CSV") }
 }
 
 /**

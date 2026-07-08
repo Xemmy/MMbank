@@ -8,6 +8,7 @@ import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -58,6 +59,7 @@ data class BackupTransaction(
     val accountNumberSuffix: String?,
     val category: String = "NORMAL",
     val person: String? = null,
+    val spendingCategory: String = "UNCATEGORIZED",
 )
 
 @Serializable
@@ -122,6 +124,46 @@ class BackupManager(
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
 
+    /**
+     * Exports every transaction as a plain, UTF-8 CSV for spreadsheets. Unlike
+     * [export] this is NOT encrypted — it carries no rule patterns or settings,
+     * just the ledger rows, with account ids resolved to names. RFC-4180 quoting.
+     */
+    suspend fun exportCsv(): String {
+        val accountNames = database.accountDao().getAll().associate { it.id to it.name }
+        val txs = database.transactionDao().getAll().sortedByDescending { it.timestamp }
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+        val header = listOf(
+            "Date", "Direction", "Amount", "Currency", "Merchant", "Category",
+            "Account", "Person", "Source", "Rule", "Sender",
+        )
+        val sb = StringBuilder()
+        sb.append(header.joinToString(",", transform = ::csvEscape)).append("\r\n")
+        for (t in txs) {
+            val row = listOf(
+                fmt.format(java.util.Date(t.timestamp)),
+                t.direction.name,
+                t.amount.toPlainString(),
+                t.currencyCode,
+                t.merchant.orEmpty(),
+                t.spendingCategory.label,
+                t.accountId?.let { accountNames[it] }.orEmpty(),
+                t.person.orEmpty(),
+                t.source.name,
+                t.matchedRuleName.orEmpty(),
+                t.sender.orEmpty(),
+            )
+            sb.append(row.joinToString(",", transform = ::csvEscape)).append("\r\n")
+        }
+        return sb.toString()
+    }
+
+    private fun csvEscape(value: String): String {
+        val needsQuote = value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
+        val escaped = value.replace("\"", "\"\"")
+        return if (needsQuote) "\"$escaped\"" else escaped
+    }
+
     /** @return counts (accounts, transactions) for the status message. */
     suspend fun import(blob: ByteArray, password: CharArray): Pair<Int, Int> {
         val payload = json.decodeFromString<BackupPayload>(
@@ -165,13 +207,14 @@ class BackupManager(
     private fun TransactionEntity.toBackup() = BackupTransaction(
         id, accountId, amount.toPlainString(), currencyCode, direction.name, merchant,
         source.name, sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
-        category.name, person,
+        category.name, person, spendingCategory.name,
     )
 
     private fun BackupTransaction.toEntity() = TransactionEntity(
         id, accountId, BigDecimal(amount), currencyCode, TransactionDirection.valueOf(direction), merchant,
         TransactionSource.valueOf(source), sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
         TransactionCategory.valueOf(category), person,
+        runCatching { SpendingCategory.valueOf(spendingCategory) }.getOrDefault(SpendingCategory.UNCATEGORIZED),
     )
 
     private fun ParsingRuleEntity.toBackup() = BackupRule(

@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -123,10 +123,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v7 -> v8: per-transaction spending category (groceries, dining, fuel, …). */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE transactions ADD COLUMN spendingCategory " +
+                        "TEXT NOT NULL DEFAULT 'UNCATEGORIZED'"
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                    MIGRATION_7_8,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +19,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -51,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -76,11 +80,39 @@ enum class DateFilter(val label: String) {
     MONTH("This month"),
 }
 
+/** Account dimension of the Activity filter: any / only unassigned / one account. */
+sealed interface AccountFilter {
+    data object Any : AccountFilter
+    data object Unassigned : AccountFilter
+    data class Specific(val id: Long) : AccountFilter
+}
+
+/** Person dimension of the Activity filter: any / only unassigned / one person. */
+sealed interface PersonFilter {
+    data object Any : PersonFilter
+    data object Unassigned : PersonFilter
+    data class Specific(val name: String) : PersonFilter
+}
+
+/** All Activity-tab filters, folded into one flow so the combine stays small. */
+data class ActivityFilters(
+    val dateFilter: DateFilter = DateFilter.ALL,
+    val query: String = "",
+    val direction: TransactionDirection? = null,
+    val account: AccountFilter = AccountFilter.Any,
+    val person: PersonFilter = PersonFilter.Any,
+) {
+    /** True when anything beyond the default (show-everything) is set. */
+    val active: Boolean
+        get() = dateFilter != DateFilter.ALL || query.isNotBlank() || direction != null ||
+            account != AccountFilter.Any || person != PersonFilter.Any
+}
+
 data class TransactionsUiState(
     val transactions: List<Transaction> = emptyList(),
     val accounts: List<Account> = emptyList(),
     val senderLabels: Map<String, String> = emptyMap(),
-    val dateFilter: DateFilter = DateFilter.ALL,
+    val filters: ActivityFilters = ActivityFilters(),
     /** Every person seen so far, for the quick-assign menu. */
     val knownPersons: List<String> = emptyList(),
     /** True when the filter (not an empty ledger) hid everything. */
@@ -91,16 +123,16 @@ data class TransactionsUiState(
 
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
-    private val dateFilter = MutableStateFlow(DateFilter.ALL)
+    private val filters = MutableStateFlow(ActivityFilters())
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         container.transactionRepository.observeTransactions(),
         container.accountRepository.observeActive(),
         container.senderLabelRepository.observeLabels(),
-        dateFilter,
-    ) { transactions, accounts, senderLabels, filter ->
-        val cutoff = filterCutoffMillis(filter)
-        val visible = if (cutoff == null) transactions else transactions.filter { it.timestampMillis >= cutoff }
+        filters,
+    ) { transactions, accounts, senderLabels, f ->
+        val cutoff = filterCutoffMillis(f.dateFilter)
+        val visible = transactions.filter { tx -> matches(tx, f, cutoff, senderLabels) }
         // The menu is fed ONLY by the saved list (Settings > Preferences >
         // People) so removing a person there really removes it here. Names
         // dedupe case-insensitively to avoid "Ahmed" vs "ahmed" doubles.
@@ -114,7 +146,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             transactions = visible,
             accounts = accounts,
             senderLabels = senderLabels,
-            dateFilter = filter,
+            filters = f,
             knownPersons = persons,
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
@@ -123,9 +155,49 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
 
-    fun setDateFilter(filter: DateFilter) {
-        dateFilter.value = filter
+    /** Applies every active filter to one transaction. */
+    private fun matches(
+        tx: Transaction,
+        f: ActivityFilters,
+        cutoff: Long?,
+        senderLabels: Map<String, String>,
+    ): Boolean {
+        if (cutoff != null && tx.timestampMillis < cutoff) return false
+        if (f.direction != null && tx.direction != f.direction) return false
+        when (val a = f.account) {
+            AccountFilter.Any -> Unit
+            AccountFilter.Unassigned -> if (tx.accountId != null) return false
+            is AccountFilter.Specific -> if (tx.accountId != a.id) return false
+        }
+        when (val p = f.person) {
+            PersonFilter.Any -> Unit
+            PersonFilter.Unassigned -> if (!tx.person.isNullOrBlank()) return false
+            is PersonFilter.Specific -> if (!tx.person.equals(p.name, ignoreCase = true)) return false
+        }
+        val q = f.query.trim()
+        if (q.isNotEmpty()) {
+            val haystack = listOfNotNull(
+                tx.merchant,
+                tx.rawMessage,
+                tx.sender,
+                bankNameFor(tx.sender, senderLabels),
+                tx.amount.toPlainString(),
+                tx.currencyCode,
+                tx.spendingCategory.label,
+            )
+            if (haystack.none { it.contains(q, ignoreCase = true) }) return false
+        }
+        return true
     }
+
+    fun setDateFilter(filter: DateFilter) { filters.value = filters.value.copy(dateFilter = filter) }
+    fun setQuery(query: String) { filters.value = filters.value.copy(query = query) }
+    fun setDirectionFilter(direction: TransactionDirection?) {
+        filters.value = filters.value.copy(direction = direction)
+    }
+    fun setAccountFilter(account: AccountFilter) { filters.value = filters.value.copy(account = account) }
+    fun setPersonFilter(person: PersonFilter) { filters.value = filters.value.copy(person = person) }
+    fun clearFilters() { filters.value = ActivityFilters() }
 
     /** Start-of-range in epoch millis; null = no lower bound. */
     private fun filterCutoffMillis(filter: DateFilter): Long? {
@@ -158,6 +230,9 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             container.transactionRepository.setPerson(transactionId, person)
         }
 
+    fun setCategory(transactionId: Long, category: SpendingCategory) =
+        safeWrite("setCategory") { container.transactionRepository.setSpendingCategory(transactionId, category) }
+
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
 
@@ -169,6 +244,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         merchant: String?,
         accountId: Long?,
         person: String?,
+        spendingCategory: SpendingCategory,
         timestampMillis: Long,
     ) = safeWrite("addManual") {
         person?.let(container.preferences::addPerson)
@@ -182,6 +258,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 timestampMillis = timestampMillis,
                 accountId = accountId,
                 person = person,
+                spendingCategory = spendingCategory,
                 matchedRuleName = MANUAL_ENTRY_LABEL,
             )
         )
@@ -219,27 +296,21 @@ fun TransactionsScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // Date-range chips: filter what's shown without touching the data.
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                DateFilter.entries.forEach { filter ->
-                    FilterChip(
-                        selected = state.dateFilter == filter,
-                        onClick = { viewModel.setDateFilter(filter) },
-                        label = { Text(filter.label, style = MaterialTheme.typography.labelMedium) },
-                    )
-                }
-            }
+            ActivityFilterBar(
+                state = state,
+                onQuery = viewModel::setQuery,
+                onDateFilter = viewModel::setDateFilter,
+                onDirectionFilter = viewModel::setDirectionFilter,
+                onAccountFilter = viewModel::setAccountFilter,
+                onPersonFilter = viewModel::setPersonFilter,
+                onClear = viewModel::clearFilters,
+            )
 
             if (state.transactions.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         if (state.hasAnyTransactions) {
-                            "No transactions in this period."
+                            "No transactions match your filters."
                         } else {
                             "No transactions yet.\nCaptured bank messages appear here automatically — " +
                                 "or tap + to add one the app missed."
@@ -262,6 +333,7 @@ fun TransactionsScreen(
                             bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
                             onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
                             onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                            onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
                             onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
                             onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
                             onDelete = { viewModel.delete(tx.id) },
@@ -278,11 +350,157 @@ fun TransactionsScreen(
             knownPersons = state.knownPersons,
             defaultCurrency = state.defaultCurrency,
             onDismiss = { addOpen = false },
-            onSave = { amount, currency, direction, merchant, accountId, person, timestamp ->
-                viewModel.addManual(amount, currency, direction, merchant, accountId, person, timestamp)
+            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp ->
+                viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp)
                 addOpen = false
             },
         )
+    }
+}
+
+/**
+ * Search box + date/direction/account/person filter chips for the Activity list.
+ * Filtering is purely in-memory (personal-scale data), so it's instant and needs
+ * no new queries. Chip rows scroll horizontally so they never wrap on narrow phones.
+ */
+@Composable
+private fun ActivityFilterBar(
+    state: TransactionsUiState,
+    onQuery: (String) -> Unit,
+    onDateFilter: (DateFilter) -> Unit,
+    onDirectionFilter: (TransactionDirection?) -> Unit,
+    onAccountFilter: (AccountFilter) -> Unit,
+    onPersonFilter: (PersonFilter) -> Unit,
+    onClear: () -> Unit,
+) {
+    val f = state.filters
+    var accountMenuOpen by remember { mutableStateOf(false) }
+    var personMenuOpen by remember { mutableStateOf(false) }
+
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(
+            value = f.query,
+            onValueChange = onQuery,
+            label = { Text("Search merchant, bank, amount…") },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (f.query.isNotEmpty()) {
+                    IconButton(onClick = { onQuery("") }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // Date range.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DateFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = f.dateFilter == filter,
+                    onClick = { onDateFilter(filter) },
+                    label = { Text(filter.label, style = MaterialTheme.typography.labelMedium) },
+                )
+            }
+        }
+
+        // Direction + account + person.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = f.direction == null,
+                onClick = { onDirectionFilter(null) },
+                label = { Text("All", style = MaterialTheme.typography.labelMedium) },
+            )
+            FilterChip(
+                selected = f.direction == TransactionDirection.DEBIT,
+                onClick = { onDirectionFilter(TransactionDirection.DEBIT) },
+                label = { Text("Spent", style = MaterialTheme.typography.labelMedium) },
+            )
+            FilterChip(
+                selected = f.direction == TransactionDirection.CREDIT,
+                onClick = { onDirectionFilter(TransactionDirection.CREDIT) },
+                label = { Text("Received", style = MaterialTheme.typography.labelMedium) },
+            )
+
+            // Account filter chip + menu.
+            Box {
+                val accountLabel = when (val a = f.account) {
+                    AccountFilter.Any -> "Account"
+                    AccountFilter.Unassigned -> "Unassigned"
+                    is AccountFilter.Specific ->
+                        state.accounts.firstOrNull { it.id == a.id }?.name ?: "Account"
+                }
+                FilterChip(
+                    selected = f.account != AccountFilter.Any,
+                    onClick = { accountMenuOpen = true },
+                    label = { Text(accountLabel, style = MaterialTheme.typography.labelMedium) },
+                    leadingIcon = { Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, Modifier.size(16.dp)) },
+                )
+                DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Any account") },
+                        onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Any) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Unassigned") },
+                        onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Unassigned) },
+                    )
+                    state.accounts.forEach { account ->
+                        DropdownMenuItem(
+                            text = { Text(account.name) },
+                            onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Specific(account.id)) },
+                        )
+                    }
+                }
+            }
+
+            // Person filter chip + menu.
+            Box {
+                val personLabel = when (val p = f.person) {
+                    PersonFilter.Any -> "Person"
+                    PersonFilter.Unassigned -> "Unassigned"
+                    is PersonFilter.Specific -> p.name
+                }
+                FilterChip(
+                    selected = f.person != PersonFilter.Any,
+                    onClick = { personMenuOpen = true },
+                    label = { Text(personLabel, style = MaterialTheme.typography.labelMedium) },
+                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, Modifier.size(16.dp)) },
+                )
+                DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Any person") },
+                        onClick = { personMenuOpen = false; onPersonFilter(PersonFilter.Any) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Unassigned") },
+                        onClick = { personMenuOpen = false; onPersonFilter(PersonFilter.Unassigned) },
+                    )
+                    state.knownPersons.forEach { name ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = { personMenuOpen = false; onPersonFilter(PersonFilter.Specific(name)) },
+                        )
+                    }
+                }
+            }
+
+            if (f.active) {
+                TextButton(onClick = onClear) { Text("Clear") }
+            }
+        }
     }
 }
 
@@ -294,6 +512,7 @@ private fun TransactionCard(
     bankName: String?,
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
+    onAssignCategory: (SpendingCategory) -> Unit,
     onRenameSender: (String) -> Unit,
     onResetSender: () -> Unit,
     onDelete: () -> Unit,
@@ -301,6 +520,7 @@ private fun TransactionCard(
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
+    var categoryMenuOpen by remember { mutableStateOf(false) }
     var newPersonOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     val accountName = accounts.firstOrNull { it.id == tx.accountId }?.name
@@ -427,6 +647,35 @@ private fun TransactionCard(
                     )
                 }
             }
+
+            // Spending category — its own row so it never crowds the chips above.
+            Box(Modifier.padding(top = 2.dp)) {
+                AssistChip(
+                    onClick = { categoryMenuOpen = true },
+                    leadingIcon = {
+                        Text(tx.spendingCategory.emoji, style = MaterialTheme.typography.labelMedium)
+                    },
+                    label = {
+                        Text(
+                            tx.spendingCategory.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                )
+                DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
+                    SpendingCategory.entries.forEach { category ->
+                        DropdownMenuItem(
+                            text = { Text("${category.emoji}  ${category.label}") },
+                            onClick = {
+                                categoryMenuOpen = false
+                                onAssignCategory(category)
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -527,6 +776,7 @@ private fun AddTransactionDialog(
         merchant: String?,
         accountId: Long?,
         person: String?,
+        spendingCategory: SpendingCategory,
         timestampMillis: Long,
     ) -> Unit,
 ) {
@@ -536,16 +786,23 @@ private fun AddTransactionDialog(
     var merchant by remember { mutableStateOf("") }
     var accountId by remember { mutableStateOf<Long?>(null) }
     var person by remember { mutableStateOf<String?>(null) }
+    // null = follow the merchant-derived suggestion; a value = user override.
+    var categoryOverride by remember { mutableStateOf<SpendingCategory?>(null) }
     var dateIso by remember { mutableStateOf(java.time.LocalDate.now().toString()) }
 
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
+    var categoryMenuOpen by remember { mutableStateOf(false) }
 
     val amountValue = amount.replace(",", "").toBigDecimalOrNull()
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
     val valid = amountValue != null && amountValue.signum() > 0 &&
         currency.trim().length == 3 && date != null
     val accountName = accounts.firstOrNull { it.id == accountId }?.name
+    val suggestedCategory = remember(merchant) {
+        MerchantCategorizer.categorize(merchant.takeIf { it.isNotBlank() })
+    }
+    val effectiveCategory = categoryOverride ?: suggestedCategory
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -636,6 +893,27 @@ private fun AddTransactionDialog(
                         }
                     }
                 }
+
+                // Category picker — defaults to the merchant-derived guess ("auto"),
+                // overridable. Mirrors the auto-categorization done on capture.
+                Box {
+                    OutlinedButton(onClick = { categoryMenuOpen = true }) {
+                        val autoTag = if (categoryOverride == null) " (auto)" else ""
+                        Text("Category: ${effectiveCategory.emoji} ${effectiveCategory.label}$autoTag")
+                    }
+                    DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Auto (from merchant)") },
+                            onClick = { categoryMenuOpen = false; categoryOverride = null },
+                        )
+                        SpendingCategory.entries.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text("${category.emoji}  ${category.label}") },
+                                onClick = { categoryMenuOpen = false; categoryOverride = category },
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -660,6 +938,7 @@ private fun AddTransactionDialog(
                             merchant.trim().takeIf { it.isNotBlank() },
                             accountId,
                             person,
+                            effectiveCategory,
                             timestamp,
                         )
                     }

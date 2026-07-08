@@ -88,6 +88,9 @@ interface TransactionDao {
     @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
     suspend fun setPerson(transactionId: Long, person: String?)
 
+    @Query("UPDATE transactions SET spendingCategory = :category WHERE id = :transactionId")
+    suspend fun setSpendingCategory(transactionId: Long, category: com.xemmy.mmbank.domain.model.SpendingCategory)
+
     @Query("UPDATE transactions SET person = :to WHERE person = :from")
     suspend fun renamePerson(from: String, to: String?)
 
