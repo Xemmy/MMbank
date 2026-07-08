@@ -5,10 +5,12 @@ import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -16,6 +18,8 @@ import kotlinx.coroutines.flow.map
 class TransactionRepositoryImpl(
     private val database: AppDatabase,
     private val dao: TransactionDao,
+    /** Person newly captured transactions default to (Settings > Default person). */
+    private val defaultPersonProvider: () -> String? = { null },
 ) : TransactionRepository {
 
     override fun observeTransactions(): Flow<List<Transaction>> =
@@ -51,11 +55,10 @@ class TransactionRepositoryImpl(
         if (existing != null) {
             IngestResult.Duplicate(existing.id)
         } else {
-            val detectedAccountId = if (parsed.accountNumberSuffix != null) {
-                detectAccountByNumber(parsed.accountNumberSuffix, parsed.currencyCode)
-            } else {
-                null
-            }
+            // A rule's explicit account ("default assign") wins over the
+            // number sniffed out of the message text.
+            val detectedAccountId = parsed.assignAccountId
+                ?: parsed.accountNumberSuffix?.let { detectAccountByNumber(it, parsed.currencyCode) }
 
             val id = dao.insert(
                 TransactionEntity(
@@ -72,14 +75,36 @@ class TransactionRepositoryImpl(
                     accountNumberSuffix = parsed.accountNumberSuffix,
                     accountId = detectedAccountId,
                     category = parsed.category,
+                    person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
+                    spendingCategory = MerchantCategorizer.categorize(parsed.merchant, message.body),
                 )
             )
             IngestResult.Inserted(id)
         }
     }
 
+    override suspend fun recordManual(transaction: Transaction): Long =
+        dao.insert(transaction.toEntity())
+
+    override suspend fun update(transaction: Transaction) =
+        dao.update(transaction.toEntity())
+
     override suspend fun assignAccount(transactionId: Long, accountId: Long?) =
         dao.assignAccount(transactionId, accountId)
+
+    override suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int =
+        dao.assignAccountByRuleName(ruleName, accountId)
+
+    override suspend fun setPerson(transactionId: Long, person: String?) =
+        dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })
+
+    override suspend fun setSpendingCategory(
+        transactionId: Long,
+        category: com.xemmy.mmbank.domain.model.SpendingCategory,
+    ) = dao.setSpendingCategory(transactionId, category)
+
+    override suspend fun renamePerson(from: String, to: String?) =
+        dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() })
 
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
 

@@ -10,10 +10,12 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.model.WalletBalance
 import java.math.BigDecimal
 
 @Entity(tableName = "accounts")
@@ -80,6 +82,8 @@ data class TransactionEntity(
     val createdAt: Long,
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    val person: String? = null,
+    val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -94,6 +98,7 @@ data class ParsingRuleEntity(
     val enabled: Boolean = true,
     val sampleText: String? = null,
     val createdAt: Long,
+    val assignAccountId: Long? = null,
 )
 
 @Entity(tableName = "asset_balances")
@@ -102,6 +107,15 @@ data class AssetBalanceEntity(
     val free: BigDecimal,
     val locked: BigDecimal,
     val priceUsd: BigDecimal? = null,
+    val valueUsd: BigDecimal? = null,
+    val updatedAt: Long,
+)
+
+@Entity(tableName = "wallet_balances")
+data class WalletBalanceEntity(
+    /** "Spot", "Funding", "Earn", "Trading Bots", … as named by Binance. */
+    @PrimaryKey val walletName: String,
+    val balanceBtc: BigDecimal,
     val valueUsd: BigDecimal? = null,
     val updatedAt: Long,
 )
@@ -133,17 +147,41 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
-    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category,
+    rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
+    spendingCategory,
+)
+
+fun Transaction.toEntity() = TransactionEntity(
+    id = id,
+    accountId = accountId,
+    amount = amount,
+    currencyCode = currencyCode,
+    direction = direction,
+    merchant = merchant,
+    source = source,
+    sender = sender,
+    rawMessage = rawMessage,
+    matchedRuleName = matchedRuleName,
+    timestamp = timestampMillis,
+    createdAt = createdAt,
+    accountNumberSuffix = accountNumberSuffix,
+    category = category,
+    person = person,
+    spendingCategory = spendingCategory,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
+    assignAccountId,
 )
 
 fun ParsingRule.toEntity() = ParsingRuleEntity(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
+    assignAccountId,
 )
 
 fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, valueUsd, updatedAt)
+
+fun WalletBalanceEntity.toDomain() = WalletBalance(walletName, balanceBtc, valueUsd, updatedAt)
 
 fun ExchangeRateEntity.toDomain() = ExchangeRate(baseCode, quoteCode, rate, fetchedAt)

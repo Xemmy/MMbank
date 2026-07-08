@@ -8,6 +8,13 @@ import java.util.Locale
 fun Double.asMoney(currencyCode: String): String =
     String.format(Locale.US, "%,.2f %s", this, currencyCode)
 
+/** What the hide-balances toggle shows instead of any amount. */
+const val AMOUNT_MASK = "••••••"
+
+/** All maskable money rendering goes through this so the eye toggle works everywhere. */
+fun Double.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
+    if (hidden) AMOUNT_MASK else asMoney(currencyCode)
+
 fun BigDecimal.asMoney(currencyCode: String): String =
     toDouble().asMoney(currencyCode)
 

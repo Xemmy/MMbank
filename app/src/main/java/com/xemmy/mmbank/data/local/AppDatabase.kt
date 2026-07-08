@@ -13,12 +13,14 @@ import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.dao.TransactionDao
+import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
+import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
 
 @Database(
     entities = [
@@ -26,10 +28,11 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
         TransactionEntity::class,
         ParsingRuleEntity::class,
         AssetBalanceEntity::class,
+        WalletBalanceEntity::class,
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 4,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -39,6 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun parsingRuleDao(): ParsingRuleDao
     abstract fun assetBalanceDao(): AssetBalanceDao
+    abstract fun walletBalanceDao(): WalletBalanceDao
     abstract fun exchangeRateDao(): ExchangeRateDao
     abstract fun senderLabelDao(): SenderLabelDao
 
@@ -89,9 +93,52 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 -> v5: per-wallet Binance totals (Spot, Funding, Earn, Trading
+         * Bots, …) so holdings outside the spot wallet show on the dashboard.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS wallet_balances (" +
+                        "walletName TEXT NOT NULL PRIMARY KEY, " +
+                        "balanceBtc TEXT NOT NULL, " +
+                        "valueUsd TEXT, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
+        /** v5 -> v6: per-transaction person assignment. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN person TEXT")
+            }
+        }
+
+        /** v6 -> v7: rules can pin their matches to an account ("default assign"). */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE parsing_rules ADD COLUMN assignAccountId INTEGER")
+            }
+        }
+
+        /** v7 -> v8: per-transaction spending category (groceries, dining, fuel, …). */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE transactions ADD COLUMN spendingCategory " +
+                        "TEXT NOT NULL DEFAULT 'UNCATEGORIZED'"
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
+                    MIGRATION_7_8,
+                )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
                 .fallbackToDestructiveMigrationOnDowngrade()

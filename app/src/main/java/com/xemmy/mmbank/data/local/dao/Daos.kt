@@ -12,6 +12,7 @@ import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
+import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,10 @@ interface TransactionDao {
 
     @Insert
     suspend fun insert(entity: TransactionEntity): Long
+
+    /** Full-row update by primary key; used by the manual "edit transaction" flow. */
+    @Update
+    suspend fun update(entity: TransactionEntity)
 
     /**
      * Sliding-window dedup lookup: an identical amount + currency + direction
@@ -72,6 +77,26 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
+
+    /**
+     * Backfills a rule's account onto the transactions it already captured that
+     * are still unassigned. Only NULL accountIds are touched, so a transaction
+     * the user manually moved elsewhere is never overwritten. Returns the count.
+     */
+    @Query(
+        "UPDATE transactions SET accountId = :accountId " +
+            "WHERE matchedRuleName = :ruleName AND accountId IS NULL"
+    )
+    suspend fun assignAccountByRuleName(ruleName: String, accountId: Long): Int
+
+    @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
+    suspend fun setPerson(transactionId: Long, person: String?)
+
+    @Query("UPDATE transactions SET spendingCategory = :category WHERE id = :transactionId")
+    suspend fun setSpendingCategory(transactionId: Long, category: com.xemmy.mmbank.domain.model.SpendingCategory)
+
+    @Query("UPDATE transactions SET person = :to WHERE person = :from")
+    suspend fun renamePerson(from: String, to: String?)
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -185,6 +210,19 @@ interface AssetBalanceDao {
     suspend fun insertAll(entities: List<AssetBalanceEntity>)
 
     @Query("DELETE FROM asset_balances")
+    suspend fun clear()
+}
+
+@Dao
+interface WalletBalanceDao {
+
+    @Query("SELECT * FROM wallet_balances ORDER BY valueUsd DESC")
+    fun observeAll(): Flow<List<WalletBalanceEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<WalletBalanceEntity>)
+
+    @Query("DELETE FROM wallet_balances")
     suspend fun clear()
 }
 

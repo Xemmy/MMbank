@@ -5,11 +5,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -41,8 +45,14 @@ import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
+import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
+import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
@@ -59,15 +69,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class TopLevelDestination(val route: String, val label: String, val icon: ImageVector)
+private data class TopLevelDestination(
+    val route: String,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+    /** Non-tab routes that should keep this tab highlighted while open. */
+    val childRoutePrefixes: List<String> = emptyList(),
+)
 
+// Five destinations, Material 3's sweet spot. Rules lives under Settings and
+// Rewards under the Dashboard tab, so neither crowds the bar.
 private val topLevelDestinations = listOf(
-    TopLevelDestination("dashboard", "Home", Icons.Filled.Dashboard),
-    TopLevelDestination("transactions", "Activity", Icons.AutoMirrored.Filled.ReceiptLong),
-    TopLevelDestination("accounts", "Accounts", Icons.Filled.AccountBalanceWallet),
-    TopLevelDestination("cashback", "Rewards", Icons.Filled.Redeem),
-    TopLevelDestination("rules", "Rules", Icons.Filled.Tune),
-    TopLevelDestination("settings", "Settings", Icons.Filled.Settings),
+    TopLevelDestination("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
+    TopLevelDestination(
+        "transactions", "Activity",
+        Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong,
+    ),
+    TopLevelDestination(
+        "insights", "Dashboard", Icons.Filled.Insights, Icons.Outlined.Insights,
+        childRoutePrefixes = listOf("cashback"),
+    ),
+    TopLevelDestination(
+        "accounts", "Accounts",
+        Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet,
+    ),
+    TopLevelDestination(
+        "settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings,
+        childRoutePrefixes = listOf("settings_", "rules", "rule_editor"),
+    ),
 )
 
 @Composable
@@ -82,7 +112,7 @@ fun MMbankApp() {
     // instead — where Diagnostics, Backup/Export, and account editing are
     // still reachable — rather than repeating the same crash on every launch.
     val recoveredFromCrash = remember { Diagnostics.crashStreak(context) > 0 }
-    val startDestination = if (recoveredFromCrash) "settings" else "dashboard"
+    val startDestination = if (recoveredFromCrash) "settings" else "home"
 
     LaunchedEffect(Unit) {
         // Only clear the streak after staying up a while — a launch that
@@ -96,8 +126,10 @@ fun MMbankApp() {
         bottomBar = {
             NavigationBar {
                 topLevelDestinations.forEach { dest ->
+                    val selected = currentRoute == dest.route ||
+                        dest.childRoutePrefixes.any { currentRoute?.startsWith(it) == true }
                     NavigationBarItem(
-                        selected = currentRoute == dest.route,
+                        selected = selected,
                         onClick = {
                             navController.navigate(dest.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -105,7 +137,13 @@ fun MMbankApp() {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(dest.icon, contentDescription = dest.label, modifier = Modifier.size(20.dp)) },
+                        icon = {
+                            Icon(
+                                if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                contentDescription = dest.label,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        },
                         label = {
                             Text(
                                 dest.label,
@@ -157,8 +195,11 @@ private fun AppNavHost(
         startDestination = startDestination,
         modifier = modifier,
     ) {
-        composable("dashboard") { DashboardScreen() }
+        composable("home") { DashboardScreen() }
         composable("transactions") { TransactionsScreen() }
+        composable("insights") {
+            InsightsScreen(onOpenRewards = { navController.navigate("cashback") })
+        }
         composable("accounts") { AccountsScreen() }
         composable("cashback") { CashbackScreen() }
         composable("rules") {
@@ -173,6 +214,13 @@ private fun AppNavHost(
         ) {
             RuleEditorScreen(onDone = { navController.popBackStack() })
         }
-        composable("settings") { SettingsScreen() }
+        composable("settings") {
+            SettingsScreen(onOpen = { route -> navController.navigate(route) })
+        }
+        composable("settings_capture") { CaptureSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_prefs") { PreferencesSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_binance") { BinanceSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_backup") { BackupSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }
     }
 }

@@ -7,6 +7,7 @@ import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.data.prefs.SecureCredentialStore
 import com.xemmy.mmbank.data.remote.binance.BinanceApi
 import com.xemmy.mmbank.data.remote.binance.BinanceSigningInterceptor
+import com.xemmy.mmbank.data.remote.binance.BinanceWalletAssetsService
 import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
@@ -21,11 +22,14 @@ import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -75,7 +79,7 @@ class AppContainer(context: Context) {
     }
 
     val transactionRepository: TransactionRepository by lazy {
-        TransactionRepositoryImpl(database, database.transactionDao())
+        TransactionRepositoryImpl(database, database.transactionDao()) { preferences.defaultPerson }
     }
     val accountRepository: AccountRepository by lazy {
         AccountRepositoryImpl(database.accountDao())
@@ -86,8 +90,19 @@ class AppContainer(context: Context) {
     val senderLabelRepository: SenderLabelRepository by lazy {
         SenderLabelRepositoryImpl(database.senderLabelDao())
     }
+    /** Logic-only Spot/Funding/Earn per-asset fetcher (zero balances filtered). */
+    val binanceWalletAssets: BinanceWalletAssetsService by lazy {
+        BinanceWalletAssetsService(binanceApi) { tag, t -> Diagnostics.recordError(appContext, tag, t) }
+    }
     val portfolioRepository: PortfolioRepository by lazy {
-        PortfolioRepositoryImpl(binanceApi, database, database.assetBalanceDao())
+        PortfolioRepositoryImpl(
+            api = binanceApi,
+            database = database,
+            dao = database.assetBalanceDao(),
+            walletDao = database.walletBalanceDao(),
+            walletAssets = binanceWalletAssets,
+            recordError = { tag, t -> Diagnostics.recordError(appContext, tag, t) },
+        )
     }
     val ratesRepository: RatesRepository by lazy {
         RatesRepositoryImpl(forexApi, database.exchangeRateDao())
@@ -111,4 +126,43 @@ class AppContainer(context: Context) {
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */
     fun recordError(tag: String, throwable: Throwable) = Diagnostics.recordError(appContext, tag, throwable)
+
+    /**
+     * Inserts the starter Tabby Card / Tabby Cash rules exactly once. They are
+     * ordinary custom rules, so the Rules screen can edit them — including the
+     * "assign matches to" account, which is the whole point: these messages
+     * carry no account number, so each rule pins its card explicitly.
+     */
+    fun seedDefaultRulesOnce() {
+        if (preferences.tabbyRulesSeeded) return
+        applicationScope.launch {
+            runCatching {
+                parsingRuleRepository.save(
+                    ParsingRule(
+                        name = "Tabby Card spend",
+                        pattern = "You spent (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) " +
+                            "at (?<merchant>[^.]+?)\\. Your available Tabby Card limit",
+                        senderPattern = "tabby",
+                        direction = TransactionDirection.DEBIT,
+                        priority = 120,
+                        sampleText = "You spent AED 110.90 at CAREEM RIDE. " +
+                            "Your available Tabby Card limit is now AED 6111.71.",
+                    )
+                )
+                parsingRuleRepository.save(
+                    ParsingRule(
+                        name = "Tabby Cash spend",
+                        pattern = "You spent (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) " +
+                            "at (?<merchant>[^.]+?)\\. Your available Tabby Cash balance",
+                        senderPattern = "tabby",
+                        direction = TransactionDirection.DEBIT,
+                        priority = 120,
+                        sampleText = "You spent AED 32.95 at CARREFOUR-MAF MKT YAS. " +
+                            "Your available Tabby Cash balance is now AED 1675.59.",
+                    )
+                )
+                preferences.tabbyRulesSeeded = true
+            }.onFailure { recordError("AppContainer.seedDefaultRules", it) }
+        }
+    }
 }

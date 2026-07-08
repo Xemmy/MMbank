@@ -96,6 +96,27 @@ object BuiltInRules {
         // of the real purchase amount.
         rule("builtin.en.debit.tabby.purchase", "Transaction\\s+of\\s+$CUR\\s?$AMT\\s+At\\s+$MERCHANT_TABBY$ACCTAIL", TransactionDirection.DEBIT, 10),
 
+        // --- Transaction adjustments / partial refunds (priority 20) ---
+        // Tabby "Transaction adjusted — Your CAREEM RIDE purchase was decreased
+        // by AED 5.58": a partial refund. Recorded as a CREDIT so the money is
+        // returned to the ledger. The rarer "increased by" is an extra charge
+        // (DEBIT). Priority 20 puts these ahead of the generic keyword rules,
+        // whose DEBIT keyword "purchase" would otherwise grab the adjusted
+        // amount as a fresh spend. The required literal "Your " keeps the
+        // notification title out of the (lazy) merchant capture.
+        rule(
+            "builtin.en.adjust.decrease",
+            "Your\\s+(?<merchant>[^.,;\\n*]{2,40}?)\\s+(?:purchase|transaction|order|payment)\\s+was\\s+decreased\\s+by\\s+$CUR\\s?$AMT$ACCTAIL",
+            TransactionDirection.CREDIT,
+            20,
+        ),
+        rule(
+            "builtin.en.adjust.increase",
+            "Your\\s+(?<merchant>[^.,;\\n*]{2,40}?)\\s+(?:purchase|transaction|order|payment)\\s+was\\s+increased\\s+by\\s+$CUR\\s?$AMT$ACCTAIL",
+            TransactionDirection.DEBIT,
+            20,
+        ),
+
         // --- Tabby cashback-earned notifications (priority 10) ---
         // "You earned AED 1.00! You got cashback with Tabby+. Your cashback
         // will be processed after next statement is paid." Tagged so the

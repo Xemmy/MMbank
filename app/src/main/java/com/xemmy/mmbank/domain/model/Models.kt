@@ -11,6 +11,29 @@ enum class TransactionDirection { DEBIT, CREDIT }
 enum class TransactionCategory { NORMAL, CASHBACK_EARNED }
 
 /**
+ * User-facing spending category, assignable per transaction (like account and
+ * person) and auto-suggested from the merchant at capture time. A fixed set —
+ * kept deliberately small so the Dashboard breakdown stays legible and no
+ * category-management screen is needed.
+ */
+enum class SpendingCategory(val label: String, val emoji: String) {
+    UNCATEGORIZED("Uncategorized", "🏷️"),
+    GROCERIES("Groceries", "🛒"),
+    DINING("Dining", "🍽️"),
+    TRANSPORT("Transport", "🚕"),
+    FUEL("Fuel", "⛽"),
+    SHOPPING("Shopping", "🛍️"),
+    UTILITIES("Utilities", "💡"),
+    ENTERTAINMENT("Entertainment", "🎬"),
+    HEALTH("Health", "🩺"),
+    TRAVEL("Travel", "✈️"),
+    TRANSFERS("Transfers", "🔁"),
+    INCOME("Income", "💰"),
+    FEES("Fees", "🏦"),
+    OTHER("Other", "•"),
+}
+
+/**
  * Ledger types managed by the app. Balances are computed uniformly
  * (opening + credits - debits); liability accounts (CREDIT_CARD, LOAN)
  * simply trend negative as spending is captured.
@@ -36,6 +59,8 @@ data class ParsedTransaction(
     val matchedRuleName: String,
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    /** Account the matched rule pins its transactions to; wins over detection. */
+    val assignAccountId: Long? = null,
 )
 
 data class Account(
@@ -95,6 +120,10 @@ data class Transaction(
     /** Account number suffix extracted from the message (last 3-4 digits like *617 or XXX810001). */
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    /** Person this transaction belongs to (user-assigned; defaults from Settings). */
+    val person: String? = null,
+    /** Spending category (auto-suggested from the merchant, user-overridable). */
+    val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
 )
 
 /**
@@ -117,6 +146,12 @@ data class ParsingRule(
     /** Last sample text used in the rule tester, persisted for convenience. */
     val sampleText: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * Account every transaction matched by this rule is assigned to (the
+     * "default assign", editable in the rule editor). Overrides card-number
+     * detection; null keeps the automatic behavior.
+     */
+    val assignAccountId: Long? = null,
 )
 
 /** User-defined friendly name for a transaction sender (SMS short code or app package). */
@@ -140,6 +175,17 @@ data class ParsedBankDetails(
     val hasAnything: Boolean
         get() = listOfNotNull(bankName, accountTitle, accountNumber, iban, swift, currencyCode).isNotEmpty()
 }
+
+/**
+ * Total value of one Binance wallet (Spot, Funding, Earn, Trading Bots, …),
+ * as reported BTC-valued by Binance and converted to USD at sync time.
+ */
+data class WalletBalance(
+    val walletName: String,
+    val balanceBtc: BigDecimal,
+    val valueUsd: BigDecimal?,
+    val updatedAt: Long,
+)
 
 /** A spot balance pulled from Binance via the read-only API key. */
 data class AssetBalance(
