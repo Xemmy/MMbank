@@ -86,6 +86,9 @@ class TransactionRepositoryImpl(
     override suspend fun recordManual(transaction: Transaction): Long =
         dao.insert(transaction.toEntity())
 
+    override suspend fun update(transaction: Transaction) =
+        dao.update(transaction.toEntity())
+
     override suspend fun assignAccount(transactionId: Long, accountId: Long?) =
         dao.assignAccount(transactionId, accountId)
 

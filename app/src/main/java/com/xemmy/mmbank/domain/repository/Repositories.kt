@@ -22,6 +22,8 @@ interface TransactionRepository {
     suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult
     /** Inserts a user-entered transaction (no dedup — a manual entry is intentional). */
     suspend fun recordManual(transaction: Transaction): Long
+    /** Updates an existing transaction's editable fields (manual edit flow). */
+    suspend fun update(transaction: Transaction)
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
     /**
      * Assigns [accountId] to the already-captured transactions matched by

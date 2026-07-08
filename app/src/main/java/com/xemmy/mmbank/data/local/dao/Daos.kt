@@ -29,6 +29,10 @@ interface TransactionDao {
     @Insert
     suspend fun insert(entity: TransactionEntity): Long
 
+    /** Full-row update by primary key; used by the manual "edit transaction" flow. */
+    @Update
+    suspend fun update(entity: TransactionEntity)
+
     /**
      * Sliding-window dedup lookup: an identical amount + currency + direction
      * within `windowMillis` of the event timestamp is treated as the same

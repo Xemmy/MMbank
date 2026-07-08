@@ -11,20 +11,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -36,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -265,6 +268,33 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
+    /** Saves edits to an existing transaction, preserving its untouched fields. */
+    fun updateTransaction(
+        original: Transaction,
+        amount: java.math.BigDecimal,
+        currencyCode: String,
+        direction: TransactionDirection,
+        merchant: String?,
+        accountId: Long?,
+        person: String?,
+        spendingCategory: SpendingCategory,
+        timestampMillis: Long,
+    ) = safeWrite("updateTransaction") {
+        person?.let(container.preferences::addPerson)
+        container.transactionRepository.update(
+            original.copy(
+                amount = amount,
+                currencyCode = currencyCode.trim().uppercase(),
+                direction = direction,
+                merchant = merchant?.trim()?.takeIf { it.isNotBlank() },
+                accountId = accountId,
+                person = person,
+                spendingCategory = spendingCategory,
+                timestampMillis = timestampMillis,
+            )
+        )
+    }
+
     fun setSenderLabel(sender: String, label: String) =
         safeWrite("setSenderLabel") { container.senderLabelRepository.setLabel(sender, label) }
 
@@ -284,6 +314,7 @@ fun TransactionsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Transaction?>(null) }
 
     Scaffold(
         floatingActionButton = {
@@ -337,6 +368,7 @@ fun TransactionsScreen(
                             onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
                             onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
                             onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                            onEdit = { editing = tx },
                             onDelete = { viewModel.delete(tx.id) },
                         )
                     }
@@ -346,7 +378,8 @@ fun TransactionsScreen(
     }
 
     if (addOpen) {
-        AddTransactionDialog(
+        TransactionEditorDialog(
+            existing = null,
             accounts = state.accounts,
             knownPersons = state.knownPersons,
             defaultCurrency = state.defaultCurrency,
@@ -354,6 +387,20 @@ fun TransactionsScreen(
             onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp ->
                 viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp)
                 addOpen = false
+            },
+        )
+    }
+
+    editing?.let { tx ->
+        TransactionEditorDialog(
+            existing = tx,
+            accounts = state.accounts,
+            knownPersons = state.knownPersons,
+            defaultCurrency = state.defaultCurrency,
+            onDismiss = { editing = null },
+            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp ->
+                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, category, timestamp)
+                editing = null
             },
         )
     }
@@ -382,13 +429,15 @@ private fun ActivityFilterBar(
         OutlinedTextField(
             value = f.query,
             onValueChange = onQuery,
-            label = { Text("Search merchant, bank, amount…") },
+            // Placeholder (not a floating label) + bodySmall keeps the field short.
+            placeholder = { Text("Search merchant, bank, amount…", style = MaterialTheme.typography.bodySmall) },
+            textStyle = MaterialTheme.typography.bodySmall,
             singleLine = true,
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, Modifier.size(18.dp)) },
             trailingIcon = {
                 if (f.query.isNotEmpty()) {
                     IconButton(onClick = { onQuery("") }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                        Icon(Icons.Filled.Close, contentDescription = "Clear search", Modifier.size(18.dp))
                     }
                 }
             },
@@ -406,7 +455,7 @@ private fun ActivityFilterBar(
                 FilterChip(
                     selected = f.dateFilter == filter,
                     onClick = { onDateFilter(filter) },
-                    label = { Text(filter.label, style = MaterialTheme.typography.labelMedium) },
+                    label = { Text(filter.label, style = MaterialTheme.typography.labelSmall) },
                 )
             }
         }
@@ -422,17 +471,17 @@ private fun ActivityFilterBar(
             FilterChip(
                 selected = f.direction == null,
                 onClick = { onDirectionFilter(null) },
-                label = { Text("All", style = MaterialTheme.typography.labelMedium) },
+                label = { Text("All", style = MaterialTheme.typography.labelSmall) },
             )
             FilterChip(
                 selected = f.direction == TransactionDirection.DEBIT,
                 onClick = { onDirectionFilter(TransactionDirection.DEBIT) },
-                label = { Text("Spent", style = MaterialTheme.typography.labelMedium) },
+                label = { Text("Spent", style = MaterialTheme.typography.labelSmall) },
             )
             FilterChip(
                 selected = f.direction == TransactionDirection.CREDIT,
                 onClick = { onDirectionFilter(TransactionDirection.CREDIT) },
-                label = { Text("Received", style = MaterialTheme.typography.labelMedium) },
+                label = { Text("Received", style = MaterialTheme.typography.labelSmall) },
             )
 
             // Account filter chip + menu.
@@ -446,7 +495,7 @@ private fun ActivityFilterBar(
                 FilterChip(
                     selected = f.account != AccountFilter.Any,
                     onClick = { accountMenuOpen = true },
-                    label = { Text(accountLabel, style = MaterialTheme.typography.labelMedium) },
+                    label = { Text(accountLabel, style = MaterialTheme.typography.labelSmall) },
                     leadingIcon = { Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, Modifier.size(16.dp)) },
                 )
                 DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
@@ -477,7 +526,7 @@ private fun ActivityFilterBar(
                 FilterChip(
                     selected = f.person != PersonFilter.Any,
                     onClick = { personMenuOpen = true },
-                    label = { Text(personLabel, style = MaterialTheme.typography.labelMedium) },
+                    label = { Text(personLabel, style = MaterialTheme.typography.labelSmall) },
                     leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, Modifier.size(16.dp)) },
                 )
                 DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
@@ -516,6 +565,7 @@ private fun TransactionCard(
     onAssignCategory: (SpendingCategory) -> Unit,
     onRenameSender: (String) -> Unit,
     onResetSender: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val isCredit = tx.direction == TransactionDirection.CREDIT
@@ -569,112 +619,85 @@ private fun TransactionCard(
                     it,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            // Compact chip row: both chips ellipsize long names inside their
-            // half of the row instead of wrapping and blowing the card up.
+            // One compact meta row: account · person · category chips scroll
+            // horizontally so long names never blow up the card, with edit &
+            // delete pinned on the right.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 2.dp),
+                    .padding(top = 6.dp),
             ) {
-                Box(Modifier.weight(1f)) {
-                    SelectorChip(
-                        icon = Icons.Filled.AccountBalanceWallet,
-                        text = accountName ?: "Account",
-                        onClick = { accountMenuOpen = true },
-                    )
-                    DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Unassigned") },
-                            onClick = {
-                                accountMenuOpen = false
-                                onAssignAccount(null)
-                            },
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box {
+                        MetaChip(
+                            text = accountName ?: "Account",
+                            active = tx.accountId != null,
+                            icon = Icons.Filled.AccountBalanceWallet,
+                            onClick = { accountMenuOpen = true },
                         )
-                        accounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text(account.name) },
-                                onClick = {
-                                    accountMenuOpen = false
-                                    onAssignAccount(account.id)
-                                },
-                            )
+                        DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Unassigned") }, onClick = { accountMenuOpen = false; onAssignAccount(null) })
+                            accounts.forEach { account ->
+                                DropdownMenuItem(text = { Text(account.name) }, onClick = { accountMenuOpen = false; onAssignAccount(account.id) })
+                            }
+                        }
+                    }
+                    Box {
+                        MetaChip(
+                            text = tx.person ?: "Person",
+                            active = tx.person != null,
+                            icon = Icons.Filled.Person,
+                            onClick = { personMenuOpen = true },
+                        )
+                        DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Nobody") }, onClick = { personMenuOpen = false; onAssignPerson(null) })
+                            knownPersons.forEach { person ->
+                                DropdownMenuItem(text = { Text(person) }, onClick = { personMenuOpen = false; onAssignPerson(person) })
+                            }
+                            DropdownMenuItem(text = { Text("New person…") }, onClick = { personMenuOpen = false; newPersonOpen = true })
+                        }
+                    }
+                    Box {
+                        MetaChip(
+                            text = tx.spendingCategory.label,
+                            active = tx.spendingCategory != SpendingCategory.UNCATEGORIZED,
+                            emoji = tx.spendingCategory.emoji,
+                            onClick = { categoryMenuOpen = true },
+                        )
+                        DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
+                            SpendingCategory.entries.forEach { category ->
+                                DropdownMenuItem(text = { Text("${category.emoji}  ${category.label}") }, onClick = { categoryMenuOpen = false; onAssignCategory(category) })
+                            }
                         }
                     }
                 }
-                Box(Modifier.weight(1f)) {
-                    SelectorChip(
-                        icon = Icons.Filled.Person,
-                        text = tx.person ?: "Person",
-                        onClick = { personMenuOpen = true },
-                    )
-                    DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Nobody") },
-                            onClick = {
-                                personMenuOpen = false
-                                onAssignPerson(null)
-                            },
-                        )
-                        knownPersons.forEach { person ->
-                            DropdownMenuItem(
-                                text = { Text(person) },
-                                onClick = {
-                                    personMenuOpen = false
-                                    onAssignPerson(person)
-                                },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("New person…") },
-                            onClick = {
-                                personMenuOpen = false
-                                newPersonOpen = true
-                            },
-                        )
-                    }
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
                     Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Delete transaction",
-                        modifier = Modifier.size(18.dp),
+                        Icons.Filled.Edit,
+                        contentDescription = "Edit transaction",
+                        modifier = Modifier.size(17.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-
-            // Spending category — its own row so it never crowds the chips above.
-            Box(Modifier.padding(top = 2.dp)) {
-                AssistChip(
-                    onClick = { categoryMenuOpen = true },
-                    leadingIcon = {
-                        Text(tx.spendingCategory.emoji, style = MaterialTheme.typography.labelMedium)
-                    },
-                    label = {
-                        Text(
-                            tx.spendingCategory.label,
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                )
-                DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                    SpendingCategory.entries.forEach { category ->
-                        DropdownMenuItem(
-                            text = { Text("${category.emoji}  ${category.label}") },
-                            onClick = {
-                                categoryMenuOpen = false
-                                onAssignCategory(category)
-                            },
-                        )
-                    }
+                IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Delete transaction",
+                        modifier = Modifier.size(17.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -707,32 +730,45 @@ private fun TransactionCard(
     }
 }
 
-/** Small outlined selector: fixed height, single ellipsized line, never wraps. */
+/**
+ * Dense tappable chip for the per-transaction account/person/category selectors.
+ * Smaller than a Material AssistChip (labelSmall text, tighter padding) and tinted when
+ * a value is set, so a card's meta row stays compact instead of looking cluttered.
+ * Long values ellipsize within a capped width rather than widening the card.
+ */
 @Composable
-private fun SelectorChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun MetaChip(
     text: String,
+    active: Boolean,
     onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    emoji: String? = null,
 ) {
-    AssistChip(
-        onClick = onClick,
-        leadingIcon = {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        },
-        label = {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .widthIn(max = 150.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            when {
+                icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+                emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
+            }
             Text(
                 text,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -760,12 +796,13 @@ private fun NewPersonDialog(
 }
 
 /**
- * Hand-enters a transaction the capture pipeline missed. Amount + currency are
- * the only required fields; everything else mirrors what a captured row carries
- * so a manual entry behaves identically in balances, filters and the dashboard.
+ * Add or edit a transaction. With [existing] null it hand-enters one the capture
+ * pipeline missed; with [existing] set it edits that row's fields in place. Either
+ * way the result behaves identically to a captured row in balances and filters.
  */
 @Composable
-private fun AddTransactionDialog(
+private fun TransactionEditorDialog(
+    existing: Transaction?,
     accounts: List<Account>,
     knownPersons: List<String>,
     defaultCurrency: String,
@@ -781,15 +818,23 @@ private fun AddTransactionDialog(
         timestampMillis: Long,
     ) -> Unit,
 ) {
-    var amount by remember { mutableStateOf("") }
-    var currency by remember { mutableStateOf(defaultCurrency) }
-    var direction by remember { mutableStateOf(TransactionDirection.DEBIT) }
-    var merchant by remember { mutableStateOf("") }
-    var accountId by remember { mutableStateOf<Long?>(null) }
-    var person by remember { mutableStateOf<String?>(null) }
-    // null = follow the merchant-derived suggestion; a value = user override.
-    var categoryOverride by remember { mutableStateOf<SpendingCategory?>(null) }
-    var dateIso by remember { mutableStateOf(java.time.LocalDate.now().toString()) }
+    val zone = java.time.ZoneId.systemDefault()
+    val isEdit = existing != null
+    var amount by remember { mutableStateOf(existing?.amount?.stripTrailingZeros()?.toPlainString() ?: "") }
+    var currency by remember { mutableStateOf(existing?.currencyCode ?: defaultCurrency) }
+    var direction by remember { mutableStateOf(existing?.direction ?: TransactionDirection.DEBIT) }
+    var merchant by remember { mutableStateOf(existing?.merchant.orEmpty()) }
+    var accountId by remember { mutableStateOf(existing?.accountId) }
+    var person by remember { mutableStateOf(existing?.person) }
+    // null = follow the merchant-derived suggestion; a value = explicit choice.
+    // Editing starts from the row's saved category so it never silently changes.
+    var categoryOverride by remember { mutableStateOf(existing?.spendingCategory) }
+    var dateIso by remember {
+        mutableStateOf(
+            java.time.Instant.ofEpochMilli(existing?.timestampMillis ?: System.currentTimeMillis())
+                .atZone(zone).toLocalDate().toString()
+        )
+    }
 
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
@@ -807,7 +852,7 @@ private fun AddTransactionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add transaction", style = MaterialTheme.typography.titleLarge) },
+        title = { Text(if (isEdit) "Edit transaction" else "Add transaction", style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -925,13 +970,13 @@ private fun AddTransactionDialog(
                     val parsedDate = date
                     val value = amountValue
                     if (parsedDate != null && value != null) {
-                        // Stamp the chosen day at the current time-of-day so ordering
-                        // within a day stays natural and the date filters line up.
-                        val timestamp = parsedDate
-                            .atTime(java.time.LocalTime.now())
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toInstant()
-                            .toEpochMilli()
+                        // Keep the original time-of-day when editing (so unchanged
+                        // dates keep their exact timestamp and intra-day order);
+                        // use the current time for a fresh manual entry.
+                        val timeOfDay = existing
+                            ?.let { java.time.Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalTime() }
+                            ?: java.time.LocalTime.now()
+                        val timestamp = parsedDate.atTime(timeOfDay).atZone(zone).toInstant().toEpochMilli()
                         onSave(
                             value,
                             currency.trim().uppercase(),
@@ -944,7 +989,7 @@ private fun AddTransactionDialog(
                         )
                     }
                 },
-            ) { Text("Add") }
+            ) { Text(if (isEdit) "Save" else "Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

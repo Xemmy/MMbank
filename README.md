@@ -46,9 +46,11 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
   by-category breakdown.
 - **Search & filters**: the Activity tab has full-text search (merchant, bank,
   amount, category) plus date-range, direction, account and person filters.
-- **Manual entry**: the Activity tab's “+” adds a transaction the capture pipeline
-  missed (amount, currency, spent/received, merchant, category, account, person, date)
-  — stored as a `MANUAL` source row that behaves like any captured one.
+- **Manual entry & editing**: the Activity tab's “+” adds a transaction the capture
+  pipeline missed (amount, currency, spent/received, merchant, category, account,
+  person, date) — stored as a `MANUAL` source row that behaves like any captured one.
+  Any transaction (captured or manual) can be edited in place via the ✏️ on its card;
+  the same compact card carries tap-to-set account / person / category chips.
 - **Export**: an AES-256 encrypted `.mmb` backup (full restore) plus a plain,
   unencrypted **CSV** of every transaction for spreadsheets (Settings → Backup).
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
