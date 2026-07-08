@@ -373,6 +373,40 @@ class TransactionParserTest {
         assertEquals(TransactionCategory.NORMAL, r!!.category)
     }
 
+    // --- Transaction adjustments / partial refunds ---
+
+    @Test
+    fun `tabby transaction adjusted decrease parses as refund credit`() {
+        // The screenshot: title + body concatenated by the parser.
+        val r = parser.parse(
+            CapturedMessage(
+                source = TransactionSource.PUSH_NOTIFICATION,
+                sender = "com.tabby.customer",
+                title = "Transaction adjusted",
+                body = "Your CAREEM RIDE purchase was decreased by AED 5.58",
+                timestampMillis = 1_700_000_000_000,
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("5.58"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        // A decrease is money returned — a CREDIT, never a fresh spend.
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("CAREEM RIDE", r.merchant)
+    }
+
+    @Test
+    fun `transaction adjusted increase parses as extra debit`() {
+        val r = parser.parse(
+            sms("Your NOON purchase was increased by AED 12.00", sender = "com.tabby.customer")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("12.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("NOON", r.merchant)
+    }
+
     @Test
     fun `rule compiler rejects invalid patterns`() {
         assertNull(RuleCompiler.compile(ParsingRule(name = "bad", pattern = "([", direction = TransactionDirection.DEBIT)))
