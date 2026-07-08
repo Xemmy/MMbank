@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,6 +75,8 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
+    var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
+        private set
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
     var hasBinanceKeys by mutableStateOf(container.credentialStore.hasBinanceCredentials)
@@ -196,6 +199,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             statusMessage = "Currency must be a 3-letter ISO code"
         }
+    }
+
+    fun setHideZeroBalances(hide: Boolean) {
+        container.preferences.hideZeroBalances = hide
+        hideZeroBalances = hide
     }
 
     fun saveBinanceKeys() {
@@ -577,6 +585,25 @@ fun PreferencesSettingsScreen(
                 modifier = Modifier.weight(1f),
             )
             Button(onClick = viewModel::saveDefaultPerson) { Text("Save") }
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide zero-value coins/tokens", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Dust and unpriced crypto holdings are left off the Dashboard. Turn off to show every holding.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideZeroBalances,
+                onCheckedChange = viewModel::setHideZeroBalances,
+            )
         }
 
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {

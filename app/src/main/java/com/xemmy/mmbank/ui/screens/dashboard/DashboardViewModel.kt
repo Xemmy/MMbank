@@ -113,6 +113,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.transactionRepository.observeRecent(10),
     ) { accounts, netByAccount, crypto, rates, recent ->
         val base = container.preferences.defaultCurrency
+        val hideZeroBalances = container.preferences.hideZeroBalances
         val ratesFromBase = rates
             .filter { it.baseCode.equals(base, ignoreCase = true) }
             .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
@@ -130,11 +131,12 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         // $0.002 still displays as "$0.00" at 2-decimal money formatting, and
         // an unpriced token contributes nothing visible either. Requiring a
         // real (roundable) USD value hides both, not just a zero token amount.
+        // Users can turn this off in Settings to see every holding, dust included.
         val visibleCrypto = crypto.assets
-            .filter { (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
+            .filter { !hideZeroBalances || (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
             .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
         val visibleWallets = crypto.wallets
-            .filter { (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
+            .filter { !hideZeroBalances || (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
             .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
 
         // The wallet overview covers Earn/Funding/Bots on top of Spot, so it
