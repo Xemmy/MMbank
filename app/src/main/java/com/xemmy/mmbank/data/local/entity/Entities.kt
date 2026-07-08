@@ -148,6 +148,24 @@ fun TransactionEntity.toDomain() = Transaction(
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
 )
 
+fun Transaction.toEntity() = TransactionEntity(
+    id = id,
+    accountId = accountId,
+    amount = amount,
+    currencyCode = currencyCode,
+    direction = direction,
+    merchant = merchant,
+    source = source,
+    sender = sender,
+    rawMessage = rawMessage,
+    matchedRuleName = matchedRuleName,
+    timestamp = timestampMillis,
+    createdAt = createdAt,
+    accountNumberSuffix = accountNumberSuffix,
+    category = category,
+    person = person,
+)
+
 fun ParsingRuleEntity.toDomain() = ParsingRule(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
     assignAccountId,

@@ -39,6 +39,9 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
   months-to-target estimate, 6-month cash-flow columns, spend per person.
 - **People**: every transaction can be assigned to a person (default person configurable
   in Settings, applied to new captures); the Activity tab filters by date range.
+- **Manual entry**: the Activity tab's “+” adds a transaction the capture pipeline
+  missed (amount, currency, spent/received, merchant, account, person, date) — stored
+  as a `MANUAL` source row that behaves like any captured one in balances and filters.
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
 - **Amounts** are `BigDecimal`, persisted as normalized plain-decimal TEXT — exact for fiat and 8-decimal crypto alike.
 
@@ -89,6 +92,11 @@ Rules screen → “+” lets you map any unknown bank message layout:
 
 Example rule for a quirky bank: pattern `TXN:(?<amount>\d+(?:\.\d+)?)/(?<currency>[A-Z]{3})`,
 sender filter `MYBANK`, direction `DEBIT`.
+
+A rule's **“Assign matches to”** account pins every match to one account, winning over
+card-number detection (for messages that carry no account number, e.g. Tabby Card vs
+Tabby Cash). Setting it also **backfills** the rule's already-captured, still-unassigned
+transactions, so history is fixed too — not just future captures.
 
 ### Binance integration (read-only)
 

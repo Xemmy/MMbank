@@ -5,6 +5,7 @@ import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
@@ -80,8 +81,14 @@ class TransactionRepositoryImpl(
         }
     }
 
+    override suspend fun recordManual(transaction: Transaction): Long =
+        dao.insert(transaction.toEntity())
+
     override suspend fun assignAccount(transactionId: Long, accountId: Long?) =
         dao.assignAccount(transactionId, accountId)
+
+    override suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int =
+        dao.assignAccountByRuleName(ruleName, accountId)
 
     override suspend fun setPerson(transactionId: Long, person: String?) =
         dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })

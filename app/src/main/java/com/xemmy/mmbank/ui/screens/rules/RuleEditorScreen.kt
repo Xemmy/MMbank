@@ -126,6 +126,13 @@ class RuleEditorViewModel(
         val rule = buildRule() ?: return
         viewModelScope.launch {
             container.parsingRuleRepository.save(rule)
+            // Pin the account onto the transactions this rule already captured
+            // but left unassigned (e.g. Tabby messages carry no card number),
+            // so setting "Assign matches to" fixes history, not just new capture.
+            rule.assignAccountId?.let { accountId ->
+                runCatching { container.transactionRepository.assignAccountForRule(rule.name, accountId) }
+                    .onFailure { container.recordError("RuleEditor.backfillAssign", it) }
+            }
             onDone()
         }
     }

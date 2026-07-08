@@ -74,6 +74,17 @@ interface TransactionDao {
     @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
 
+    /**
+     * Backfills a rule's account onto the transactions it already captured that
+     * are still unassigned. Only NULL accountIds are touched, so a transaction
+     * the user manually moved elsewhere is never overwritten. Returns the count.
+     */
+    @Query(
+        "UPDATE transactions SET accountId = :accountId " +
+            "WHERE matchedRuleName = :ruleName AND accountId IS NULL"
+    )
+    suspend fun assignAccountByRuleName(ruleName: String, accountId: Long): Int
+
     @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
     suspend fun setPerson(transactionId: Long, person: String?)
 

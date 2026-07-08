@@ -19,7 +19,14 @@ interface TransactionRepository {
     fun observeNetByAccount(): Flow<Map<Long, Double>>
     /** Dedup + insert; the heart of the automated capture pipeline. */
     suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult
+    /** Inserts a user-entered transaction (no dedup — a manual entry is intentional). */
+    suspend fun recordManual(transaction: Transaction): Long
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
+    /**
+     * Assigns [accountId] to the already-captured transactions matched by
+     * [ruleName] that are still unassigned. Returns how many rows changed.
+     */
+    suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int
     /** Assigns/clears the person a transaction belongs to. */
     suspend fun setPerson(transactionId: Long, person: String?)
     /** Renames a person on every transaction carrying it; null [to] clears them. */
