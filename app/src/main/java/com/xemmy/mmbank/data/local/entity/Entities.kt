@@ -10,6 +10,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -38,6 +39,8 @@ data class AccountEntity(
     val profitRatePa: Double? = null,
     val maturityDateMillis: Long? = null,
     val loanNotes: String? = null,
+    /** Day of month (1-31) the card's statement cycle starts; null = no cycle. */
+    val statementCycleDay: Int? = null,
 )
 
 @Entity(tableName = "sender_labels")
@@ -82,6 +85,9 @@ data class TransactionEntity(
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
     val person: String? = null,
+    val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
+    /** Kept in the ledger but omitted from analytics (corrections, refund adjustments, transfers). */
+    val excludeFromStats: Boolean = false,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -96,6 +102,7 @@ data class ParsingRuleEntity(
     val enabled: Boolean = true,
     val sampleText: String? = null,
     val createdAt: Long,
+    val assignAccountId: Long? = null,
 )
 
 @Entity(tableName = "asset_balances")
@@ -131,12 +138,14 @@ fun AccountEntity.toDomain() = Account(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
+    statementCycleDay,
 )
 
 fun Account.toEntity() = AccountEntity(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
+    statementCycleDay,
 )
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)
@@ -145,14 +154,37 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
+    spendingCategory, excludeFromStats,
+)
+
+fun Transaction.toEntity() = TransactionEntity(
+    id = id,
+    accountId = accountId,
+    amount = amount,
+    currencyCode = currencyCode,
+    direction = direction,
+    merchant = merchant,
+    source = source,
+    sender = sender,
+    rawMessage = rawMessage,
+    matchedRuleName = matchedRuleName,
+    timestamp = timestampMillis,
+    createdAt = createdAt,
+    accountNumberSuffix = accountNumberSuffix,
+    category = category,
+    person = person,
+    spendingCategory = spendingCategory,
+    excludeFromStats = excludeFromStats,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
+    assignAccountId,
 )
 
 fun ParsingRule.toEntity() = ParsingRuleEntity(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
+    assignAccountId,
 )
 
 fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, valueUsd, updatedAt)

@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.local
 
 import androidx.room.TypeConverter
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -49,4 +50,11 @@ class Converters {
     @TypeConverter
     fun stringToCategory(value: String?): TransactionCategory? =
         value?.let { TransactionCategory.valueOf(it) }
+
+    @TypeConverter
+    fun spendingCategoryToString(value: SpendingCategory?): String? = value?.name
+
+    @TypeConverter
+    fun stringToSpendingCategory(value: String?): SpendingCategory? =
+        value?.let { runCatching { SpendingCategory.valueOf(it) }.getOrDefault(SpendingCategory.UNCATEGORIZED) }
 }

@@ -11,6 +11,29 @@ enum class TransactionDirection { DEBIT, CREDIT }
 enum class TransactionCategory { NORMAL, CASHBACK_EARNED }
 
 /**
+ * User-facing spending category, assignable per transaction (like account and
+ * person) and auto-suggested from the merchant at capture time. A fixed set —
+ * kept deliberately small so the Dashboard breakdown stays legible and no
+ * category-management screen is needed.
+ */
+enum class SpendingCategory(val label: String, val emoji: String) {
+    UNCATEGORIZED("Uncategorized", "🏷️"),
+    GROCERIES("Groceries", "🛒"),
+    DINING("Dining", "🍽️"),
+    TRANSPORT("Transport", "🚕"),
+    FUEL("Fuel", "⛽"),
+    SHOPPING("Shopping", "🛍️"),
+    UTILITIES("Utilities", "💡"),
+    ENTERTAINMENT("Entertainment", "🎬"),
+    HEALTH("Health", "🩺"),
+    TRAVEL("Travel", "✈️"),
+    TRANSFERS("Transfers", "🔁"),
+    INCOME("Income", "💰"),
+    FEES("Fees", "🏦"),
+    OTHER("Other", "•"),
+}
+
+/**
  * Ledger types managed by the app. Balances are computed uniformly
  * (opening + credits - debits); liability accounts (CREDIT_CARD, LOAN)
  * simply trend negative as spending is captured.
@@ -36,6 +59,10 @@ data class ParsedTransaction(
     val matchedRuleName: String,
     val accountNumberSuffix: String? = null,
     val category: TransactionCategory = TransactionCategory.NORMAL,
+    /** Account the matched rule pins its transactions to; wins over detection. */
+    val assignAccountId: Long? = null,
+    /** Persisted onto the transaction: keep it in the ledger but out of analytics. */
+    val excludeFromStats: Boolean = false,
 )
 
 data class Account(
@@ -67,6 +94,12 @@ data class Account(
     val maturityDateMillis: Long? = null,
     /** Free text: add-ons, early-settlement terms, penalties, etc. */
     val loanNotes: String? = null,
+    /**
+     * Day of month (1-31) the card's statement cycle starts, e.g. 10 = the
+     * "10th of last month → 9th of this month" window. Null = no statement
+     * cycle; date presets fall back to a rolling window.
+     */
+    val statementCycleDay: Int? = null,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement
@@ -97,6 +130,14 @@ data class Transaction(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     /** Person this transaction belongs to (user-assigned; defaults from Settings). */
     val person: String? = null,
+    /** Spending category (auto-suggested from the merchant, user-overridable). */
+    val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
+    /**
+     * Stays visible in the raw ledger (and keeps counting toward account
+     * balances) but is omitted from analytics: balance corrections, Tabby
+     * refund adjustments, internal transfers, cash refunds.
+     */
+    val excludeFromStats: Boolean = false,
 )
 
 /**
@@ -119,6 +160,12 @@ data class ParsingRule(
     /** Last sample text used in the rule tester, persisted for convenience. */
     val sampleText: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * Account every transaction matched by this rule is assigned to (the
+     * "default assign", editable in the rule editor). Overrides card-number
+     * detection; null keeps the automatic behavior.
+     */
+    val assignAccountId: Long? = null,
 )
 
 /** User-defined friendly name for a transaction sender (SMS short code or app package). */

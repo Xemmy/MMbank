@@ -8,6 +8,7 @@ import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SenderLabel
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.WalletBalance
 import kotlinx.coroutines.flow.Flow
@@ -19,9 +20,20 @@ interface TransactionRepository {
     fun observeNetByAccount(): Flow<Map<Long, Double>>
     /** Dedup + insert; the heart of the automated capture pipeline. */
     suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult
+    /** Inserts a user-entered transaction (no dedup — a manual entry is intentional). */
+    suspend fun recordManual(transaction: Transaction): Long
+    /** Updates an existing transaction's editable fields (manual edit flow). */
+    suspend fun update(transaction: Transaction)
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
+    /**
+     * Assigns [accountId] to the already-captured transactions matched by
+     * [ruleName] that are still unassigned. Returns how many rows changed.
+     */
+    suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int
     /** Assigns/clears the person a transaction belongs to. */
     suspend fun setPerson(transactionId: Long, person: String?)
+    /** Sets the spending category (groceries, dining, …) on a transaction. */
+    suspend fun setSpendingCategory(transactionId: Long, category: SpendingCategory)
     /** Renames a person on every transaction carrying it; null [to] clears them. */
     suspend fun renamePerson(from: String, to: String?)
     suspend fun delete(transactionId: Long)

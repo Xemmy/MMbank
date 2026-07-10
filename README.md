@@ -36,9 +36,26 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
 - **Home**: net worth with hide-balances eye toggle, account balances, collapsible
   Binance card, recent activity.
 - **Dashboard tab**: this-month income/spent/net tiles, savings goal with
-  months-to-target estimate, 6-month cash-flow columns, spend per person.
+  months-to-target estimate, 6-month cash-flow columns, spend per person, and
+  spend per category.
 - **People**: every transaction can be assigned to a person (default person configurable
-  in Settings, applied to new captures); the Activity tab filters by date range.
+  in Settings, applied to new captures).
+- **Spending categories**: every transaction carries a category (groceries, dining,
+  fuel, transport, …), auto-suggested from the merchant at capture time
+  (`MerchantCategorizer`) and overridable via a chip — powering the Dashboard's
+  by-category breakdown.
+- **Search & filters**: the Activity tab has full-text search (merchant, bank,
+  amount, category) plus date-range, direction, account and person filters.
+- **Manual entry & editing**: the Activity tab's “+” adds a transaction the capture
+  pipeline missed (amount, currency, spent/received, merchant, category, account,
+  person, date) — stored as a `MANUAL` source row that behaves like any captured one.
+  Any transaction (captured or manual) can be edited in place via the ✏️ on its card;
+  the same compact card carries tap-to-set account / person / category chips.
+- **Balance correction**: when a computed balance drifts from reality (a missed or
+  mis-parsed capture), an account's adjust action reconciles it — you type the real
+  balance and one auditable “Balance adjustment” entry is posted for the difference.
+- **Export**: an AES-256 encrypted `.mmb` backup (full restore) plus a plain,
+  unencrypted **CSV** of every transaction for spreadsheets (Settings → Backup).
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
 - **Amounts** are `BigDecimal`, persisted as normalized plain-decimal TEXT — exact for fiat and 8-decimal crypto alike.
 
@@ -89,6 +106,11 @@ Rules screen → “+” lets you map any unknown bank message layout:
 
 Example rule for a quirky bank: pattern `TXN:(?<amount>\d+(?:\.\d+)?)/(?<currency>[A-Z]{3})`,
 sender filter `MYBANK`, direction `DEBIT`.
+
+A rule's **“Assign matches to”** account pins every match to one account, winning over
+card-number detection (for messages that carry no account number, e.g. Tabby Card vs
+Tabby Cash). Setting it also **backfills** the rule's already-captured, still-unassigned
+transactions, so history is fixed too — not just future captures.
 
 ### Binance integration (read-only)
 

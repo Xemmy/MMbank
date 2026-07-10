@@ -18,6 +18,26 @@ fun Double.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
 fun BigDecimal.asMoney(currencyCode: String): String =
     toDouble().asMoney(currencyCode)
 
+/** The numeral and ISO-code halves of a rendered money string, for split styling. */
+data class MoneyParts(val numeral: String, val currencyCode: String?)
+
+/**
+ * Splits a display string like "+1,234.56 AED" into its numeral half (sign
+ * included) and trailing 3-letter ISO code, so the code can render smaller and
+ * lighter than the figures. Strings without a trailing code — the ••••••
+ * hide-balances mask, quantities, plain text — come back whole with a null code.
+ */
+fun splitMoneyDisplay(display: String): MoneyParts {
+    val spaceAt = display.lastIndexOf(' ')
+    if (spaceAt <= 0) return MoneyParts(display, null)
+    val tail = display.substring(spaceAt + 1)
+    return if (tail.length == 3 && tail.all { it in 'A'..'Z' }) {
+        MoneyParts(display.substring(0, spaceAt), tail)
+    } else {
+        MoneyParts(display, null)
+    }
+}
+
 /** Crypto quantities keep full precision instead of 2-decimal money formatting. */
 fun BigDecimal.asQuantity(): String = stripTrailingZeros().toPlainString()
 

@@ -96,6 +96,27 @@ object BuiltInRules {
         // of the real purchase amount.
         rule("builtin.en.debit.tabby.purchase", "Transaction\\s+of\\s+$CUR\\s?$AMT\\s+At\\s+$MERCHANT_TABBY$ACCTAIL", TransactionDirection.DEBIT, 10),
 
+        // --- Transaction adjustments / partial refunds (priority 20) ---
+        // Tabby "Transaction adjusted — Your CAREEM RIDE purchase was decreased
+        // by AED 5.58": a partial refund. Recorded as a CREDIT so the money is
+        // returned to the ledger. The rarer "increased by" is an extra charge
+        // (DEBIT). Priority 20 puts these ahead of the generic keyword rules,
+        // whose DEBIT keyword "purchase" would otherwise grab the adjusted
+        // amount as a fresh spend. The required literal "Your " keeps the
+        // notification title out of the (lazy) merchant capture.
+        rule(
+            "builtin.en.adjust.decrease",
+            "Your\\s+(?<merchant>[^.,;\\n*]{2,40}?)\\s+(?:purchase|transaction|order|payment)\\s+was\\s+decreased\\s+by\\s+$CUR\\s?$AMT$ACCTAIL",
+            TransactionDirection.CREDIT,
+            20,
+        ),
+        rule(
+            "builtin.en.adjust.increase",
+            "Your\\s+(?<merchant>[^.,;\\n*]{2,40}?)\\s+(?:purchase|transaction|order|payment)\\s+was\\s+increased\\s+by\\s+$CUR\\s?$AMT$ACCTAIL",
+            TransactionDirection.DEBIT,
+            20,
+        ),
+
         // --- Tabby cashback-earned notifications (priority 10) ---
         // "You earned AED 1.00! You got cashback with Tabby+. Your cashback
         // will be processed after next statement is paid." Tagged so the
@@ -130,6 +151,26 @@ object BuiltInRules {
         // "AED 1.00 was credited to your account *963" / "Your AED X purchase … " handled above
         rule("builtin.en.credit.af.cur-amt", "$CUR\\s?$AMT\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
         rule("builtin.en.credit.af.amt-cur", "$AMT\\s?$CUR\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
+
+        // --- Signature-routed rules (no regex; see TransactionParser phase 1) ---
+        // Binance Mastercard spend notifications vary their wording too much
+        // for one stable regex; the card name itself is the reliable marker.
+        // Amount/merchant come from GenericExtractors, and if no plausible
+        // amount is present the message falls through to the regex rules.
+        // NOTE: deliberately no Tabby signature rule here — Tabby messages are
+        // already covered by the regex rules above and by the user's seeded
+        // custom rules, which pin transactions to their accounts; a built-in
+        // signature would intercept those messages and strip the pinning.
+        CompiledRule(
+            ruleId = null,
+            name = "builtin.sig.binance.card",
+            pattern = null,
+            senderPattern = null,
+            direction = TransactionDirection.DEBIT,
+            defaultCurrency = null,
+            priority = 10,
+            signatures = listOf("Binance Mastercard"),
+        ),
 
         // --- No currency in the message: fall back to the default currency (priority 0) ---
         // The (?<!\*) guard stops the fallback from grabbing a "*617" account

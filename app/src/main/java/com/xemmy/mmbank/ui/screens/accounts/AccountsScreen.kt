@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.accounts
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,7 +23,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
@@ -47,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -58,13 +62,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
+import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.glassSurface
+import com.xemmy.mmbank.ui.theme.glowBackdrop
+import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -126,6 +141,54 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                 }
         }
     }
+
+    /**
+     * Corrects a drifted balance (e.g. after a missed or mis-parsed capture) by
+     * posting a single "Balance adjustment" transaction for the gap between the
+     * computed balance and the real one, pinned to this account. It's an ordinary
+     * row, so the fix is visible in Activity and reversible (just delete it).
+     */
+    fun adjustBalance(account: Account, computedBalance: Double, targetBalance: BigDecimal) {
+        viewModelScope.launch {
+            runCatching {
+                val adjustment = buildBalanceAdjustment(account, computedBalance, targetBalance)
+                    ?: return@runCatching
+                container.transactionRepository.recordManual(adjustment)
+            }.onFailure {
+                container.recordError("AccountsViewModel.adjustBalance", it)
+                lastError.value = "Couldn't adjust balance: ${it.message}"
+            }
+        }
+    }
+}
+
+/**
+ * Builds the "Balance adjustment" transaction that reconciles a drifted computed
+ * balance to the real one, or null when they already match. The row is excluded
+ * from analytics by construction: it corrects the ledger, it isn't a real spend
+ * or income, so it must never show up in stats.
+ */
+internal fun buildBalanceAdjustment(
+    account: Account,
+    computedBalance: Double,
+    targetBalance: BigDecimal,
+    nowMillis: Long = System.currentTimeMillis(),
+): Transaction? {
+    val current = BigDecimal.valueOf(computedBalance).setScale(2, RoundingMode.HALF_UP)
+    val delta = targetBalance.setScale(2, RoundingMode.HALF_UP).subtract(current)
+    if (delta.signum() == 0) return null
+    return Transaction(
+        accountId = account.id,
+        amount = delta.abs(),
+        currencyCode = account.currencyCode,
+        direction = if (delta.signum() > 0) TransactionDirection.CREDIT else TransactionDirection.DEBIT,
+        merchant = "Balance adjustment",
+        source = TransactionSource.MANUAL,
+        timestampMillis = nowMillis,
+        matchedRuleName = "Balance adjustment",
+        spendingCategory = SpendingCategory.OTHER,
+        excludeFromStats = true,
+    )
 }
 
 @Composable
@@ -136,6 +199,8 @@ fun AccountsScreen(
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
+    // The account row whose balance is being corrected; null = dialog closed.
+    var adjusting by remember { mutableStateOf<AccountWithBalance?>(null) }
 
     Scaffold(
         floatingActionButton = {
@@ -176,6 +241,7 @@ fun AccountsScreen(
                 AccountCard(
                     row = row,
                     onEdit = { editing = row.account },
+                    onAdjust = { adjusting = row },
                     onDelete = { viewModel.delete(row.account) },
                 )
             }
@@ -192,12 +258,24 @@ fun AccountsScreen(
             },
         )
     }
+
+    adjusting?.let { row ->
+        AdjustBalanceDialog(
+            row = row,
+            onDismiss = { adjusting = null },
+            onConfirm = { target ->
+                viewModel.adjustBalance(row.account, row.balance, target)
+                adjusting = null
+            },
+        )
+    }
 }
 
 @Composable
 private fun AccountCard(
     row: AccountWithBalance,
     onEdit: () -> Unit,
+    onAdjust: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val a = row.account
@@ -205,9 +283,20 @@ private fun AccountCard(
     Card(
         Modifier
             .fillMaxWidth()
+            // Loan-section expansion and edits glide instead of snapping.
+            .animateContentSize()
             .clickable { onEdit() },
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(
+            Modifier
+                // Faint brand glow when the account's origin has one (Binance/Tabby).
+                .glowBackdrop(
+                    GlowTones.forAccountOrigin(a.name, a.bankName),
+                    GlowPalette.ORIGIN_ALPHA,
+                    atTopEnd = false,
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(a.name, style = MaterialTheme.typography.titleMedium)
@@ -226,11 +315,14 @@ private fun AccountCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    row.balance.asMoney(a.currencyCode),
-                    style = MaterialTheme.typography.titleMedium,
+                AmountText(
+                    display = row.balance.asMoney(a.currencyCode),
                     color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
                 )
+                IconButton(onClick = onAdjust) {
+                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance")
+                }
                 IconButton(onClick = { confirmingDelete = true }) {
                     Icon(Icons.Filled.Delete, contentDescription = "Delete account")
                 }
@@ -277,10 +369,87 @@ private fun AccountCard(
     }
 }
 
+/**
+ * Reconciles a drifted balance: the user types the account's real balance and a
+ * single "Balance adjustment" entry is posted for the difference. Nothing happens
+ * when the numbers already match.
+ */
+@Composable
+private fun AdjustBalanceDialog(
+    row: AccountWithBalance,
+    onDismiss: () -> Unit,
+    onConfirm: (BigDecimal) -> Unit,
+) {
+    val account = row.account
+    var text by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", row.balance)) }
+    val target = text.replace(",", "").trim().toBigDecimalOrNull()
+    val current = BigDecimal.valueOf(row.balance).setScale(2, RoundingMode.HALF_UP)
+    val delta = target?.setScale(2, RoundingMode.HALF_UP)?.subtract(current)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        // Glass overlay: translucent container + hairline border, with a real
+        // backdrop blur on API 31+ (falls back to a more opaque surface below).
+        modifier = Modifier.glassSurface(AlertDialogDefaults.shape),
+        containerColor = Color.Transparent,
+        title = { Text("Adjust balance", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            GlassDialogBackdrop()
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "“${account.name}” currently computes to ${row.balance.asMoney(account.currencyCode)} " +
+                        "from its opening balance and transactions. Enter the real balance and a matching " +
+                        "“Balance adjustment” entry is added so they line up.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Actual balance (${account.currencyCode})") },
+                    supportingText = { Text("Use a negative number for money owed.") },
+                    singleLine = true,
+                    isError = target == null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                when {
+                    delta == null -> Unit
+                    delta.signum() == 0 -> Text(
+                        "Already matches — no adjustment needed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    else -> {
+                        val credit = delta.signum() > 0
+                        Text(
+                            (if (credit) "Adds a credit of +" else "Adds a debit of −") +
+                                delta.abs().asMoney(account.currencyCode) + ".",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (credit) LedgerColors.credit else LedgerColors.debit,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = delta != null && delta.signum() != 0,
+                onClick = { target?.let(onConfirm) },
+            ) { Text("Adjust") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 @Composable
 private fun LoanLine(label: String, value: String) {
     Row(Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Editorial meta label: tiny, letter-spaced uppercase.
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.8.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             value,
             style = MaterialTheme.typography.labelSmall,

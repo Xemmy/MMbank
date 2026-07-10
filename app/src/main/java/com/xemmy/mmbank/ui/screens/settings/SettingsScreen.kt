@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,6 +75,8 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
+    var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
+        private set
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
     var hasBinanceKeys by mutableStateOf(container.credentialStore.hasBinanceCredentials)
@@ -198,6 +201,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun updateHideZeroBalances(hide: Boolean) {
+        container.preferences.hideZeroBalances = hide
+        hideZeroBalances = hide
+    }
+
     fun saveBinanceKeys() {
         container.credentialStore.binanceApiKey = apiKeyInput
         container.credentialStore.binanceSecretKey = secretKeyInput
@@ -220,7 +228,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             busy = true
             statusMessage = "Contacting Binance…"
             container.portfolioRepository.syncSpotBalances()
-                .onSuccess { statusMessage = "Connected — $it assets synced" }
+                .onSuccess {
+                    val failed = container.binanceWalletAssets.lastFailedWallets
+                    statusMessage = if (failed.isEmpty()) {
+                        "Connected — $it holdings synced (Spot · Funding · Earn)"
+                    } else {
+                        "Synced $it holdings, but couldn't read: ${failed.joinToString(", ")}. " +
+                            "Enable those permissions on the API key."
+                    }
+                }
                 .onFailure { statusMessage = "Binance error: ${it.message}" }
             busy = false
         }
@@ -253,6 +269,24 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 statusMessage = "Backup exported (encrypted)"
             }.onFailure {
                 statusMessage = "Export failed: ${it.message}"
+            }
+            busy = false
+        }
+    }
+
+    /** [writeText] runs on IO and streams the unencrypted CSV to the chosen document. */
+    fun exportCsv(writeText: suspend (String) -> Unit) {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Exporting CSV…"
+            runCatching {
+                val csv = container.backupManager.exportCsv()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeText(csv) }
+            }.onSuccess {
+                statusMessage = "Transactions exported to CSV"
+            }.onFailure {
+                statusMessage = "CSV export failed: ${it.message}"
             }
             busy = false
         }
@@ -571,6 +605,25 @@ fun PreferencesSettingsScreen(
             Button(onClick = viewModel::saveDefaultPerson) { Text("Save") }
         }
 
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide zero-value coins/tokens", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Dust and unpriced crypto holdings are left off the Dashboard. Turn off to show every holding.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideZeroBalances,
+                onCheckedChange = viewModel::updateHideZeroBalances,
+            )
+        }
+
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
             Text("Refresh Forex rates now")
         }
@@ -850,6 +903,16 @@ private fun BackupSection(viewModel: SettingsViewModel) {
             }
         }
     }
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportCsv { text ->
+                context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    ?: error("Couldn't open the selected file")
+            }
+        }
+    }
 
     Text(
         "Exports accounts, transactions, custom rules, sender names and settings into one " +
@@ -887,6 +950,23 @@ private fun BackupSection(viewModel: SettingsViewModel) {
             color = MaterialTheme.colorScheme.error,
         )
     }
+
+    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+    Text(
+        "Or export a plain CSV of every transaction for spreadsheets (date, amount, " +
+            "merchant, category, account, person…). This file is NOT encrypted or " +
+            "password-protected.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedButton(
+        onClick = {
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
+                .format(java.util.Date())
+            csvLauncher.launch("mmbank-$stamp.csv")
+        },
+        enabled = !viewModel.busy,
+    ) { Text("Export CSV") }
 }
 
 /**

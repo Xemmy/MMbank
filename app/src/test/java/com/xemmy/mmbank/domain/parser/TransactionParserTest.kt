@@ -96,6 +96,60 @@ class TransactionParserTest {
         assertNull(p.parse(sms("TXN:42.50/EUR ref 998", sender = "OTHER")))
     }
 
+    @Test
+    fun `tabby card and cash rules parse and pin their own accounts`() {
+        val card = RuleCompiler.compile(
+            ParsingRule(
+                id = 1,
+                name = "Tabby Card spend",
+                pattern = "You spent (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) " +
+                    "at (?<merchant>[^.]+?)\\. Your available Tabby Card limit",
+                senderPattern = "tabby",
+                direction = TransactionDirection.DEBIT,
+                priority = 120,
+                assignAccountId = 11L,
+            )
+        )!!
+        val cash = RuleCompiler.compile(
+            ParsingRule(
+                id = 2,
+                name = "Tabby Cash spend",
+                pattern = "You spent (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) " +
+                    "at (?<merchant>[^.]+?)\\. Your available Tabby Cash balance",
+                senderPattern = "tabby",
+                direction = TransactionDirection.DEBIT,
+                priority = 120,
+                assignAccountId = 22L,
+            )
+        )!!
+        val p = TransactionParser(listOf(card, cash) + BuiltInRules.all, "USD")
+
+        val cardTx = p.parse(
+            sms(
+                "You spent AED 110.90 at CAREEM RIDE. Your available Tabby Card limit is now AED 6111.71.",
+                sender = "com.tabby.customer",
+            )
+        )
+        assertNotNull(cardTx)
+        assertEquals("Tabby Card spend", cardTx!!.matchedRuleName)
+        assertEquals(BigDecimal("110.90"), cardTx.amount)
+        assertEquals("AED", cardTx.currencyCode)
+        assertEquals("CAREEM RIDE", cardTx.merchant)
+        assertEquals(11L, cardTx.assignAccountId)
+
+        val cashTx = p.parse(
+            sms(
+                "You spent AED 32.95 at CARREFOUR-MAF MKT YAS. Your available Tabby Cash balance is now AED 1675.59.",
+                sender = "tabby",
+            )
+        )
+        assertNotNull(cashTx)
+        assertEquals("Tabby Cash spend", cashTx!!.matchedRuleName)
+        assertEquals(BigDecimal("32.95"), cashTx.amount)
+        assertEquals("CARREFOUR-MAF MKT YAS", cashTx.merchant)
+        assertEquals(22L, cashTx.assignAccountId)
+    }
+
     // --- Account-number extraction: real-world message formats ---
 
     @Test
@@ -317,6 +371,40 @@ class TransactionParserTest {
         val r = parser.parse(sms("You spent AED 250.75 at CARREFOUR DUBAI. Avl bal AED 1,200"))
         assertNotNull(r)
         assertEquals(TransactionCategory.NORMAL, r!!.category)
+    }
+
+    // --- Transaction adjustments / partial refunds ---
+
+    @Test
+    fun `tabby transaction adjusted decrease parses as refund credit`() {
+        // The screenshot: title + body concatenated by the parser.
+        val r = parser.parse(
+            CapturedMessage(
+                source = TransactionSource.PUSH_NOTIFICATION,
+                sender = "com.tabby.customer",
+                title = "Transaction adjusted",
+                body = "Your CAREEM RIDE purchase was decreased by AED 5.58",
+                timestampMillis = 1_700_000_000_000,
+            )
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("5.58"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        // A decrease is money returned — a CREDIT, never a fresh spend.
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("CAREEM RIDE", r.merchant)
+    }
+
+    @Test
+    fun `transaction adjusted increase parses as extra debit`() {
+        val r = parser.parse(
+            sms("Your NOON purchase was increased by AED 12.00", sender = "com.tabby.customer")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("12.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("NOON", r.merchant)
     }
 
     @Test

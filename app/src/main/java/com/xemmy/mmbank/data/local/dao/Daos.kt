@@ -29,6 +29,10 @@ interface TransactionDao {
     @Insert
     suspend fun insert(entity: TransactionEntity): Long
 
+    /** Full-row update by primary key; used by the manual "edit transaction" flow. */
+    @Update
+    suspend fun update(entity: TransactionEntity)
+
     /**
      * Sliding-window dedup lookup: an identical amount + currency + direction
      * within `windowMillis` of the event timestamp is treated as the same
@@ -74,8 +78,22 @@ interface TransactionDao {
     @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
 
+    /**
+     * Backfills a rule's account onto the transactions it already captured that
+     * are still unassigned. Only NULL accountIds are touched, so a transaction
+     * the user manually moved elsewhere is never overwritten. Returns the count.
+     */
+    @Query(
+        "UPDATE transactions SET accountId = :accountId " +
+            "WHERE matchedRuleName = :ruleName AND accountId IS NULL"
+    )
+    suspend fun assignAccountByRuleName(ruleName: String, accountId: Long): Int
+
     @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
     suspend fun setPerson(transactionId: Long, person: String?)
+
+    @Query("UPDATE transactions SET spendingCategory = :category WHERE id = :transactionId")
+    suspend fun setSpendingCategory(transactionId: Long, category: com.xemmy.mmbank.domain.model.SpendingCategory)
 
     @Query("UPDATE transactions SET person = :to WHERE person = :from")
     suspend fun renamePerson(from: String, to: String?)

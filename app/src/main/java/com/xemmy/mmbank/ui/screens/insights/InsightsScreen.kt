@@ -21,8 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,7 +47,12 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTone
+import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.glowBackdrop
+import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -70,12 +77,34 @@ fun InsightsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Low-profile switch between "clean" analytics (excluded rows filtered
+        // out, the default) and the raw ledger with every transaction counted.
+        item(key = "ledger_toggle") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                FilterChip(
+                    selected = state.showAllLedgerTransactions,
+                    onClick = viewModel::toggleShowAllLedgerTransactions,
+                    label = { Text("Raw ledger") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.VisibilityOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                )
+            }
+        }
+
         item(key = "month_tiles") { MonthTiles(state) }
 
         item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
 
         if (hasData) {
             item(key = "cashflow_card") { CashFlowCard(state) }
+            if (state.stats.categorySpends.isNotEmpty()) {
+                item(key = "category_card") { CategorySpendCard(state) }
+            }
             if (state.stats.personSpends.isNotEmpty()) {
                 item(key = "person_card") { PersonSpendCard(state) }
             }
@@ -103,8 +132,14 @@ private fun MonthTiles(state: DashboardUiState) {
     val hidden = state.hideBalances
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        StatTile("Income", income.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.credit, Modifier.weight(1f))
-        StatTile("Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.debit, Modifier.weight(1f))
+        StatTile(
+            "Income", income.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.credit,
+            Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = true),
+        )
+        StatTile(
+            "Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.debit,
+            Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = false),
+        )
         StatTile(
             "Net",
             net.asMoneyOrMask(state.baseCurrency, hidden),
@@ -115,20 +150,30 @@ private fun MonthTiles(state: DashboardUiState) {
 }
 
 @Composable
-private fun StatTile(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
+private fun StatTile(
+    label: String,
+    value: String,
+    valueColor: Color,
+    modifier: Modifier = Modifier,
+    glow: GlowTone? = null,
+) {
     Card(modifier) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .glowBackdrop(glow, GlowPalette.DIRECTION_ALPHA)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(2.dp))
-            Text(
-                value,
-                style = MaterialTheme.typography.titleSmall,
+            AmountText(
+                display = value,
                 color = valueColor,
-                maxLines = 1,
+                style = MaterialTheme.typography.titleSmall,
             )
         }
     }
@@ -388,6 +433,57 @@ private fun LegendDot(color: Color) {
             .size(8.dp)
             .background(color, CircleShape),
     )
+}
+
+/** This month's spend per category as proportional bars, biggest first. */
+@Composable
+private fun CategorySpendCard(state: DashboardUiState) {
+    val spends = state.stats.categorySpends
+    val hidden = state.hideBalances
+    val maxAmount = spends.maxOf { it.amount }.takeIf { it > 0.0 } ?: 1.0
+    val total = spends.sumOf { it.amount }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("This month by category", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    total.asMoneyOrMask(state.baseCurrency, hidden),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            spends.forEach { entry ->
+                Column {
+                    Row {
+                        Text(
+                            "${entry.category.emoji}  ${entry.category.label}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            entry.amount.asMoneyOrMask(state.baseCurrency, hidden),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth((entry.amount / maxAmount).toFloat().coerceIn(0.02f, 1f))
+                                .height(8.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** This month's spend per person as proportional bars, biggest first. */
