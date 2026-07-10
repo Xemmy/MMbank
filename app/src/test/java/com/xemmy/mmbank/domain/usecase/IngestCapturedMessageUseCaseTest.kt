@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -130,6 +131,45 @@ class IngestCapturedMessageUseCaseTest {
             timestampMillis = 0L,
         )
         assertTrue(useCase().invoke(message) is IngestResult.Inserted)
+    }
+
+    @Test
+    fun `tabby decreased adjustment is a credit excluded from stats`() = runBlocking {
+        val result = useCase().invoke(
+            push(
+                sender = "com.tabby.customer",
+                body = "Your CAREEM RIDE purchase was decreased by AED 5.58",
+                title = "Transaction adjusted",
+            )
+        )
+        assertTrue(result is IngestResult.Inserted)
+        val parsed = recorder.lastParsed!!
+        assertEquals("builtin.en.adjust.decrease", parsed.matchedRuleName)
+        assertEquals(TransactionDirection.CREDIT, parsed.direction)
+        assertTrue(parsed.excludeFromStats)
+    }
+
+    @Test
+    fun `tabby increased adjustment is a debit excluded from stats`() = runBlocking {
+        val result = useCase().invoke(
+            push(
+                sender = "com.tabby.customer",
+                body = "Your NOON order was increased by AED 12.00",
+                title = "Transaction adjusted",
+            )
+        )
+        assertTrue(result is IngestResult.Inserted)
+        val parsed = recorder.lastParsed!!
+        assertEquals("builtin.en.adjust.increase", parsed.matchedRuleName)
+        assertEquals(TransactionDirection.DEBIT, parsed.direction)
+        assertTrue(parsed.excludeFromStats)
+    }
+
+    @Test
+    fun `ordinary purchase is not excluded from stats`() = runBlocking {
+        val result = useCase().invoke(push("com.adcb.bank", bankStyleBody))
+        assertTrue(result is IngestResult.Inserted)
+        assertFalse(recorder.lastParsed!!.excludeFromStats)
     }
 
     @Test

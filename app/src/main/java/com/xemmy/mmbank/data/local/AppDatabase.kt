@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -133,11 +133,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 -> v9: analytics purity flag on transactions (excludeFromStats:
+         * corrections/adjustments stay in the ledger but out of the stats) and
+         * the statement-cycle start day on accounts (front-loaded for the
+         * statement-window date preset; only Tabby cards use it today, seeded
+         * with day 10 = "10th prev month → 9th current month").
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE transactions ADD COLUMN excludeFromStats INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL("ALTER TABLE accounts ADD COLUMN statementCycleDay INTEGER")
+                db.execSQL(
+                    "UPDATE accounts SET statementCycleDay = 10 " +
+                        "WHERE LOWER(name) LIKE '%tabby%' OR LOWER(IFNULL(bankName, '')) LIKE '%tabby%'"
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8,
+                    MIGRATION_7_8, MIGRATION_8_9,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

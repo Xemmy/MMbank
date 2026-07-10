@@ -142,28 +142,44 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
     fun adjustBalance(account: Account, computedBalance: Double, targetBalance: BigDecimal) {
         viewModelScope.launch {
             runCatching {
-                val current = BigDecimal.valueOf(computedBalance).setScale(2, RoundingMode.HALF_UP)
-                val delta = targetBalance.setScale(2, RoundingMode.HALF_UP).subtract(current)
-                if (delta.signum() == 0) return@runCatching
-                container.transactionRepository.recordManual(
-                    Transaction(
-                        accountId = account.id,
-                        amount = delta.abs(),
-                        currencyCode = account.currencyCode,
-                        direction = if (delta.signum() > 0) TransactionDirection.CREDIT else TransactionDirection.DEBIT,
-                        merchant = "Balance adjustment",
-                        source = TransactionSource.MANUAL,
-                        timestampMillis = System.currentTimeMillis(),
-                        matchedRuleName = "Balance adjustment",
-                        spendingCategory = SpendingCategory.OTHER,
-                    )
-                )
+                val adjustment = buildBalanceAdjustment(account, computedBalance, targetBalance)
+                    ?: return@runCatching
+                container.transactionRepository.recordManual(adjustment)
             }.onFailure {
                 container.recordError("AccountsViewModel.adjustBalance", it)
                 lastError.value = "Couldn't adjust balance: ${it.message}"
             }
         }
     }
+}
+
+/**
+ * Builds the "Balance adjustment" transaction that reconciles a drifted computed
+ * balance to the real one, or null when they already match. The row is excluded
+ * from analytics by construction: it corrects the ledger, it isn't a real spend
+ * or income, so it must never show up in stats.
+ */
+internal fun buildBalanceAdjustment(
+    account: Account,
+    computedBalance: Double,
+    targetBalance: BigDecimal,
+    nowMillis: Long = System.currentTimeMillis(),
+): Transaction? {
+    val current = BigDecimal.valueOf(computedBalance).setScale(2, RoundingMode.HALF_UP)
+    val delta = targetBalance.setScale(2, RoundingMode.HALF_UP).subtract(current)
+    if (delta.signum() == 0) return null
+    return Transaction(
+        accountId = account.id,
+        amount = delta.abs(),
+        currencyCode = account.currencyCode,
+        direction = if (delta.signum() > 0) TransactionDirection.CREDIT else TransactionDirection.DEBIT,
+        merchant = "Balance adjustment",
+        source = TransactionSource.MANUAL,
+        timestampMillis = nowMillis,
+        matchedRuleName = "Balance adjustment",
+        spendingCategory = SpendingCategory.OTHER,
+        excludeFromStats = true,
+    )
 }
 
 @Composable

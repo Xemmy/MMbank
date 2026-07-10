@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -250,6 +251,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         person: String?,
         spendingCategory: SpendingCategory,
         timestampMillis: Long,
+        excludeFromStats: Boolean,
     ) = safeWrite("addManual") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.recordManual(
@@ -264,6 +266,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 person = person,
                 spendingCategory = spendingCategory,
                 matchedRuleName = MANUAL_ENTRY_LABEL,
+                excludeFromStats = excludeFromStats,
             )
         )
     }
@@ -279,6 +282,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         person: String?,
         spendingCategory: SpendingCategory,
         timestampMillis: Long,
+        excludeFromStats: Boolean,
     ) = safeWrite("updateTransaction") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.update(
@@ -291,6 +295,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 person = person,
                 spendingCategory = spendingCategory,
                 timestampMillis = timestampMillis,
+                excludeFromStats = excludeFromStats,
             )
         )
     }
@@ -384,8 +389,8 @@ fun TransactionsScreen(
             knownPersons = state.knownPersons,
             defaultCurrency = state.defaultCurrency,
             onDismiss = { addOpen = false },
-            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp ->
-                viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp)
+            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
+                viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
                 addOpen = false
             },
         )
@@ -398,8 +403,8 @@ fun TransactionsScreen(
             knownPersons = state.knownPersons,
             defaultCurrency = state.defaultCurrency,
             onDismiss = { editing = null },
-            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp ->
-                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, category, timestamp)
+            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
+                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
                 editing = null
             },
         )
@@ -816,6 +821,7 @@ private fun TransactionEditorDialog(
         person: String?,
         spendingCategory: SpendingCategory,
         timestampMillis: Long,
+        excludeFromStats: Boolean,
     ) -> Unit,
 ) {
     val zone = java.time.ZoneId.systemDefault()
@@ -829,6 +835,7 @@ private fun TransactionEditorDialog(
     // null = follow the merchant-derived suggestion; a value = explicit choice.
     // Editing starts from the row's saved category so it never silently changes.
     var categoryOverride by remember { mutableStateOf(existing?.spendingCategory) }
+    var excludeFromStats by remember { mutableStateOf(existing?.excludeFromStats ?: false) }
     var dateIso by remember {
         mutableStateOf(
             java.time.Instant.ofEpochMilli(existing?.timestampMillis ?: System.currentTimeMillis())
@@ -960,6 +967,20 @@ private fun TransactionEditorDialog(
                         }
                     }
                 }
+
+                // Analytics purity control: internal transfers, cash refunds and
+                // the like stay in the ledger but shouldn't skew the stats.
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Exclude from Analytics", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = excludeFromStats,
+                        onCheckedChange = { excludeFromStats = it },
+                    )
+                }
             }
         },
         confirmButton = {
@@ -986,6 +1007,7 @@ private fun TransactionEditorDialog(
                             person,
                             effectiveCategory,
                             timestamp,
+                            excludeFromStats,
                         )
                     }
                 },

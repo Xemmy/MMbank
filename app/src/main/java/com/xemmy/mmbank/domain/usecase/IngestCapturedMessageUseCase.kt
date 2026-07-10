@@ -55,6 +55,22 @@ class IngestCapturedMessageUseCase(
 
         val parser = TransactionParser(rules, fallbackCurrencyProvider())
         val parsed = parser.parse(message) ?: return IngestResult.NoMatch
-        return transactionRepository.recordParsed(parsed, message)
+
+        // "Transaction adjusted" messages (Tabby partial refunds / extra
+        // charges) correct an already-recorded purchase rather than describe a
+        // new spend, so they must not skew analytics. They stay in the ledger
+        // (balances remain right) but carry the exclusion flag.
+        val flagged =
+            if (parsed.matchedRuleName.startsWith(ADJUSTMENT_RULE_PREFIX)) {
+                parsed.copy(excludeFromStats = true)
+            } else {
+                parsed
+            }
+        return transactionRepository.recordParsed(flagged, message)
+    }
+
+    companion object {
+        /** The priority-20 builtin.en.adjust.* rules in [BuiltInRules]. */
+        const val ADJUSTMENT_RULE_PREFIX = "builtin.en.adjust."
     }
 }

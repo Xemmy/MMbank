@@ -39,6 +39,8 @@ data class AccountEntity(
     val profitRatePa: Double? = null,
     val maturityDateMillis: Long? = null,
     val loanNotes: String? = null,
+    /** Day of month (1-31) the card's statement cycle starts; null = no cycle. */
+    val statementCycleDay: Int? = null,
 )
 
 @Entity(tableName = "sender_labels")
@@ -84,6 +86,8 @@ data class TransactionEntity(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     val person: String? = null,
     val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
+    /** Kept in the ledger but omitted from analytics (corrections, refund adjustments, transfers). */
+    val excludeFromStats: Boolean = false,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -134,12 +138,14 @@ fun AccountEntity.toDomain() = Account(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
+    statementCycleDay,
 )
 
 fun Account.toEntity() = AccountEntity(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
+    statementCycleDay,
 )
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)
@@ -148,7 +154,7 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
-    spendingCategory,
+    spendingCategory, excludeFromStats,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -168,6 +174,7 @@ fun Transaction.toEntity() = TransactionEntity(
     category = category,
     person = person,
     spendingCategory = spendingCategory,
+    excludeFromStats = excludeFromStats,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

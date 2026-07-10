@@ -77,6 +77,7 @@ class TransactionRepositoryImpl(
                     category = parsed.category,
                     person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
                     spendingCategory = MerchantCategorizer.categorize(parsed.merchant, message.body),
+                    excludeFromStats = parsed.excludeFromStats,
                 )
             )
             IngestResult.Inserted(id)

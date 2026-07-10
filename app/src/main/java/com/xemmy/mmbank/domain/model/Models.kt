@@ -61,6 +61,8 @@ data class ParsedTransaction(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     /** Account the matched rule pins its transactions to; wins over detection. */
     val assignAccountId: Long? = null,
+    /** Persisted onto the transaction: keep it in the ledger but out of analytics. */
+    val excludeFromStats: Boolean = false,
 )
 
 data class Account(
@@ -92,6 +94,12 @@ data class Account(
     val maturityDateMillis: Long? = null,
     /** Free text: add-ons, early-settlement terms, penalties, etc. */
     val loanNotes: String? = null,
+    /**
+     * Day of month (1-31) the card's statement cycle starts, e.g. 10 = the
+     * "10th of last month → 9th of this month" window. Null = no statement
+     * cycle; date presets fall back to a rolling window.
+     */
+    val statementCycleDay: Int? = null,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement
@@ -124,6 +132,12 @@ data class Transaction(
     val person: String? = null,
     /** Spending category (auto-suggested from the merchant, user-overridable). */
     val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
+    /**
+     * Stays visible in the raw ledger (and keeps counting toward account
+     * balances) but is omitted from analytics: balance corrections, Tabby
+     * refund adjustments, internal transfers, cash refunds.
+     */
+    val excludeFromStats: Boolean = false,
 )
 
 /**
