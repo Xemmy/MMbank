@@ -33,6 +33,30 @@ object LedgerColors {
     val debit = Color(0xFFEF5350)
 }
 
+/**
+ * Contextual glow color tokens (Phase 5). Every faint background glow in the
+ * app resolves through here — screens reference a [GlowTone], never inline hex.
+ */
+object GlowPalette {
+    val creditMint = Color(0xFF9BD4B4)
+    val debitCopper = Color(0xFFD9917B)
+    val binanceGold = Color(0xFFE3C36B)
+    val tabbyTeal = Color(0xFF6FC4B8)
+
+    /** Alpha for the direction glow behind amounts. */
+    const val DIRECTION_ALPHA = 0.10f
+
+    /** Alpha for the account-origin brand glow — fainter than direction. */
+    const val ORIGIN_ALPHA = 0.08f
+
+    fun color(tone: GlowTone): Color = when (tone) {
+        GlowTone.CREDIT_MINT -> creditMint
+        GlowTone.DEBIT_COPPER -> debitCopper
+        GlowTone.BINANCE_GOLD -> binanceGold
+        GlowTone.TABBY_TEAL -> tabbyTeal
+    }
+}
+
 @Composable
 fun MMbankTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
