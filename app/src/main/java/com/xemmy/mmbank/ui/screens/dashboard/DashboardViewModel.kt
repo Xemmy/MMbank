@@ -71,6 +71,12 @@ data class DashboardUiState(
     val hasUnconvertedAmounts: Boolean = false,
     val stats: DashboardStats = DashboardStats(),
     val goal: GoalState = GoalState(),
+    /**
+     * When true, stats are computed over the raw ledger — transactions flagged
+     * [Transaction.excludeFromStats] (balance corrections, refund adjustments)
+     * are counted instead of filtered out. Off by default.
+     */
+    val showAllLedgerTransactions: Boolean = false,
     val hideBalances: Boolean = false,
     val refreshing: Boolean = false,
     val message: String? = null,
@@ -85,6 +91,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
+    private val showAllLedgerTransactions = MutableStateFlow(false)
 
     private data class PrefsSnapshot(val hideBalances: Boolean, val goal: GoalState)
 
@@ -179,87 +186,39 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     private val statsFlow = combine(
         container.transactionRepository.observeTransactions(),
         container.ratesRepository.observeRates(),
-    ) { transactions, rates -> computeStats(transactions, rates) }
-        .recoverAndRetry("DashboardViewModel.stats", container) { DashboardStats() }
+        showAllLedgerTransactions,
+    ) { transactions, rates, showAll ->
+        computeDashboardStats(transactions, rates, container.preferences.defaultCurrency, showAll)
+    }.recoverAndRetry("DashboardViewModel.stats", container) { DashboardStats() }
+
+    private data class UiMeta(
+        val refreshing: Boolean,
+        val message: String?,
+        val prefs: PrefsSnapshot,
+        val showAllLedger: Boolean,
+    )
 
     // Folded into one flow so the final combine stays within five slots.
-    private val uiMeta = combine(refreshing, message, prefsState) { busy, msg, prefs ->
-        Triple(busy, msg, prefs)
+    private val uiMeta = combine(refreshing, message, prefsState, showAllLedgerTransactions) { busy, msg, prefs, showAll ->
+        UiMeta(busy, msg, prefs, showAll)
     }
 
     val uiState: StateFlow<DashboardUiState> =
-        combine(ledgerState, senderLabels, statsFlow, uiMeta) { state, labels, stats, (busy, msg, prefs) ->
+        combine(ledgerState, senderLabels, statsFlow, uiMeta) { state, labels, stats, meta ->
             state.copy(
                 senderLabels = labels,
                 stats = stats,
-                goal = prefs.goal,
-                hideBalances = prefs.hideBalances,
-                refreshing = busy,
-                message = msg ?: state.message,
+                goal = meta.prefs.goal,
+                showAllLedgerTransactions = meta.showAllLedger,
+                hideBalances = meta.prefs.hideBalances,
+                refreshing = meta.refreshing,
+                message = meta.message ?: state.message,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
-    /**
-     * Six months of income/spend plus this month's per-person spend, all in
-     * the base currency (unconvertible amounts are skipped, not guessed).
-     */
-    private fun computeStats(transactions: List<Transaction>, rates: List<ExchangeRate>): DashboardStats {
-        val base = container.preferences.defaultCurrency
-        val ratesFromBase = rates
-            .filter { it.baseCode.equals(base, ignoreCase = true) }
-            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
-        val zone = ZoneId.systemDefault()
-
-        fun inBase(tx: Transaction): Double? =
-            CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase)
-
-        val thisMonth = YearMonth.now(zone)
-        val byMonth = transactions.groupBy {
-            YearMonth.from(Instant.ofEpochMilli(it.timestampMillis).atZone(zone))
-        }
-
-        val monthly = (5 downTo 0).map { back ->
-            val month = thisMonth.minusMonths(back.toLong())
-            var income = 0.0
-            var spend = 0.0
-            byMonth[month].orEmpty().forEach { tx ->
-                val value = inBase(tx) ?: return@forEach
-                if (tx.direction == TransactionDirection.CREDIT) income += value else spend += value
-            }
-            MonthlyFlow(
-                label = month.month.getDisplayName(TextStyle.SHORT, Locale.US),
-                income = income,
-                spend = spend,
-            )
-        }
-
-        val personSpends = byMonth[thisMonth].orEmpty()
-            .filter { it.direction == TransactionDirection.DEBIT }
-            .groupBy { it.person?.trim()?.takeIf(String::isNotEmpty) ?: "Unassigned" }
-            .mapNotNull { (person, txs) ->
-                val total = txs.sumOf { inBase(it) ?: 0.0 }
-                if (total <= 0.0) null else PersonSpend(person, total)
-            }
-            .sortedByDescending { it.amount }
-
-        val categorySpends = byMonth[thisMonth].orEmpty()
-            .filter { it.direction == TransactionDirection.DEBIT }
-            .groupBy { it.spendingCategory }
-            .mapNotNull { (category, txs) ->
-                val total = txs.sumOf { inBase(it) ?: 0.0 }
-                if (total <= 0.0) null else CategorySpend(category, total)
-            }
-            .sortedByDescending { it.amount }
-
-        val priorMonths = monthly.dropLast(1).filter { it.income != 0.0 || it.spend != 0.0 }.takeLast(3)
-        val avgNet = if (priorMonths.isEmpty()) 0.0 else priorMonths.sumOf { it.income - it.spend } / priorMonths.size
-
-        return DashboardStats(
-            monthly = monthly,
-            personSpends = personSpends,
-            categorySpends = categorySpends,
-            avgMonthlyNet = avgNet,
-        )
+    /** Flips analytics between "clean" (default) and raw-ledger figures. */
+    fun toggleShowAllLedgerTransactions() {
+        showAllLedgerTransactions.value = !showAllLedgerTransactions.value
     }
 
     fun toggleHideBalances() {
@@ -302,4 +261,80 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     fun dismissMessage() {
         message.value = null
     }
+}
+
+/**
+ * Six months of income/spend plus this month's per-person and per-category
+ * spend, all in the base currency (unconvertible amounts are skipped, not
+ * guessed).
+ *
+ * Transactions flagged [Transaction.excludeFromStats] (balance corrections,
+ * refund adjustments, internal transfers) are dropped before any aggregation
+ * unless [includeExcluded] is set, in which case the raw ledger is computed.
+ *
+ * Pure and top-level so it runs under plain JVM unit tests; [zone] and
+ * [thisMonth] are injectable for determinism and default to the device values.
+ */
+internal fun computeDashboardStats(
+    transactions: List<Transaction>,
+    rates: List<ExchangeRate>,
+    baseCurrency: String,
+    includeExcluded: Boolean = false,
+    zone: ZoneId = ZoneId.systemDefault(),
+    thisMonth: YearMonth = YearMonth.now(zone),
+): DashboardStats {
+    val counted = if (includeExcluded) transactions else transactions.filter { !it.excludeFromStats }
+    val ratesFromBase = rates
+        .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+        .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+
+    fun inBase(tx: Transaction): Double? =
+        CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase)
+
+    val byMonth = counted.groupBy {
+        YearMonth.from(Instant.ofEpochMilli(it.timestampMillis).atZone(zone))
+    }
+
+    val monthly = (5 downTo 0).map { back ->
+        val month = thisMonth.minusMonths(back.toLong())
+        var income = 0.0
+        var spend = 0.0
+        byMonth[month].orEmpty().forEach { tx ->
+            val value = inBase(tx) ?: return@forEach
+            if (tx.direction == TransactionDirection.CREDIT) income += value else spend += value
+        }
+        MonthlyFlow(
+            label = month.month.getDisplayName(TextStyle.SHORT, Locale.US),
+            income = income,
+            spend = spend,
+        )
+    }
+
+    val personSpends = byMonth[thisMonth].orEmpty()
+        .filter { it.direction == TransactionDirection.DEBIT }
+        .groupBy { it.person?.trim()?.takeIf(String::isNotEmpty) ?: "Unassigned" }
+        .mapNotNull { (person, txs) ->
+            val total = txs.sumOf { inBase(it) ?: 0.0 }
+            if (total <= 0.0) null else PersonSpend(person, total)
+        }
+        .sortedByDescending { it.amount }
+
+    val categorySpends = byMonth[thisMonth].orEmpty()
+        .filter { it.direction == TransactionDirection.DEBIT }
+        .groupBy { it.spendingCategory }
+        .mapNotNull { (category, txs) ->
+            val total = txs.sumOf { inBase(it) ?: 0.0 }
+            if (total <= 0.0) null else CategorySpend(category, total)
+        }
+        .sortedByDescending { it.amount }
+
+    val priorMonths = monthly.dropLast(1).filter { it.income != 0.0 || it.spend != 0.0 }.takeLast(3)
+    val avgNet = if (priorMonths.isEmpty()) 0.0 else priorMonths.sumOf { it.income - it.spend } / priorMonths.size
+
+    return DashboardStats(
+        monthly = monthly,
+        personSpends = personSpends,
+        categorySpends = categorySpends,
+        avgMonthlyNet = avgNet,
+    )
 }

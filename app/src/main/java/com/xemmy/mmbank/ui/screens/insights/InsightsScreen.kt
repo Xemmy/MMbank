@@ -21,8 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -70,6 +72,25 @@ fun InsightsScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Low-profile switch between "clean" analytics (excluded rows filtered
+        // out, the default) and the raw ledger with every transaction counted.
+        item(key = "ledger_toggle") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                FilterChip(
+                    selected = state.showAllLedgerTransactions,
+                    onClick = viewModel::toggleShowAllLedgerTransactions,
+                    label = { Text("Raw ledger") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.VisibilityOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                )
+            }
+        }
+
         item(key = "month_tiles") { MonthTiles(state) }
 
         item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }

@@ -38,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -318,9 +319,12 @@ fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Bool
         tx.source.name.lowercase().replace('_', ' '),
         tx.timestampMillis.asDateTime(),
     ).joinToString(" · ")
+    // Same audit-friendly muting as the Activity feed: excluded rows stay
+    // listed but render dimmed with a slashed-eye marker.
     Row(
         Modifier
             .fillMaxWidth()
+            .alpha(if (tx.excludeFromStats) 0.55f else 1f)
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -340,5 +344,13 @@ fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Bool
             style = MaterialTheme.typography.bodyLarge,
             color = if (isCredit) LedgerColors.credit else LedgerColors.debit,
         )
+        if (tx.excludeFromStats) {
+            Icon(
+                Icons.Filled.VisibilityOff,
+                contentDescription = "Excluded from analytics",
+                modifier = Modifier.padding(start = 4.dp).size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
