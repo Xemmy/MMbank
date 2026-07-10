@@ -22,15 +22,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -39,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -58,11 +64,18 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.filter.AccountFilter
+import com.xemmy.mmbank.domain.filter.ActivityFilters
+import com.xemmy.mmbank.domain.filter.AnalyticsStatusFilter
+import com.xemmy.mmbank.domain.filter.DateRangeFilter
+import com.xemmy.mmbank.domain.filter.PersonFilter
+import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
@@ -78,42 +91,6 @@ import kotlinx.coroutines.launch
 
 /** Shown as the "rule" on hand-entered rows so they read clearly in the list. */
 const val MANUAL_ENTRY_LABEL = "Manual entry"
-
-/** Quick date ranges for the Activity list. */
-enum class DateFilter(val label: String) {
-    ALL("All"),
-    TODAY("Today"),
-    WEEK("7 days"),
-    MONTH("This month"),
-}
-
-/** Account dimension of the Activity filter: any / only unassigned / one account. */
-sealed interface AccountFilter {
-    data object Any : AccountFilter
-    data object Unassigned : AccountFilter
-    data class Specific(val id: Long) : AccountFilter
-}
-
-/** Person dimension of the Activity filter: any / only unassigned / one person. */
-sealed interface PersonFilter {
-    data object Any : PersonFilter
-    data object Unassigned : PersonFilter
-    data class Specific(val name: String) : PersonFilter
-}
-
-/** All Activity-tab filters, folded into one flow so the combine stays small. */
-data class ActivityFilters(
-    val dateFilter: DateFilter = DateFilter.ALL,
-    val query: String = "",
-    val direction: TransactionDirection? = null,
-    val account: AccountFilter = AccountFilter.Any,
-    val person: PersonFilter = PersonFilter.Any,
-) {
-    /** True when anything beyond the default (show-everything) is set. */
-    val active: Boolean
-        get() = dateFilter != DateFilter.ALL || query.isNotBlank() || direction != null ||
-            account != AccountFilter.Any || person != PersonFilter.Any
-}
 
 data class TransactionsUiState(
     val transactions: List<Transaction> = emptyList(),
@@ -138,8 +115,13 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         container.senderLabelRepository.observeLabels(),
         filters,
     ) { transactions, accounts, senderLabels, f ->
-        val cutoff = filterCutoffMillis(f.dateFilter)
-        val visible = transactions.filter { tx -> matches(tx, f, cutoff, senderLabels) }
+        // All predicate logic lives in the pure-Kotlin engine so it's JVM-testable.
+        val visible = TransactionFilterEngine.filter(
+            transactions = transactions,
+            filters = f,
+            accounts = accounts,
+            bankNameOf = { sender -> bankNameFor(sender, senderLabels) },
+        )
         // The menu is fed ONLY by the saved list (Settings > Preferences >
         // People) so removing a person there really removes it here. Names
         // dedupe case-insensitively to avoid "Ahmed" vs "ahmed" doubles.
@@ -162,63 +144,22 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
 
-    /** Applies every active filter to one transaction. */
-    private fun matches(
-        tx: Transaction,
-        f: ActivityFilters,
-        cutoff: Long?,
-        senderLabels: Map<String, String>,
-    ): Boolean {
-        if (cutoff != null && tx.timestampMillis < cutoff) return false
-        if (f.direction != null && tx.direction != f.direction) return false
-        when (val a = f.account) {
-            AccountFilter.Any -> Unit
-            AccountFilter.Unassigned -> if (tx.accountId != null) return false
-            is AccountFilter.Specific -> if (tx.accountId != a.id) return false
-        }
-        when (val p = f.person) {
-            PersonFilter.Any -> Unit
-            PersonFilter.Unassigned -> if (!tx.person.isNullOrBlank()) return false
-            is PersonFilter.Specific -> if (!tx.person.equals(p.name, ignoreCase = true)) return false
-        }
-        val q = f.query.trim()
-        if (q.isNotEmpty()) {
-            val haystack = listOfNotNull(
-                tx.merchant,
-                tx.rawMessage,
-                tx.sender,
-                bankNameFor(tx.sender, senderLabels),
-                tx.amount.toPlainString(),
-                tx.currencyCode,
-                tx.spendingCategory.label,
-            )
-            if (haystack.none { it.contains(q, ignoreCase = true) }) return false
-        }
-        return true
-    }
-
-    fun setDateFilter(filter: DateFilter) { filters.value = filters.value.copy(dateFilter = filter) }
+    fun setDateRange(range: DateRangeFilter) { filters.value = filters.value.copy(dateRange = range) }
     fun setQuery(query: String) { filters.value = filters.value.copy(query = query) }
     fun setDirectionFilter(direction: TransactionDirection?) {
         filters.value = filters.value.copy(direction = direction)
     }
     fun setAccountFilter(account: AccountFilter) { filters.value = filters.value.copy(account = account) }
     fun setPersonFilter(person: PersonFilter) { filters.value = filters.value.copy(person = person) }
-    fun clearFilters() { filters.value = ActivityFilters() }
-
-    /** Start-of-range in epoch millis; null = no lower bound. */
-    private fun filterCutoffMillis(filter: DateFilter): Long? {
-        if (filter == DateFilter.ALL) return null
-        val zone = java.time.ZoneId.systemDefault()
-        val today = java.time.LocalDate.now(zone)
-        val start = when (filter) {
-            DateFilter.TODAY -> today
-            DateFilter.WEEK -> today.minusDays(6)
-            DateFilter.MONTH -> today.withDayOfMonth(1)
-            DateFilter.ALL -> return null
-        }
-        return start.atStartOfDay(zone).toInstant().toEpochMilli()
+    fun setTriageOnly(enabled: Boolean) { filters.value = filters.value.copy(triageOnly = enabled) }
+    fun setAmountRange(min: java.math.BigDecimal?, max: java.math.BigDecimal?) {
+        filters.value = filters.value.copy(minAmount = min, maxAmount = max)
     }
+    fun setSourceFilter(source: TransactionSource?) { filters.value = filters.value.copy(source = source) }
+    fun setAnalyticsStatus(status: AnalyticsStatusFilter?) {
+        filters.value = filters.value.copy(analyticsStatus = status)
+    }
+    fun clearFilters() { filters.value = ActivityFilters() }
 
     private fun safeWrite(what: String, block: suspend () -> Unit) {
         viewModelScope.launch {
@@ -338,10 +279,14 @@ fun TransactionsScreen(
             ActivityFilterBar(
                 state = state,
                 onQuery = viewModel::setQuery,
-                onDateFilter = viewModel::setDateFilter,
+                onDateRange = viewModel::setDateRange,
                 onDirectionFilter = viewModel::setDirectionFilter,
                 onAccountFilter = viewModel::setAccountFilter,
                 onPersonFilter = viewModel::setPersonFilter,
+                onTriageOnly = viewModel::setTriageOnly,
+                onAmountRange = viewModel::setAmountRange,
+                onSourceFilter = viewModel::setSourceFilter,
+                onAnalyticsStatus = viewModel::setAnalyticsStatus,
                 onClear = viewModel::clearFilters,
             )
 
@@ -414,23 +359,32 @@ fun TransactionsScreen(
 }
 
 /**
- * Search box + date/direction/account/person filter chips for the Activity list.
- * Filtering is purely in-memory (personal-scale data), so it's instant and needs
- * no new queries. Chip rows scroll horizontally so they never wrap on narrow phones.
+ * Search box + date/direction/account/person/triage/amount/source/analytics
+ * filter chips for the Activity list. Filtering is purely in-memory
+ * (personal-scale data), so it's instant and needs no new queries. Chip rows
+ * scroll horizontally so they never wrap on narrow phones.
  */
 @Composable
 private fun ActivityFilterBar(
     state: TransactionsUiState,
     onQuery: (String) -> Unit,
-    onDateFilter: (DateFilter) -> Unit,
+    onDateRange: (DateRangeFilter) -> Unit,
     onDirectionFilter: (TransactionDirection?) -> Unit,
     onAccountFilter: (AccountFilter) -> Unit,
     onPersonFilter: (PersonFilter) -> Unit,
+    onTriageOnly: (Boolean) -> Unit,
+    onAmountRange: (java.math.BigDecimal?, java.math.BigDecimal?) -> Unit,
+    onSourceFilter: (TransactionSource?) -> Unit,
+    onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
     onClear: () -> Unit,
 ) {
     val f = state.filters
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
+    var sourceMenuOpen by remember { mutableStateOf(false) }
+    var analyticsMenuOpen by remember { mutableStateOf(false) }
+    var customRangeOpen by remember { mutableStateOf(false) }
+    var amountOpen by remember { mutableStateOf(false) }
 
     Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedTextField(
@@ -451,20 +405,55 @@ private fun ActivityFilterBar(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // Date range.
+        // Date range: fixed presets, the data-driven statement cycle, and a
+        // twin-calendar custom range.
         Row(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            DateFilter.entries.forEach { filter ->
+            val presets = listOf(
+                DateRangeFilter.All to "All",
+                DateRangeFilter.Today to "Today",
+                DateRangeFilter.Past7Days to "Past 7 days",
+                DateRangeFilter.Past30Days to "Past 30 days",
+                DateRangeFilter.YearToDate to "Year-to-date",
+            )
+            presets.forEach { (range, label) ->
                 FilterChip(
-                    selected = f.dateFilter == filter,
-                    onClick = { onDateFilter(filter) },
-                    label = { Text(filter.label, style = MaterialTheme.typography.labelSmall) },
+                    selected = f.dateRange == range,
+                    onClick = { onDateRange(range) },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                 )
             }
+            // Label the statement chip with the cycle when one applies, so the
+            // rolling-30-day fallback (no account / no cycle day) is visible.
+            val cycleDay = TransactionFilterEngine
+                .activeAccount(f.account, state.accounts)?.statementCycleDay
+            FilterChip(
+                selected = f.dateRange == DateRangeFilter.StatementCycle,
+                onClick = { onDateRange(DateRangeFilter.StatementCycle) },
+                label = {
+                    Text(
+                        if (cycleDay != null) "Statement (day $cycleDay)" else "Statement",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+            )
+            val custom = f.dateRange as? DateRangeFilter.Custom
+            FilterChip(
+                selected = custom != null,
+                onClick = { customRangeOpen = true },
+                label = {
+                    Text(
+                        custom?.let { "${it.start.format(chipDateFormat)} – ${it.end.format(chipDateFormat)}" }
+                            ?: "Custom…",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                },
+                leadingIcon = { Icon(Icons.Filled.DateRange, contentDescription = null, Modifier.size(16.dp)) },
+            )
         }
 
         // Direction + account + person.
@@ -554,11 +543,226 @@ private fun ActivityFilterBar(
                 }
             }
 
+        }
+
+        // Triage + amount + source + analytics status.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // "Inbox Zero": rows still needing review — uncategorized captures
+            // and system-generated balance adjustments.
+            FilterChip(
+                selected = f.triageOnly,
+                onClick = { onTriageOnly(!f.triageOnly) },
+                label = { Text("Inbox Zero", style = MaterialTheme.typography.labelSmall) },
+                leadingIcon = { Icon(Icons.Filled.Inbox, contentDescription = null, Modifier.size(16.dp)) },
+            )
+
+            // Amount threshold / range.
+            val amountLabel = when {
+                f.minAmount != null && f.maxAmount != null -> "${f.minAmount}–${f.maxAmount}"
+                f.minAmount != null -> "≥ ${f.minAmount}"
+                f.maxAmount != null -> "≤ ${f.maxAmount}"
+                else -> "Amount"
+            }
+            FilterChip(
+                selected = f.minAmount != null || f.maxAmount != null,
+                onClick = { amountOpen = true },
+                label = { Text(amountLabel, style = MaterialTheme.typography.labelSmall) },
+            )
+
+            // Capture source.
+            Box {
+                FilterChip(
+                    selected = f.source != null,
+                    onClick = { sourceMenuOpen = true },
+                    label = {
+                        Text(
+                            f.source?.let(::sourceLabel) ?: "Source",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                )
+                DropdownMenu(expanded = sourceMenuOpen, onDismissRequest = { sourceMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Any source") },
+                        onClick = { sourceMenuOpen = false; onSourceFilter(null) },
+                    )
+                    TransactionSource.entries.forEach { source ->
+                        DropdownMenuItem(
+                            text = { Text(sourceLabel(source)) },
+                            onClick = { sourceMenuOpen = false; onSourceFilter(source) },
+                        )
+                    }
+                }
+            }
+
+            // Analytics status (the Phase 1 excludeFromStats flag).
+            Box {
+                FilterChip(
+                    selected = f.analyticsStatus != null,
+                    onClick = { analyticsMenuOpen = true },
+                    label = {
+                        Text(
+                            f.analyticsStatus?.label ?: "Analytics",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                )
+                DropdownMenu(expanded = analyticsMenuOpen, onDismissRequest = { analyticsMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("All rows") },
+                        onClick = { analyticsMenuOpen = false; onAnalyticsStatus(null) },
+                    )
+                    AnalyticsStatusFilter.entries.forEach { status ->
+                        DropdownMenuItem(
+                            text = { Text(status.label) },
+                            onClick = { analyticsMenuOpen = false; onAnalyticsStatus(status) },
+                        )
+                    }
+                }
+            }
+
             if (f.active) {
                 TextButton(onClick = onClear) { Text("Clear") }
             }
         }
     }
+
+    if (customRangeOpen) {
+        CustomDateRangeDialog(
+            initial = f.dateRange as? DateRangeFilter.Custom,
+            onDismiss = { customRangeOpen = false },
+            onSelect = { start, end ->
+                onDateRange(DateRangeFilter.Custom(start, end))
+                customRangeOpen = false
+            },
+        )
+    }
+
+    if (amountOpen) {
+        AmountRangeDialog(
+            currentMin = f.minAmount,
+            currentMax = f.maxAmount,
+            onDismiss = { amountOpen = false },
+            onApply = { min, max ->
+                onAmountRange(min, max)
+                amountOpen = false
+            },
+        )
+    }
+}
+
+/** Short human label for a capture source in the filter UI. */
+private fun sourceLabel(source: TransactionSource): String = when (source) {
+    TransactionSource.MANUAL -> "Manual"
+    TransactionSource.SMS -> "SMS"
+    TransactionSource.PUSH_NOTIFICATION -> "Notification"
+    TransactionSource.BINANCE_SYNC -> "Binance sync"
+}
+
+private val chipDateFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")
+
+/** Twin-calendar picker for an arbitrary inclusive Start→End window. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomDateRangeDialog(
+    initial: DateRangeFilter.Custom?,
+    onDismiss: () -> Unit,
+    onSelect: (java.time.LocalDate, java.time.LocalDate) -> Unit,
+) {
+    // The Material picker works in UTC day-millis, so conversions stay in UTC.
+    fun java.time.LocalDate.toUtcMillis() =
+        atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+    fun Long.toUtcDate() =
+        java.time.Instant.ofEpochMilli(this).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+
+    val pickerState = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = initial?.start?.toUtcMillis(),
+        initialSelectedEndDateMillis = initial?.end?.toUtcMillis(),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = pickerState.selectedStartDateMillis != null &&
+                    pickerState.selectedEndDateMillis != null,
+                onClick = {
+                    val start = pickerState.selectedStartDateMillis
+                    val end = pickerState.selectedEndDateMillis
+                    if (start != null && end != null) onSelect(start.toUtcDate(), end.toUtcDate())
+                },
+            ) { Text("Apply") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DateRangePicker(
+            state = pickerState,
+            modifier = Modifier.weight(1f),
+            showModeToggle = false,
+        )
+    }
+}
+
+/** Min/max amount bounds; either side may be left blank for an open threshold. */
+@Composable
+private fun AmountRangeDialog(
+    currentMin: java.math.BigDecimal?,
+    currentMax: java.math.BigDecimal?,
+    onDismiss: () -> Unit,
+    onApply: (java.math.BigDecimal?, java.math.BigDecimal?) -> Unit,
+) {
+    var minText by remember { mutableStateOf(currentMin?.toPlainString().orEmpty()) }
+    var maxText by remember { mutableStateOf(currentMax?.toPlainString().orEmpty()) }
+    val min = minText.trim().replace(",", "").takeIf { it.isNotEmpty() }?.toBigDecimalOrNull()
+    val max = maxText.trim().replace(",", "").takeIf { it.isNotEmpty() }?.toBigDecimalOrNull()
+    val minValid = minText.isBlank() || min != null
+    val maxValid = maxText.isBlank() || max != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Filter by amount") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Leave a field blank for an open bound (e.g. only “Min” = everything above it).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = minText,
+                        onValueChange = { minText = it },
+                        label = { Text("Min") },
+                        singleLine = true,
+                        isError = !minValid,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = maxText,
+                        onValueChange = { maxText = it },
+                        label = { Text("Max") },
+                        singleLine = true,
+                        isError = !maxValid,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = minValid && maxValid,
+                onClick = { onApply(min, max) },
+            ) { Text("Apply") }
+        },
+        dismissButton = {
+            TextButton(onClick = { onApply(null, null) }) { Text("Clear") }
+        },
+    )
 }
 
 @Composable
