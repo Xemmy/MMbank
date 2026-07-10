@@ -12,13 +12,16 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import com.xemmy.mmbank.ui.theme.AppFonts
+import com.xemmy.mmbank.ui.theme.ObsidianTokens
 
 /**
- * Renders a money display string with the Phase 5 typography split: numerals in
- * a high-contrast weight with tabular figures and geometric tracking, the
- * trailing currency ISO code distinctly smaller and lighter. Strings without a
- * trailing code (the hide-balances mask, for one) render whole, so this is a
- * drop-in replacement for a plain Text of `asMoney`/`asMoneyOrMask` output.
+ * Renders a money display string with the Obsidian Ledger typography split
+ * (spec 5.1): numerals in IBM Plex Mono SemiBold with tabular figures, the
+ * trailing currency ISO code distinctly smaller, lighter and low-opacity.
+ * Strings without a trailing code (the hide-balances mask, for one) render
+ * whole, so this is a drop-in replacement for a plain Text of
+ * `asMoney`/`asMoneyOrMask` output.
  */
 @Composable
 fun AmountText(
@@ -32,6 +35,7 @@ fun AmountText(
         buildAnnotatedString {
             withStyle(
                 SpanStyle(
+                    fontFamily = AppFonts.plexMono,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 0.2.sp,
                     // Tabular numerals: figures align instead of wobbling per digit.
@@ -42,10 +46,11 @@ fun AmountText(
                 append(' ')
                 withStyle(
                     SpanStyle(
-                        fontSize = style.fontSize * 0.68f,
+                        fontFamily = AppFonts.inter,
+                        fontSize = ObsidianTokens.currencyFontSize,
                         fontWeight = FontWeight.Light,
-                        letterSpacing = 1.sp,
-                        color = color.copy(alpha = 0.72f),
+                        letterSpacing = ObsidianTokens.currencyTracking,
+                        color = color.copy(alpha = 0.55f),
                     )
                 ) { append(code) }
             }

@@ -5,6 +5,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /**
  * Semantic identity of a contextual glow. Screens pick a tone; only the theme
@@ -23,6 +24,25 @@ enum class GlowTone {
 
     /** Soft teal for Tabby-originated accounts/cards. */
     TABBY_TEAL,
+
+    /** Neutral slate for manual/system accounts with no registered brand. */
+    SYSTEM_SLATE,
+}
+
+/**
+ * Per-tone edge-glow alpha (spec 5.1). Kept free of any [GlowPalette] color
+ * property so this lookup stays a pure primitive-only computation — JVM
+ * tests can exercise it without forcing Compose `Color` construction.
+ */
+object GlowAlphas {
+    const val DIRECTION = 0.10f
+
+    fun origin(tone: GlowTone): Float = when (tone) {
+        GlowTone.BINANCE_GOLD -> ObsidianTokens.GLOW_BINANCE_ALPHA
+        GlowTone.TABBY_TEAL -> ObsidianTokens.GLOW_TABBY_ALPHA
+        GlowTone.SYSTEM_SLATE -> ObsidianTokens.GLOW_SYSTEM_ALPHA
+        GlowTone.CREDIT_MINT, GlowTone.DEBIT_COPPER -> DIRECTION
+    }
 }
 
 object GlowTones {
@@ -72,6 +92,26 @@ fun Modifier.glowBackdrop(
                 center = center,
                 radius = radius,
             ),
+            radius = radius,
+            center = center,
+        )
+    }
+}
+
+/**
+ * Row edge glow (spec 5.3): a faint radial bloom anchored to the card's left
+ * edge, vertically centered, ~110dp radius. Per-brand alpha via
+ * [GlowAlphas.origin]. A null tone draws nothing.
+ */
+fun Modifier.rowEdgeGlow(tone: GlowTone?): Modifier {
+    if (tone == null) return this
+    return drawBehind {
+        if (size.minDimension <= 0f) return@drawBehind
+        val color = GlowPalette.color(tone).copy(alpha = GlowAlphas.origin(tone))
+        val radius = 110.dp.toPx()
+        val center = Offset(0f, size.height / 2f)
+        drawCircle(
+            brush = Brush.radialGradient(colors = listOf(color, Color.Transparent), center = center, radius = radius),
             radius = radius,
             center = center,
         )

@@ -1,0 +1,3 @@
+Space Grotesk, IBM Plex Mono and Inter are licensed under the SIL Open Font
+License, Version 1.1, available at https://openfontlicense.org. Files
+retrieved from Google Fonts (fonts.google.com).
