@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
@@ -57,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -78,7 +80,9 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
@@ -1077,8 +1081,13 @@ private fun TransactionEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        // Glass overlay: translucent container + hairline border, with a real
+        // backdrop blur on API 31+ (falls back to a more opaque surface below).
+        modifier = Modifier.glassSurface(AlertDialogDefaults.shape),
+        containerColor = Color.Transparent,
         title = { Text(if (isEdit) "Edit transaction" else "Add transaction", style = MaterialTheme.typography.titleLarge) },
         text = {
+            GlassDialogBackdrop()
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier

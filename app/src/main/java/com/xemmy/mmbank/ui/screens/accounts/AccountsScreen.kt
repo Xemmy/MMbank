@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
@@ -48,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -65,7 +67,9 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
@@ -368,8 +372,13 @@ private fun AdjustBalanceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        // Glass overlay: translucent container + hairline border, with a real
+        // backdrop blur on API 31+ (falls back to a more opaque surface below).
+        modifier = Modifier.glassSurface(AlertDialogDefaults.shape),
+        containerColor = Color.Transparent,
         title = { Text("Adjust balance", style = MaterialTheme.typography.titleLarge) },
         text = {
+            GlassDialogBackdrop()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "“${account.name}” currently computes to ${row.balance.asMoney(account.currencyCode)} " +
