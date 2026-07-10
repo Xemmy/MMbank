@@ -57,6 +57,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -103,6 +104,7 @@ import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
+import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.MetaLabel
@@ -572,6 +574,15 @@ private fun ObsidianChip(
         ),
     )
 }
+
+/** Glass field colors (spec 5.3): surfaceGlass fill, hairline/focus border — shared by every OutlinedTextField in the glass dialogs. */
+@Composable
+private fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
+    unfocusedContainerColor = ObsidianTokens.surfaceGlass,
+    focusedContainerColor = ObsidianTokens.surfaceGlass,
+    unfocusedBorderColor = ObsidianTokens.hairline,
+    focusedBorderColor = Color.White.copy(alpha = 0.28f),
+)
 
 /**
  * Search box + date/direction/account/person/triage/amount/source/analytics
@@ -1314,7 +1325,6 @@ private fun TransactionEditorDialog(
 
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
-    var categoryMenuOpen by remember { mutableStateOf(false) }
 
     val amountValue = amount.replace(",", "").toBigDecimalOrNull()
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
@@ -1344,7 +1354,7 @@ private fun TransactionEditorDialog(
                 // Debit / credit picker: drives the sign in every balance sum.
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TransactionDirection.entries.forEach { entry ->
-                        FilterChip(
+                        ObsidianChip(
                             selected = direction == entry,
                             onClick = { direction = entry },
                             label = { Text(if (entry == TransactionDirection.DEBIT) "Spent" else "Received") },
@@ -1355,38 +1365,58 @@ private fun TransactionEditorDialog(
                     OutlinedTextField(
                         value = amount,
                         onValueChange = { amount = it },
-                        label = { Text("Amount") },
+                        label = { MetaLabel("Amount") },
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = AppFonts.plexMono,
+                            fontSize = ObsidianTokens.amountFontSize,
+                        ),
                         singleLine = true,
                         isError = amount.isNotBlank() && amountValue == null,
+                        colors = glassFieldColors(),
                         modifier = Modifier.weight(0.6f),
                     )
                     OutlinedTextField(
                         value = currency,
                         onValueChange = { currency = it.uppercase().take(3) },
-                        label = { Text("Currency") },
+                        label = { MetaLabel("Currency") },
                         singleLine = true,
+                        colors = glassFieldColors(),
                         modifier = Modifier.weight(0.4f),
                     )
                 }
                 OutlinedTextField(
                     value = merchant,
                     onValueChange = { merchant = it },
-                    label = { Text("Merchant / description (optional)") },
+                    label = { MetaLabel("Merchant / description (optional)") },
                     singleLine = true,
+                    colors = glassFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = dateIso,
                     onValueChange = { dateIso = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
+                    label = { MetaLabel("Date (YYYY-MM-DD)") },
                     singleLine = true,
                     isError = date == null,
+                    colors = glassFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 // Account picker — same target the capture pipeline assigns to.
+                // A glowing brand dot previews the row's edge glow before saving.
                 Box {
+                    val accountTone = GlowTones.forAccountOrigin(
+                        accountName,
+                        accounts.firstOrNull { it.id == accountId }?.bankName,
+                    ) ?: GlowTone.SYSTEM_SLATE
                     OutlinedButton(onClick = { accountMenuOpen = true }) {
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(GlowPalette.color(accountTone)),
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text("Account: " + (accountName ?: "Unassigned"))
                     }
                     DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
@@ -1421,26 +1451,31 @@ private fun TransactionEditorDialog(
                     }
                 }
 
-                // Category picker — defaults to the merchant-derived guess ("auto"),
-                // overridable. Mirrors the auto-categorization done on capture.
-                Box {
-                    OutlinedButton(onClick = { categoryMenuOpen = true }) {
-                        val autoTag = if (categoryOverride == null) " (auto)" else ""
-                        Text("Category: ${effectiveCategory.emoji} ${effectiveCategory.label}$autoTag")
-                    }
-                    DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Auto (from merchant)") },
-                            onClick = { categoryMenuOpen = false; categoryOverride = null },
+                // Category chip row — defaults to the merchant-derived guess
+                // ("Auto"), overridable. Mirrors the auto-categorization done on
+                // capture. Active chip reads teal (spec 5.3).
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MetaLabel("Category")
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        ObsidianChip(
+                            selected = categoryOverride == null,
+                            onClick = { categoryOverride = null },
+                            label = { Text("Auto · ${suggestedCategory.emoji} ${suggestedCategory.label}") },
                         )
                         SpendingCategory.entries.forEach { category ->
-                            DropdownMenuItem(
-                                text = { Text("${category.emoji}  ${category.label}") },
-                                onClick = { categoryMenuOpen = false; categoryOverride = category },
+                            ObsidianChip(
+                                selected = categoryOverride == category,
+                                onClick = { categoryOverride = category },
+                                label = { Text("${category.emoji} ${category.label}") },
                             )
                         }
                     }
                 }
+
+                androidx.compose.material3.HorizontalDivider(color = ObsidianTokens.hairline)
 
                 // Analytics purity control: internal transfers, cash refunds and
                 // the like stay in the ledger but shouldn't skew the stats.
@@ -1449,17 +1484,25 @@ private fun TransactionEditorDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Exclude from Analytics", style = MaterialTheme.typography.bodyLarge)
+                    Column(Modifier.weight(1f)) {
+                        Text("Exclude from Analytics", style = MaterialTheme.typography.bodyLarge)
+                        MetaLabel("Kept in ledger, hidden from stats & charts", maxLines = 2)
+                    }
                     Switch(
                         checked = excludeFromStats,
                         onCheckedChange = { excludeFromStats = it },
+                        colors = SwitchDefaults.colors(checkedTrackColor = ObsidianTokens.credit),
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(
+            androidx.compose.material3.Button(
                 enabled = valid,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = ObsidianTokens.textPrimary,
+                    contentColor = ObsidianTokens.canvas,
+                ),
                 onClick = {
                     // Button is only enabled when both parse, so this is safe.
                     val parsedDate = date
@@ -1485,7 +1528,7 @@ private fun TransactionEditorDialog(
                         )
                     }
                 },
-            ) { Text(if (isEdit) "Save" else "Add") }
+            ) { Text(if (isEdit) "Save changes" else "Add transaction") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
