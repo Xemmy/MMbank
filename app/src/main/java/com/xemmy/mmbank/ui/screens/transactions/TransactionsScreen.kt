@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -52,16 +54,25 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -273,6 +284,29 @@ fun TransactionsScreen(
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
 
+    // Fluid header: scrolling the feed up compresses/crossfades the search
+    // field and filter chips into a compact bar; scrolling back down at the
+    // top of the list re-expands them. All the math lives in FilterBarCollapse
+    // (pure Kotlin); this connection only forwards deltas and mirrors the
+    // fraction into Compose state.
+    val collapse = remember { FilterBarCollapse() }
+    var collapseFraction by remember { mutableFloatStateOf(0f) }
+    val feedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val consumedY = collapse.onPreScroll(available.y)
+                collapseFraction = collapse.fraction
+                return Offset(0f, consumedY)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                val consumedY = collapse.onPostScroll(available.y)
+                collapseFraction = collapse.fraction
+                return Offset(0f, consumedY)
+            }
+        }
+    }
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = { addOpen = true }) {
@@ -283,21 +317,45 @@ fun TransactionsScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .nestedScroll(feedScrollConnection),
         ) {
-            ActivityFilterBar(
-                state = state,
-                onQuery = viewModel::setQuery,
-                onDateRange = viewModel::setDateRange,
-                onDirectionFilter = viewModel::setDirectionFilter,
-                onAccountFilter = viewModel::setAccountFilter,
-                onPersonFilter = viewModel::setPersonFilter,
-                onTriageOnly = viewModel::setTriageOnly,
-                onAmountRange = viewModel::setAmountRange,
-                onSourceFilter = viewModel::setSourceFilter,
-                onAnalyticsStatus = viewModel::setAnalyticsStatus,
-                onClear = viewModel::clearFilters,
+            CompactFilterBar(
+                query = state.filters.query,
+                filtersActive = state.filters.active,
+                fraction = collapseFraction,
+                onExpand = {
+                    collapse.expand()
+                    collapseFraction = 0f
+                },
             )
+            Box(
+                Modifier
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        collapse.updateRange(placeable.height.toFloat())
+                        val visibleHeight = (placeable.height * (1f - collapseFraction)).roundToInt()
+                        layout(placeable.width, visibleHeight) {
+                            placeable.placeRelative(0, visibleHeight - placeable.height)
+                        }
+                    }
+                    .graphicsLayer { alpha = 1f - collapseFraction },
+            ) {
+                ActivityFilterBar(
+                    state = state,
+                    onQuery = viewModel::setQuery,
+                    onDateRange = viewModel::setDateRange,
+                    onDirectionFilter = viewModel::setDirectionFilter,
+                    onAccountFilter = viewModel::setAccountFilter,
+                    onPersonFilter = viewModel::setPersonFilter,
+                    onTriageOnly = viewModel::setTriageOnly,
+                    onAmountRange = viewModel::setAmountRange,
+                    onSourceFilter = viewModel::setSourceFilter,
+                    onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                    onClear = viewModel::clearFilters,
+                )
+            }
 
             if (state.transactions.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -364,6 +422,68 @@ fun TransactionsScreen(
                 editing = null
             },
         )
+    }
+}
+
+/**
+ * The compact top app bar the filter header crossfades into on scroll: a thin
+ * tappable strip echoing the active query/filters. Its height and alpha track
+ * the collapse [fraction], so it grows in exactly as the full bar compresses
+ * out; tapping it snaps the full bar back open.
+ */
+@Composable
+private fun CompactFilterBar(
+    query: String,
+    filtersActive: Boolean,
+    fraction: Float,
+    onExpand: () -> Unit,
+) {
+    if (fraction <= 0f) return
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val visibleHeight = (placeable.height * fraction).roundToInt()
+                layout(placeable.width, visibleHeight) {
+                    placeable.placeRelative(0, visibleHeight - placeable.height)
+                }
+            }
+            .graphicsLayer { alpha = fraction },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .clickable(onClick = onExpand)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                when {
+                    query.isNotBlank() -> "“$query”"
+                    filtersActive -> "Filters active"
+                    else -> "Search & filters"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                Icons.Filled.ExpandMore,
+                contentDescription = "Expand filters",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -803,7 +923,13 @@ private fun TransactionCard(
     // Contextual glows: direction bloom behind the amount, plus a fainter
     // brand bloom when the row's account origin has one (Binance/Tabby).
     val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender)
-    Card(Modifier.fillMaxWidth().alpha(cardAlpha)) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            // Filter/expansion-driven size changes glide instead of snapping.
+            .animateContentSize()
+            .alpha(cardAlpha)
+    ) {
         Column(
             Modifier
                 .glowBackdrop(GlowTones.forDirection(isCredit), GlowPalette.DIRECTION_ALPHA)
