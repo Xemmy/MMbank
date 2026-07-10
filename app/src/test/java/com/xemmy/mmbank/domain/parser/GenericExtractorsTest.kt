@@ -144,4 +144,57 @@ class GenericExtractorsTest {
     fun `no clause and no header yields null`() {
         assertNull(GenericExtractors.extractMerchant("Statement ready for download"))
     }
+
+    @Test
+    fun `notification title is the merchant when no clause exists`() {
+        assertEquals(
+            "CARREFOUR-MAF MKT YAS",
+            GenericExtractors.extractMerchant(
+                "CARREFOUR-MAF MKT YAS AED229.59 with Binance Mastercard ••2957",
+                title = "CARREFOUR-MAF MKT YAS",
+            )
+        )
+    }
+
+    @Test
+    fun `title with digits is not a vendor label`() {
+        assertNull(
+            GenericExtractors.extractMerchant(
+                "AED 75.50 charged with your card",
+                title = "Transaction of AED 75.50",
+            )
+        )
+    }
+
+    @Test
+    fun `at clause wins over the title`() {
+        assertEquals(
+            "Tesla Motors Netherlan",
+            GenericExtractors.extractMerchant(
+                "Transaction of AED 46.12 At Tesla Motors Netherlan was successful. " +
+                    "Your available Tabby Card limit is AED 5125.48.",
+                title = "Tabby",
+            )
+        )
+    }
+
+    // --- Account/card suffix ---
+
+    @Test
+    fun `bullet card suffix is extracted`() {
+        assertEquals(
+            "2957",
+            GenericExtractors.extractAccountSuffix("AED229.59 with Binance Mastercard ••2957")
+        )
+    }
+
+    @Test
+    fun `star account suffix is extracted`() {
+        assertEquals("617", GenericExtractors.extractAccountSuffix("debited from your account *617."))
+    }
+
+    @Test
+    fun `no marker means no suffix`() {
+        assertNull(GenericExtractors.extractAccountSuffix("Card limit is AED 5125.48."))
+    }
 }

@@ -12,9 +12,19 @@ import org.junit.Test
 
 /**
  * Phase 2 test matrix for signature-based routing, written against the
- * notification shapes from the 99123.jpg reference (Tabby Card limit text
- * with the non-spaced "AED229.59" amount form; Binance Mastercard text with
- * the spaced "AED 46.12" form and an "at …" merchant clause).
+ * literal notification strings in the 99123.jpg reference:
+ *
+ *  - Tabby: title "Transaction of AED 46.12", body "At Tesla Motors Netherlan
+ *    was successful. Your available Tabby Card limit is AED 5125.48."
+ *    (spaced amount form, "At …" merchant clause)
+ *  - Binance Mastercard: title "CARREFOUR-MAF MKT YAS", body "AED229.59 with
+ *    Binance Mastercard ••2957" (non-spaced amount form, merchant is the
+ *    notification title — the plan's "prominent app header" fallback — plus
+ *    a card suffix)
+ *
+ * Note: the plan's 2.4 attributed the amount forms the other way around
+ * (non-spaced to Tabby, spaced to Binance); the actual image is authoritative
+ * and both forms are covered either way.
  */
 class SignatureRoutingTest {
 
@@ -46,10 +56,10 @@ class SignatureRoutingTest {
         signatures = signatures,
     )
 
-    // --- 1. Tabby limit notification: routes by signature, non-spaced amount ---
+    // --- 1. Tabby limit notification (verbatim): routes by signature ---
 
     @Test
-    fun `tabby limit signature routes with account and direction, non-spaced amount`() {
+    fun `tabby limit signature routes with account and direction, spaced amount, at-clause merchant`() {
         val tabbyCard = sigRule(
             name = "sig.tabby.card",
             signatures = listOf("Your available Tabby Card limit"),
@@ -61,9 +71,9 @@ class SignatureRoutingTest {
 
         val r = parser.parse(
             msg(
-                "Transaction of AED229.59 At Sun & Sand Sports was successful. " +
-                    "Your available Tabby Card limit is AED 6446.53.",
+                "At Tesla Motors Netherlan was successful. Your available Tabby Card limit is AED 5125.48.",
                 sender = "com.tabby.customer",
+                title = "Transaction of AED 46.12",
             )
         )
         assertNotNull(r)
@@ -72,30 +82,47 @@ class SignatureRoutingTest {
         assertEquals("sig.tabby.card", r!!.matchedRuleName)
         assertEquals(11L, r.assignAccountId)
         assertEquals(TransactionDirection.DEBIT, r.direction)
-        // The purchase amount in its non-spaced "AED229.59" form, not the
-        // spaced card-limit amount later in the message.
-        assertEquals(BigDecimal("229.59"), r.amount)
+        // The purchase amount from the title ("AED 46.12", spaced form), not
+        // the remaining card limit later in the body.
+        assertEquals(BigDecimal("46.12"), r.amount)
         assertEquals("AED", r.currencyCode)
-        assertEquals("Sun & Sand Sports", r.merchant)
+        assertEquals("Tesla Motors Netherlan", r.merchant)
     }
 
-    // --- 2. Binance Mastercard notification: built-in rule, spaced amount, merchant ---
+    // --- 2. Binance Mastercard notification (verbatim): built-in rule ---
 
     @Test
-    fun `binance mastercard signature routes via built-in rule with spaced amount and merchant`() {
+    fun `binance mastercard signature routes via built-in rule, non-spaced amount, title merchant`() {
         val parser = TransactionParser(BuiltInRules.all, "USD")
 
         val r = parser.parse(
             msg(
-                "Binance Mastercard: Your transaction of AED 46.12 at CARREFOUR CITY MALL was approved.",
-                sender = "com.binance.dev",
+                "AED229.59 with Binance Mastercard ••2957",
+                sender = "com.google.android.apps.walletnfcrel",
+                title = "CARREFOUR-MAF MKT YAS",
             )
         )
         assertNotNull(r)
         assertEquals("builtin.sig.binance.card", r!!.matchedRuleName)
         assertEquals(TransactionDirection.DEBIT, r.direction)
-        assertEquals(BigDecimal("46.12"), r.amount)
+        // Non-spaced "AED229.59" form; "2957" is a card suffix, not an amount.
+        assertEquals(BigDecimal("229.59"), r.amount)
         assertEquals("AED", r.currencyCode)
+        // No "at …" clause in this shape: the merchant IS the notification
+        // title (the plan's prominent-app-header fallback).
+        assertEquals("CARREFOUR-MAF MKT YAS", r.merchant)
+        assertEquals("2957", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `binance mastercard shape with at-clause still prefers the clause merchant`() {
+        val parser = TransactionParser(BuiltInRules.all, "USD")
+        val r = parser.parse(
+            msg("Binance Mastercard: Your transaction of AED 46.12 at CARREFOUR CITY MALL was approved.")
+        )
+        assertNotNull(r)
+        assertEquals("builtin.sig.binance.card", r!!.matchedRuleName)
+        assertEquals(BigDecimal("46.12"), r.amount)
         assertEquals("CARREFOUR CITY MALL", r.merchant)
     }
 

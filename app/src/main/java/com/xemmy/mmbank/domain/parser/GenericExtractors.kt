@@ -70,24 +70,40 @@ object GenericExtractors {
 
     /**
      * Best-effort merchant extraction. Primary: the first " at "/" to " clause.
-     * Fallback: a prominent vendor label heading the notification ("Binance
-     * Mastercard: …"). Returns null when neither yields anything usable —
-     * merchant failure is non-fatal for signature routing.
+     * Fallbacks: the prominent app header / vendor label — the notification
+     * [title] when the merchant IS the title (the 99123.jpg Binance Mastercard
+     * shape: title "CARREFOUR-MAF MKT YAS", body "AED229.59 with Binance
+     * Mastercard ••2957"), else a leading "Vendor Label: …" segment. Returns
+     * null when nothing usable is found — merchant failure is non-fatal for
+     * signature routing.
      */
-    fun extractMerchant(text: String): String? {
+    fun extractMerchant(text: String, title: String? = null): String? {
         MERCHANT_CLAUSE.find(text)
             ?.groupOrNull("merchant")
             ?.let(::clean)
             ?.let { return it }
 
-        // Header fallback: "Vendor Label: rest of the message". Digits in the
-        // header usually mean it is an amount/date fragment, not a vendor.
+        // Digits in a header candidate usually mean it is an amount/date
+        // fragment ("Transaction of AED 46.12"), not a vendor label.
+        title?.trim()
+            ?.takeIf { it.length in 2..40 && it.any { c -> c.isLetter() } && it.none { c -> c.isDigit() } }
+            ?.let { return clean(it) }
+
         val header = text.substringBefore(':', missingDelimiterValue = "").trim()
         if (header.length in 2..40 && header.any { it.isLetter() } && header.none { it.isDigit() }) {
             return clean(header)
         }
         return null
     }
+
+    // Card/account suffix markers: "*617", "••2957", "•• 2957", "XXX810001"
+    // after a marker. Kept separate from the regex rules' ACCTAIL because
+    // signature-routed messages never run a regex at all.
+    private val ACCOUNT_SUFFIX = Regex("[*•]+\\s?(?<suffix>[Xx]*\\d{3,9})")
+
+    /** Account/card number suffix ("2957" from "••2957"), or null. */
+    fun extractAccountSuffix(text: String): String? =
+        ACCOUNT_SUFFIX.find(text)?.groupOrNull("suffix")?.takeIf { it.isNotBlank() }
 
     private fun clean(raw: String): String? = raw
         .trim()

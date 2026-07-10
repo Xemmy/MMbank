@@ -129,14 +129,16 @@ class TransactionParser(
         // winner cannot recover an amount neither can the rest: bail once.
         val extracted = GenericExtractors.extractAmount(text) ?: return null
 
+        val title = message.title?.let(TextNormalizer::normalize)?.takeIf { it.isNotBlank() }
         return ParsedTransaction(
             amount = extracted.amount,
             currencyCode = extracted.currencyCode
                 ?: winner.rule.defaultCurrency
                 ?: fallbackCurrency,
             direction = winner.rule.direction,
-            merchant = GenericExtractors.extractMerchant(text),
+            merchant = GenericExtractors.extractMerchant(text, title = title),
             matchedRuleName = winner.rule.name,
+            accountNumberSuffix = GenericExtractors.extractAccountSuffix(text),
             category = winner.rule.category,
             assignAccountId = winner.rule.assignAccountId,
         )
