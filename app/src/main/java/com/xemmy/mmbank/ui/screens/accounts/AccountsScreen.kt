@@ -68,8 +68,11 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
+import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.theme.glassSurface
+import com.xemmy.mmbank.ui.theme.glowBackdrop
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
@@ -281,7 +284,16 @@ private fun AccountCard(
             .fillMaxWidth()
             .clickable { onEdit() },
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(
+            Modifier
+                // Faint brand glow when the account's origin has one (Binance/Tabby).
+                .glowBackdrop(
+                    GlowTones.forAccountOrigin(a.name, a.bankName),
+                    GlowPalette.ORIGIN_ALPHA,
+                    atTopEnd = false,
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(a.name, style = MaterialTheme.typography.titleMedium)

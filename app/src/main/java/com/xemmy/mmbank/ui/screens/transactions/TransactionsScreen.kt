@@ -82,8 +82,11 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
+import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.theme.glassSurface
+import com.xemmy.mmbank.ui.theme.glowBackdrop
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
@@ -797,8 +800,16 @@ private fun TransactionCard(
     // feed (never filtered here) but read as muted — dimmed card plus a
     // slashed-eye marker beside the amount.
     val cardAlpha = if (tx.excludeFromStats) 0.55f else 1f
+    // Contextual glows: direction bloom behind the amount, plus a fainter
+    // brand bloom when the row's account origin has one (Binance/Tabby).
+    val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender)
     Card(Modifier.fillMaxWidth().alpha(cardAlpha)) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Column(
+            Modifier
+                .glowBackdrop(GlowTones.forDirection(isCredit), GlowPalette.DIRECTION_ALPHA)
+                .glowBackdrop(originTone, GlowPalette.ORIGIN_ALPHA, atTopEnd = false)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     // Primary line: merchant if we have one, else the friendly bank name.

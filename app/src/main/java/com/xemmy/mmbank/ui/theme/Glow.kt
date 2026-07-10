@@ -1,5 +1,11 @@
 package com.xemmy.mmbank.ui.theme
 
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+
 /**
  * Semantic identity of a contextual glow. Screens pick a tone; only the theme
  * ([GlowPalette]) knows what color a tone renders as. Pure Kotlin so the
@@ -37,5 +43,37 @@ object GlowTones {
             "tabby" in haystack -> GlowTone.TABBY_TEAL
             else -> null
         }
+    }
+}
+
+/**
+ * Faint radial bloom drawn behind content. Direction glows sit at the top end
+ * (behind the amount); origin brand glows anchor at the bottom start. A null
+ * tone draws nothing, so call sites can pass the mapping result straight in.
+ */
+fun Modifier.glowBackdrop(
+    tone: GlowTone?,
+    alpha: Float,
+    atTopEnd: Boolean = true,
+): Modifier {
+    if (tone == null) return this
+    return drawBehind {
+        if (size.minDimension <= 0f) return@drawBehind
+        val color = GlowPalette.color(tone).copy(alpha = alpha)
+        val center = if (atTopEnd) {
+            Offset(size.width * 0.92f, 0f)
+        } else {
+            Offset(size.width * 0.08f, size.height)
+        }
+        val radius = size.width * 0.55f
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(color, Color.Transparent),
+                center = center,
+                radius = radius,
+            ),
+            radius = radius,
+            center = center,
+        )
     }
 }

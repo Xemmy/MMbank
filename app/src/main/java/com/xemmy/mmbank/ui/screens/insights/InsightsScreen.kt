@@ -47,7 +47,11 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTone
+import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.glowBackdrop
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.LocalDate
@@ -128,8 +132,14 @@ private fun MonthTiles(state: DashboardUiState) {
     val hidden = state.hideBalances
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        StatTile("Income", income.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.credit, Modifier.weight(1f))
-        StatTile("Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.debit, Modifier.weight(1f))
+        StatTile(
+            "Income", income.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.credit,
+            Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = true),
+        )
+        StatTile(
+            "Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.debit,
+            Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = false),
+        )
         StatTile(
             "Net",
             net.asMoneyOrMask(state.baseCurrency, hidden),
@@ -140,9 +150,20 @@ private fun MonthTiles(state: DashboardUiState) {
 }
 
 @Composable
-private fun StatTile(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
+private fun StatTile(
+    label: String,
+    value: String,
+    valueColor: Color,
+    modifier: Modifier = Modifier,
+    glow: GlowTone? = null,
+) {
     Card(modifier) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .glowBackdrop(glow, GlowPalette.DIRECTION_ALPHA)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
