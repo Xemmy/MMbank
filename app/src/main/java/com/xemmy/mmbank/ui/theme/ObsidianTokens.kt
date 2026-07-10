@@ -98,6 +98,7 @@ fun MetaLabel(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = ObsidianTokens.textMeta,
+    maxLines: Int = 1,
 ) {
     Text(
         text = text.uppercase(),
@@ -107,5 +108,7 @@ fun MetaLabel(
         fontWeight = ObsidianTokens.metaWeight,
         fontSize = ObsidianTokens.metaFontSize,
         letterSpacing = ObsidianTokens.metaTracking,
+        maxLines = maxLines,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
     )
 }

@@ -2,6 +2,10 @@ package com.xemmy.mmbank.ui.util
 
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.TextStyle
 import java.util.Date
 import java.util.Locale
 
@@ -48,6 +52,24 @@ fun Long.asDateTime(): String = dateTimeFormat.format(Date(this))
 private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.US)
 
 fun Long.asDate(): String = dateFormat.format(Date(this))
+
+/** Calendar day a timestamp falls on, in [zone] — the Activity feed's day-pill grouping key. */
+fun Long.toLocalDate(zone: ZoneId = ZoneId.systemDefault()): LocalDate =
+    Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
+
+/**
+ * Floating day-pill label for the Activity feed (Phase 5 spec 5.3), e.g.
+ * "TODAY · 10 JUL" or "3 JUL" for older days.
+ */
+fun dayPillLabel(day: LocalDate, today: LocalDate = LocalDate.now()): String {
+    val monthAbbrev = day.month.getDisplayName(TextStyle.SHORT, Locale.US).uppercase(Locale.US)
+    val datePart = "${day.dayOfMonth} $monthAbbrev"
+    return when (day) {
+        today -> "TODAY · $datePart"
+        today.minusDays(1) -> "YESTERDAY · $datePart"
+        else -> datePart
+    }
+}
 
 /**
  * Converts amounts into the app's base currency using Forex rates fetched with

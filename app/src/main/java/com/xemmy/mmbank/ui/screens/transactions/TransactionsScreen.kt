@@ -1,6 +1,8 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -8,10 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,7 +37,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DropdownMenu
@@ -61,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -71,7 +75,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -93,11 +96,14 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
-import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.MetaLabel
+import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.RowAvatar
+import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
-import com.xemmy.mmbank.ui.theme.glowBackdrop
+import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
@@ -920,28 +926,34 @@ private fun TransactionCard(
     // feed (never filtered here) but read as muted — dimmed card plus a
     // slashed-eye marker beside the amount.
     val cardAlpha = if (tx.excludeFromStats) 0.55f else 1f
-    // Contextual glows: direction bloom behind the amount, plus a fainter
-    // brand bloom when the row's account origin has one (Binance/Tabby).
-    val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender)
-    Card(
+    // Edge glow (spec 5.3): the row's brand origin, or a neutral slate for
+    // system/manual accounts with none registered.
+    val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender) ?: GlowTone.SYSTEM_SLATE
+    val avatarName = tx.merchant ?: accountName ?: bankName ?: tx.sender ?: tx.source.name
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
         Modifier
             .fillMaxWidth()
             // Filter/expansion-driven size changes glide instead of snapping.
             .animateContentSize()
             .alpha(cardAlpha)
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, ObsidianTokens.hairline, shape)
+            .rowEdgeGlow(originTone)
     ) {
-        Column(
-            Modifier
-                .glowBackdrop(GlowTones.forDirection(isCredit), GlowPalette.DIRECTION_ALPHA)
-                .glowBackdrop(originTone, GlowPalette.ORIGIN_ALPHA, atTopEnd = false)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                RowAvatar(name = avatarName, tone = originTone)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f, fill = false)) {
                     // Primary line: merchant if we have one, else the friendly bank name.
                     Text(
                         tx.merchant ?: bankName ?: tx.sender ?: tx.source.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ObsidianTokens.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     // Bank + account line, tappable to rename the bank/sender.
                     val bankLine = buildString {
@@ -951,31 +963,32 @@ private fun TransactionCard(
                             append(it)
                         }
                     }
-                    Text(
+                    MetaLabel(
                         bankLine,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable(enabled = tx.sender != null) { renameOpen = true },
                     )
-                    Text(
-                        listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
+                Spacer(
+                    Modifier
+                        .weight(1f)
+                        .widthIn(min = 12.dp)
+                        .padding(horizontal = 6.dp)
+                        .dottedLeader(),
+                )
                 AmountText(
                     display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-                    color = if (isCredit) LedgerColors.credit else LedgerColors.debit,
-                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isCredit) ObsidianTokens.credit else ObsidianTokens.debit,
+                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
                 )
                 if (tx.excludeFromStats) {
                     Icon(
                         Icons.Filled.VisibilityOff,
                         contentDescription = "Excluded from analytics",
-                        modifier = Modifier.padding(start = 4.dp).size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .size(12.dp)
+                            .alpha(0.7f),
+                        tint = ObsidianTokens.textMeta,
                     )
                 }
             }
@@ -984,11 +997,20 @@ private fun TransactionCard(
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ObsidianTokens.textMeta,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
+            Text(
+                listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = ObsidianTokens.textMeta,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
 
             // One compact meta row: account · person · category chips scroll
             // horizontally so long names never blow up the card, with edit &
@@ -1110,34 +1132,28 @@ private fun MetaChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     emoji: String? = null,
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.clickable(onClick = onClick),
+    // Glass pill (spec 5.3): idle White@4%/hairline border/meta label; active
+    // White@12%/White@28% border/full-bright label.
+    val shape = RoundedCornerShape(ObsidianTokens.pillRadius)
+    val background = if (active) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.04f)
+    val border = if (active) Color.White.copy(alpha = 0.28f) else ObsidianTokens.hairline
+    val labelColor = if (active) ObsidianTokens.textPrimary else ObsidianTokens.textMeta
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(background, shape)
+            .border(1.dp, border, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .widthIn(max = 150.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .widthIn(max = 150.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            when {
-                icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
-                emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
-            }
-            // Editorial meta label: tiny, letter-spaced uppercase.
-            Text(
-                text.uppercase(),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.sp,
-                    letterSpacing = 0.8.sp,
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        when {
+            icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp), tint = labelColor)
+            emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
         }
+        MetaLabel(text, color = labelColor)
     }
 }
 
