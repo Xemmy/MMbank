@@ -429,7 +429,12 @@ private fun AdjustBalanceDialog(
 @Composable
 private fun LoanLine(label: String, value: String) {
     Row(Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Editorial meta label: tiny, letter-spaced uppercase.
+        Text(
+            label.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.8.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             value,
             style = MaterialTheme.typography.labelSmall,

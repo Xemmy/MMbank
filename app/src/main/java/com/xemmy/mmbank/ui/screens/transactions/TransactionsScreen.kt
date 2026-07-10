@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -989,9 +990,13 @@ private fun MetaChip(
                 icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
                 emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
             }
+            // Editorial meta label: tiny, letter-spaced uppercase.
             Text(
-                text,
-                style = MaterialTheme.typography.labelSmall,
+                text.uppercase(),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    letterSpacing = 0.8.sp,
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
