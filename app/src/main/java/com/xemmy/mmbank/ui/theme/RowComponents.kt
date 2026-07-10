@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.ui.theme
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,6 +60,22 @@ fun RowAvatar(
             fontSize = 13.sp,
         )
     }
+}
+
+/**
+ * Generic glass card container (spec 5.3's "same surface/hairline/glow
+ * language" carried onto Accounts/Insights): surfaceGlass fill, hairline
+ * border, rowRadius corners. Drop-in replacement for Material's `Card`.
+ */
+@Composable
+fun ObsidianCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
+        modifier
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, ObsidianTokens.hairline, shape),
+    ) { content() }
 }
 
 /**
