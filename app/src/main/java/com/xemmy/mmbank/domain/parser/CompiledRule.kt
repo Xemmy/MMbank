@@ -9,7 +9,8 @@ data class CompiledRule(
     /** Room id for custom rules; null for built-ins. */
     val ruleId: Long?,
     val name: String,
-    val pattern: Regex,
+    /** Regex capture pattern; null for signature-only rules. */
+    val pattern: Regex?,
     val senderPattern: Regex?,
     val direction: TransactionDirection,
     val defaultCurrency: String?,
@@ -18,6 +19,14 @@ data class CompiledRule(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     /** Account matched transactions are assigned to; null = detect from the message. */
     val assignAccountId: Long? = null,
+    /**
+     * Plain-text phrases checked with case-insensitive containment against the
+     * normalized message. When one matches, the message binds to this rule's
+     * direction/account immediately — no regex needed — and the amount/merchant
+     * come from [GenericExtractors]. See [TransactionParser] for the collision
+     * and extraction-failure rules.
+     */
+    val signatures: List<String> = emptyList(),
 )
 
 object RuleCompiler {

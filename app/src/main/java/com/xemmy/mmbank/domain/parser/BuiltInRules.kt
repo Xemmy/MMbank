@@ -152,6 +152,26 @@ object BuiltInRules {
         rule("builtin.en.credit.af.cur-amt", "$CUR\\s?$AMT\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
         rule("builtin.en.credit.af.amt-cur", "$AMT\\s?$CUR\\b.{0,25}?$KW_CREDIT_EN$ACCTAIL", TransactionDirection.CREDIT, 8),
 
+        // --- Signature-routed rules (no regex; see TransactionParser phase 1) ---
+        // Binance Mastercard spend notifications vary their wording too much
+        // for one stable regex; the card name itself is the reliable marker.
+        // Amount/merchant come from GenericExtractors, and if no plausible
+        // amount is present the message falls through to the regex rules.
+        // NOTE: deliberately no Tabby signature rule here — Tabby messages are
+        // already covered by the regex rules above and by the user's seeded
+        // custom rules, which pin transactions to their accounts; a built-in
+        // signature would intercept those messages and strip the pinning.
+        CompiledRule(
+            ruleId = null,
+            name = "builtin.sig.binance.card",
+            pattern = null,
+            senderPattern = null,
+            direction = TransactionDirection.DEBIT,
+            defaultCurrency = null,
+            priority = 10,
+            signatures = listOf("Binance Mastercard"),
+        ),
+
         // --- No currency in the message: fall back to the default currency (priority 0) ---
         // The (?<!\*) guard stops the fallback from grabbing a "*617" account
         // marker as the amount when the real amount had a currency the message
