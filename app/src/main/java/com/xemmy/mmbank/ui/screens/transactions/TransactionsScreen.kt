@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.stickyHeader
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,12 +45,14 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Surface
@@ -73,8 +77,10 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
 import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -95,6 +101,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
@@ -103,11 +110,14 @@ import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
 import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
+import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.util.dayPillLabel
 import com.xemmy.mmbank.ui.util.recoverAndRetry
+import com.xemmy.mmbank.ui.util.toLocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -282,6 +292,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionsScreen(
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
@@ -323,6 +334,7 @@ fun TransactionsScreen(
         Column(
             Modifier
                 .fillMaxSize()
+                .obsidianCanvas()
                 .padding(padding)
                 .nestedScroll(feedScrollConnection),
         ) {
@@ -377,25 +389,38 @@ fun TransactionsScreen(
                     )
                 }
             } else {
+                // Floating day pills (spec 5.3): group the already date-sorted
+                // feed by calendar day and float a sticky label over each
+                // section. groupBy preserves first-encounter key order, which
+                // matches the feed's order as long as it stays date-sorted.
+                val today = remember { LocalDate.now() }
+                val grouped = remember(state.transactions) {
+                    state.transactions.groupBy { it.timestampMillis.toLocalDate() }
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(state.transactions, key = { it.id }) { tx ->
-                        TransactionCard(
-                            tx = tx,
-                            accounts = state.accounts,
-                            knownPersons = state.knownPersons,
-                            bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
-                            onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
-                            onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
-                            onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
-                            onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
-                            onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                            onEdit = { editing = tx },
-                            onDelete = { viewModel.delete(tx.id) },
-                        )
+                    grouped.forEach { (day, dayTransactions) ->
+                        stickyHeader(key = "day-$day") {
+                            DayPill(day = day, today = today)
+                        }
+                        items(dayTransactions, key = { it.id }) { tx ->
+                            TransactionCard(
+                                tx = tx,
+                                accounts = state.accounts,
+                                knownPersons = state.knownPersons,
+                                bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                                onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
+                                onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                                onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
+                                onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
+                                onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                                onEdit = { editing = tx },
+                                onDelete = { viewModel.delete(tx.id) },
+                            )
+                        }
                     }
                 }
             }
@@ -432,6 +457,32 @@ fun TransactionsScreen(
 }
 
 /**
+ * Floating sticky-header day pill (spec 5.3): a small translucent pill that
+ * hovers over its section while scrolling, labeling the calendar day below it.
+ */
+@Composable
+private fun DayPill(day: LocalDate, today: LocalDate) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(ObsidianTokens.pillRadius))
+                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(ObsidianTokens.pillRadius))
+                .border(1.dp, ObsidianTokens.hairline, RoundedCornerShape(ObsidianTokens.pillRadius))
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+        ) {
+            Text(
+                dayPillLabel(day, today),
+                color = ObsidianTokens.textMeta,
+                fontFamily = AppFonts.inter,
+                fontWeight = FontWeight.Medium,
+                fontSize = ObsidianTokens.metaFontSize,
+                letterSpacing = ObsidianTokens.pillTracking,
+            )
+        }
+    }
+}
+
+/**
  * The compact top app bar the filter header crossfades into on scroll: a thin
  * tappable strip echoing the active query/filters. Its height and alpha track
  * the collapse [fraction], so it grows in exactly as the full bar compresses
@@ -446,7 +497,7 @@ private fun CompactFilterBar(
 ) {
     if (fraction <= 0f) return
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = ObsidianTokens.canvas,
         modifier = Modifier
             .fillMaxWidth()
             .layout { measurable, constraints ->
@@ -494,6 +545,35 @@ private fun CompactFilterBar(
 }
 
 /**
+ * Glass filter chip (spec 5.3): idle White@4% fill / hairline label, active
+ * White@12% fill / bright label. A thin wrapper around Material's FilterChip
+ * so every Activity-tab chip picks up the treatment from one place.
+ */
+@Composable
+private fun ObsidianChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    leadingIcon: (@Composable () -> Unit)? = null,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = label,
+        leadingIcon = leadingIcon,
+        shape = RoundedCornerShape(ObsidianTokens.pillRadius),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color.White.copy(alpha = 0.04f),
+            labelColor = ObsidianTokens.textMeta,
+            iconColor = ObsidianTokens.textMeta,
+            selectedContainerColor = Color.White.copy(alpha = 0.12f),
+            selectedLabelColor = ObsidianTokens.textPrimary,
+            selectedLeadingIconColor = ObsidianTokens.textPrimary,
+        ),
+    )
+}
+
+/**
  * Search box + date/direction/account/person/triage/amount/source/analytics
  * filter chips for the Activity list. Filtering is purely in-memory
  * (personal-scale data), so it's instant and needs no new queries. Chip rows
@@ -537,6 +617,14 @@ private fun ActivityFilterBar(
                     }
                 }
             },
+            // Glass search bar (spec 5.3): surfaceGlass fill, 14dp radius.
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedContainerColor = ObsidianTokens.surfaceGlass,
+                focusedContainerColor = ObsidianTokens.surfaceGlass,
+                unfocusedBorderColor = ObsidianTokens.hairline,
+                focusedBorderColor = Color.White.copy(alpha = 0.28f),
+            ),
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -556,7 +644,7 @@ private fun ActivityFilterBar(
                 DateRangeFilter.YearToDate to "Year-to-date",
             )
             presets.forEach { (range, label) ->
-                FilterChip(
+                ObsidianChip(
                     selected = f.dateRange == range,
                     onClick = { onDateRange(range) },
                     label = { Text(label, style = MaterialTheme.typography.labelSmall) },
@@ -566,7 +654,7 @@ private fun ActivityFilterBar(
             // rolling-30-day fallback (no account / no cycle day) is visible.
             val cycleDay = TransactionFilterEngine
                 .activeAccount(f.account, state.accounts)?.statementCycleDay
-            FilterChip(
+            ObsidianChip(
                 selected = f.dateRange == DateRangeFilter.StatementCycle,
                 onClick = { onDateRange(DateRangeFilter.StatementCycle) },
                 label = {
@@ -577,7 +665,7 @@ private fun ActivityFilterBar(
                 },
             )
             val custom = f.dateRange as? DateRangeFilter.Custom
-            FilterChip(
+            ObsidianChip(
                 selected = custom != null,
                 onClick = { customRangeOpen = true },
                 label = {
@@ -599,17 +687,17 @@ private fun ActivityFilterBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilterChip(
+            ObsidianChip(
                 selected = f.direction == null,
                 onClick = { onDirectionFilter(null) },
                 label = { Text("All", style = MaterialTheme.typography.labelSmall) },
             )
-            FilterChip(
+            ObsidianChip(
                 selected = f.direction == TransactionDirection.DEBIT,
                 onClick = { onDirectionFilter(TransactionDirection.DEBIT) },
                 label = { Text("Spent", style = MaterialTheme.typography.labelSmall) },
             )
-            FilterChip(
+            ObsidianChip(
                 selected = f.direction == TransactionDirection.CREDIT,
                 onClick = { onDirectionFilter(TransactionDirection.CREDIT) },
                 label = { Text("Received", style = MaterialTheme.typography.labelSmall) },
@@ -623,7 +711,7 @@ private fun ActivityFilterBar(
                     is AccountFilter.Specific ->
                         state.accounts.firstOrNull { it.id == a.id }?.name ?: "Account"
                 }
-                FilterChip(
+                ObsidianChip(
                     selected = f.account != AccountFilter.Any,
                     onClick = { accountMenuOpen = true },
                     label = { Text(accountLabel, style = MaterialTheme.typography.labelSmall) },
@@ -654,7 +742,7 @@ private fun ActivityFilterBar(
                     PersonFilter.Unassigned -> "Unassigned"
                     is PersonFilter.Specific -> p.name
                 }
-                FilterChip(
+                ObsidianChip(
                     selected = f.person != PersonFilter.Any,
                     onClick = { personMenuOpen = true },
                     label = { Text(personLabel, style = MaterialTheme.typography.labelSmall) },
@@ -690,7 +778,7 @@ private fun ActivityFilterBar(
         ) {
             // "Inbox Zero": rows still needing review — uncategorized captures
             // and system-generated balance adjustments.
-            FilterChip(
+            ObsidianChip(
                 selected = f.triageOnly,
                 onClick = { onTriageOnly(!f.triageOnly) },
                 label = { Text("Inbox Zero", style = MaterialTheme.typography.labelSmall) },
@@ -704,7 +792,7 @@ private fun ActivityFilterBar(
                 f.maxAmount != null -> "≤ ${f.maxAmount}"
                 else -> "Amount"
             }
-            FilterChip(
+            ObsidianChip(
                 selected = f.minAmount != null || f.maxAmount != null,
                 onClick = { amountOpen = true },
                 label = { Text(amountLabel, style = MaterialTheme.typography.labelSmall) },
@@ -712,7 +800,7 @@ private fun ActivityFilterBar(
 
             // Capture source.
             Box {
-                FilterChip(
+                ObsidianChip(
                     selected = f.source != null,
                     onClick = { sourceMenuOpen = true },
                     label = {
@@ -738,7 +826,7 @@ private fun ActivityFilterBar(
 
             // Analytics status (the Phase 1 excludeFromStats flag).
             Box {
-                FilterChip(
+                ObsidianChip(
                     selected = f.analyticsStatus != null,
                     onClick = { analyticsMenuOpen = true },
                     label = {
