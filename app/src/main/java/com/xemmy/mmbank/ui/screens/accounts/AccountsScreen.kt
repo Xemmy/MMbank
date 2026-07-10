@@ -70,6 +70,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.theme.glassSurface
+import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
@@ -299,10 +300,10 @@ private fun AccountCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    row.balance.asMoney(a.currencyCode),
-                    style = MaterialTheme.typography.titleMedium,
+                AmountText(
+                    display = row.balance.asMoney(a.currencyCode),
                     color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 IconButton(onClick = onAdjust) {
                     Icon(Icons.Filled.Tune, contentDescription = "Adjust balance")

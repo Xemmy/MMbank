@@ -48,6 +48,7 @@ import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -148,11 +149,10 @@ private fun StatTile(label: String, value: String, valueColor: Color, modifier: 
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(2.dp))
-            Text(
-                value,
-                style = MaterialTheme.typography.titleSmall,
+            AmountText(
+                display = value,
                 color = valueColor,
-                maxLines = 1,
+                style = MaterialTheme.typography.titleSmall,
             )
         }
     }

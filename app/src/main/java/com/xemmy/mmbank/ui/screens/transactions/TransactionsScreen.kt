@@ -83,6 +83,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.theme.glassSurface
+import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
@@ -826,10 +827,10 @@ private fun TransactionCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-                    style = MaterialTheme.typography.titleMedium,
+                AmountText(
+                    display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
                     color = if (isCredit) LedgerColors.credit else LedgerColors.debit,
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 if (tx.excludeFromStats) {
                     Icon(
