@@ -42,6 +42,18 @@ fun splitMoneyDisplay(display: String): MoneyParts {
     }
 }
 
+/**
+ * Splits a numeral like "+1,234.56" or "≈ 129,289.66" into its leading
+ * sign/approximation prefix and the digits, so a drawn currency symbol can
+ * slot between them ("-Đ85.00") the way banking apps place it. Strings that
+ * start with a digit (or contain none at all) come back with an empty prefix.
+ */
+fun splitLeadingSign(numeral: String): Pair<String, String> {
+    val firstDigit = numeral.indexOfFirst { it.isDigit() }
+    return if (firstDigit <= 0) "" to numeral
+    else numeral.substring(0, firstDigit) to numeral.substring(firstDigit)
+}
+
 /** Crypto quantities keep full precision instead of 2-decimal money formatting. */
 fun BigDecimal.asQuantity(): String = stripTrailingZeros().toPlainString()
 
