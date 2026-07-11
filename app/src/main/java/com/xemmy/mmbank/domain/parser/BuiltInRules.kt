@@ -85,6 +85,31 @@ object BuiltInRules {
         rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
         rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
 
+        // --- "Received a payment of X" overrides the ambiguous debit
+        // keyword (priority 15) ---
+        // KW_DEBIT_EN includes bare "payment of" (for genuine outgoing "Your
+        // payment of AED 50.00 to Merchant was successful" messages), but
+        // incoming P2P/crypto notifications phrase the credit the same way:
+        // "Received a payment of 85 USDT from Alice". Both the debit and
+        // credit generic rules above match that text at equal priority 10,
+        // and since the debit rule is listed first, the stable sort's tie
+        // break picks it -- silently recording an incoming payment as a
+        // spend. This rule outranks that tie so "received ... payment" always
+        // wins as a credit; it doesn't affect any message without "received"
+        // near "payment".
+        rule(
+            "builtin.en.credit.received-payment.amt-cur",
+            "\\breceiv\\w*\\b.{0,15}?\\bpayment\\b.{0,15}?$AMT\\s?$CUR(?:\\s+from\\s+(?<merchant>[^.,;\\n*]{2,40}))?$ACCTAIL",
+            TransactionDirection.CREDIT,
+            15,
+        ),
+        rule(
+            "builtin.en.credit.received-payment.cur-amt",
+            "\\breceiv\\w*\\b.{0,15}?\\bpayment\\b.{0,15}?$CUR\\s?$AMT(?:\\s+from\\s+(?<merchant>[^.,;\\n*]{2,40}))?$ACCTAIL",
+            TransactionDirection.CREDIT,
+            15,
+        ),
+
         // --- Tabby purchase confirmations (priority 10) ---
         // "Transaction of AED 20.00 At Tips and Toes was successful. Your
         // available Tabby Card limit is AED 6676.12." / "...At Sephora ME.
