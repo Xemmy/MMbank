@@ -1,0 +1,11 @@
+<!-- UAE Dirham (AED) currency symbol — official Central Bank letterform.
+     Single-color version: inherits `currentColor` from its context, so it
+     tints like text (credit/debit/neutral) wherever it's embedded.
+     Path data is the single source of truth shared verbatim with the app's
+     Compose ImageVector (ui/theme/CurrencyGlyphs.kt) and AedDirhamIcon.tsx. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" role="img" aria-label="UAE Dirham">
+  <g transform="translate(2 0)">
+    <path fill-rule="evenodd" d="M3.4 0.4 H9 C14.85 0.4 19.6 5.59 19.6 12 C19.6 18.41 14.85 23.6 9 23.6 H3.4 Z M6 3 H9 C13.42 3 17 7.03 17 12 C17 16.97 13.42 21 9 21 H6 Z"/>
+    <path d="M0 7.55 H16.1 V9.75 H0 Z M0 14.25 H16.1 V16.45 H0 Z"/>
+  </g>
+</svg>

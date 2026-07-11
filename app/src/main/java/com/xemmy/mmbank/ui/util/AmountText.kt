@@ -81,9 +81,10 @@ fun AmountText(
         },
         inlineContent = mapOf(
             AED_GLYPH_ID to InlineTextContent(
-                // Cap height of the numerals (~0.72em), bottom on the baseline;
-                // width leaves a hair of air before the first digit.
-                Placeholder(0.66.em, 0.72.em, PlaceholderVerticalAlign.AboveBaseline),
+                // Cap height of the numerals (~0.72em), bottom on the baseline.
+                // Width matches the vector's 20:24 viewport exactly so the
+                // glyph fills the placeholder with no letterboxing.
+                Placeholder(0.60.em, 0.72.em, PlaceholderVerticalAlign.AboveBaseline),
             ) {
                 AedGlyph(color = color, modifier = Modifier.fillMaxSize())
             }

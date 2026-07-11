@@ -1,70 +1,67 @@
 package com.xemmy.mmbank.ui.theme
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.unit.dp
 
 /**
- * The UAE Dirham symbol: a "D" spine and bowl crossed by two horizontal
- * strikes. Drawn as a vector so it stays crisp at any size, and fills its
- * whole bounding box — [com.xemmy.mmbank.ui.util.AmountText] embeds it as
- * inline text content sized in em, so it renders at digit cap height,
- * baseline-aligned, exactly like the symbol in banking apps ("Đ46,122.24").
- * Stroke weight is tuned to match IBM Plex Mono SemiBold stems so it reads
- * as part of the amount, not an icon beside it. The box wants a ~0.83
- * width:height aspect; other aspects just stretch proportionally.
+ * SVG path data for the official UAE Dirham symbol (the "D" with two strike
+ * bars), hand-crafted as a filled letterform: outer contour + counter hole
+ * (even-odd) plus two bars protruding left of the stem. Tight 20x24 viewport.
+ *
+ * Single source of truth shared verbatim with the standalone assets in
+ * design/aed-dirham*.svg and design/AedDirhamIcon.tsx — keep them in sync.
+ */
+internal const val DIRHAM_D_PATH =
+    "M3.4 0.4 H9 C14.85 0.4 19.6 5.59 19.6 12 C19.6 18.41 14.85 23.6 9 23.6 H3.4 Z " +
+        "M6 3 H9 C13.42 3 17 7.03 17 12 C17 16.97 13.42 21 9 21 H6 Z"
+internal const val DIRHAM_BARS_PATH =
+    "M0 7.55 H16.1 V9.75 H0 Z M0 14.25 H16.1 V16.45 H0 Z"
+
+/**
+ * The Dirham symbol as a tintable vector. Built with a white fill so
+ * [Icon]'s tint (or any ColorFilter) recolors it — the Compose analog of an
+ * SVG using currentColor.
+ */
+val DirhamSymbol: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "DirhamSymbol",
+        defaultWidth = 20.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 20f,
+        viewportHeight = 24f,
+    )
+        .addPath(
+            pathData = addPathNodes(DIRHAM_D_PATH),
+            pathFillType = PathFillType.EvenOdd,
+            fill = SolidColor(Color.White),
+        )
+        .addPath(
+            pathData = addPathNodes(DIRHAM_BARS_PATH),
+            fill = SolidColor(Color.White),
+        )
+        .build()
+}
+
+/**
+ * The Dirham symbol tinted to [color]. [com.xemmy.mmbank.ui.util.AmountText]
+ * embeds this as inline text content at digit cap height, baseline-aligned,
+ * so AED amounts read like the banking apps' "Đ46,122.24". Content
+ * description stays null: the surrounding inline content already carries a
+ * "Đ" alternate for accessibility, and a second announcement would stutter.
  */
 @Composable
 fun AedGlyph(color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        val strokeWidth = h * 0.14f
-        val thinStrokeWidth = strokeWidth * 0.9f
-        val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
-
-        val spineX = w * 0.28f
-
-        // Spine: the D's vertical stroke, running the full box height.
-        drawLine(
-            color,
-            Offset(spineX, strokeWidth / 2),
-            Offset(spineX, h - strokeWidth / 2),
-            strokeWidth,
-            StrokeCap.Butt,
-        )
-
-        // Bowl: the right half of an oval anchored on the spine.
-        val rx = w * 0.60f
-        val ry = h * 0.46f - strokeWidth / 2
-        val cy = h * 0.5f
-        drawArc(
-            color = color,
-            startAngle = -90f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(spineX - rx, cy - ry),
-            size = Size(rx * 2, ry * 2),
-            style = stroke,
-        )
-
-        // Two horizontal strikes protruding left of the spine and reaching
-        // into the bowl — the mark that makes this a currency symbol.
-        val strikeStartX = w * 0.02f
-        val strikeEndX = w * 0.70f
-        for (fy in floatArrayOf(0.40f, 0.60f)) {
-            drawLine(
-                color,
-                Offset(strikeStartX, h * fy),
-                Offset(strikeEndX, h * fy),
-                thinStrokeWidth,
-                StrokeCap.Butt,
-            )
-        }
-    }
+    Icon(
+        imageVector = DirhamSymbol,
+        contentDescription = null,
+        tint = color,
+        modifier = modifier,
+    )
 }
