@@ -21,20 +21,22 @@ fun AedGlyph(color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val w = size.width
         val h = size.height
-        val strokeWidth = minOf(w, h) * 0.095f
-        val thinStrokeWidth = strokeWidth * 0.8f
+        // Bolder than a typical text stroke on purpose: at the ~13dp size this
+        // renders next to the numerals, thin strokes anti-alias into mush.
+        val strokeWidth = minOf(w, h) * 0.13f
+        val thinStrokeWidth = strokeWidth * 0.85f
         val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
 
-        val spineX = w * 0.36f
-        val topY = h * 0.12f
-        val bottomY = h * 0.88f
+        val spineX = w * 0.37f
+        val topY = h * 0.11f
+        val bottomY = h * 0.89f
 
         // Spine: the D's vertical stroke.
         drawLine(color, Offset(spineX, topY), Offset(spineX, bottomY), strokeWidth, StrokeCap.Round)
 
         // Bowl: the right half of an oval centered on the spine, open to the left.
-        val rx = w * 0.26f
-        val ry = h * 0.38f
+        val rx = w * 0.27f
+        val ry = h * 0.39f
         val bowlCenterY = h * 0.5f
         drawArc(
             color = color,
@@ -48,10 +50,10 @@ fun AedGlyph(color: Color, modifier: Modifier = Modifier) {
 
         // Two horizontal strikes crossing the spine into the bowl, the mark
         // that reads this as a currency symbol rather than a bare letter.
-        val strikeStartX = w * 0.20f
-        val strikeEndX = spineX + rx * 0.85f
-        val strikeY1 = h * 0.40f
-        val strikeY2 = h * 0.60f
+        val strikeStartX = w * 0.19f
+        val strikeEndX = spineX + rx * 0.80f
+        val strikeY1 = h * 0.39f
+        val strikeY2 = h * 0.61f
         drawLine(color, Offset(strikeStartX, strikeY1), Offset(strikeEndX, strikeY1), thinStrokeWidth, StrokeCap.Round)
         drawLine(color, Offset(strikeStartX, strikeY2), Offset(strikeEndX, strikeY2), thinStrokeWidth, StrokeCap.Round)
     }

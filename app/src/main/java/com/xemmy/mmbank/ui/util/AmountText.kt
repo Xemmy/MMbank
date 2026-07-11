@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.util
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -78,7 +79,9 @@ fun AmountText(
             Spacer(Modifier.width(3.dp))
             AedGlyph(
                 color = currencyColor,
-                modifier = Modifier.size(11.dp),
+                modifier = Modifier
+                    .padding(bottom = 2.dp)
+                    .size(13.dp),
             )
         }
     }
