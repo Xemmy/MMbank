@@ -49,4 +49,14 @@ class MoneyPartsTest {
             splitMoneyDisplay("≈ 50.00 AED"),
         )
     }
+
+    @Test
+    fun `leading sign splits off so the dirham glyph can slot between sign and digits`() {
+        assertEquals("+" to "229.59", splitLeadingSign("+229.59"))
+        assertEquals("-" to "1,000.00", splitLeadingSign("-1,000.00"))
+        assertEquals("≈ " to "129,289.66", splitLeadingSign("≈ 129,289.66"))
+        assertEquals("" to "85", splitLeadingSign("85"))
+        // No digits at all (the hide-balances mask): everything stays in the numeral half.
+        assertEquals("" to AMOUNT_MASK, splitLeadingSign(AMOUNT_MASK))
+    }
 }

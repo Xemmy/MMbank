@@ -13,11 +13,11 @@ private val DarkColors = darkColorScheme(
     secondary = Color(0xFF80CBC4),
     onSecondary = Color(0xFF00332E),
     tertiary = Color(0xFFFFB74D),
-    background = Color(0xFF0E1B2C),
-    surface = Color(0xFF14243A),
-    surfaceVariant = Color(0xFF1C3050),
-    onBackground = Color(0xFFE3ECF5),
-    onSurface = Color(0xFFE3ECF5),
+    background = ObsidianTokens.canvas,
+    surface = Color(0xFF12161F),
+    surfaceVariant = Color(0xFF1B2130),
+    onBackground = ObsidianTokens.textPrimary,
+    onSurface = ObsidianTokens.textPrimary,
     error = Color(0xFFFF8A80),
 )
 
@@ -34,19 +34,24 @@ object LedgerColors {
 }
 
 /**
- * Contextual glow color tokens (Phase 5). Every faint background glow in the
- * app resolves through here — screens reference a [GlowTone], never inline hex.
+ * Contextual glow color tokens (Phase 5 "Obsidian Ledger", spec 5.1). Every
+ * faint background glow in the app resolves through here — screens reference
+ * a [GlowTone], never inline hex. Values mirror [ObsidianTokens].
  */
 object GlowPalette {
-    val creditMint = Color(0xFF9BD4B4)
-    val debitCopper = Color(0xFFD9917B)
-    val binanceGold = Color(0xFFE3C36B)
-    val tabbyTeal = Color(0xFF6FC4B8)
+    val creditMint = ObsidianTokens.credit
+    val debitCopper = ObsidianTokens.debit
+    val binanceGold = ObsidianTokens.glowBinance
+    val tabbyTeal = ObsidianTokens.glowTabby
+    val systemSlate = ObsidianTokens.glowSystem
 
     /** Alpha for the direction glow behind amounts. */
-    const val DIRECTION_ALPHA = 0.10f
+    const val DIRECTION_ALPHA = GlowAlphas.DIRECTION
 
-    /** Alpha for the account-origin brand glow — fainter than direction. */
+    /**
+     * Legacy flat origin-glow alpha, kept only until every call site moves to
+     * the per-brand [GlowAlphas.origin]. New code should call that instead.
+     */
     const val ORIGIN_ALPHA = 0.08f
 
     fun color(tone: GlowTone): Color = when (tone) {
@@ -54,6 +59,7 @@ object GlowPalette {
         GlowTone.DEBIT_COPPER -> debitCopper
         GlowTone.BINANCE_GOLD -> binanceGold
         GlowTone.TABBY_TEAL -> tabbyTeal
+        GlowTone.SYSTEM_SLATE -> systemSlate
     }
 }
 
@@ -64,6 +70,7 @@ fun MMbankTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
+        typography = ObsidianTypography,
         content = content,
     )
 }

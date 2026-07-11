@@ -1,6 +1,9 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -8,10 +11,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,23 +38,25 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -69,9 +77,10 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import java.time.LocalDate
 import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -92,16 +101,24 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.MetaLabel
+import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.RowAvatar
+import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
-import com.xemmy.mmbank.ui.theme.glowBackdrop
+import com.xemmy.mmbank.ui.theme.obsidianCanvas
+import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.util.dayPillLabel
 import com.xemmy.mmbank.ui.util.recoverAndRetry
+import com.xemmy.mmbank.ui.util.toLocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -276,6 +293,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionsScreen(
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
@@ -317,6 +335,7 @@ fun TransactionsScreen(
         Column(
             Modifier
                 .fillMaxSize()
+                .obsidianCanvas()
                 .padding(padding)
                 .nestedScroll(feedScrollConnection),
         ) {
@@ -371,25 +390,38 @@ fun TransactionsScreen(
                     )
                 }
             } else {
+                // Floating day pills (spec 5.3): group the already date-sorted
+                // feed by calendar day and float a sticky label over each
+                // section. groupBy preserves first-encounter key order, which
+                // matches the feed's order as long as it stays date-sorted.
+                val today = remember { LocalDate.now() }
+                val grouped = remember(state.transactions) {
+                    state.transactions.groupBy { it.timestampMillis.toLocalDate() }
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(state.transactions, key = { it.id }) { tx ->
-                        TransactionCard(
-                            tx = tx,
-                            accounts = state.accounts,
-                            knownPersons = state.knownPersons,
-                            bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
-                            onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
-                            onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
-                            onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
-                            onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
-                            onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                            onEdit = { editing = tx },
-                            onDelete = { viewModel.delete(tx.id) },
-                        )
+                    grouped.forEach { (day, dayTransactions) ->
+                        stickyHeader(key = "day-$day") {
+                            DayPill(day = day, today = today)
+                        }
+                        items(dayTransactions, key = { it.id }) { tx ->
+                            TransactionCard(
+                                tx = tx,
+                                accounts = state.accounts,
+                                knownPersons = state.knownPersons,
+                                bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                                onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
+                                onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                                onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
+                                onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
+                                onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                                onEdit = { editing = tx },
+                                onDelete = { viewModel.delete(tx.id) },
+                            )
+                        }
                     }
                 }
             }
@@ -426,6 +458,32 @@ fun TransactionsScreen(
 }
 
 /**
+ * Floating sticky-header day pill (spec 5.3): a small translucent pill that
+ * hovers over its section while scrolling, labeling the calendar day below it.
+ */
+@Composable
+private fun DayPill(day: LocalDate, today: LocalDate) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(ObsidianTokens.pillRadius))
+                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(ObsidianTokens.pillRadius))
+                .border(1.dp, ObsidianTokens.hairline, RoundedCornerShape(ObsidianTokens.pillRadius))
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+        ) {
+            Text(
+                dayPillLabel(day, today),
+                color = ObsidianTokens.textMeta,
+                fontFamily = AppFonts.inter,
+                fontWeight = FontWeight.Medium,
+                fontSize = ObsidianTokens.metaFontSize,
+                letterSpacing = ObsidianTokens.pillTracking,
+            )
+        }
+    }
+}
+
+/**
  * The compact top app bar the filter header crossfades into on scroll: a thin
  * tappable strip echoing the active query/filters. Its height and alpha track
  * the collapse [fraction], so it grows in exactly as the full bar compresses
@@ -440,7 +498,7 @@ private fun CompactFilterBar(
 ) {
     if (fraction <= 0f) return
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = ObsidianTokens.canvas,
         modifier = Modifier
             .fillMaxWidth()
             .layout { measurable, constraints ->
@@ -488,6 +546,44 @@ private fun CompactFilterBar(
 }
 
 /**
+ * Glass filter chip (spec 5.3): idle White@4% fill / hairline label, active
+ * White@12% fill / bright label. A thin wrapper around Material's FilterChip
+ * so every Activity-tab chip picks up the treatment from one place.
+ */
+@Composable
+private fun ObsidianChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    leadingIcon: (@Composable () -> Unit)? = null,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = label,
+        leadingIcon = leadingIcon,
+        shape = RoundedCornerShape(ObsidianTokens.pillRadius),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color.White.copy(alpha = 0.04f),
+            labelColor = ObsidianTokens.textMeta,
+            iconColor = ObsidianTokens.textMeta,
+            selectedContainerColor = Color.White.copy(alpha = 0.12f),
+            selectedLabelColor = ObsidianTokens.textPrimary,
+            selectedLeadingIconColor = ObsidianTokens.textPrimary,
+        ),
+    )
+}
+
+/** Glass field colors (spec 5.3): surfaceGlass fill, hairline/focus border — shared by every OutlinedTextField in the glass dialogs. */
+@Composable
+private fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
+    unfocusedContainerColor = ObsidianTokens.surfaceGlass,
+    focusedContainerColor = ObsidianTokens.surfaceGlass,
+    unfocusedBorderColor = ObsidianTokens.hairline,
+    focusedBorderColor = Color.White.copy(alpha = 0.28f),
+)
+
+/**
  * Search box + date/direction/account/person/triage/amount/source/analytics
  * filter chips for the Activity list. Filtering is purely in-memory
  * (personal-scale data), so it's instant and needs no new queries. Chip rows
@@ -531,6 +627,14 @@ private fun ActivityFilterBar(
                     }
                 }
             },
+            // Glass search bar (spec 5.3): surfaceGlass fill, 14dp radius.
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedContainerColor = ObsidianTokens.surfaceGlass,
+                focusedContainerColor = ObsidianTokens.surfaceGlass,
+                unfocusedBorderColor = ObsidianTokens.hairline,
+                focusedBorderColor = Color.White.copy(alpha = 0.28f),
+            ),
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -550,7 +654,7 @@ private fun ActivityFilterBar(
                 DateRangeFilter.YearToDate to "Year-to-date",
             )
             presets.forEach { (range, label) ->
-                FilterChip(
+                ObsidianChip(
                     selected = f.dateRange == range,
                     onClick = { onDateRange(range) },
                     label = { Text(label, style = MaterialTheme.typography.labelSmall) },
@@ -560,7 +664,7 @@ private fun ActivityFilterBar(
             // rolling-30-day fallback (no account / no cycle day) is visible.
             val cycleDay = TransactionFilterEngine
                 .activeAccount(f.account, state.accounts)?.statementCycleDay
-            FilterChip(
+            ObsidianChip(
                 selected = f.dateRange == DateRangeFilter.StatementCycle,
                 onClick = { onDateRange(DateRangeFilter.StatementCycle) },
                 label = {
@@ -571,7 +675,7 @@ private fun ActivityFilterBar(
                 },
             )
             val custom = f.dateRange as? DateRangeFilter.Custom
-            FilterChip(
+            ObsidianChip(
                 selected = custom != null,
                 onClick = { customRangeOpen = true },
                 label = {
@@ -593,17 +697,17 @@ private fun ActivityFilterBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FilterChip(
+            ObsidianChip(
                 selected = f.direction == null,
                 onClick = { onDirectionFilter(null) },
                 label = { Text("All", style = MaterialTheme.typography.labelSmall) },
             )
-            FilterChip(
+            ObsidianChip(
                 selected = f.direction == TransactionDirection.DEBIT,
                 onClick = { onDirectionFilter(TransactionDirection.DEBIT) },
                 label = { Text("Spent", style = MaterialTheme.typography.labelSmall) },
             )
-            FilterChip(
+            ObsidianChip(
                 selected = f.direction == TransactionDirection.CREDIT,
                 onClick = { onDirectionFilter(TransactionDirection.CREDIT) },
                 label = { Text("Received", style = MaterialTheme.typography.labelSmall) },
@@ -617,7 +721,7 @@ private fun ActivityFilterBar(
                     is AccountFilter.Specific ->
                         state.accounts.firstOrNull { it.id == a.id }?.name ?: "Account"
                 }
-                FilterChip(
+                ObsidianChip(
                     selected = f.account != AccountFilter.Any,
                     onClick = { accountMenuOpen = true },
                     label = { Text(accountLabel, style = MaterialTheme.typography.labelSmall) },
@@ -648,7 +752,7 @@ private fun ActivityFilterBar(
                     PersonFilter.Unassigned -> "Unassigned"
                     is PersonFilter.Specific -> p.name
                 }
-                FilterChip(
+                ObsidianChip(
                     selected = f.person != PersonFilter.Any,
                     onClick = { personMenuOpen = true },
                     label = { Text(personLabel, style = MaterialTheme.typography.labelSmall) },
@@ -684,7 +788,7 @@ private fun ActivityFilterBar(
         ) {
             // "Inbox Zero": rows still needing review — uncategorized captures
             // and system-generated balance adjustments.
-            FilterChip(
+            ObsidianChip(
                 selected = f.triageOnly,
                 onClick = { onTriageOnly(!f.triageOnly) },
                 label = { Text("Inbox Zero", style = MaterialTheme.typography.labelSmall) },
@@ -698,7 +802,7 @@ private fun ActivityFilterBar(
                 f.maxAmount != null -> "≤ ${f.maxAmount}"
                 else -> "Amount"
             }
-            FilterChip(
+            ObsidianChip(
                 selected = f.minAmount != null || f.maxAmount != null,
                 onClick = { amountOpen = true },
                 label = { Text(amountLabel, style = MaterialTheme.typography.labelSmall) },
@@ -706,7 +810,7 @@ private fun ActivityFilterBar(
 
             // Capture source.
             Box {
-                FilterChip(
+                ObsidianChip(
                     selected = f.source != null,
                     onClick = { sourceMenuOpen = true },
                     label = {
@@ -732,7 +836,7 @@ private fun ActivityFilterBar(
 
             // Analytics status (the Phase 1 excludeFromStats flag).
             Box {
-                FilterChip(
+                ObsidianChip(
                     selected = f.analyticsStatus != null,
                     onClick = { analyticsMenuOpen = true },
                     label = {
@@ -920,28 +1024,34 @@ private fun TransactionCard(
     // feed (never filtered here) but read as muted — dimmed card plus a
     // slashed-eye marker beside the amount.
     val cardAlpha = if (tx.excludeFromStats) 0.55f else 1f
-    // Contextual glows: direction bloom behind the amount, plus a fainter
-    // brand bloom when the row's account origin has one (Binance/Tabby).
-    val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender)
-    Card(
+    // Edge glow (spec 5.3): the row's brand origin, or a neutral slate for
+    // system/manual accounts with none registered.
+    val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender) ?: GlowTone.SYSTEM_SLATE
+    val avatarName = tx.merchant ?: accountName ?: bankName ?: tx.sender ?: tx.source.name
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
         Modifier
             .fillMaxWidth()
             // Filter/expansion-driven size changes glide instead of snapping.
             .animateContentSize()
             .alpha(cardAlpha)
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, ObsidianTokens.hairline, shape)
+            .rowEdgeGlow(originTone)
     ) {
-        Column(
-            Modifier
-                .glowBackdrop(GlowTones.forDirection(isCredit), GlowPalette.DIRECTION_ALPHA)
-                .glowBackdrop(originTone, GlowPalette.ORIGIN_ALPHA, atTopEnd = false)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                RowAvatar(name = avatarName, tone = originTone)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f, fill = false)) {
                     // Primary line: merchant if we have one, else the friendly bank name.
                     Text(
                         tx.merchant ?: bankName ?: tx.sender ?: tx.source.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ObsidianTokens.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     // Bank + account line, tappable to rename the bank/sender.
                     val bankLine = buildString {
@@ -951,31 +1061,32 @@ private fun TransactionCard(
                             append(it)
                         }
                     }
-                    Text(
+                    MetaLabel(
                         bankLine,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable(enabled = tx.sender != null) { renameOpen = true },
                     )
-                    Text(
-                        listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
+                Spacer(
+                    Modifier
+                        .weight(1f)
+                        .widthIn(min = 12.dp)
+                        .padding(horizontal = 6.dp)
+                        .dottedLeader(),
+                )
                 AmountText(
                     display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-                    color = if (isCredit) LedgerColors.credit else LedgerColors.debit,
-                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isCredit) ObsidianTokens.credit else ObsidianTokens.debit,
+                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
                 )
                 if (tx.excludeFromStats) {
                     Icon(
                         Icons.Filled.VisibilityOff,
                         contentDescription = "Excluded from analytics",
-                        modifier = Modifier.padding(start = 4.dp).size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .size(12.dp)
+                            .alpha(0.7f),
+                        tint = ObsidianTokens.textMeta,
                     )
                 }
             }
@@ -984,11 +1095,20 @@ private fun TransactionCard(
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ObsidianTokens.textMeta,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
+            Text(
+                listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = ObsidianTokens.textMeta,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
 
             // One compact meta row: account · person · category chips scroll
             // horizontally so long names never blow up the card, with edit &
@@ -1110,34 +1230,28 @@ private fun MetaChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     emoji: String? = null,
 ) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.clickable(onClick = onClick),
+    // Glass pill (spec 5.3): idle White@4%/hairline border/meta label; active
+    // White@12%/White@28% border/full-bright label.
+    val shape = RoundedCornerShape(ObsidianTokens.pillRadius)
+    val background = if (active) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.04f)
+    val border = if (active) Color.White.copy(alpha = 0.28f) else ObsidianTokens.hairline
+    val labelColor = if (active) ObsidianTokens.textPrimary else ObsidianTokens.textMeta
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(background, shape)
+            .border(1.dp, border, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .widthIn(max = 150.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .widthIn(max = 150.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            when {
-                icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
-                emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
-            }
-            // Editorial meta label: tiny, letter-spaced uppercase.
-            Text(
-                text.uppercase(),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.sp,
-                    letterSpacing = 0.8.sp,
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        when {
+            icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp), tint = labelColor)
+            emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
         }
+        MetaLabel(text, color = labelColor)
     }
 }
 
@@ -1210,7 +1324,6 @@ private fun TransactionEditorDialog(
 
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
-    var categoryMenuOpen by remember { mutableStateOf(false) }
 
     val amountValue = amount.replace(",", "").toBigDecimalOrNull()
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
@@ -1240,7 +1353,7 @@ private fun TransactionEditorDialog(
                 // Debit / credit picker: drives the sign in every balance sum.
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TransactionDirection.entries.forEach { entry ->
-                        FilterChip(
+                        ObsidianChip(
                             selected = direction == entry,
                             onClick = { direction = entry },
                             label = { Text(if (entry == TransactionDirection.DEBIT) "Spent" else "Received") },
@@ -1251,38 +1364,58 @@ private fun TransactionEditorDialog(
                     OutlinedTextField(
                         value = amount,
                         onValueChange = { amount = it },
-                        label = { Text("Amount") },
+                        label = { MetaLabel("Amount") },
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontFamily = AppFonts.plexMono,
+                            fontSize = ObsidianTokens.amountFontSize,
+                        ),
                         singleLine = true,
                         isError = amount.isNotBlank() && amountValue == null,
+                        colors = glassFieldColors(),
                         modifier = Modifier.weight(0.6f),
                     )
                     OutlinedTextField(
                         value = currency,
                         onValueChange = { currency = it.uppercase().take(3) },
-                        label = { Text("Currency") },
+                        label = { MetaLabel("Currency") },
                         singleLine = true,
+                        colors = glassFieldColors(),
                         modifier = Modifier.weight(0.4f),
                     )
                 }
                 OutlinedTextField(
                     value = merchant,
                     onValueChange = { merchant = it },
-                    label = { Text("Merchant / description (optional)") },
+                    label = { MetaLabel("Merchant / description (optional)") },
                     singleLine = true,
+                    colors = glassFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = dateIso,
                     onValueChange = { dateIso = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
+                    label = { MetaLabel("Date (YYYY-MM-DD)") },
                     singleLine = true,
                     isError = date == null,
+                    colors = glassFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 // Account picker — same target the capture pipeline assigns to.
+                // A glowing brand dot previews the row's edge glow before saving.
                 Box {
+                    val accountTone = GlowTones.forAccountOrigin(
+                        accountName,
+                        accounts.firstOrNull { it.id == accountId }?.bankName,
+                    ) ?: GlowTone.SYSTEM_SLATE
                     OutlinedButton(onClick = { accountMenuOpen = true }) {
+                        Box(
+                            Modifier
+                                .size(7.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(GlowPalette.color(accountTone)),
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text("Account: " + (accountName ?: "Unassigned"))
                     }
                     DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
@@ -1317,26 +1450,31 @@ private fun TransactionEditorDialog(
                     }
                 }
 
-                // Category picker — defaults to the merchant-derived guess ("auto"),
-                // overridable. Mirrors the auto-categorization done on capture.
-                Box {
-                    OutlinedButton(onClick = { categoryMenuOpen = true }) {
-                        val autoTag = if (categoryOverride == null) " (auto)" else ""
-                        Text("Category: ${effectiveCategory.emoji} ${effectiveCategory.label}$autoTag")
-                    }
-                    DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Auto (from merchant)") },
-                            onClick = { categoryMenuOpen = false; categoryOverride = null },
+                // Category chip row — defaults to the merchant-derived guess
+                // ("Auto"), overridable. Mirrors the auto-categorization done on
+                // capture. Active chip reads teal (spec 5.3).
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MetaLabel("Category")
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        ObsidianChip(
+                            selected = categoryOverride == null,
+                            onClick = { categoryOverride = null },
+                            label = { Text("Auto · ${suggestedCategory.emoji} ${suggestedCategory.label}") },
                         )
                         SpendingCategory.entries.forEach { category ->
-                            DropdownMenuItem(
-                                text = { Text("${category.emoji}  ${category.label}") },
-                                onClick = { categoryMenuOpen = false; categoryOverride = category },
+                            ObsidianChip(
+                                selected = categoryOverride == category,
+                                onClick = { categoryOverride = category },
+                                label = { Text("${category.emoji} ${category.label}") },
                             )
                         }
                     }
                 }
+
+                androidx.compose.material3.HorizontalDivider(color = ObsidianTokens.hairline)
 
                 // Analytics purity control: internal transfers, cash refunds and
                 // the like stay in the ledger but shouldn't skew the stats.
@@ -1345,17 +1483,25 @@ private fun TransactionEditorDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Exclude from Analytics", style = MaterialTheme.typography.bodyLarge)
+                    Column(Modifier.weight(1f)) {
+                        Text("Exclude from Analytics", style = MaterialTheme.typography.bodyLarge)
+                        MetaLabel("Kept in ledger, hidden from stats & charts", maxLines = 2)
+                    }
                     Switch(
                         checked = excludeFromStats,
                         onCheckedChange = { excludeFromStats = it },
+                        colors = SwitchDefaults.colors(checkedTrackColor = ObsidianTokens.credit),
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(
+            androidx.compose.material3.Button(
                 enabled = valid,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = ObsidianTokens.textPrimary,
+                    contentColor = ObsidianTokens.canvas,
+                ),
                 onClick = {
                     // Button is only enabled when both parse, so this is safe.
                     val parsedDate = date
@@ -1381,7 +1527,7 @@ private fun TransactionEditorDialog(
                         )
                     }
                 },
-            ) { Text(if (isEdit) "Save" else "Add") }
+            ) { Text(if (isEdit) "Save changes" else "Add transaction") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

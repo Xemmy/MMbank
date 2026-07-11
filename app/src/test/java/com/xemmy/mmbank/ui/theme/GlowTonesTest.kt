@@ -46,4 +46,17 @@ class GlowTonesTest {
         assertNull(GlowTones.forAccountOrigin(null, null))
         assertNull(GlowTones.forAccountOrigin())
     }
+
+    @Test
+    fun `each brand tone carries its own edge-glow alpha per the Obsidian spec`() {
+        assertEquals(0.28f, GlowAlphas.origin(GlowTone.BINANCE_GOLD), 0.001f)
+        assertEquals(0.26f, GlowAlphas.origin(GlowTone.TABBY_TEAL), 0.001f)
+        assertEquals(0.18f, GlowAlphas.origin(GlowTone.SYSTEM_SLATE), 0.001f)
+    }
+
+    @Test
+    fun `direction tones fall back to the direction alpha`() {
+        assertEquals(GlowAlphas.DIRECTION, GlowAlphas.origin(GlowTone.CREDIT_MINT), 0.001f)
+        assertEquals(GlowAlphas.DIRECTION, GlowAlphas.origin(GlowTone.DEBIT_COPPER), 0.001f)
+    }
 }
