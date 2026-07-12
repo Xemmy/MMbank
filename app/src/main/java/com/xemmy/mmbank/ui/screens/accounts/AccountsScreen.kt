@@ -61,7 +61,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
@@ -123,15 +122,8 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         emptyList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // The hide-balances toggle lives on the Home tab and writes to plain
-    // SharedPreferences (no Flow), so this tab re-reads it on resume via
-    // refreshHideBalances() to stay in sync. Mirrors DashboardViewModel.prefsState.
-    private val _hideBalances = MutableStateFlow(container.preferences.hideBalances)
-    val hideBalances: StateFlow<Boolean> = _hideBalances
-
-    fun refreshHideBalances() {
-        _hideBalances.value = container.preferences.hideBalances
-    }
+    /** Shared, live hide-balances flag — see [AppContainer.hideBalances]. */
+    val hideBalances: StateFlow<Boolean> = container.hideBalances
 
     fun save(account: Account) {
         viewModelScope.launch {
@@ -219,12 +211,6 @@ fun AccountsScreen(
     val rows by viewModel.uiState.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
-    // The toggle lives on the Home tab; re-read it whenever this tab resumes so
-    // masked/shown state stays in sync after the user flips it elsewhere.
-    LifecycleResumeEffect(Unit) {
-        viewModel.refreshHideBalances()
-        onPauseOrDispose { }
-    }
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
     // The account row whose balance is being corrected; null = dialog closed.
