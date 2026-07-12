@@ -400,7 +400,9 @@ fun TransactionsScreen(
                 }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    // Bottom clearance so the "+" FAB never floats over the last
+                    // row's edit/delete actions (56dp FAB + 16dp margin + 16dp).
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     grouped.forEach { (day, dayTransactions) ->

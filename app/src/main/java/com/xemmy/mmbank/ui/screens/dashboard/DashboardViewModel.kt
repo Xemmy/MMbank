@@ -264,6 +264,14 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 }
 
 /**
+ * This-month net flow: income minus spend. Extracted as a pure top-level
+ * function so the Net stat tile's math is unit-testable off the main thread
+ * (the tile itself only formats the result). A negative result keeps its sign
+ * and digits through [com.xemmy.mmbank.ui.util.asMoney].
+ */
+internal fun netFlow(income: Double, spend: Double): Double = income - spend
+
+/**
  * Six months of income/spend plus this month's per-person and per-category
  * spend, all in the base currency (unconvertible amounts are skipped, not
  * guessed).

@@ -398,6 +398,21 @@ fun SettingsScreen(
                 )
             }
         }
+
+        // App version, read from the package at runtime (no BuildConfig needed).
+        val versionName = remember {
+            runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull() ?: "—"
+        }
+        Text(
+            "Version $versionName",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 8.dp),
+        )
     }
 }
 

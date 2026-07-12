@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.screens.dashboard.netFlow
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
@@ -80,20 +82,46 @@ fun InsightsScreen(
     ) {
         // Low-profile switch between "clean" analytics (excluded rows filtered
         // out, the default) and the raw ledger with every transaction counted.
+        // The (i) reveals what "Raw ledger" means, since it isn't self-evident.
         item(key = "ledger_toggle") {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                FilterChip(
-                    selected = state.showAllLedgerTransactions,
-                    onClick = viewModel::toggleShowAllLedgerTransactions,
-                    label = { Text("Raw ledger") },
-                    leadingIcon = {
+            var showInfo by remember { mutableStateOf(false) }
+            Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { showInfo = !showInfo }, modifier = Modifier.size(32.dp)) {
                         Icon(
-                            Icons.Filled.VisibilityOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            Icons.Outlined.Info,
+                            contentDescription = "What is Raw ledger?",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
                         )
-                    },
-                )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    FilterChip(
+                        selected = state.showAllLedgerTransactions,
+                        onClick = viewModel::toggleShowAllLedgerTransactions,
+                        label = { Text("Raw ledger") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                    )
+                }
+                if (showInfo) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Includes all transactions, like balance adjustments and cashback, " +
+                            "which are normally hidden from spending totals.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
@@ -129,7 +157,7 @@ private fun MonthTiles(state: DashboardUiState) {
     val month = state.stats.monthly.lastOrNull()
     val income = month?.income ?: 0.0
     val spend = month?.spend ?: 0.0
-    val net = income - spend
+    val net = netFlow(income, spend)
     val hidden = state.hideBalances
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
