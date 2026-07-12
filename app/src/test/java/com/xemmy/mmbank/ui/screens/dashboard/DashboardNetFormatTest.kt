@@ -16,7 +16,9 @@ class DashboardNetFormatTest {
     fun negativeNet_keepsSignAndDigits() {
         // Income 2,282.46 and Spent 3,430.68 → net −1,148.22.
         val formatted = netFlow(income = 2282.46, spend = 3430.68).asMoney("USD")
-        assertTrue("expected digits in [$formatted]", formatted.contains("1148.22"))
+        // Digits must survive (the reported "-¥" dropped them). Strip the
+        // thousands separator so the grouping comma doesn't hide the match.
+        assertTrue("expected digits in [$formatted]", formatted.replace(",", "").contains("1148.22"))
         assertTrue("expected leading minus in [$formatted]", formatted.startsWith("-"))
         assertEquals("-1,148.22 USD", formatted)
     }
