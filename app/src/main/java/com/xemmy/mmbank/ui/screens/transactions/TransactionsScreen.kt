@@ -309,6 +309,7 @@ fun TransactionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
+    var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
 
     // Fluid header: scrolling the feed up compresses/crossfades the search
     // field and filter chips into a compact bar; scrolling back down at the
@@ -430,6 +431,7 @@ fun TransactionsScreen(
                                     onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
                                     onEdit = { editing = tx },
                                     onDelete = { viewModel.delete(tx.id) },
+                                    onCardClick = { selectedTransaction = tx },
                                 )
                                 // White base, not DividerDefaults: the theme's divider
                                 // gray at 10% alpha would vanish on the obsidian canvas.
@@ -473,6 +475,22 @@ fun TransactionsScreen(
                 viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
                 editing = null
             },
+        )
+    }
+
+    selectedTransaction?.let { tx ->
+        TransactionDetailSheet(
+            transaction = tx,
+            accountName = state.accounts.firstOrNull { it.id == tx.accountId }?.name,
+            onEditClick = {
+                selectedTransaction = null
+                editing = tx
+            },
+            onDeleteClick = {
+                viewModel.delete(tx.id)
+                selectedTransaction = null
+            },
+            onDismiss = { selectedTransaction = null },
         )
     }
 }
@@ -1032,7 +1050,7 @@ private fun ActivityFilterBar(
 }
 
 /** Short human label for a capture source in the filter UI. */
-private fun sourceLabel(source: TransactionSource): String = when (source) {
+internal fun sourceLabel(source: TransactionSource): String = when (source) {
     TransactionSource.MANUAL -> "Manual"
     TransactionSource.SMS -> "SMS"
     TransactionSource.PUSH_NOTIFICATION -> "Notification"
@@ -1154,8 +1172,8 @@ internal fun amountTone(amount: java.math.BigDecimal, direction: TransactionDire
 }
 
 /** Soft copper for money going out, desaturated mint for money coming in. */
-private val amountNegativeColor = Color(0xFFE07A5F)
-private val amountPositiveColor = Color(0xFF4ECDC4)
+internal val amountNegativeColor = Color(0xFFE07A5F)
+internal val amountPositiveColor = Color(0xFF4ECDC4)
 
 /** Shared treatment for the card's secondary meta lines and chip labels. */
 private val metaTextColor = Color.Gray
@@ -1173,6 +1191,7 @@ private fun TransactionCard(
     onResetSender: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onCardClick: () -> Unit,
 ) {
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
@@ -1201,6 +1220,7 @@ private fun TransactionCard(
             .background(ObsidianTokens.surfaceGlass, shape)
             .border(1.dp, ObsidianTokens.hairline, shape)
             .rowEdgeGlow(originTone)
+            .clickable(onClick = onCardClick)
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
