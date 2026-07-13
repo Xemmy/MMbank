@@ -132,4 +132,50 @@ class DashboardViewModelTest {
         assertTrue(result.categorySpends.isEmpty())
         assertTrue(result.personSpends.isEmpty())
     }
+
+    @Test
+    fun `categorySlicesFrom caps at top 4 and rolls the rest into Other`() {
+        val spends = listOf(
+            CategorySpend(SpendingCategory.GROCERIES, 600.0),
+            CategorySpend(SpendingCategory.DINING, 400.0),
+            CategorySpend(SpendingCategory.TRANSPORT, 300.0),
+            CategorySpend(SpendingCategory.SHOPPING, 200.0),
+            CategorySpend(SpendingCategory.FUEL, 80.0),
+            CategorySpend(SpendingCategory.ENTERTAINMENT, 20.0),
+        )
+        val slices = categorySlicesFrom(spends)
+
+        assertEquals(5, slices.size)
+        assertEquals(listOf("Groceries", "Dining", "Transport", "Shopping", "Other"), slices.map { it.name })
+        assertEquals(100.0, slices.last().amount, 1e-9)
+        assertEquals(
+            listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL, 0xFF6C757DL),
+            slices.map { it.color },
+        )
+    }
+
+    @Test
+    fun `categorySlicesFrom leaves no Other slice when there are 4 or fewer categories`() {
+        val spends = listOf(
+            CategorySpend(SpendingCategory.GROCERIES, 600.0),
+            CategorySpend(SpendingCategory.DINING, 400.0),
+            CategorySpend(SpendingCategory.TRANSPORT, 300.0),
+        )
+        val slices = categorySlicesFrom(spends)
+
+        assertEquals(3, slices.size)
+        assertEquals(listOf("Groceries", "Dining", "Transport"), slices.map { it.name })
+        assertTrue(slices.none { it.name == "Other" })
+    }
+
+    @Test
+    fun `toggle off - categorySlices mirrors categorySpends for the mixed fixture`() {
+        val result = stats(mixed, includeExcluded = false)
+        assertEquals(2, result.categorySlices.size)
+        assertEquals(
+            result.categorySpends.map { it.category.label to it.amount },
+            result.categorySlices.map { it.name to it.amount },
+        )
+        assertTrue(result.categorySlices.none { it.name == "Other" })
+    }
 }

@@ -39,11 +39,16 @@ data class PersonSpend(val person: String, val amount: Double)
 /** Current-month spend grouped by spending category. */
 data class CategorySpend(val category: SpendingCategory, val amount: Double)
 
+/** One donut-chart slice: a category (or the "Other" rollup) with its rank color. */
+data class CategorySlice(val name: String, val amount: Double, val color: Long)
+
 data class DashboardStats(
     /** Oldest -> newest, always six entries. */
     val monthly: List<MonthlyFlow> = emptyList(),
     val personSpends: List<PersonSpend> = emptyList(),
     val categorySpends: List<CategorySpend> = emptyList(),
+    /** [categorySpends] capped to the top 4 + an "Other" rollup, for the donut chart. */
+    val categorySlices: List<CategorySlice> = emptyList(),
     /** Average net flow of the last up-to-3 completed months with activity. */
     val avgMonthlyNet: Double = 0.0,
 )
@@ -277,6 +282,25 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
  */
 internal fun netFlow(income: Double, spend: Double): Double = income - spend
 
+/** Rank-ordered donut palette: top 4 categories, then grey for the "Other" rollup. */
+private val SLICE_PALETTE = listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL)
+private const val OTHER_SLICE_COLOR = 0xFF6C757DL
+
+/**
+ * Caps [categorySpends] (already sorted descending) to the top 4 entries and
+ * rolls everything past that into one "Other" slice, for the donut chart.
+ * Colors are assigned by rank, not by category identity, so the same 5-color
+ * palette works regardless of which categories happen to lead this month.
+ */
+internal fun categorySlicesFrom(categorySpends: List<CategorySpend>): List<CategorySlice> {
+    val top = categorySpends.take(4)
+    val other = categorySpends.drop(4).sumOf { it.amount }
+    val slices = top.mapIndexed { index, spend ->
+        CategorySlice(spend.category.label, spend.amount, SLICE_PALETTE[index])
+    }
+    return if (other > 0.0) slices + CategorySlice("Other", other, OTHER_SLICE_COLOR) else slices
+}
+
 /**
  * Six months of income/spend plus this month's per-person and per-category
  * spend, all in the base currency (unconvertible amounts are skipped, not
@@ -349,6 +373,7 @@ internal fun computeDashboardStats(
         monthly = monthly,
         personSpends = personSpends,
         categorySpends = categorySpends,
+        categorySlices = categorySlicesFrom(categorySpends),
         avgMonthlyNet = avgNet,
     )
 }

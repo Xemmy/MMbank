@@ -40,10 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.DonutChart
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
@@ -131,7 +133,7 @@ fun InsightsScreen(
 
         if (hasData) {
             item(key = "cashflow_card") { CashFlowCard(state) }
-            if (state.stats.categorySpends.isNotEmpty()) {
+            if (state.stats.categorySlices.isNotEmpty()) {
                 item(key = "category_card") { CategorySpendCard(state) }
             }
             if (state.stats.personSpends.isNotEmpty()) {
@@ -464,13 +466,12 @@ private fun LegendDot(color: Color) {
     )
 }
 
-/** This month's spend per category as proportional bars, biggest first. */
+/** This month's spend per category as a donut chart with a legend, biggest first. */
 @Composable
 private fun CategorySpendCard(state: DashboardUiState) {
-    val spends = state.stats.categorySpends
+    val slices = state.stats.categorySlices
     val hidden = state.hideBalances
-    val maxAmount = spends.maxOf { it.amount }.takeIf { it > 0.0 } ?: 1.0
-    val total = spends.sumOf { it.amount }
+    val total = slices.sumOf { it.amount }
 
     ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -482,32 +483,29 @@ private fun CategorySpendCard(state: DashboardUiState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            spends.forEach { entry ->
-                Column {
-                    Row {
-                        Text(
-                            "${entry.category.emoji}  ${entry.category.label}",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            entry.amount.asMoneyOrMask(state.baseCurrency, hidden),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth((entry.amount / maxAmount).toFloat().coerceIn(0.02f, 1f))
-                                .height(8.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
-                        )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DonutChart(slices = slices, modifier = Modifier.size(120.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    slices.forEach { slice ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(12.dp)
+                                    .background(Color(slice.color), RoundedCornerShape(3.dp)),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(slice.name, style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                slice.amount.asMoneyOrMask(state.baseCurrency, hidden),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
                     }
                 }
             }
