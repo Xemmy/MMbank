@@ -50,6 +50,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -410,26 +411,36 @@ fun TransactionsScreen(
                     // Bottom clearance so the "+" FAB never floats over the last
                     // row's edit/delete actions (56dp FAB + 16dp margin + 16dp).
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     grouped.forEach { (day, dayTransactions) ->
                         stickyHeader(key = "day-$day") {
                             DayPill(day = day, today = today)
                         }
                         items(dayTransactions, key = { it.id }) { tx ->
-                            TransactionCard(
-                                tx = tx,
-                                accounts = state.accounts,
-                                knownPersons = state.knownPersons,
-                                bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
-                                onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
-                                onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
-                                onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
-                                onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
-                                onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                                onEdit = { editing = tx },
-                                onDelete = { viewModel.delete(tx.id) },
-                            )
+                            Column {
+                                TransactionCard(
+                                    tx = tx,
+                                    accounts = state.accounts,
+                                    knownPersons = state.knownPersons,
+                                    bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                                    onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
+                                    onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                                    onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
+                                    onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
+                                    onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                                    onEdit = { editing = tx },
+                                    onDelete = { viewModel.delete(tx.id) },
+                                )
+                                // White base, not DividerDefaults: the theme's divider
+                                // gray at 10% alpha would vanish on the obsidian canvas.
+                                HorizontalDivider(
+                                    modifier = Modifier
+                                        .padding(vertical = 8.dp)
+                                        .alpha(0.1f),
+                                    thickness = 1.dp,
+                                    color = Color.White,
+                                )
+                            }
                         }
                     }
                 }
@@ -1128,6 +1139,27 @@ private fun AmountRangeDialog(
     )
 }
 
+/** Sign-based tone of a row's amount, deciding which color the figure renders in. */
+internal enum class AmountTone { NEGATIVE, POSITIVE, NEUTRAL }
+
+/**
+ * Amounts store magnitude and [TransactionDirection] carries the sign, so a
+ * DEBIT reads as negative money and a CREDIT as positive; a zero amount is
+ * neutral either way and keeps the default text color.
+ */
+internal fun amountTone(amount: java.math.BigDecimal, direction: TransactionDirection): AmountTone = when {
+    amount.signum() == 0 -> AmountTone.NEUTRAL
+    direction == TransactionDirection.CREDIT -> AmountTone.POSITIVE
+    else -> AmountTone.NEGATIVE
+}
+
+/** Soft copper for money going out, desaturated mint for money coming in. */
+private val amountNegativeColor = Color(0xFFE07A5F)
+private val amountPositiveColor = Color(0xFF4ECDC4)
+
+/** Shared treatment for the card's secondary meta lines and chip labels. */
+private val metaTextColor = Color.Gray
+
 @Composable
 private fun TransactionCard(
     tx: Transaction,
@@ -1170,7 +1202,7 @@ private fun TransactionCard(
             .border(1.dp, ObsidianTokens.hairline, shape)
             .rowEdgeGlow(originTone)
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RowAvatar(name = avatarName, tone = originTone)
                 Spacer(Modifier.width(10.dp))
@@ -1178,7 +1210,10 @@ private fun TransactionCard(
                     // Primary line: merchant if we have one, else the friendly bank name.
                     Text(
                         tx.merchant ?: bankName ?: tx.sender ?: tx.source.name,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
                         color = ObsidianTokens.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1191,8 +1226,13 @@ private fun TransactionCard(
                             append(it)
                         }
                     }
-                    MetaLabel(
+                    Text(
                         bankLine,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = metaTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.clickable(enabled = tx.sender != null) { renameOpen = true },
                     )
                 }
@@ -1205,8 +1245,17 @@ private fun TransactionCard(
                 )
                 AmountText(
                     display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-                    color = if (isCredit) ObsidianTokens.credit else ObsidianTokens.debit,
-                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
+                    color = when (amountTone(tx.amount, tx.direction)) {
+                        AmountTone.NEGATIVE -> amountNegativeColor
+                        AmountTone.POSITIVE -> amountPositiveColor
+                        AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
+                    },
+                    style = androidx.compose.ui.text.TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        // Tabular figures so decimal points align down the list.
+                        fontFeatureSettings = "tnum",
+                    ),
                 )
                 if (tx.excludeFromStats) {
                     Icon(
@@ -1224,8 +1273,9 @@ private fun TransactionCard(
             tx.rawMessage?.let {
                 Text(
                     it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = ObsidianTokens.textMeta,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = metaTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp),
@@ -1233,8 +1283,9 @@ private fun TransactionCard(
             }
             Text(
                 listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = ObsidianTokens.textMeta,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = metaTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
@@ -1365,7 +1416,8 @@ private fun MetaChip(
     val shape = RoundedCornerShape(ObsidianTokens.pillRadius)
     val background = if (active) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.04f)
     val border = if (active) Color.White.copy(alpha = 0.28f) else ObsidianTokens.hairline
-    val labelColor = if (active) ObsidianTokens.textPrimary else ObsidianTokens.textMeta
+    // Assigned values stay full-bright so set/unset chips remain distinguishable.
+    val labelColor = if (active) ObsidianTokens.textPrimary else metaTextColor
     Row(
         modifier = Modifier
             .clip(shape)
@@ -1381,7 +1433,14 @@ private fun MetaChip(
             icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp), tint = labelColor)
             emoji != null -> Text(emoji, style = MaterialTheme.typography.labelSmall)
         }
-        MetaLabel(text, color = labelColor)
+        Text(
+            text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Normal,
+            color = labelColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
