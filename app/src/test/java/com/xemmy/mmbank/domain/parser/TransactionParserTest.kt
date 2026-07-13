@@ -407,6 +407,44 @@ class TransactionParserTest {
         assertEquals("NOON", r.merchant)
     }
 
+    // --- Kah-ching (KAST) purchases with a trailing cashback line ---
+
+    private fun kahChing(body: String) = CapturedMessage(
+        source = TransactionSource.PUSH_NOTIFICATION,
+        sender = "money.kast.app",
+        title = "Kah-ching 🤑",
+        body = body,
+        timestampMillis = 1_700_000_000_000,
+    )
+
+    @Test
+    fun `kah-ching purchase captures purchase amount not cashback - regression`() {
+        // Regression: the generic keyword-first rule skipped over the merchant
+        // and grabbed the $0.42 cashback as the amount instead of $27.71.
+        val r = parser.parse(
+            kahChing("\$27.71 spent at SHABIK ELECTRIC VEHICL\n\$0.42 cashback: 1.5% CASH")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("27.71"), r!!.amount)
+        assertEquals("USD", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("SHABIK ELECTRIC VEHICL", r.merchant)
+    }
+
+    @Test
+    fun `kah-ching purchase with phone number after merchant - regression`() {
+        // Same bug, second shape: extra ", 800 82229" between the merchant and
+        // the cashback line. Amount must be 9.63, not the 0.14 cashback.
+        val r = parser.parse(
+            kahChing("\$9.63 spent at Tabby, 800 82229\n\$0.14 cashback: 1.5% CASH")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("9.63"), r!!.amount)
+        assertEquals("USD", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("Tabby", r.merchant)
+    }
+
     @Test
     fun `rule compiler rejects invalid patterns`() {
         assertNull(RuleCompiler.compile(ParsingRule(name = "bad", pattern = "([", direction = TransactionDirection.DEBIT)))
