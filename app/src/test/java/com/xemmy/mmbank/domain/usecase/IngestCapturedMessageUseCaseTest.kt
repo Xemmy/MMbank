@@ -55,6 +55,12 @@ class IngestCapturedMessageUseCaseTest {
         ) = Unit
         override suspend fun renamePerson(from: String, to: String?) = Unit
         override suspend fun delete(transactionId: Long) = Unit
+        override suspend fun bulkSetCategory(
+            ids: List<Long>,
+            category: com.xemmy.mmbank.domain.model.SpendingCategory,
+        ): Int = 0
+        override suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int = 0
+        override suspend fun deleteMany(ids: List<Long>): Int = 0
     }
 
     private val recorder = RecordingTransactionRepository()
