@@ -130,12 +130,17 @@ class TransactionParser(
         val extracted = GenericExtractors.extractAmount(text) ?: return null
 
         val title = message.title?.let(TextNormalizer::normalize)?.takeIf { it.isNotBlank() }
+        // A signature rule's direction is a single static default (e.g.
+        // "Binance Mastercard" -> DEBIT); explicit wording in the message
+        // overrides it so a "received"/"incoming"/"deposited" notification
+        // still credits the account even under a spend-flavored signature.
+        val direction = GenericExtractors.detectDirectionOverride(text) ?: winner.rule.direction
         return ParsedTransaction(
             amount = extracted.amount,
             currencyCode = extracted.currencyCode
                 ?: winner.rule.defaultCurrency
                 ?: fallbackCurrency,
-            direction = winner.rule.direction,
+            direction = direction,
             merchant = GenericExtractors.extractMerchant(text, title = title),
             matchedRuleName = winner.rule.name,
             accountNumberSuffix = GenericExtractors.extractAccountSuffix(text),

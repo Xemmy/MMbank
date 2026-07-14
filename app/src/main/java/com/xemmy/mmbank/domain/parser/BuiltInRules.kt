@@ -22,9 +22,14 @@ object BuiltInRules {
     // named group so a pattern can also match a *second* currency token
     // (e.g. a trailing cashback figure) without a duplicate group name.
     private const val CUR_BODY =
-        "USD|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
+        "USD|USDT|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
             "|[$€£₹₺¥]|ر\\.\\s?س|د\\.\\s?إ|ج\\.\\s?م|د\\.\\s?ك|ر\\.\\s?ق|ر\\.\\s?ع|د\\.\\s?ب|د\\.\\s?ا|ل\\.\\s?ل|ريال|درهم|جنيه"
-    private const val CUR = "(?<currency>$CUR_BODY)"
+    // Trailing guard so "USD" can never be mistaken for a truncated prefix of
+    // "USDT" (or any other longer token) — without it, alternation matches
+    // the first alternative that lets the rest of the pattern succeed, not
+    // the longest one, so "USD" would win over "USDT" and silently drop the
+    // "T". Mirrors the \b guard the priority-8 af rules already rely on.
+    private const val CUR = "(?<currency>$CUR_BODY)(?![A-Za-z])"
 
     private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
 

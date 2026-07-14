@@ -126,6 +126,19 @@ class SignatureRoutingTest {
         assertEquals("CARREFOUR CITY MALL", r.merchant)
     }
 
+    // The signature rule's own direction is a single static default (DEBIT
+    // for "Binance Mastercard"), which is wrong for a refund/credit routed
+    // through the same card — the message wording must be able to override it.
+    @Test
+    fun `binance mastercard signature direction is overridden when the text says received`() {
+        val parser = TransactionParser(BuiltInRules.all, "USD")
+        val r = parser.parse(msg("Binance Mastercard: You received a refund of AED 46.12"))
+        assertNotNull(r)
+        assertEquals("builtin.sig.binance.card", r!!.matchedRuleName)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals(BigDecimal("46.12"), r.amount)
+    }
+
     // --- 3. Collision rules: priority, then signature length, then registration order ---
 
     @Test

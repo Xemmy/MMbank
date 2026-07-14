@@ -29,4 +29,10 @@ class TextNormalizerTest {
         assertEquals("EUR", CurrencyNormalizer.normalize("eur"))
         assertEquals(null, CurrencyNormalizer.normalize("...."))
     }
+
+    @Test
+    fun `USDT preserves as its own currency instead of truncating to USD`() {
+        assertEquals("USDT", CurrencyNormalizer.normalize("USDT"))
+        assertEquals("USDT", CurrencyNormalizer.normalize("usdt"))
+    }
 }

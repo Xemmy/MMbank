@@ -9,6 +9,7 @@ import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TransactionParserTest {
@@ -40,6 +41,24 @@ class TransactionParserTest {
         assertEquals(BigDecimal("12500.00"), result!!.amount)
         assertEquals("SAR", result.currencyCode)
         assertEquals(TransactionDirection.CREDIT, result.direction)
+    }
+
+    // Regression: a Binance Pay/Wallet "received" notification was ingested as
+    // a negative USD expense — "received" wasn't recognized as a credit
+    // keyword, and the currency regex truncated "USDT" down to "USD" because
+    // "USD" is a shorter alternative tried first with nothing stopping it from
+    // matching as a false prefix.
+    @Test
+    fun `Binance received payment parses as positive credit`() {
+        val text = "You have received a payment 710 USDT from m_aldhinhani at 2026-07-14 05:53:58 (UTC)"
+        val result = parser.parse(sms(text))
+
+        assertNotNull(result)
+        // Amount is stored as a positive magnitude; sign is carried by direction.
+        assertTrue("Received payment must be positive", result!!.amount > BigDecimal.ZERO)
+        assertEquals(BigDecimal("710"), result.amount)
+        assertEquals(TransactionDirection.CREDIT, result.direction)
+        assertEquals("USDT", result.currencyCode)
     }
 
     @Test

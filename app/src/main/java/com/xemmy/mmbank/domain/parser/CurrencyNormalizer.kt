@@ -32,6 +32,9 @@ object CurrencyNormalizer {
         SYMBOLS[token]?.let { return it }
         // Tolerate spacing variants of dotted Arabic abbreviations, e.g. "ر . س"
         SYMBOLS[token.replace(" ", "")]?.let { return it }
+        // USDT (Tether) is a real currency for Binance transactions, not a
+        // typo of USD — preserve it rather than truncating to the 3-letter case below.
+        if (token.equals("USDT", ignoreCase = true)) return "USDT"
         if (token.length == 3 && token.all { it.isLetter() }) return token.uppercase()
         return null
     }
