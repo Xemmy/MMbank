@@ -90,5 +90,9 @@ dependencies {
     // Encrypted storage for the Binance read-only API keys
     implementation(libs.androidx.security.crypto)
 
+    // SQLCipher (future at-rest DB encryption — see DatabaseEncryptor); not
+    // wired into AppDatabase yet.
+    implementation(libs.sqlcipher.android)
+
     testImplementation(libs.junit)
 }
