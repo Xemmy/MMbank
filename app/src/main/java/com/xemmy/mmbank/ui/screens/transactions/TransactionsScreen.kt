@@ -85,6 +85,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -311,6 +312,15 @@ fun TransactionsScreen(
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
 
+    // Brand accent for a specific-account filter, reusing the same GlowTone
+    // mapping every row already uses for its own origin glow — one source of
+    // truth for "what color is this account", not a second hardcoded map.
+    val activeAccountGlow = remember(state.filters.account, state.accounts) {
+        TransactionFilterEngine.activeAccount(state.filters.account, state.accounts)
+            ?.let { account -> GlowTones.forAccountOrigin(account.name, account.bankName) }
+            ?.let { tone -> GlowPalette.color(tone) }
+    }
+
     // Fluid header: scrolling the feed up compresses/crossfades the search
     // field and filter chips into a compact bar; scrolling back down at the
     // top of the list re-expands them. All the math lives in FilterBarCollapse
@@ -424,6 +434,7 @@ fun TransactionsScreen(
                                     accounts = state.accounts,
                                     knownPersons = state.knownPersons,
                                     bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                                    accountFilterTint = activeAccountGlow,
                                     onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
                                     onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
                                     onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
@@ -1184,6 +1195,8 @@ private fun TransactionCard(
     accounts: List<Account>,
     knownPersons: List<String>,
     bankName: String?,
+    /** Brand accent from the active account filter, or null for the default hairline. */
+    accountFilterTint: Color? = null,
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
     onAssignCategory: (SpendingCategory) -> Unit,
@@ -1218,7 +1231,7 @@ private fun TransactionCard(
             .alpha(cardAlpha)
             .clip(shape)
             .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, ObsidianTokens.hairline, shape)
+            .border(1.dp, accountFilterTint?.copy(alpha = 0.35f) ?: ObsidianTokens.hairline, shape)
             .rowEdgeGlow(originTone)
             .clickable(onClick = onCardClick)
     ) {
@@ -1228,11 +1241,15 @@ private fun TransactionCard(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f, fill = false)) {
                     // Primary line: merchant if we have one, else the friendly bank name.
+                    // Excluded rows also get a strikethrough here, on top of the
+                    // existing card-wide dimming and trailing icon (additive, not
+                    // a replacement for either).
                     Text(
                         tx.merchant ?: bankName ?: tx.sender ?: tx.source.name,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
+                            textDecoration = if (tx.excludeFromStats) TextDecoration.LineThrough else TextDecoration.None,
                         ),
                         color = ObsidianTokens.textPrimary,
                         maxLines = 1,
