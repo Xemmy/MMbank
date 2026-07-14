@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,13 +32,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -109,6 +114,7 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
+import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
@@ -149,11 +155,26 @@ data class TransactionsUiState(
     val hasAnyTransactions: Boolean = false,
     /** Currency a new manual entry defaults to. */
     val defaultCurrency: String = "USD",
+    /** True once a long-press has entered multi-select bulk-edit mode. */
+    val isInBulkMode: Boolean = false,
+    /** Ids currently checked while in bulk mode. */
+    val selectedTransactionIds: Set<Long> = emptySet(),
 )
+
+/** Bulk-mode selection is UI-only state, layered onto the Room-backed pipeline below. */
+private data class BulkModeState(
+    val isInBulkMode: Boolean = false,
+    val selectedIds: Set<Long> = emptySet(),
+)
+
+/** Adds or removes [id] from [current] — the pure toggle behind bulk-mode row taps. */
+internal fun toggleSelection(current: Set<Long>, id: Long): Set<Long> =
+    if (id in current) current - id else current + id
 
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val filters = MutableStateFlow(ActivityFilters())
+    private val bulkMode = MutableStateFlow(BulkModeState())
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         container.transactionRepository.observeTransactions(),
@@ -186,6 +207,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
         )
+    }.combine(bulkMode) { base, bulk ->
+        base.copy(isInBulkMode = bulk.isInBulkMode, selectedTransactionIds = bulk.selectedIds)
     }.recoverAndRetry("TransactionsViewModel", container) {
         TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
@@ -206,6 +229,35 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         filters.value = filters.value.copy(analyticsStatus = status)
     }
     fun clearFilters() { filters.value = ActivityFilters() }
+
+    fun enterBulkMode(initialId: Long) {
+        bulkMode.value = BulkModeState(isInBulkMode = true, selectedIds = setOf(initialId))
+    }
+
+    fun exitBulkMode() { bulkMode.value = BulkModeState() }
+
+    fun toggleSelected(transactionId: Long) {
+        bulkMode.value = bulkMode.value.let { it.copy(selectedIds = toggleSelection(it.selectedIds, transactionId)) }
+    }
+
+    fun selectAll(ids: List<Long>) {
+        bulkMode.value = bulkMode.value.copy(selectedIds = ids.toSet())
+    }
+
+    fun bulkSetCategory(category: SpendingCategory) = safeWrite("bulkSetCategory") {
+        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(spendingCategory = category))
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkSetExcludeFromStats(excluded: Boolean) = safeWrite("bulkSetExcludeFromStats") {
+        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(excludeFromStats = excluded))
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkDelete() = safeWrite("bulkDelete") {
+        container.bulkUpdateTransactions.delete(bulkMode.value.selectedIds.toList())
+        bulkMode.value = BulkModeState()
+    }
 
     private fun safeWrite(what: String, block: suspend () -> Unit) {
         viewModelScope.launch {
@@ -358,41 +410,52 @@ fun TransactionsScreen(
                 .padding(padding)
                 .nestedScroll(feedScrollConnection),
         ) {
-            CompactFilterBar(
-                query = state.filters.query,
-                filtersActive = state.filters.active,
-                fraction = collapseFraction,
-                onExpand = {
-                    collapse.expand()
-                    collapseFraction = 0f
-                },
-            )
-            Box(
-                Modifier
-                    .clipToBounds()
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints)
-                        collapse.updateRange(placeable.height.toFloat())
-                        val visibleHeight = (placeable.height * (1f - collapseFraction)).roundToInt()
-                        layout(placeable.width, visibleHeight) {
-                            placeable.placeRelative(0, visibleHeight - placeable.height)
-                        }
-                    }
-                    .graphicsLayer { alpha = 1f - collapseFraction },
-            ) {
-                ActivityFilterBar(
-                    state = state,
-                    onQuery = viewModel::setQuery,
-                    onDateRange = viewModel::setDateRange,
-                    onDirectionFilter = viewModel::setDirectionFilter,
-                    onAccountFilter = viewModel::setAccountFilter,
-                    onPersonFilter = viewModel::setPersonFilter,
-                    onTriageOnly = viewModel::setTriageOnly,
-                    onAmountRange = viewModel::setAmountRange,
-                    onSourceFilter = viewModel::setSourceFilter,
-                    onAnalyticsStatus = viewModel::setAnalyticsStatus,
-                    onClear = viewModel::clearFilters,
+            if (state.isInBulkMode) {
+                BulkModeBar(
+                    selectedCount = state.selectedTransactionIds.size,
+                    onSelectAll = { viewModel.selectAll(state.transactions.map { it.id }) },
+                    onCategorize = { category -> viewModel.bulkSetCategory(category) },
+                    onExclude = { viewModel.bulkSetExcludeFromStats(true) },
+                    onDelete = { viewModel.bulkDelete() },
+                    onClose = { viewModel.exitBulkMode() },
                 )
+            } else {
+                CompactFilterBar(
+                    query = state.filters.query,
+                    filtersActive = state.filters.active,
+                    fraction = collapseFraction,
+                    onExpand = {
+                        collapse.expand()
+                        collapseFraction = 0f
+                    },
+                )
+                Box(
+                    Modifier
+                        .clipToBounds()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            collapse.updateRange(placeable.height.toFloat())
+                            val visibleHeight = (placeable.height * (1f - collapseFraction)).roundToInt()
+                            layout(placeable.width, visibleHeight) {
+                                placeable.placeRelative(0, visibleHeight - placeable.height)
+                            }
+                        }
+                        .graphicsLayer { alpha = 1f - collapseFraction },
+                ) {
+                    ActivityFilterBar(
+                        state = state,
+                        onQuery = viewModel::setQuery,
+                        onDateRange = viewModel::setDateRange,
+                        onDirectionFilter = viewModel::setDirectionFilter,
+                        onAccountFilter = viewModel::setAccountFilter,
+                        onPersonFilter = viewModel::setPersonFilter,
+                        onTriageOnly = viewModel::setTriageOnly,
+                        onAmountRange = viewModel::setAmountRange,
+                        onSourceFilter = viewModel::setSourceFilter,
+                        onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                        onClear = viewModel::clearFilters,
+                    )
+                }
             }
 
             if (state.transactions.isEmpty()) {
@@ -435,6 +498,8 @@ fun TransactionsScreen(
                                     knownPersons = state.knownPersons,
                                     bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
                                     accountFilterTint = activeAccountGlow,
+                                    isInBulkMode = state.isInBulkMode,
+                                    isSelected = tx.id in state.selectedTransactionIds,
                                     onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
                                     onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
                                     onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
@@ -443,6 +508,8 @@ fun TransactionsScreen(
                                     onEdit = { editing = tx },
                                     onDelete = { viewModel.delete(tx.id) },
                                     onCardClick = { selectedTransaction = tx },
+                                    onLongPress = { viewModel.enterBulkMode(tx.id) },
+                                    onToggleSelected = { viewModel.toggleSelected(tx.id) },
                                 )
                                 // White base, not DividerDefaults: the theme's divider
                                 // gray at 10% alpha would vanish on the obsidian canvas.
@@ -529,6 +596,77 @@ private fun DayPill(day: LocalDate, today: LocalDate) {
                 letterSpacing = ObsidianTokens.pillTracking,
             )
         }
+    }
+}
+
+/**
+ * Contextual bar shown in place of the filter header while the Transactions
+ * screen is in bulk-edit mode: selection count, Select All, and the three
+ * bulk actions (Categorize / Exclude / Delete), plus a close button to drop
+ * back to the normal filter header.
+ */
+@Composable
+private fun BulkModeBar(
+    selectedCount: Int,
+    onSelectAll: () -> Unit,
+    onCategorize: (SpendingCategory) -> Unit,
+    onExclude: () -> Unit,
+    onDelete: () -> Unit,
+    onClose: () -> Unit,
+) {
+    var categoryMenuOpen by remember { mutableStateOf(false) }
+    var deleteConfirmOpen by remember { mutableStateOf(false) }
+    val hasSelection = selectedCount > 0
+    Surface(color = ObsidianTokens.canvas, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.Close, contentDescription = "Exit bulk mode")
+            }
+            Text(
+                "$selectedCount selected",
+                style = MaterialTheme.typography.labelLarge,
+                color = ObsidianTokens.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Filled.DoneAll, contentDescription = "Select all")
+            }
+            Box {
+                IconButton(onClick = { categoryMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.Category, contentDescription = "Categorize selected")
+                }
+                DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
+                    SpendingCategory.entries.forEach { category ->
+                        DropdownMenuItem(
+                            text = { Text("${category.emoji} ${category.label}") },
+                            onClick = { categoryMenuOpen = false; onCategorize(category) },
+                        )
+                    }
+                }
+            }
+            IconButton(onClick = onExclude, enabled = hasSelection) {
+                Icon(Icons.Filled.VisibilityOff, contentDescription = "Exclude selected from analytics")
+            }
+            IconButton(onClick = { deleteConfirmOpen = true }, enabled = hasSelection) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+            }
+        }
+    }
+    if (deleteConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteConfirmOpen = false },
+            title = { Text("Delete $selectedCount transaction${if (selectedCount == 1) "" else "s"}?") },
+            text = { Text("This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { deleteConfirmOpen = false; onDelete() }) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteConfirmOpen = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -1189,6 +1327,7 @@ internal val amountPositiveColor = Color(0xFF4ECDC4)
 /** Shared treatment for the card's secondary meta lines and chip labels. */
 private val metaTextColor = Color.Gray
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TransactionCard(
     tx: Transaction,
@@ -1197,6 +1336,10 @@ private fun TransactionCard(
     bankName: String?,
     /** Brand accent from the active account filter, or null for the default hairline. */
     accountFilterTint: Color? = null,
+    /** True while the screen is in multi-select bulk-edit mode. */
+    isInBulkMode: Boolean = false,
+    /** True when this row is checked while [isInBulkMode]. */
+    isSelected: Boolean = false,
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
     onAssignCategory: (SpendingCategory) -> Unit,
@@ -1205,6 +1348,10 @@ private fun TransactionCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onCardClick: () -> Unit,
+    /** Long-press enters bulk mode, selecting this row as the first pick. */
+    onLongPress: () -> Unit = {},
+    /** Tap while already in bulk mode toggles this row's selection instead of opening detail. */
+    onToggleSelected: () -> Unit = {},
 ) {
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
@@ -1231,13 +1378,33 @@ private fun TransactionCard(
             .alpha(cardAlpha)
             .clip(shape)
             .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, accountFilterTint?.copy(alpha = 0.35f) ?: ObsidianTokens.hairline, shape)
+            .border(
+                1.dp,
+                when {
+                    isSelected -> MaterialTheme.colorScheme.primary
+                    accountFilterTint != null -> accountFilterTint.copy(alpha = 0.35f)
+                    else -> ObsidianTokens.hairline
+                },
+                shape,
+            )
             .rowEdgeGlow(originTone)
-            .clickable(onClick = onCardClick)
+            .combinedClickable(
+                onClick = { if (isInBulkMode) onToggleSelected() else onCardClick() },
+                onLongClick = onLongPress,
+            )
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                RowAvatar(name = avatarName, tone = originTone)
+                if (isInBulkMode) {
+                    Icon(
+                        if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                        contentDescription = if (isSelected) "Selected" else "Not selected",
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else ObsidianTokens.textMeta,
+                        modifier = Modifier.size(34.dp).padding(4.dp),
+                    )
+                } else {
+                    RowAvatar(name = avatarName, tone = originTone)
+                }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f, fill = false)) {
                     // Primary line: merchant if we have one, else the friendly bank name.
