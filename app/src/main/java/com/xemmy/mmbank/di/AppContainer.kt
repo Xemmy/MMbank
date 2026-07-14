@@ -25,6 +25,7 @@ import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
+import com.xemmy.mmbank.domain.usecase.BulkUpdateTransactionsUseCase
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +140,10 @@ class AppContainer(context: Context) {
             transactionRepository = transactionRepository,
             fallbackCurrencyProvider = { preferences.defaultCurrency },
         )
+    }
+
+    val bulkUpdateTransactions: BulkUpdateTransactionsUseCase by lazy {
+        BulkUpdateTransactionsUseCase(transactionRepository)
     }
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */

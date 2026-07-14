@@ -109,6 +109,16 @@ class TransactionRepositoryImpl(
 
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
 
+    override suspend fun bulkSetCategory(
+        ids: List<Long>,
+        category: com.xemmy.mmbank.domain.model.SpendingCategory,
+    ): Int = dao.bulkSetCategory(ids, category)
+
+    override suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int =
+        dao.bulkSetExcludeFromStats(ids, excluded)
+
+    override suspend fun deleteMany(ids: List<Long>): Int = dao.deleteMany(ids)
+
     /**
      * Matches the account/card number pulled from a bank message (e.g. "*617",
      * "XXX810001") against the identifying number the user configured on each

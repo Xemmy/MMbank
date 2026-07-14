@@ -101,6 +101,18 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Multi-select edit: sets spending category on every row in [ids] at once. Returns affected count. */
+    @Query("UPDATE transactions SET spendingCategory = :category WHERE id IN (:ids)")
+    suspend fun bulkSetCategory(ids: List<Long>, category: com.xemmy.mmbank.domain.model.SpendingCategory): Int
+
+    /** Multi-select edit: sets the analytics-exclusion flag on every row in [ids] at once. Returns affected count. */
+    @Query("UPDATE transactions SET excludeFromStats = :excluded WHERE id IN (:ids)")
+    suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int
+
+    /** Multi-select delete. Returns the number of rows removed. */
+    @Query("DELETE FROM transactions WHERE id IN (:ids)")
+    suspend fun deleteMany(ids: List<Long>): Int
+
     // --- Backup support ---
 
     @Query("SELECT * FROM transactions")
