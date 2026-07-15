@@ -47,11 +47,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -68,6 +71,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -76,6 +80,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
+        private set
+    var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
+        private set
+    var appLockTimeoutMinutes by mutableStateOf(container.preferences.appLockTimeoutMinutes)
         private set
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
@@ -204,6 +212,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateHideZeroBalances(hide: Boolean) {
         container.preferences.hideZeroBalances = hide
         hideZeroBalances = hide
+    }
+
+    /** Call only after the enabling auth prompt has succeeded (the UI enforces that). */
+    fun updateAppLockEnabled(enabled: Boolean) {
+        container.setAppLockEnabled(enabled)
+        appLockEnabled = enabled
+    }
+
+    fun updateAppLockTimeout(minutes: Int) {
+        container.setAppLockTimeoutMinutes(minutes)
+        appLockTimeoutMinutes = minutes
     }
 
     fun saveBinanceKeys() {
@@ -643,10 +662,88 @@ fun PreferencesSettingsScreen(
             Text("Refresh Forex rates now")
         }
 
+        AppLockSection(viewModel)
+
         PeopleSection(viewModel)
 
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        }
+    }
+}
+
+/**
+ * Opt-in biometric app lock: the switch, and the idle-timeout picker while it
+ * is on. ENABLING requires passing the biometric/device-credential prompt
+ * right there — both to prove the prompt works on this device before it can
+ * gate the app, and so a passer-by with the phone in hand can't silently arm
+ * a lock. Disabling is immediate (the user already authenticated to be here).
+ */
+@Composable
+private fun AppLockSection(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val scope = rememberCoroutineScope()
+    val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
+    var enabling by remember { mutableStateOf(false) }
+
+    Text("Security", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("App lock", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (canAuthenticate) {
+                    "Require your fingerprint, face, or device PIN when the app opens, " +
+                        "returns from the background, or sits idle."
+                } else {
+                    "Unavailable: set up a screen lock or enroll biometrics on this device first."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = viewModel.appLockEnabled,
+            enabled = canAuthenticate && !enabling && activity != null,
+            onCheckedChange = { wantEnabled ->
+                if (!wantEnabled) {
+                    viewModel.updateAppLockEnabled(false)
+                } else if (activity != null) {
+                    enabling = true
+                    scope.launch {
+                        try {
+                            val ok = BiometricAuthManagerImpl(activity).promptAuth(
+                                title = "Enable app lock",
+                                subtitle = "Confirm it's you — this prompt will guard the app",
+                            )
+                            if (ok) viewModel.updateAppLockEnabled(true)
+                        } finally {
+                            enabling = false
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    if (viewModel.appLockEnabled) {
+        Text(
+            "Auto-lock after inactivity",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(1, 2, 5, 15).forEach { minutes ->
+                FilterChip(
+                    selected = viewModel.appLockTimeoutMinutes == minutes,
+                    onClick = { viewModel.updateAppLockTimeout(minutes) },
+                    label = { Text("$minutes min") },
+                )
+            }
         }
     }
 }

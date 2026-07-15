@@ -1,8 +1,8 @@
 package com.xemmy.mmbank.ui
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
@@ -41,7 +41,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.foundation.layout.Box
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
+import com.xemmy.mmbank.ui.auth.LockScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
@@ -58,14 +63,41 @@ import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import kotlinx.coroutines.delay
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (not ComponentActivity) because BiometricPrompt requires
+// a fragment host; it is a ComponentActivity subclass, so setContent and the
+// rest of the Compose wiring are unaffected.
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val container = (application as MMBankApp).container
+        val biometricAuth = BiometricAuthManagerImpl(this)
         setContent {
             MMbankTheme {
-                MMbankApp()
+                val locked by container.appLock.locked.collectAsStateWithLifecycle()
+                Box {
+                    MMbankApp()
+                    // Opaque gate over (not instead of) the app so navigation
+                    // and screen state survive a lock/unlock round-trip.
+                    if (locked) {
+                        LockScreen(
+                            authenticate = {
+                                biometricAuth.promptAuth(
+                                    title = "Unlock MMbank",
+                                    subtitle = "Confirm it's you to open your ledger",
+                                )
+                            },
+                            onUnlocked = { container.appLock.onUnlocked() },
+                        )
+                    }
+                }
             }
         }
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        // Defers the idle-timeout lock; a no-op while the lock is off/engaged.
+        (application as MMBankApp).container.appLock.onUserInteraction()
     }
 }
 

@@ -16,6 +16,8 @@ import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.auth.AppLockController
+import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
@@ -68,6 +70,34 @@ class AppContainer(context: Context) {
     }
 
     fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
+
+    /**
+     * Opt-in biometric app lock. The controller is pure Kotlin; only this
+     * scheduler lambda touches the Android main-thread Handler, so the whole
+     * lock state machine stays JVM-testable.
+     */
+    val appLock: AppLockController by lazy {
+        AppLockController(
+            sessionMonitor = IdleSessionMonitor(schedule = { delayMillis, block ->
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                val runnable = Runnable(block)
+                handler.postDelayed(runnable, delayMillis)
+                ({ handler.removeCallbacks(runnable) })
+            }),
+            isEnabled = { preferences.appLockEnabled },
+            timeoutMillis = { preferences.appLockTimeoutMinutes * 60_000L },
+        )
+    }
+
+    fun setAppLockEnabled(enabled: Boolean) {
+        preferences.appLockEnabled = enabled
+        appLock.onSettingsChanged()
+    }
+
+    fun setAppLockTimeoutMinutes(minutes: Int) {
+        preferences.appLockTimeoutMinutes = minutes
+        appLock.onSettingsChanged()   // re-arm the idle timer with the new duration
+    }
 
     private val database by lazy { AppDatabase.build(appContext) }
 

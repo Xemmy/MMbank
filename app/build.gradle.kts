@@ -90,6 +90,12 @@ dependencies {
     // Encrypted storage for the Binance read-only API keys
     implementation(libs.androidx.security.crypto)
 
+    // Biometric app lock: BiometricPrompt needs a FragmentActivity host, and
+    // ProcessLifecycleOwner drives the lock-on-background behavior.
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.lifecycle.process)
+
     // SQLCipher (future at-rest DB encryption — see DatabaseEncryptor); not
     // wired into AppDatabase yet.
     implementation(libs.sqlcipher.android)

@@ -37,6 +37,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_TABBY_RULES_SEEDED, false)
         set(value) = prefs.edit().putBoolean(KEY_TABBY_RULES_SEEDED, value).apply()
 
+    /** Opt-in biometric app lock (lock on background + idle timeout). */
+    var appLockEnabled: Boolean
+        get() = prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, value).apply()
+
+    /** Minutes of inactivity before an enabled app lock re-engages. */
+    var appLockTimeoutMinutes: Int
+        get() = prefs.getInt(KEY_APP_LOCK_TIMEOUT_MIN, 5)
+        set(value) = prefs.edit().putInt(KEY_APP_LOCK_TIMEOUT_MIN, value.coerceAtLeast(1)).apply()
+
     /** Saved people, newline-separated. Editable in Settings, included in backups. */
     var personsRaw: String
         get() = prefs.getString(KEY_PERSONS, "") ?: ""
@@ -78,6 +88,8 @@ class AppPreferences(context: Context) {
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
+        const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
+        const val KEY_APP_LOCK_TIMEOUT_MIN = "app_lock_timeout_min"
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
     }
