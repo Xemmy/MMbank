@@ -107,6 +107,8 @@ data class ParsingRuleEntity(
     val sampleText: String? = null,
     val createdAt: Long,
     val assignAccountId: Long? = null,
+    /** True for sample rules created by the Settings "Demo mode" toggle. */
+    val isDemo: Boolean = false,
 )
 
 @Entity(tableName = "asset_balances")
@@ -184,12 +186,12 @@ fun Transaction.toEntity() = TransactionEntity(
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
-    assignAccountId,
+    assignAccountId, isDemo,
 )
 
 fun ParsingRule.toEntity() = ParsingRuleEntity(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
-    assignAccountId,
+    assignAccountId, isDemo,
 )
 
 fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, valueUsd, updatedAt)

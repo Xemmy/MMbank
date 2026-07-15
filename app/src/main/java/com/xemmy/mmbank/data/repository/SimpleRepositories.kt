@@ -52,10 +52,19 @@ class AccountRepositoryImpl(
     override suspend fun delete(account: Account) = dao.delete(account.toEntity())
 }
 
-class ParsingRuleRepositoryImpl(private val dao: ParsingRuleDao) : ParsingRuleRepository {
+class ParsingRuleRepositoryImpl(
+    private val dao: ParsingRuleDao,
+    /** Whether "Demo mode" is on; see TransactionRepositoryImpl. */
+    private val demoMode: StateFlow<Boolean>,
+) : ParsingRuleRepository {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeAll(): Flow<List<ParsingRule>> =
-        dao.observeAll().map { list -> list.map(ParsingRuleEntity::toDomain) }
+        demoMode.flatMapLatest { demo -> dao.observeAll(demo) }
+            .map { list -> list.map(ParsingRuleEntity::toDomain) }
+
+    override fun observeAllReal(): Flow<List<ParsingRule>> =
+        dao.observeAll(false).map { list -> list.map(ParsingRuleEntity::toDomain) }
 
     override suspend fun getEnabled(): List<ParsingRule> =
         dao.getEnabled().map(ParsingRuleEntity::toDomain)

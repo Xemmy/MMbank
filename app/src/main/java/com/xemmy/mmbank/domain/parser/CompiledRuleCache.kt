@@ -25,7 +25,9 @@ class CompiledRuleCache(
     scope: CoroutineScope,
 ) {
 
-    private val compiled: StateFlow<List<CompiledRule>?> = ruleRepository.observeAll()
+    // Real rules only: the capture parser must ignore demo rules so a real
+    // message arriving during a demo is still matched against the user's rules.
+    private val compiled: StateFlow<List<CompiledRule>?> = ruleRepository.observeAllReal()
         .map { rules -> rules.filter { it.enabled }.mapNotNull(RuleCompiler::compile) }
         // A DB hiccup must never kill capture: degrade to built-ins only.
         .catch { emit(emptyList()) }

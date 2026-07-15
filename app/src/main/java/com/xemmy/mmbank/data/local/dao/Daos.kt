@@ -188,18 +188,29 @@ interface ParsingRuleDao {
     @Query("DELETE FROM parsing_rules WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM parsing_rules ORDER BY priority DESC, name")
-    fun observeAll(): Flow<List<ParsingRuleEntity>>
+    /** [demo] selects the active partition: real rules (false) or demo rules (true). */
+    @Query("SELECT * FROM parsing_rules WHERE isDemo = :demo ORDER BY priority DESC, name")
+    fun observeAll(demo: Boolean): Flow<List<ParsingRuleEntity>>
 
-    @Query("SELECT * FROM parsing_rules WHERE enabled = 1 ORDER BY priority DESC")
+    // The parser only ever runs REAL rules — a real message captured during a
+    // demo must be matched against the user's real rules, not the sample ones.
+    @Query("SELECT * FROM parsing_rules WHERE enabled = 1 AND isDemo = 0 ORDER BY priority DESC")
     suspend fun getEnabled(): List<ParsingRuleEntity>
 
     @Query("SELECT * FROM parsing_rules WHERE id = :id")
     suspend fun getById(id: Long): ParsingRuleEntity?
 
+    /** Removes every demo rule. */
+    @Query("DELETE FROM parsing_rules WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
+
+    @Query("SELECT COUNT(*) FROM parsing_rules WHERE isDemo = 1")
+    suspend fun countDemo(): Int
+
     // --- Backup support ---
 
-    @Query("SELECT * FROM parsing_rules")
+    // Backups carry only real rules — demo data must never leak into an export.
+    @Query("SELECT * FROM parsing_rules WHERE isDemo = 0")
     suspend fun getAll(): List<ParsingRuleEntity>
 
     @Query("DELETE FROM parsing_rules")

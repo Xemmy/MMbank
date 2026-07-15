@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.demo
 
 import com.xemmy.mmbank.data.local.entity.AccountEntity
+import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -30,11 +31,15 @@ object DemoDataGenerator {
     const val KEY_LOAN = 4
     const val KEY_CRYPTO = 5
 
+    /** Sample people demo transactions are shared between while Demo mode is on. */
+    val DEMO_PEOPLE = listOf("Alex Rivera", "Sam Carter", "Jordan Blake")
+
     /** An account to insert, paired with the temp key its transactions reference. */
     data class SeedAccount(val key: Int, val entity: AccountEntity)
 
     class Batch internal constructor(
         val accounts: List<SeedAccount>,
+        val rules: List<ParsingRuleEntity>,
         private val pending: List<PendingTransaction>,
     ) {
         /** Resolves each demo transaction's temp account key to the real inserted row id. */
@@ -52,6 +57,7 @@ object DemoDataGenerator {
         val category: TransactionCategory,
         val timestampMillis: Long,
         val createdAt: Long,
+        val person: String? = null,
     ) {
         fun toEntity(accountId: Long) = TransactionEntity(
             accountId = accountId,
@@ -64,6 +70,7 @@ object DemoDataGenerator {
             createdAt = createdAt,
             category = category,
             spendingCategory = spendingCategory,
+            person = person,
             isDemo = true,
         )
     }
@@ -213,11 +220,59 @@ object DemoDataGenerator {
             )
         }
 
+        // Share the debit spends among the demo people; leave income/transfers
+        // unassigned so the people list looks like a real mix.
+        var personIdx = 0
+        val withMeta = txns.map { t ->
+            val person = if (t.direction == TransactionDirection.DEBIT) {
+                DEMO_PEOPLE[personIdx++ % DEMO_PEOPLE.size]
+            } else {
+                null
+            }
+            t.copy(currencyCode = currency, person = person)
+        }
+
         return Batch(
-            accounts,
-            txns.map { it.copy(currencyCode = currency) }.sortedByDescending { it.timestampMillis },
+            accounts = accounts,
+            rules = demoRules(now),
+            pending = withMeta.sortedByDescending { it.timestampMillis },
         )
     }
+
+    /** A few illustrative parsing rules shown on the Rules screen during a demo. */
+    private fun demoRules(now: Long): List<ParsingRuleEntity> = listOf(
+        ParsingRuleEntity(
+            name = "Demo Bank card spend",
+            pattern = "You spent (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) " +
+                "at (?<merchant>[^.]+?)\\.",
+            senderPattern = "demobank",
+            direction = TransactionDirection.DEBIT,
+            priority = 110,
+            sampleText = "You spent USD 42.90 at BLUE BOTTLE COFFEE. Card ending 4821.",
+            createdAt = now,
+            isDemo = true,
+        ),
+        ParsingRuleEntity(
+            name = "Demo Bank salary credit",
+            pattern = "Salary of (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) credited",
+            senderPattern = "demobank",
+            direction = TransactionDirection.CREDIT,
+            priority = 110,
+            sampleText = "Salary of USD 4200.00 credited to your Everyday Checking account.",
+            createdAt = now,
+            isDemo = true,
+        ),
+        ParsingRuleEntity(
+            name = "Demo Finance loan installment",
+            pattern = "Installment of (?<currency>[A-Z]{3}) (?<amount>[\\d,]+(?:\\.\\d+)?) received",
+            senderPattern = "demofinance",
+            direction = TransactionDirection.DEBIT,
+            priority = 100,
+            sampleText = "Installment of USD 512.30 received for your Auto Loan.",
+            createdAt = now,
+            isDemo = true,
+        ),
+    )
 
     private data class Spend(
         val merchant: String,

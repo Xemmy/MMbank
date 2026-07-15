@@ -92,13 +92,20 @@ class AppContainer(context: Context) {
             // Fresh batch each time: clear any leftover demo rows first.
             database.transactionDao().deleteDemo()
             database.accountDao().deleteDemo()
+            database.parsingRuleDao().deleteDemo()
 
             val batch = DemoDataGenerator.generate(currency = preferences.defaultCurrency)
             val idByKey = batch.accounts.associate { seed ->
                 seed.key to database.accountDao().insert(seed.entity)
             }
             database.transactionDao().insertAll(batch.transactions(idByKey))
+            database.parsingRuleDao().insertAll(batch.rules)
         }
+        // Stash the real saved-people list and show demo people instead. Real
+        // rules/accounts/transactions are only hidden (isDemo filter); people
+        // live in a single pref string, so we swap it and keep the original safe.
+        preferences.demoPersonsBackup = preferences.personsRaw
+        preferences.persons = DemoDataGenerator.DEMO_PEOPLE
         preferences.demoModeEnabled = true
         _demoModeEnabled.value = true
     }
@@ -111,20 +118,26 @@ class AppContainer(context: Context) {
     suspend fun disableDemoMode() {
         preferences.demoModeEnabled = false
         _demoModeEnabled.value = false
+        // Restore the real saved-people list.
+        preferences.personsRaw = preferences.demoPersonsBackup
+        preferences.demoPersonsBackup = ""
         database.withTransaction {
             database.transactionDao().deleteDemo()
             database.accountDao().deleteDemo()
+            database.parsingRuleDao().deleteDemo()
         }
     }
 
     /**
      * Forces Demo mode off without touching the DB — used after a backup import,
-     * which clears every table (demo rows included) and restores real data, so
-     * the flag must not be left on pointing at a now-empty demo partition.
+     * which clears every table (demo rows included) and restores real data +
+     * the real people list, so the flag/backup must not be left pointing at a
+     * now-gone demo state. (The import already set the real personsRaw.)
      */
     fun forceDemoModeOff() {
         preferences.demoModeEnabled = false
         _demoModeEnabled.value = false
+        preferences.demoPersonsBackup = ""
     }
 
     /**
@@ -214,7 +227,7 @@ class AppContainer(context: Context) {
         AccountRepositoryImpl(database.accountDao(), demoModeEnabled)
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
-        ParsingRuleRepositoryImpl(database.parsingRuleDao())
+        ParsingRuleRepositoryImpl(database.parsingRuleDao(), demoModeEnabled)
     }
     val senderLabelRepository: SenderLabelRepository by lazy {
         SenderLabelRepositoryImpl(database.senderLabelDao())

@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.local.entity
 
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
@@ -143,6 +144,30 @@ class EntityMappersTest {
         assertTrue(demo.isDemo)
         val real = account(statementCycleDay = 10, isDemo = false).toEntity().toDomain()
         assertFalse(real.isDemo)
+    }
+
+    @Test
+    fun `parsing rule round-trip preserves isDemo in both states`() {
+        fun rule(isDemo: Boolean) = ParsingRule(
+            id = 5,
+            name = "Demo Bank card spend",
+            pattern = "You spent (?<amount>\\d+)",
+            senderPattern = "demobank",
+            direction = TransactionDirection.DEBIT,
+            defaultCurrency = "USD",
+            priority = 110,
+            enabled = true,
+            sampleText = "You spent 42",
+            createdAt = 1_700_000_000_000,
+            assignAccountId = 9,
+            isDemo = isDemo,
+        )
+        val demo = rule(isDemo = true)
+        assertEquals(demo, demo.toEntity().toDomain())
+        assertTrue(demo.toEntity().isDemo)
+        val real = rule(isDemo = false)
+        assertEquals(real, real.toEntity().toDomain())
+        assertFalse(real.toEntity().isDemo)
     }
 
     @Test

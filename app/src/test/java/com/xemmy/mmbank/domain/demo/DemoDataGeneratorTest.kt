@@ -72,4 +72,26 @@ class DemoDataGeneratorTest {
             .let { b -> b.transactions(idMap(b)).map { it.amount to it.timestamp } }
         assertEquals(run(), run())
     }
+
+    @Test
+    fun `debit transactions are shared among the demo people`() {
+        val batch = DemoDataGenerator.generate(random = Random(6), now = now)
+        val txns = batch.transactions(idMap(batch))
+        val people = txns.mapNotNull { it.person }.toSet()
+        assertTrue("demo debits should carry demo people", people.isNotEmpty())
+        assertTrue("only demo people are used", DemoDataGenerator.DEMO_PEOPLE.containsAll(people))
+        assertTrue(
+            "credits stay unassigned",
+            txns.filter { it.direction == TransactionDirection.CREDIT }.all { it.person == null },
+        )
+    }
+
+    @Test
+    fun `demo rules are all flagged demo and cover both directions`() {
+        val rules = DemoDataGenerator.generate(random = Random(7), now = now).rules
+        assertTrue(rules.isNotEmpty())
+        assertTrue(rules.all { it.isDemo })
+        assertTrue(rules.any { it.direction == TransactionDirection.DEBIT })
+        assertTrue(rules.any { it.direction == TransactionDirection.CREDIT })
+    }
 }

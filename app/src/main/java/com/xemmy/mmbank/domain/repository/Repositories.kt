@@ -60,7 +60,10 @@ interface AccountRepository {
 }
 
 interface ParsingRuleRepository {
+    /** All rules for display — demo rules while Demo mode is on. */
     fun observeAll(): Flow<List<ParsingRule>>
+    /** Real rules only, regardless of Demo mode — used by the capture parser. */
+    fun observeAllReal(): Flow<List<ParsingRule>>
     suspend fun getEnabled(): List<ParsingRule>
     suspend fun getById(id: Long): ParsingRule?
     suspend fun save(rule: ParsingRule): Long

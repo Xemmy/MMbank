@@ -46,6 +46,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_DEMO_MODE_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_DEMO_MODE_ENABLED, value).apply()
 
+    /**
+     * While Demo mode is on, the real saved-people list is stashed here and
+     * [personsRaw] shows demo people instead. Restored (and cleared) when demo
+     * mode is switched off, so the real list is preserved, never lost.
+     */
+    var demoPersonsBackup: String
+        get() = prefs.getString(KEY_DEMO_PERSONS_BACKUP, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_DEMO_PERSONS_BACKUP, value).apply()
+
     /** Opt-in biometric app lock (lock on background + idle timeout). */
     var appLockEnabled: Boolean
         get() = prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
@@ -107,6 +116,7 @@ class AppPreferences(context: Context) {
         const val KEY_PERSONS = "persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
         const val KEY_DEMO_MODE_ENABLED = "demo_mode_enabled"
+        const val KEY_DEMO_PERSONS_BACKUP = "demo_persons_backup"
         const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         const val KEY_APP_LOCK_TIMEOUT_MIN = "app_lock_timeout_min"
         const val KEY_APP_LOCK_LAST_ACTIVE = "app_lock_last_active_at"

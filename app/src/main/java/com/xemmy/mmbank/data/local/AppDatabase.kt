@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -166,6 +166,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v10 -> v11: Demo mode also swaps parsing rules. Same disposable-demo
+         * flag on parsing_rules (real rules default to 0), so the Rules screen
+         * shows demo rules while demo mode is on without touching real ones.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE parsing_rules ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         const val DB_NAME = "mmbank.db"
 
         /**
@@ -180,7 +191,7 @@ abstract class AppDatabase : RoomDatabase() {
             Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

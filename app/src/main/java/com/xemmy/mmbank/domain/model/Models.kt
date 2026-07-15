@@ -174,6 +174,8 @@ data class ParsingRule(
      * detection; null keeps the automatic behavior.
      */
     val assignAccountId: Long? = null,
+    /** True for sample rules created by the Settings "Demo mode" toggle. */
+    val isDemo: Boolean = false,
 )
 
 /** User-defined friendly name for a transaction sender (SMS short code or app package). */

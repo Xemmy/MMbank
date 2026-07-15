@@ -259,6 +259,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             runCatching { container.enableDemoMode() }
                 .onSuccess {
                     demoModeEnabled = true
+                    persons = container.preferences.persons
+                    recomputeUnlisted()
                     statusMessage = "Demo mode on — your real data is hidden"
                 }
                 .onFailure {
@@ -269,7 +271,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Turns Demo mode OFF — deletes the sample data and restores the real ledger. */
+    /**
+     * Turns Demo mode OFF — deletes the sample data and restores the real
+     * ledger, rules and people. Call only after the biometric prompt has
+     * succeeded (revealing real data is the guarded step; the UI enforces it).
+     */
     fun disableDemoMode() {
         if (busy) return
         viewModelScope.launch {
@@ -278,6 +284,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             runCatching { container.disableDemoMode() }
                 .onSuccess {
                     demoModeEnabled = false
+                    persons = container.preferences.persons
+                    recomputeUnlisted()
                     statusMessage = "Demo mode off — your real data is back"
                 }
                 .onFailure {
@@ -874,10 +882,12 @@ fun DemoSettingsScreen(
 }
 
 /**
- * Biometric-gated switch that swaps the real ledger for disposable sample data.
- * ENABLING requires passing the prompt (so a passer-by can't hide someone's real
- * data, and to prove the prompt works); disabling is immediate and just deletes
- * the sample rows. Real accounts/transactions are never modified — only hidden.
+ * Switch that swaps the real ledger, rules and people for disposable sample
+ * data. Turning it ON is immediate. Turning it OFF — revealing the real data —
+ * requires passing the biometric/device-credential prompt, so someone handed
+ * the phone mid-demo can't get back to the real accounts. Real data is never
+ * modified, only hidden; the whole feature needs a device lock so demo mode can
+ * always be exited.
  */
 @Composable
 private fun DemoModeSection(viewModel: SettingsViewModel) {
@@ -885,7 +895,7 @@ private fun DemoModeSection(viewModel: SettingsViewModel) {
     val activity = context as? FragmentActivity
     val scope = rememberCoroutineScope()
     val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
-    var enabling by remember { mutableStateOf(false) }
+    var disabling by remember { mutableStateOf(false) }
 
     Card(Modifier.fillMaxWidth()) {
         Column(
@@ -901,10 +911,10 @@ private fun DemoModeSection(viewModel: SettingsViewModel) {
                     Text("Demo mode", style = MaterialTheme.typography.bodyLarge)
                     Text(
                         if (canAuthenticate) {
-                            "Hide your real accounts and transactions behind a batch of randomly " +
-                                "generated sample data — handy for screenshots or a walkthrough. " +
-                                "Switching it off deletes the sample data and brings your real " +
-                                "data back, untouched."
+                            "Hide your real accounts, transactions, rules and people behind a batch " +
+                                "of randomly generated sample data — handy for screenshots or a " +
+                                "walkthrough. Turning it off asks for your fingerprint, face or " +
+                                "device PIN, then restores your real data untouched."
                         } else {
                             "Unavailable: set up a screen lock or enroll biometrics on this device first."
                         },
@@ -914,21 +924,21 @@ private fun DemoModeSection(viewModel: SettingsViewModel) {
                 }
                 Switch(
                     checked = viewModel.demoModeEnabled,
-                    enabled = canAuthenticate && !viewModel.busy && !enabling && activity != null,
+                    enabled = canAuthenticate && !viewModel.busy && !disabling && activity != null,
                     onCheckedChange = { wantEnabled ->
-                        if (!wantEnabled) {
-                            viewModel.disableDemoMode()
+                        if (wantEnabled) {
+                            viewModel.enableDemoMode()
                         } else if (activity != null) {
-                            enabling = true
+                            disabling = true
                             scope.launch {
                                 try {
                                     val ok = BiometricAuthManagerImpl(activity).promptAuth(
-                                        title = "Enter demo mode",
-                                        subtitle = "Confirm it's you before hiding your real data",
+                                        title = "Exit demo mode",
+                                        subtitle = "Confirm it's you to reveal your real data",
                                     )
-                                    if (ok) viewModel.enableDemoMode()
+                                    if (ok) viewModel.disableDemoMode()
                                 } finally {
-                                    enabling = false
+                                    disabling = false
                                 }
                             }
                         }
@@ -937,8 +947,8 @@ private fun DemoModeSection(viewModel: SettingsViewModel) {
             }
             if (viewModel.demoModeEnabled) {
                 Text(
-                    "Demo mode is on — your real data is safely hidden. Switch off to restore it; " +
-                        "switching on again generates a fresh set of sample data.",
+                    "Demo mode is on — your real data is safely hidden. Switch off (with biometrics) " +
+                        "to restore it; switching on again generates a fresh set of sample data.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )

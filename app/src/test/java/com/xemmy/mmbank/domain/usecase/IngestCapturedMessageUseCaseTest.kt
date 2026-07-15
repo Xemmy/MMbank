@@ -28,6 +28,7 @@ class IngestCapturedMessageUseCaseTest {
         val rules: MutableStateFlow<List<ParsingRule>>,
     ) : ParsingRuleRepository {
         override fun observeAll(): Flow<List<ParsingRule>> = rules
+        override fun observeAllReal(): Flow<List<ParsingRule>> = rules
         override suspend fun getEnabled(): List<ParsingRule> = rules.value.filter { it.enabled }
         override suspend fun getById(id: Long): ParsingRule? = rules.value.firstOrNull { it.id == id }
         override suspend fun save(rule: ParsingRule): Long = rule.id
