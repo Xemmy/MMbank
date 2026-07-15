@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.parser
 
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsedTransaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.util.LogRedactor
 
 /**
@@ -70,10 +71,28 @@ class TransactionParser(
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
 
+            // A keyword rule can match on the wrong side of a mixed message: the
+            // Binance Pay "You have received a payment of 710 USDT" notification
+            // trips the DEBIT rule because "payment of" is a debit keyword, even
+            // though "received" makes it money IN. When an explicit incoming-money
+            // word (received/incoming/deposited) is the earliest directional cue,
+            // promote a DEBIT-ruled match to CREDIT. This is deliberately one-way:
+            // the DEBIT side of the override ("paid") fires on unrelated clauses
+            // like "...processed after next statement is paid" in cashback credits,
+            // so we never demote a CREDIT rule here — only rescue a mislabeled credit.
+            val direction =
+                if (rule.direction == TransactionDirection.DEBIT &&
+                    GenericExtractors.detectDirectionOverride(text) == TransactionDirection.CREDIT
+                ) {
+                    TransactionDirection.CREDIT
+                } else {
+                    rule.direction
+                }
+
             return ParsedTransaction(
                 amount = amount,
                 currencyCode = currency,
-                direction = rule.direction,
+                direction = direction,
                 merchant = merchant,
                 matchedRuleName = rule.name,
                 accountNumberSuffix = accountNumberSuffix,

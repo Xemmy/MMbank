@@ -43,15 +43,27 @@ class TransactionParserTest {
         assertEquals(TransactionDirection.CREDIT, result.direction)
     }
 
-    // Regression: a Binance Pay/Wallet "received" notification was ingested as
-    // a negative USD expense — "received" wasn't recognized as a credit
-    // keyword, and the currency regex truncated "USDT" down to "USD" because
-    // "USD" is a shorter alternative tried first with nothing stopping it from
-    // matching as a false prefix.
+    // Regression: the real Binance Pay/Wallet notification — title "Binance",
+    // body "You have received a payment of 710 USDT from ..." — was ingested as
+    // a negative USD expense. It never hits the "Binance Mastercard" signature
+    // route, so it falls to the regex phase, where "payment of" trips the DEBIT
+    // keyword rule (builtin.en.debit.amt-cur) even though "received" makes it a
+    // credit. The phase-2 direction override must promote it to CREDIT.
+    //
+    // The earlier version of this test dropped the word "of" ("a payment 710
+    // USDT"), which sidestepped the "payment of" debit keyword and let a credit
+    // rule match directly — so it passed while the real message still broke.
     @Test
     fun `Binance received payment parses as positive credit`() {
-        val text = "You have received a payment 710 USDT from m_aldhinhani at 2026-07-14 05:53:58 (UTC)"
-        val result = parser.parse(sms(text))
+        val result = parser.parse(
+            CapturedMessage(
+                source = TransactionSource.PUSH_NOTIFICATION,
+                sender = "com.binance.dev",
+                title = "Binance",
+                body = "You have received a payment of 710 USDT from m_aldhinhani on 2026-07-14 05:53:58(UTC)",
+                timestampMillis = 1_700_000_000_000,
+            )
+        )
 
         assertNotNull(result)
         // Amount is stored as a positive magnitude; sign is carried by direction.
@@ -59,6 +71,20 @@ class TransactionParserTest {
         assertEquals(BigDecimal("710"), result.amount)
         assertEquals(TransactionDirection.CREDIT, result.direction)
         assertEquals("USDT", result.currencyCode)
+    }
+
+    // The one-way nature of the phase-2 promotion: a spend-flavored keyword rule
+    // whose message happens to contain "paid" in an unrelated clause must NOT be
+    // demoted. This is the exact shape of the Tabby cashback credit below, guarded
+    // here at the parser level so the asymmetry can't silently regress.
+    @Test
+    fun `credit rule is not demoted by an incidental debit keyword`() {
+        val r = parser.parse(
+            sms("You received 50 USD after next statement is paid")
+        )
+        assertNotNull(r)
+        // "received" comes before "paid", and we never demote a credit anyway.
+        assertEquals(TransactionDirection.CREDIT, r!!.direction)
     }
 
     @Test
