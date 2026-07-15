@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Tune
@@ -225,6 +226,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         appLockTimeoutMinutes = minutes
     }
 
+    /**
+     * Re-snapshots the app-lock prefs. The root Settings menu and the Security
+     * subpage are separate nav destinations with separate SettingsViewModel
+     * instances, so the menu's subtitle must refresh on resume after the
+     * subpage changed the underlying preference.
+     */
+    fun refreshAppLockState() {
+        appLockEnabled = container.preferences.appLockEnabled
+        appLockTimeoutMinutes = container.preferences.appLockTimeoutMinutes
+    }
+
     fun saveBinanceKeys() {
         container.credentialStore.binanceApiKey = apiKeyInput
         container.credentialStore.binanceSecretKey = secretKeyInput
@@ -347,6 +359,7 @@ fun SettingsScreen(
     LifecycleResumeEffect(Unit) {
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
         crashRecorded = Diagnostics.readCrash(context) != null
+        viewModel.refreshAppLockState()
         onPauseOrDispose { }
     }
 
@@ -394,6 +407,17 @@ fun SettingsScreen(
                     title = "Parsing rules",
                     subtitle = "Teach the app new bank message formats",
                     onClick = { onOpen("rules") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Lock,
+                    title = "Security",
+                    subtitle = if (viewModel.appLockEnabled) {
+                        "App lock on · auto-lock ${viewModel.appLockTimeoutMinutes} min"
+                    } else {
+                        "Biometric app lock (off)"
+                    },
+                    onClick = { onOpen("settings_security") },
                 )
             }
         }
@@ -662,13 +686,25 @@ fun PreferencesSettingsScreen(
             Text("Refresh Forex rates now")
         }
 
-        AppLockSection(viewModel)
-
         PeopleSection(viewModel)
 
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Security (biometric app lock)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun SecuritySettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Security", onBack = onBack) {
+        AppLockSection(viewModel)
     }
 }
 
@@ -686,8 +722,6 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
     val scope = rememberCoroutineScope()
     val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
     var enabling by remember { mutableStateOf(false) }
-
-    Text("Security", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
 
     Row(
         Modifier.fillMaxWidth(),

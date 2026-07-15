@@ -58,6 +58,7 @@ import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
@@ -254,5 +255,6 @@ private fun AppNavHost(
         composable("settings_binance") { BinanceSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_backup") { BackupSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_security") { SecuritySettingsScreen(onBack = { navController.popBackStack() }) }
     }
 }

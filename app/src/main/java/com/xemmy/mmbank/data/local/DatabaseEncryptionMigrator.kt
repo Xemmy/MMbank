@@ -88,24 +88,42 @@ object DatabaseEncryptionMigrator {
 
     private fun migrate(context: Context, dbFile: File, encFile: File, bakFile: File, passphrase: String) {
         SQLiteDatabase.loadLibs(context)
-        encFile.delete() // half-written export from an interrupted run
+        // Half-written export (and its journals) from an interrupted run.
+        encFile.delete()
+        File(encFile.path + "-journal").delete()
+        File(encFile.path + "-wal").delete()
+        File(encFile.path + "-shm").delete()
 
+        // Pass 1 — plaintext connection: read the schema version and fold WAL
+        // content into the main file, so the single .bak file is a complete
+        // backup and stale -wal/-shm can be deleted after the swap instead of
+        // being replayed into the encrypted DB.
         val version: Int
         val plain = SQLiteDatabase.openDatabase(dbFile.path, "", null, SQLiteDatabase.OPEN_READWRITE)
         try {
             version = plain.version
-            // Fold WAL content into the main file so the single .bak file is
-            // a complete backup and stale -wal/-shm can be deleted after the
-            // swap instead of being replayed into the encrypted DB.
             plain.rawExecSQL("PRAGMA wal_checkpoint(TRUNCATE);")
-            // Passphrase is hex by construction (DatabaseKeyMaterial), so
-            // embedding it in the SQL literal needs no escaping.
-            plain.rawExecSQL("ATTACH DATABASE '${encFile.path}' AS encrypted KEY '$passphrase';")
-            plain.rawExecSQL("SELECT sqlcipher_export('encrypted');")
-            plain.rawExecSQL("PRAGMA encrypted.user_version = $version;")
-            plain.rawExecSQL("DETACH DATABASE encrypted;")
         } finally {
             plain.close()
+        }
+
+        // Pass 2 — encrypted connection as MAIN, plaintext attached as the
+        // export SOURCE. The forward direction (plaintext main + "ATTACH ...
+        // KEY '<key>'") throws "unable to open database" on-device with this
+        // library: an empty-key connection won't attach a keyed database.
+        // Attaching the plaintext (KEY '') from an encrypted main is the
+        // documented, reliable direction; the two-argument
+        // sqlcipher_export(target, source) has existed since SQLCipher 4.1.
+        // Passphrase is hex by construction (DatabaseKeyMaterial), so
+        // embedding it in openOrCreateDatabase needs no escaping concerns.
+        val enc = SQLiteDatabase.openOrCreateDatabase(encFile.path, passphrase, null)
+        try {
+            enc.rawExecSQL("ATTACH DATABASE '${dbFile.path}' AS plaintext KEY '';")
+            enc.rawExecSQL("SELECT sqlcipher_export('main', 'plaintext');")
+            enc.rawExecSQL("DETACH DATABASE plaintext;")
+            enc.rawExecSQL("PRAGMA user_version = $version;")
+        } finally {
+            enc.close()
         }
 
         // Gate: nothing below runs unless the encrypted copy provably works.
