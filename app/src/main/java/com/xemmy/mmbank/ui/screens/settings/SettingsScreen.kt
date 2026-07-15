@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -413,7 +415,7 @@ fun SettingsScreen(
                     icon = Icons.Filled.Lock,
                     title = "Security",
                     subtitle = if (viewModel.appLockEnabled) {
-                        "App lock on · auto-lock ${viewModel.appLockTimeoutMinutes} min"
+                        "App lock on · auto-lock ${appLockTimeoutLabel(viewModel.appLockTimeoutMinutes)}"
                     } else {
                         "Biometric app lock (off)"
                     },
@@ -715,6 +717,7 @@ fun SecuritySettingsScreen(
  * gate the app, and so a passer-by with the phone in hand can't silently arm
  * a lock. Disabling is immediate (the user already authenticated to be here).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AppLockSection(viewModel: SettingsViewModel) {
     val context = LocalContext.current
@@ -732,8 +735,8 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
             Text("App lock", style = MaterialTheme.typography.bodyLarge)
             Text(
                 if (canAuthenticate) {
-                    "Require your fingerprint, face, or device PIN when the app opens, " +
-                        "returns from the background, or sits idle."
+                    "Require your fingerprint, face, or device PIN once the app has " +
+                        "been closed or idle beyond the auto-lock time below."
                 } else {
                     "Unavailable: set up a screen lock or enroll biometrics on this device first."
                 },
@@ -767,20 +770,32 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
 
     if (viewModel.appLockEnabled) {
         Text(
-            "Auto-lock after inactivity",
+            "Ask again after inactivity",
             style = MaterialTheme.typography.bodyMedium,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(1, 2, 5, 15).forEach { minutes ->
+        Text(
+            "Switching away and back within this window won't ask again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            APP_LOCK_TIMEOUT_OPTIONS_MIN.forEach { minutes ->
                 FilterChip(
                     selected = viewModel.appLockTimeoutMinutes == minutes,
                     onClick = { viewModel.updateAppLockTimeout(minutes) },
-                    label = { Text("$minutes min") },
+                    label = { Text(appLockTimeoutLabel(minutes)) },
                 )
             }
         }
     }
 }
+
+/** Auto-lock grace-window choices, in minutes: 1/2/5/15 min, then 1/6/12 hours. */
+val APP_LOCK_TIMEOUT_OPTIONS_MIN = listOf(1, 2, 5, 15, 60, 360, 720)
+
+/** "15 min" / "6 hr" — whole-hour multiples render in hours, else minutes. */
+fun appLockTimeoutLabel(minutes: Int): String =
+    if (minutes >= 60 && minutes % 60 == 0) "${minutes / 60} hr" else "$minutes min"
 
 /** Editable saved-people list: add, rename (updates every transaction), remove. */
 @Composable

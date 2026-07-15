@@ -47,6 +47,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getInt(KEY_APP_LOCK_TIMEOUT_MIN, 5)
         set(value) = prefs.edit().putInt(KEY_APP_LOCK_TIMEOUT_MIN, value.coerceAtLeast(1)).apply()
 
+    /**
+     * Wall-clock millis when the app was last active (backgrounded or unlocked).
+     * The app lock uses it to require auth only after the timeout has actually
+     * elapsed, so a quick switch away and back doesn't re-prompt. 0 = never.
+     */
+    var appLockLastActiveAt: Long
+        get() = prefs.getLong(KEY_APP_LOCK_LAST_ACTIVE, 0L)
+        set(value) = prefs.edit().putLong(KEY_APP_LOCK_LAST_ACTIVE, value).apply()
+
     /** Saved people, newline-separated. Editable in Settings, included in backups. */
     var personsRaw: String
         get() = prefs.getString(KEY_PERSONS, "") ?: ""
@@ -90,6 +99,7 @@ class AppPreferences(context: Context) {
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
         const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         const val KEY_APP_LOCK_TIMEOUT_MIN = "app_lock_timeout_min"
+        const val KEY_APP_LOCK_LAST_ACTIVE = "app_lock_last_active_at"
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
     }

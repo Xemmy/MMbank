@@ -88,6 +88,13 @@ class AppContainer(context: Context) {
             }),
             isEnabled = { preferences.appLockEnabled },
             timeoutMillis = { preferences.appLockTimeoutMinutes * 60_000L },
+            // Persisted so the idle grace window survives the process being
+            // killed: a return within the timeout doesn't force a re-auth.
+            lastActive = object : AppLockController.LastActiveStore {
+                override var value: Long
+                    get() = preferences.appLockLastActiveAt
+                    set(v) { preferences.appLockLastActiveAt = v }
+            },
         )
     }
 
