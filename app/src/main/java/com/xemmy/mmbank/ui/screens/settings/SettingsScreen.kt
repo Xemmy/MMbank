@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,6 +88,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
         private set
     var appLockTimeoutMinutes by mutableStateOf(container.preferences.appLockTimeoutMinutes)
+        private set
+    var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
@@ -239,6 +242,52 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         appLockTimeoutMinutes = container.preferences.appLockTimeoutMinutes
     }
 
+    /** Re-snapshots the Demo mode flag (separate VM instances per nav destination). */
+    fun refreshDemoState() {
+        demoModeEnabled = container.preferences.demoModeEnabled
+    }
+
+    /**
+     * Turns Demo mode ON — real data hides, a fresh sample batch appears. Call
+     * only after the enabling auth prompt has succeeded (the UI enforces that).
+     */
+    fun enableDemoMode() {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Loading demo data…"
+            runCatching { container.enableDemoMode() }
+                .onSuccess {
+                    demoModeEnabled = true
+                    statusMessage = "Demo mode on — your real data is hidden"
+                }
+                .onFailure {
+                    container.recordError("SettingsViewModel.enableDemoMode", it)
+                    statusMessage = "Couldn't start demo mode: ${it.message}"
+                }
+            busy = false
+        }
+    }
+
+    /** Turns Demo mode OFF — deletes the sample data and restores the real ledger. */
+    fun disableDemoMode() {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Removing demo data…"
+            runCatching { container.disableDemoMode() }
+                .onSuccess {
+                    demoModeEnabled = false
+                    statusMessage = "Demo mode off — your real data is back"
+                }
+                .onFailure {
+                    container.recordError("SettingsViewModel.disableDemoMode", it)
+                    statusMessage = "Couldn't exit demo mode: ${it.message}"
+                }
+            busy = false
+        }
+    }
+
     fun saveBinanceKeys() {
         container.credentialStore.binanceApiKey = apiKeyInput
         container.credentialStore.binanceSecretKey = secretKeyInput
@@ -335,6 +384,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val blob = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readBytes() }
                 container.backupManager.import(blob, backupPassword.toCharArray())
             }.onSuccess { (accounts, transactions) ->
+                // Import clears every table (demo rows included) and restores real
+                // data, so Demo mode must not stay on pointing at an empty partition.
+                container.forceDemoModeOff()
+                demoModeEnabled = false
                 defaultCurrency = container.preferences.defaultCurrency
                 statusMessage = "Backup restored: $accounts accounts, $transactions transactions"
             }.onFailure {
@@ -362,6 +415,7 @@ fun SettingsScreen(
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
         crashRecorded = Diagnostics.readCrash(context) != null
         viewModel.refreshAppLockState()
+        viewModel.refreshDemoState()
         onPauseOrDispose { }
     }
 
@@ -440,6 +494,18 @@ fun SettingsScreen(
                     subtitle = if (crashRecorded) "Crash log recorded — tap to view" else "No problems recorded",
                     subtitleColor = if (crashRecorded) MaterialTheme.colorScheme.error else null,
                     onClick = { onOpen("settings_diagnostics") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Science,
+                    title = "Demo mode",
+                    subtitle = if (viewModel.demoModeEnabled) {
+                        "On — real data hidden behind sample data"
+                    } else {
+                        "Show sample data for demos (your data stays safe)"
+                    },
+                    subtitleColor = if (viewModel.demoModeEnabled) MaterialTheme.colorScheme.primary else null,
+                    onClick = { onOpen("settings_demo") },
                 )
             }
         }
@@ -784,6 +850,97 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
                     selected = viewModel.appLockTimeoutMinutes == minutes,
                     onClick = { viewModel.updateAppLockTimeout(minutes) },
                     label = { Text(appLockTimeoutLabel(minutes)) },
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Demo mode (biometric-gated sample-data toggle)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun DemoSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Demo mode", onBack = onBack) {
+        DemoModeSection(viewModel)
+        viewModel.statusMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+/**
+ * Biometric-gated switch that swaps the real ledger for disposable sample data.
+ * ENABLING requires passing the prompt (so a passer-by can't hide someone's real
+ * data, and to prove the prompt works); disabling is immediate and just deletes
+ * the sample rows. Real accounts/transactions are never modified — only hidden.
+ */
+@Composable
+private fun DemoModeSection(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val scope = rememberCoroutineScope()
+    val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
+    var enabling by remember { mutableStateOf(false) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Demo mode", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (canAuthenticate) {
+                            "Hide your real accounts and transactions behind a batch of randomly " +
+                                "generated sample data — handy for screenshots or a walkthrough. " +
+                                "Switching it off deletes the sample data and brings your real " +
+                                "data back, untouched."
+                        } else {
+                            "Unavailable: set up a screen lock or enroll biometrics on this device first."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = viewModel.demoModeEnabled,
+                    enabled = canAuthenticate && !viewModel.busy && !enabling && activity != null,
+                    onCheckedChange = { wantEnabled ->
+                        if (!wantEnabled) {
+                            viewModel.disableDemoMode()
+                        } else if (activity != null) {
+                            enabling = true
+                            scope.launch {
+                                try {
+                                    val ok = BiometricAuthManagerImpl(activity).promptAuth(
+                                        title = "Enter demo mode",
+                                        subtitle = "Confirm it's you before hiding your real data",
+                                    )
+                                    if (ok) viewModel.enableDemoMode()
+                                } finally {
+                                    enabling = false
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+            if (viewModel.demoModeEnabled) {
+                Text(
+                    "Demo mode is on — your real data is safely hidden. Switch off to restore it; " +
+                        "switching on again generates a fresh set of sample data.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

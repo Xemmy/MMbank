@@ -41,6 +41,8 @@ data class AccountEntity(
     val loanNotes: String? = null,
     /** Day of month (1-31) the card's statement cycle starts; null = no cycle. */
     val statementCycleDay: Int? = null,
+    /** True for sample rows created by the Settings "Demo mode" toggle. */
+    val isDemo: Boolean = false,
 )
 
 @Entity(tableName = "sender_labels")
@@ -88,6 +90,8 @@ data class TransactionEntity(
     val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
     /** Kept in the ledger but omitted from analytics (corrections, refund adjustments, transfers). */
     val excludeFromStats: Boolean = false,
+    /** True for sample rows created by the Settings "Demo mode" toggle. */
+    val isDemo: Boolean = false,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -138,14 +142,14 @@ fun AccountEntity.toDomain() = Account(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    statementCycleDay,
+    statementCycleDay, isDemo,
 )
 
 fun Account.toEntity() = AccountEntity(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    statementCycleDay,
+    statementCycleDay, isDemo,
 )
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)
@@ -154,7 +158,7 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
-    spendingCategory, excludeFromStats,
+    spendingCategory, excludeFromStats, isDemo,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -175,6 +179,7 @@ fun Transaction.toEntity() = TransactionEntity(
     person = person,
     spendingCategory = spendingCategory,
     excludeFromStats = excludeFromStats,
+    isDemo = isDemo,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

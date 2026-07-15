@@ -100,6 +100,12 @@ data class Account(
      * cycle; date presets fall back to a rolling window.
      */
     val statementCycleDay: Int? = null,
+    /**
+     * True for sample rows created by the Settings "Demo mode" toggle. Real
+     * accounts are always false; demo mode hides real rows and shows only
+     * these, then deletes them when switched off.
+     */
+    val isDemo: Boolean = false,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement
@@ -138,6 +144,8 @@ data class Transaction(
      * refund adjustments, internal transfers, cash refunds.
      */
     val excludeFromStats: Boolean = false,
+    /** True for sample rows created by the Settings "Demo mode" toggle. */
+    val isDemo: Boolean = false,
 )
 
 /**

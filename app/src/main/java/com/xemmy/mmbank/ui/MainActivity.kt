@@ -56,6 +56,7 @@ import com.xemmy.mmbank.ui.screens.rules.RulesScreen
 import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.DemoSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
@@ -256,5 +257,6 @@ private fun AppNavHost(
         composable("settings_backup") { BackupSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_security") { SecuritySettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_demo") { DemoSettingsScreen(onBack = { navController.popBackStack() }) }
     }
 }

@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -153,6 +153,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9 -> v10: "Demo mode" support. A disposable-demo flag on accounts and
+         * transactions; real rows default to 0. Demo mode inserts isDemo=1 rows
+         * and hides real ones via a runtime filter, then deletes the demo rows
+         * when switched off — real data is never touched.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         const val DB_NAME = "mmbank.db"
 
         /**
@@ -167,7 +180,7 @@ abstract class AppDatabase : RoomDatabase() {
             Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

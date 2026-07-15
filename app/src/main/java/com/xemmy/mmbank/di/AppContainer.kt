@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.di
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.xemmy.mmbank.data.backup.BackupManager
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.DatabaseEncryptionMigrator
@@ -18,6 +19,7 @@ import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
 import com.xemmy.mmbank.domain.repository.AccountRepository
@@ -72,6 +74,58 @@ class AppContainer(context: Context) {
     }
 
     fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
+
+    // Single reactive source of truth for "Demo mode". The repositories collect
+    // this to switch the ledger between the real partition (false) and the
+    // disposable demo partition (true); flipping it hides/reveals real data live.
+    private val _demoModeEnabled by lazy { MutableStateFlow(preferences.demoModeEnabled) }
+    val demoModeEnabled: StateFlow<Boolean> by lazy { _demoModeEnabled.asStateFlow() }
+
+    /**
+     * Turns Demo mode ON: replaces any stale demo rows with a fresh random batch
+     * (accounts + transactions, all tagged isDemo=1), then flips the flag so the
+     * UI shows only that batch. Real rows are never read or written. Call only
+     * after the biometric prompt has succeeded (the Settings UI enforces that).
+     */
+    suspend fun enableDemoMode() {
+        database.withTransaction {
+            // Fresh batch each time: clear any leftover demo rows first.
+            database.transactionDao().deleteDemo()
+            database.accountDao().deleteDemo()
+
+            val batch = DemoDataGenerator.generate(currency = preferences.defaultCurrency)
+            val idByKey = batch.accounts.associate { seed ->
+                seed.key to database.accountDao().insert(seed.entity)
+            }
+            database.transactionDao().insertAll(batch.transactions(idByKey))
+        }
+        preferences.demoModeEnabled = true
+        _demoModeEnabled.value = true
+    }
+
+    /**
+     * Turns Demo mode OFF: reveals the real data first (flip the flag), then
+     * deletes the disposable demo rows — transactions before accounts, so the
+     * accounts' ON DELETE SET_NULL never has to touch a row we're about to drop.
+     */
+    suspend fun disableDemoMode() {
+        preferences.demoModeEnabled = false
+        _demoModeEnabled.value = false
+        database.withTransaction {
+            database.transactionDao().deleteDemo()
+            database.accountDao().deleteDemo()
+        }
+    }
+
+    /**
+     * Forces Demo mode off without touching the DB — used after a backup import,
+     * which clears every table (demo rows included) and restores real data, so
+     * the flag must not be left on pointing at a now-empty demo partition.
+     */
+    fun forceDemoModeOff() {
+        preferences.demoModeEnabled = false
+        _demoModeEnabled.value = false
+    }
 
     /**
      * Opt-in biometric app lock. The controller is pure Kotlin; only this
@@ -152,10 +206,12 @@ class AppContainer(context: Context) {
     }
 
     val transactionRepository: TransactionRepository by lazy {
-        TransactionRepositoryImpl(database, database.transactionDao()) { preferences.defaultPerson }
+        TransactionRepositoryImpl(
+            database, database.transactionDao(), demoModeEnabled,
+        ) { preferences.defaultPerson }
     }
     val accountRepository: AccountRepository by lazy {
-        AccountRepositoryImpl(database.accountDao())
+        AccountRepositoryImpl(database.accountDao(), demoModeEnabled)
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao())

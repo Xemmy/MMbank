@@ -37,6 +37,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_TABBY_RULES_SEEDED, false)
         set(value) = prefs.edit().putBoolean(KEY_TABBY_RULES_SEEDED, value).apply()
 
+    /**
+     * "Demo mode" is on: real accounts/transactions are hidden and disposable
+     * sample data is shown instead. Persisted so the state survives a restart;
+     * the demo rows themselves live in the DB tagged isDemo=1.
+     */
+    var demoModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DEMO_MODE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEMO_MODE_ENABLED, value).apply()
+
     /** Opt-in biometric app lock (lock on background + idle timeout). */
     var appLockEnabled: Boolean
         get() = prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
@@ -97,6 +106,7 @@ class AppPreferences(context: Context) {
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
+        const val KEY_DEMO_MODE_ENABLED = "demo_mode_enabled"
         const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         const val KEY_APP_LOCK_TIMEOUT_MIN = "app_lock_timeout_min"
         const val KEY_APP_LOCK_LAST_ACTIVE = "app_lock_last_active_at"

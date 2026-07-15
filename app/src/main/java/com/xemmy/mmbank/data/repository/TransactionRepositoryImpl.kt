@@ -12,24 +12,39 @@ import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
 class TransactionRepositoryImpl(
     private val database: AppDatabase,
     private val dao: TransactionDao,
+    /**
+     * Whether "Demo mode" is on. The ledger observers switch between the real
+     * partition (false) and the disposable demo partition (true) reactively, so
+     * flipping this hides/reveals the real data live without touching a row.
+     */
+    private val demoMode: StateFlow<Boolean>,
     /** Person newly captured transactions default to (Settings > Default person). */
     private val defaultPersonProvider: () -> String? = { null },
 ) : TransactionRepository {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeTransactions(): Flow<List<Transaction>> =
-        dao.observeAll().map { list -> list.map(TransactionEntity::toDomain) }
+        demoMode.flatMapLatest { demo -> dao.observeAll(demo) }
+            .map { list -> list.map(TransactionEntity::toDomain) }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeRecent(limit: Int): Flow<List<Transaction>> =
-        dao.observeRecent(limit).map { list -> list.map(TransactionEntity::toDomain) }
+        demoMode.flatMapLatest { demo -> dao.observeRecent(demo, limit) }
+            .map { list -> list.map(TransactionEntity::toDomain) }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeNetByAccount(): Flow<Map<Long, Double>> =
-        dao.observeNetByAccount().map { rows -> rows.associate { it.accountId to it.net } }
+        demoMode.flatMapLatest { demo -> dao.observeNetByAccount(demo) }
+            .map { rows -> rows.associate { it.accountId to it.net } }
 
     /**
      * Sliding-Window Deduplication Engine.

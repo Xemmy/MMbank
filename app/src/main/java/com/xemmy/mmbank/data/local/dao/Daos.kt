@@ -44,6 +44,7 @@ interface TransactionDao {
         WHERE amount = :amount
           AND currencyCode = :currencyCode
           AND direction = :direction
+          AND isDemo = 0
           AND ABS(timestamp - :timestamp) <= :windowMillis
         ORDER BY ABS(timestamp - :timestamp) ASC
         LIMIT 1
@@ -57,11 +58,12 @@ interface TransactionDao {
         windowMillis: Long,
     ): TransactionEntity?
 
-    @Query("SELECT * FROM transactions ORDER BY timestamp DESC")
-    fun observeAll(): Flow<List<TransactionEntity>>
+    /** [demo] selects the active partition: real rows (false) or demo rows (true). */
+    @Query("SELECT * FROM transactions WHERE isDemo = :demo ORDER BY timestamp DESC")
+    fun observeAll(demo: Boolean): Flow<List<TransactionEntity>>
 
-    @Query("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT :limit")
-    fun observeRecent(limit: Int): Flow<List<TransactionEntity>>
+    @Query("SELECT * FROM transactions WHERE isDemo = :demo ORDER BY timestamp DESC LIMIT :limit")
+    fun observeRecent(demo: Boolean, limit: Int): Flow<List<TransactionEntity>>
 
     @Query(
         """
@@ -69,11 +71,18 @@ interface TransactionDao {
                SUM(CASE WHEN direction = 'CREDIT' THEN CAST(amount AS REAL)
                         ELSE -CAST(amount AS REAL) END) AS net
         FROM transactions
-        WHERE accountId IS NOT NULL
+        WHERE accountId IS NOT NULL AND isDemo = :demo
         GROUP BY accountId
         """
     )
-    fun observeNetByAccount(): Flow<List<AccountNetRow>>
+    fun observeNetByAccount(demo: Boolean): Flow<List<AccountNetRow>>
+
+    /** Removes every demo transaction. Delete these BEFORE demo accounts (FK SET_NULL). */
+    @Query("DELETE FROM transactions WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE isDemo = 1")
+    suspend fun countDemo(): Int
 
     @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
@@ -115,7 +124,8 @@ interface TransactionDao {
 
     // --- Backup support ---
 
-    @Query("SELECT * FROM transactions")
+    // Backups carry only real rows — demo data must never leak into an export.
+    @Query("SELECT * FROM transactions WHERE isDemo = 0")
     suspend fun getAll(): List<TransactionEntity>
 
     @Query("DELETE FROM transactions")
@@ -137,18 +147,29 @@ interface AccountDao {
     @Delete
     suspend fun delete(entity: AccountEntity)
 
-    @Query("SELECT * FROM accounts WHERE archived = 0 ORDER BY name")
-    fun observeActive(): Flow<List<AccountEntity>>
+    /** [demo] selects the active partition: real accounts (false) or demo accounts (true). */
+    @Query("SELECT * FROM accounts WHERE archived = 0 AND isDemo = :demo ORDER BY name")
+    fun observeActive(demo: Boolean): Flow<List<AccountEntity>>
 
-    @Query("SELECT * FROM accounts WHERE archived = 0 ORDER BY name")
+    // Capture auto-assignment only ever binds to REAL accounts, so a demo
+    // account can never end up owning a real transaction.
+    @Query("SELECT * FROM accounts WHERE archived = 0 AND isDemo = 0 ORDER BY name")
     suspend fun getActive(): List<AccountEntity>
 
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getById(id: Long): AccountEntity?
 
+    /** Removes every demo account. Delete demo transactions FIRST (FK SET_NULL). */
+    @Query("DELETE FROM accounts WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
+
+    @Query("SELECT COUNT(*) FROM accounts WHERE isDemo = 1")
+    suspend fun countDemo(): Int
+
     // --- Backup support ---
 
-    @Query("SELECT * FROM accounts")
+    // Backups carry only real rows — demo data must never leak into an export.
+    @Query("SELECT * FROM accounts WHERE isDemo = 0")
     suspend fun getAll(): List<AccountEntity>
 
     @Query("DELETE FROM accounts")

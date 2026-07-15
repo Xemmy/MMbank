@@ -46,7 +46,14 @@ interface TransactionRepository {
 }
 
 interface AccountRepository {
+    /** Active accounts for the current view — demo accounts while Demo mode is on. */
     fun observeActive(): Flow<List<Account>>
+    /**
+     * Active REAL accounts only, regardless of Demo mode. Config surfaces (rule
+     * "assign to account", pickers) use this so a rule can't be pinned to a demo
+     * account that vanishes when Demo mode is switched off.
+     */
+    fun observeActiveReal(): Flow<List<Account>>
     suspend fun save(account: Account): Long
     suspend fun archive(account: Account)
     suspend fun delete(account: Account)
