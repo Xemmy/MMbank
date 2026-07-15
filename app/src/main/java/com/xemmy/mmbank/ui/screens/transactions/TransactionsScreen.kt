@@ -129,6 +129,8 @@ import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AmountText
+import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MAX_LENGTH
+import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MIN_LENGTH
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.dayPillLabel
@@ -1721,7 +1723,7 @@ private fun TransactionEditorDialog(
     val amountValue = amount.replace(",", "").toBigDecimalOrNull()
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
     val valid = amountValue != null && amountValue.signum() > 0 &&
-        currency.trim().length == 3 && date != null
+        currency.trim().length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && date != null
     val accountName = accounts.firstOrNull { it.id == accountId }?.name
     val suggestedCategory = remember(merchant) {
         MerchantCategorizer.categorize(merchant.takeIf { it.isNotBlank() })
@@ -1769,7 +1771,7 @@ private fun TransactionEditorDialog(
                     )
                     OutlinedTextField(
                         value = currency,
-                        onValueChange = { currency = it.uppercase().take(3) },
+                        onValueChange = { currency = it.uppercase().take(CURRENCY_CODE_MAX_LENGTH) },
                         label = { MetaLabel("Currency") },
                         singleLine = true,
                         colors = glassFieldColors(),

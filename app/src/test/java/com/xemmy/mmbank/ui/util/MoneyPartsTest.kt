@@ -17,6 +17,16 @@ class MoneyPartsTest {
     }
 
     @Test
+    fun `four and five letter crypto codes split like fiat`() {
+        // USDT (Binance) and other 3–5 letter tickers are real codes now, so
+        // their trailing token must get the same small-light code styling.
+        assertEquals(MoneyParts("710.00", "USDT"), splitMoneyDisplay("710.00 USDT"))
+        assertEquals(MoneyParts("+710.00", "USDT"), splitMoneyDisplay("+710.00 USDT"))
+        assertEquals(MoneyParts("12.50", "USDC"), splitMoneyDisplay("12.50 USDC"))
+        assertEquals(MoneyParts("3.00", "MATIC"), splitMoneyDisplay("3.00 MATIC"))
+    }
+
+    @Test
     fun `sign prefix stays with the numerals`() {
         assertEquals(MoneyParts("+229.59", "AED"), splitMoneyDisplay("+229.59 AED"))
         assertEquals(MoneyParts("-1,000.00", "EUR"), splitMoneyDisplay("-1,000.00 EUR"))
@@ -35,9 +45,9 @@ class MoneyPartsTest {
 
     @Test
     fun `strings without a trailing ISO code pass through whole`() {
-        // Lowercase / wrong length / no space — none of these are ISO codes.
+        // Lowercase / too long / no space — none of these are currency codes.
         assertEquals(MoneyParts("1,234.56 aed", null), splitMoneyDisplay("1,234.56 aed"))
-        assertEquals(MoneyParts("12.00 AEDX", null), splitMoneyDisplay("12.00 AEDX"))
+        assertEquals(MoneyParts("12.00 TOOLONG", null), splitMoneyDisplay("12.00 TOOLONG"))
         assertEquals(MoneyParts("0.00420000", null), splitMoneyDisplay("0.00420000"))
         assertEquals(MoneyParts("", null), splitMoneyDisplay(""))
     }

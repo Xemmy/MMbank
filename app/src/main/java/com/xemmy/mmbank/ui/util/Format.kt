@@ -22,12 +22,27 @@ fun Double.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
 fun BigDecimal.asMoney(currencyCode: String): String =
     toDouble().asMoney(currencyCode)
 
+/**
+ * Accepted currency-code length: 3–5 uppercase letters. Covers ISO-4217 fiat
+ * (3, e.g. AED/USD) plus the crypto tickers the app now ingests — notably USDT
+ * (4) from Binance, and up to 5 (MATIC). Single source of truth so the
+ * transaction editor's validation and the split-typography formatter agree on
+ * what a code is; before this, both hard-coded 3 and rejected USDT (an edited
+ * USDT row could not be saved, and its code did not get the split styling).
+ */
+const val CURRENCY_CODE_MIN_LENGTH = 3
+const val CURRENCY_CODE_MAX_LENGTH = 5
+
+/** True for a trailing money token that is a 3–5 letter uppercase currency code. */
+fun isCurrencyCode(token: String): Boolean =
+    token.length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && token.all { it in 'A'..'Z' }
+
 /** The numeral and ISO-code halves of a rendered money string, for split styling. */
 data class MoneyParts(val numeral: String, val currencyCode: String?)
 
 /**
  * Splits a display string like "+1,234.56 AED" into its numeral half (sign
- * included) and trailing 3-letter ISO code, so the code can render smaller and
+ * included) and trailing currency code, so the code can render smaller and
  * lighter than the figures. Strings without a trailing code — the ••••••
  * hide-balances mask, quantities, plain text — come back whole with a null code.
  */
@@ -35,7 +50,7 @@ fun splitMoneyDisplay(display: String): MoneyParts {
     val spaceAt = display.lastIndexOf(' ')
     if (spaceAt <= 0) return MoneyParts(display, null)
     val tail = display.substring(spaceAt + 1)
-    return if (tail.length == 3 && tail.all { it in 'A'..'Z' }) {
+    return if (isCurrencyCode(tail)) {
         MoneyParts(display.substring(0, spaceAt), tail)
     } else {
         MoneyParts(display, null)
