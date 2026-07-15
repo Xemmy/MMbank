@@ -96,8 +96,8 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.lifecycle.process)
 
-    // SQLCipher (future at-rest DB encryption — see DatabaseEncryptor); not
-    // wired into AppDatabase yet.
+    // SQLCipher: at-rest encryption of the Room DB (SecureDatabaseFactory +
+    // the one-time plaintext migration in DatabaseEncryptionMigrator).
     implementation(libs.sqlcipher.android)
 
     testImplementation(libs.junit)

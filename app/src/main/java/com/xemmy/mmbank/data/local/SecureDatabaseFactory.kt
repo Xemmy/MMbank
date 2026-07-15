@@ -2,14 +2,21 @@ package com.xemmy.mmbank.data.local
 
 import android.content.Context
 import androidx.sqlite.db.SupportSQLiteOpenHelper
+import net.sqlcipher.database.SQLiteDatabase
+import net.sqlcipher.database.SupportFactory
 
 /**
- * Stub SQLCipher-backed [DatabaseEncryptor]. Not wired into [AppDatabase] yet —
- * this is scaffolding for a future phase that swaps Room's default SQLite
- * driver for an encrypted one. Intentionally not implemented: real wiring
- * needs a passphrase source (Keystore-backed) that doesn't exist yet.
+ * SQLCipher-backed [DatabaseEncryptor]: every page of the Room database is
+ * AES-encrypted at rest with the passphrase (itself generated once and held
+ * in EncryptedSharedPreferences behind the Android Keystore — see
+ * SecureCredentialStore.getOrCreateDatabasePassphrase).
  */
 class SecureDatabaseFactory : DatabaseEncryptor {
-    override fun getEncryptedOpenHelper(context: Context, passphrase: String): SupportSQLiteOpenHelper =
-        TODO("Requires device implementation: wrap net.zetetic SQLCipher SupportFactory here")
+
+    override fun encryptedFactory(context: Context, passphrase: String): SupportSQLiteOpenHelper.Factory {
+        // Loads the native SQLCipher library; idempotent, must precede any
+        // SQLCipher API use in the process.
+        SQLiteDatabase.loadLibs(context)
+        return SupportFactory(SQLiteDatabase.getBytes(passphrase.toCharArray()))
+    }
 }

@@ -3,6 +3,8 @@ package com.xemmy.mmbank.di
 import android.content.Context
 import com.xemmy.mmbank.data.backup.BackupManager
 import com.xemmy.mmbank.data.local.AppDatabase
+import com.xemmy.mmbank.data.local.DatabaseEncryptionMigrator
+import com.xemmy.mmbank.data.local.SecureDatabaseFactory
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.data.prefs.SecureCredentialStore
 import com.xemmy.mmbank.data.remote.binance.BinanceApi
@@ -99,7 +101,23 @@ class AppContainer(context: Context) {
         appLock.onSettingsChanged()   // re-arm the idle timer with the new duration
     }
 
-    private val database by lazy { AppDatabase.build(appContext) }
+    /**
+     * At-rest encryption: an existing plaintext ledger is migrated to
+     * SQLCipher exactly once (verify-then-swap with a .bak safety net —
+     * see DatabaseEncryptionMigrator); fresh installs are created encrypted.
+     * If the migration fails the DB stays plaintext and is opened as such,
+     * so the ledger keeps working and migration retries next process start.
+     */
+    private val database by lazy {
+        val encrypted = runCatching {
+            val passphrase = credentialStore.getOrCreateDatabasePassphrase()
+            val migrated = DatabaseEncryptionMigrator.ensureEncrypted(
+                appContext, AppDatabase.DB_NAME, passphrase, ::recordError,
+            )
+            if (migrated) SecureDatabaseFactory().encryptedFactory(appContext, passphrase) else null
+        }.onFailure { recordError("AppContainer.databaseEncryption", it) }.getOrNull()
+        AppDatabase.build(appContext, encrypted)
+    }
 
     private val json = Json { ignoreUnknownKeys = true }
 

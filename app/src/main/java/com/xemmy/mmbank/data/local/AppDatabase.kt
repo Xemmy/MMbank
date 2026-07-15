@@ -153,8 +153,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun build(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
+        const val DB_NAME = "mmbank.db"
+
+        /**
+         * [factory] swaps in the SQLCipher open helper (see AppContainer);
+         * null opens plaintext — the pre-encryption format, kept as the
+         * fallback so a failed encryption migration never bricks the app.
+         */
+        fun build(
+            context: Context,
+            factory: androidx.sqlite.db.SupportSQLiteOpenHelper.Factory? = null,
+        ): AppDatabase =
+            Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9,
@@ -162,6 +172,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
                 .fallbackToDestructiveMigrationOnDowngrade()
+                .apply { if (factory != null) openHelperFactory(factory) }
                 .build()
     }
 }
