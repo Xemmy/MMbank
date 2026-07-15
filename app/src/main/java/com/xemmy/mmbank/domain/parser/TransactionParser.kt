@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.parser
 
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsedTransaction
+import com.xemmy.mmbank.util.LogRedactor
 
 /**
  * The parsing engine. Two phases:
@@ -22,8 +23,8 @@ import com.xemmy.mmbank.domain.model.ParsedTransaction
 class TransactionParser(
     rules: List<CompiledRule>,
     private val fallbackCurrency: String = DEFAULT_CURRENCY,
-    /** Sink for non-fatal diagnostics (signature-collision ties). */
-    private val onWarning: (String) -> Unit = { println("TransactionParser: $it") },
+    /** Sink for non-fatal diagnostics (signature-collision ties). Redacted: rule names can echo message fragments. */
+    private val onWarning: (String) -> Unit = { println("TransactionParser: ${LogRedactor.redactSensitiveData(it)}") },
 ) {
 
     private val orderedRules = rules.sortedByDescending { it.priority }

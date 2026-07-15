@@ -34,4 +34,25 @@ class LogRedactorTest {
         val message = "Payment of AED 250.00 at CARREFOUR was made from your account *617"
         assertEquals(message, LogRedactor.redactSensitiveData(message))
     }
+
+    // Diagnostics passes whole stack-trace entries through the redactor, so a
+    // card number quoted inside an exception message must be masked even when
+    // it sits mid-way through a multiline blob.
+    @Test
+    fun `card number embedded in a multiline stack trace is masked`() {
+        val entry = """
+            [2026-07-14 10:00:00] TransactionsViewModel.update
+            java.lang.NumberFormatException: For input string: "4111222233334444"
+                at java.lang.Integer.parseInt(Integer.java:652)
+        """.trimIndent()
+        val redacted = LogRedactor.redactSensitiveData(entry)
+        assertEquals(
+            """
+            [2026-07-14 10:00:00] TransactionsViewModel.update
+            java.lang.NumberFormatException: For input string: "**** **** **** 4444"
+                at java.lang.Integer.parseInt(Integer.java:652)
+            """.trimIndent(),
+            redacted,
+        )
+    }
 }
