@@ -20,6 +20,15 @@ import com.xemmy.mmbank.util.LogRedactor
  *
  * 2. **Regex matching** — the classic loop: rules are tried highest-priority
  *    first; the first rule whose pattern yields a valid positive amount wins.
+ *
+ * 3. **Card-ending routing** — a last resort for keyword-less, signature-less
+ *    merchant notifications ("AED27.60 with Tabby Cash Card ••4543"): a card
+ *    ending trusted by [CardEndingRegistry] binds the message to that card's
+ *    direction, with amount/merchant recovered by [GenericExtractors] and the
+ *    ending copied onto [ParsedTransaction.accountNumberSuffix] so the existing
+ *    suffix→account lookup assigns the account. Runs *after* the regex loop so
+ *    it never preempts a custom rule's account pinning, and — like signature
+ *    routing — never fabricates an amount.
  */
 class TransactionParser(
     rules: List<CompiledRule>,
@@ -100,7 +109,33 @@ class TransactionParser(
                 assignAccountId = rule.assignAccountId,
             )
         }
-        return null
+
+        return routeByCardEnding(text)
+    }
+
+    /**
+     * Phase 3. Returns null unless the text carries a card ending
+     * [CardEndingRegistry] trusts *and* a plausible amount can be recovered —
+     * an unknown ending or a missing amount leaves the message unparsed rather
+     * than guessing.
+     */
+    private fun routeByCardEnding(text: String): ParsedTransaction? {
+        val ending = CardEndingExtractor.extract(text) ?: return null
+        val route = CardEndingRegistry.lookup(ending) ?: return null
+
+        val extracted = GenericExtractors.extractAmount(text) ?: return null
+
+        return ParsedTransaction(
+            amount = extracted.amount,
+            currencyCode = extracted.currencyCode
+                ?: route.defaultCurrency
+                ?: fallbackCurrency,
+            direction = route.direction,
+            merchant = GenericExtractors.extractMerchant(text),
+            matchedRuleName = route.label,
+            accountNumberSuffix = ending,
+            category = route.category,
+        )
     }
 
     private data class SignatureHit(
