@@ -562,6 +562,7 @@ fun TransactionsScreen(
         TransactionDetailSheet(
             transaction = tx,
             accountName = state.accounts.firstOrNull { it.id == tx.accountId }?.name,
+            bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
             onEditClick = {
                 selectedTransaction = null
                 editing = tx

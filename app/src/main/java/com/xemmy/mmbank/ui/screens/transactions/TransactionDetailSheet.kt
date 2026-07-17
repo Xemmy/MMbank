@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +44,8 @@ import com.xemmy.mmbank.ui.util.asMoney
 fun TransactionDetailSheet(
     transaction: Transaction,
     accountName: String?,
+    /** Friendly bank name resolved from the sender (user label, then built-in map). */
+    bankName: String?,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
@@ -61,6 +65,7 @@ fun TransactionDetailSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 20.dp),
         ) {
@@ -100,7 +105,22 @@ fun TransactionDetailSheet(
             DetailRow("Category", "${transaction.spendingCategory.emoji}  ${transaction.spendingCategory.label}")
             DetailRow("Account", accountName ?: "Unassigned")
             DetailRow("Date & time", transaction.timestampMillis.asDateTime())
+            (bankName ?: transaction.sender)?.let { DetailRow("Sender", it) }
             DetailRow("Source", sourceLabel(transaction.source))
+
+            transaction.rawMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                Text(
+                    "Message",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = ObsidianTokens.textMeta,
+                    modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+                )
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ObsidianTokens.textPrimary,
+                )
+            }
 
             if (transaction.excludeFromStats) {
                 Text(
