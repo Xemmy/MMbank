@@ -8,6 +8,7 @@ import android.util.Log
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,7 +45,7 @@ class SmsReceiver : BroadcastReceiver() {
             try {
                 container.ingestCapturedMessage(message)
             } catch (t: Throwable) {
-                Log.w(TAG, "Ingest failed for SMS from $sender", t)
+                Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for SMS from $sender"), t)
             } finally {
                 pendingResult.finish()
             }

@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 9,
+    version = 11,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -153,15 +153,50 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun build(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "mmbank.db")
+        /**
+         * v9 -> v10: "Demo mode" support. A disposable-demo flag on accounts and
+         * transactions; real rows default to 0. Demo mode inserts isDemo=1 rows
+         * and hides real ones via a runtime filter, then deletes the demo rows
+         * when switched off — real data is never touched.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * v10 -> v11: Demo mode also swaps parsing rules. Same disposable-demo
+         * flag on parsing_rules (real rules default to 0), so the Rules screen
+         * shows demo rules while demo mode is on without touching real ones.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE parsing_rules ADD COLUMN isDemo INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        const val DB_NAME = "mmbank.db"
+
+        /**
+         * [factory] swaps in the SQLCipher open helper (see AppContainer);
+         * null opens plaintext — the pre-encryption format, kept as the
+         * fallback so a failed encryption migration never bricks the app.
+         */
+        fun build(
+            context: Context,
+            factory: androidx.sqlite.db.SupportSQLiteOpenHelper.Factory? = null,
+        ): AppDatabase =
+            Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
                 .fallbackToDestructiveMigrationOnDowngrade()
+                .apply { if (factory != null) openHelperFactory(factory) }
                 .build()
     }
 }

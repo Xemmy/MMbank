@@ -18,12 +18,24 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 object BuiltInRules {
 
     // Restricted to known codes/symbols so stray 3-letter words are never
-    // mistaken for a currency under IGNORE_CASE.
-    private const val CUR =
-        "(?<currency>USD|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
-            "|[$€£₹₺¥]|ر\\.\\s?س|د\\.\\s?إ|ج\\.\\s?م|د\\.\\s?ك|ر\\.\\s?ق|ر\\.\\s?ع|د\\.\\s?ب|د\\.\\s?ا|ل\\.\\s?ل|ريال|درهم|جنيه)"
+    // mistaken for a currency under IGNORE_CASE. The body is separate from the
+    // named group so a pattern can also match a *second* currency token
+    // (e.g. a trailing cashback figure) without a duplicate group name.
+    private const val CUR_BODY =
+        "USD|USDT|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
+            "|[$€£₹₺¥]|ر\\.\\s?س|د\\.\\s?إ|ج\\.\\s?م|د\\.\\s?ك|ر\\.\\s?ق|ر\\.\\s?ع|د\\.\\s?ب|د\\.\\s?ا|ل\\.\\s?ل|ريال|درهم|جنيه"
+    // Trailing guard so "USD" can never be mistaken for a truncated prefix of
+    // "USDT" (or any other longer token) — without it, alternation matches
+    // the first alternative that lets the rest of the pattern succeed, not
+    // the longest one, so "USD" would win over "USDT" and silently drop the
+    // "T". Mirrors the \b guard the priority-8 af rules already rely on.
+    private const val CUR = "(?<currency>$CUR_BODY)(?![A-Za-z])"
 
     private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
+
+    // Same shape as AMT but non-capturing, for amounts that must NOT become
+    // the transaction amount (e.g. the cashback figure after a purchase).
+    private const val AMT_NC = "(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
 
     // Merchant capture stops at punctuation and at "*" so a trailing "*617"
     // account marker is left for ACCTAIL rather than swallowed into the name.
@@ -85,6 +97,24 @@ object BuiltInRules {
         rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
         rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
 
+        // --- UAE card spend confirmations, no verb keyword (priority 10) ---
+        // Issuers post "Trx. of AED68.00 on your card ending *876 at
+        // MCDONALDS-54176, UAE is Approved. Avl. card bal is 17296.72. Trx
+        // Date: 17/07/26 13:35". There is no spend keyword (spent/paid/debited)
+        // and the card ending isn't registered for card-ending routing, so the
+        // message matched nothing and was dropped. The "Trx. of <amount> … is
+        // Approved" frame is the reliable marker; anchoring the amount right
+        // after "Trx. of" keeps the trailing "Avl. card bal" figure from being
+        // captured, and ACCTAIL/MERCHANT sit before the confirmation so both
+        // the "*876" ending and the "at <merchant>" clause are recovered.
+        // Only Approved transactions are recorded — a declined one never posted.
+        rule(
+            "builtin.en.debit.card-trx-approved",
+            "\\bTrx\\.?\\s+of\\s+$CUR\\s?$AMT\\b$ACCTAIL$MERCHANT_EN.{0,60}?\\bApproved\\b",
+            TransactionDirection.DEBIT,
+            10,
+        ),
+
         // --- Tabby purchase confirmations (priority 10) ---
         // "Transaction of AED 20.00 At Tips and Toes was successful. Your
         // available Tabby Card limit is AED 6676.12." / "...At Sephora ME.
@@ -95,6 +125,23 @@ object BuiltInRules {
         // and lets them grab the *remaining card limit* as the amount instead
         // of the real purchase amount.
         rule("builtin.en.debit.tabby.purchase", "Transaction\\s+of\\s+$CUR\\s?$AMT\\s+At\\s+$MERCHANT_TABBY$ACCTAIL", TransactionDirection.DEBIT, 10),
+
+        // --- Purchases with a trailing cashback line (priority 12) ---
+        // Kah-ching (KAST): "$27.71 spent at SHABIK ELECTRIC VEHICL ⏎ $0.42
+        // cashback: 1.5% CASH". TextNormalizer collapses the newline, putting
+        // the cashback amount inside the {0,30} forward window of the generic
+        // keyword-first rules above — which then grab $0.42 as the amount,
+        // when the real amount sits BEFORE the keyword. This amount-first rule
+        // outranks them; the mandatory "<currency><amount> cashback" tail both
+        // pins the merchant capture (which stops right before the cashback
+        // figure) and keeps the rule from shadowing the generic amount-first
+        // rules (priority 8) on ordinary messages.
+        rule(
+            "builtin.en.debit.af.cashback-tail",
+            "$CUR\\s?$AMT\\s+$KW_DEBIT_EN$MERCHANT_EN.{0,40}?(?:$CUR_BODY)\\s?$AMT_NC\\s+cashback$ACCTAIL",
+            TransactionDirection.DEBIT,
+            12,
+        ),
 
         // --- Transaction adjustments / partial refunds (priority 20) ---
         // Tabby "Transaction adjusted — Your CAREEM RIDE purchase was decreased

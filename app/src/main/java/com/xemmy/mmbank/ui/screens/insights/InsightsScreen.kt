@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -39,13 +40,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.DonutChart
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.screens.dashboard.netFlow
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
@@ -80,20 +84,46 @@ fun InsightsScreen(
     ) {
         // Low-profile switch between "clean" analytics (excluded rows filtered
         // out, the default) and the raw ledger with every transaction counted.
+        // The (i) reveals what "Raw ledger" means, since it isn't self-evident.
         item(key = "ledger_toggle") {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                FilterChip(
-                    selected = state.showAllLedgerTransactions,
-                    onClick = viewModel::toggleShowAllLedgerTransactions,
-                    label = { Text("Raw ledger") },
-                    leadingIcon = {
+            var showInfo by remember { mutableStateOf(false) }
+            Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { showInfo = !showInfo }, modifier = Modifier.size(32.dp)) {
                         Icon(
-                            Icons.Filled.VisibilityOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            Icons.Outlined.Info,
+                            contentDescription = "What is Raw ledger?",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
                         )
-                    },
-                )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    FilterChip(
+                        selected = state.showAllLedgerTransactions,
+                        onClick = viewModel::toggleShowAllLedgerTransactions,
+                        label = { Text("Raw ledger") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                    )
+                }
+                if (showInfo) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Includes all transactions, like balance adjustments and cashback, " +
+                            "which are normally hidden from spending totals.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
@@ -103,7 +133,7 @@ fun InsightsScreen(
 
         if (hasData) {
             item(key = "cashflow_card") { CashFlowCard(state) }
-            if (state.stats.categorySpends.isNotEmpty()) {
+            if (state.stats.categorySlices.isNotEmpty()) {
                 item(key = "category_card") { CategorySpendCard(state) }
             }
             if (state.stats.personSpends.isNotEmpty()) {
@@ -129,7 +159,7 @@ private fun MonthTiles(state: DashboardUiState) {
     val month = state.stats.monthly.lastOrNull()
     val income = month?.income ?: 0.0
     val spend = month?.spend ?: 0.0
-    val net = income - spend
+    val net = netFlow(income, spend)
     val hidden = state.hideBalances
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -436,13 +466,12 @@ private fun LegendDot(color: Color) {
     )
 }
 
-/** This month's spend per category as proportional bars, biggest first. */
+/** This month's spend per category as a donut chart with a legend, biggest first. */
 @Composable
 private fun CategorySpendCard(state: DashboardUiState) {
-    val spends = state.stats.categorySpends
+    val slices = state.stats.categorySlices
     val hidden = state.hideBalances
-    val maxAmount = spends.maxOf { it.amount }.takeIf { it > 0.0 } ?: 1.0
-    val total = spends.sumOf { it.amount }
+    val total = slices.sumOf { it.amount }
 
     ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -454,32 +483,29 @@ private fun CategorySpendCard(state: DashboardUiState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            spends.forEach { entry ->
-                Column {
-                    Row {
-                        Text(
-                            "${entry.category.emoji}  ${entry.category.label}",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            entry.amount.asMoneyOrMask(state.baseCurrency, hidden),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth((entry.amount / maxAmount).toFloat().coerceIn(0.02f, 1f))
-                                .height(8.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
-                        )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DonutChart(slices = slices, modifier = Modifier.size(120.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    slices.forEach { slice ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(12.dp)
+                                    .background(Color(slice.color), RoundedCornerShape(3.dp)),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(slice.name, style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                slice.amount.asMoneyOrMask(state.baseCurrency, hidden),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
                     }
                 }
             }

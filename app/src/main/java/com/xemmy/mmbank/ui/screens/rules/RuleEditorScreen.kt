@@ -70,7 +70,9 @@ class RuleEditorViewModel(
 
     init {
         viewModelScope.launch {
-            runCatching { accounts = container.accountRepository.observeActive().first() }
+            // Real accounts only: a rule pinned to a demo account would dangle
+            // when Demo mode is switched off and its accounts are deleted.
+            runCatching { accounts = container.accountRepository.observeActiveReal().first() }
             if (isEditing) {
                 container.parsingRuleRepository.getById(ruleId)?.let { rule ->
                     name = rule.name

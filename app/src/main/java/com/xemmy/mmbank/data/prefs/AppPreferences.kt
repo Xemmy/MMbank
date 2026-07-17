@@ -27,6 +27,20 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_HIDE_ZERO_BALANCES, true)
         set(value) = prefs.edit().putBoolean(KEY_HIDE_ZERO_BALANCES, value).apply()
 
+    /** Hides the whole Crypto (Binance) section from the Dashboard. */
+    var hideCryptoBalance: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_CRYPTO_BALANCE, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIDE_CRYPTO_BALANCE, value).apply()
+
+    /**
+     * Leaves crypto's dollar value out of the net-worth total, independent of
+     * [hideCryptoBalance] — the section can stay visible while its value is
+     * excluded from totals, or vice versa.
+     */
+    var excludeCryptoFromTotal: Boolean
+        get() = prefs.getBoolean(KEY_EXCLUDE_CRYPTO_FROM_TOTAL, false)
+        set(value) = prefs.edit().putBoolean(KEY_EXCLUDE_CRYPTO_FROM_TOTAL, value).apply()
+
     /** Person newly captured transactions are assigned to; null = unassigned. */
     var defaultPerson: String?
         get() = prefs.getString(KEY_DEFAULT_PERSON, null)?.takeIf { it.isNotBlank() }
@@ -36,6 +50,43 @@ class AppPreferences(context: Context) {
     var tabbyRulesSeeded: Boolean
         get() = prefs.getBoolean(KEY_TABBY_RULES_SEEDED, false)
         set(value) = prefs.edit().putBoolean(KEY_TABBY_RULES_SEEDED, value).apply()
+
+    /**
+     * "Demo mode" is on: real accounts/transactions are hidden and disposable
+     * sample data is shown instead. Persisted so the state survives a restart;
+     * the demo rows themselves live in the DB tagged isDemo=1.
+     */
+    var demoModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DEMO_MODE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DEMO_MODE_ENABLED, value).apply()
+
+    /**
+     * While Demo mode is on, the real saved-people list is stashed here and
+     * [personsRaw] shows demo people instead. Restored (and cleared) when demo
+     * mode is switched off, so the real list is preserved, never lost.
+     */
+    var demoPersonsBackup: String
+        get() = prefs.getString(KEY_DEMO_PERSONS_BACKUP, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_DEMO_PERSONS_BACKUP, value).apply()
+
+    /** Opt-in biometric app lock (lock on background + idle timeout). */
+    var appLockEnabled: Boolean
+        get() = prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, value).apply()
+
+    /** Minutes of inactivity before an enabled app lock re-engages. */
+    var appLockTimeoutMinutes: Int
+        get() = prefs.getInt(KEY_APP_LOCK_TIMEOUT_MIN, 5)
+        set(value) = prefs.edit().putInt(KEY_APP_LOCK_TIMEOUT_MIN, value.coerceAtLeast(1)).apply()
+
+    /**
+     * Wall-clock millis when the app was last active (backgrounded or unlocked).
+     * The app lock uses it to require auth only after the timeout has actually
+     * elapsed, so a quick switch away and back doesn't re-prompt. 0 = never.
+     */
+    var appLockLastActiveAt: Long
+        get() = prefs.getLong(KEY_APP_LOCK_LAST_ACTIVE, 0L)
+        set(value) = prefs.edit().putLong(KEY_APP_LOCK_LAST_ACTIVE, value).apply()
 
     /** Saved people, newline-separated. Editable in Settings, included in backups. */
     var personsRaw: String
@@ -75,9 +126,16 @@ class AppPreferences(context: Context) {
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"
         const val KEY_HIDE_ZERO_BALANCES = "hide_zero_balances"
+        const val KEY_HIDE_CRYPTO_BALANCE = "hide_crypto_balance"
+        const val KEY_EXCLUDE_CRYPTO_FROM_TOTAL = "exclude_crypto_from_total"
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
+        const val KEY_DEMO_MODE_ENABLED = "demo_mode_enabled"
+        const val KEY_DEMO_PERSONS_BACKUP = "demo_persons_backup"
+        const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
+        const val KEY_APP_LOCK_TIMEOUT_MIN = "app_lock_timeout_min"
+        const val KEY_APP_LOCK_LAST_ACTIVE = "app_lock_last_active_at"
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
     }

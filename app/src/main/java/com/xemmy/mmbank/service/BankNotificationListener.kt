@@ -8,6 +8,7 @@ import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,13 +54,13 @@ class BankNotificationListener : NotificationListenerService() {
             try {
                 when (val result = container.ingestCapturedMessage(message)) {
                     is IngestResult.Inserted ->
-                        Log.d(TAG, "Captured tx #${result.transactionId} from ${sbn.packageName}")
+                        Log.d(TAG, LogRedactor.redactSensitiveData("Captured tx #${result.transactionId} from ${sbn.packageName}"))
                     is IngestResult.Duplicate ->
-                        Log.d(TAG, "Deduped against tx #${result.existingTransactionId} (${sbn.packageName})")
+                        Log.d(TAG, LogRedactor.redactSensitiveData("Deduped against tx #${result.existingTransactionId} (${sbn.packageName})"))
                     IngestResult.NoMatch -> Unit
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "Ingest failed for notification from ${sbn.packageName}", t)
+                Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for notification from ${sbn.packageName}"), t)
             }
         }
     }

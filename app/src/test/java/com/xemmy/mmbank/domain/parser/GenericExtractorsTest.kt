@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.parser
 
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -7,6 +8,47 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GenericExtractorsTest {
+
+    // --- Direction keyword override ---
+
+    @Test
+    fun `received implies credit`() {
+        assertEquals(
+            TransactionDirection.CREDIT,
+            GenericExtractors.detectDirectionOverride("You have received a payment 710 USDT from someone"),
+        )
+    }
+
+    @Test
+    fun `incoming and deposited also imply credit`() {
+        assertEquals(TransactionDirection.CREDIT, GenericExtractors.detectDirectionOverride("Incoming transfer of 50 USD"))
+        assertEquals(TransactionDirection.CREDIT, GenericExtractors.detectDirectionOverride("100 USD deposited to your wallet"))
+    }
+
+    @Test
+    fun `paid purchased sent and spent imply debit`() {
+        assertEquals(TransactionDirection.DEBIT, GenericExtractors.detectDirectionOverride("You paid 10 USD"))
+        assertEquals(TransactionDirection.DEBIT, GenericExtractors.detectDirectionOverride("You purchased something for 10 USD"))
+        assertEquals(TransactionDirection.DEBIT, GenericExtractors.detectDirectionOverride("You sent 10 USD"))
+        assertEquals(TransactionDirection.DEBIT, GenericExtractors.detectDirectionOverride("You spent 10 USD"))
+    }
+
+    @Test
+    fun `no directional keyword yields no override`() {
+        assertNull(GenericExtractors.detectDirectionOverride("Binance Mastercard ••2957"))
+    }
+
+    @Test
+    fun `earlier keyword wins when both directions appear`() {
+        assertEquals(
+            TransactionDirection.CREDIT,
+            GenericExtractors.detectDirectionOverride("You received 10 USD after having paid a fee"),
+        )
+        assertEquals(
+            TransactionDirection.DEBIT,
+            GenericExtractors.detectDirectionOverride("You paid 10 USD before you received a refund"),
+        )
+    }
 
     // --- Amount & currency ---
 

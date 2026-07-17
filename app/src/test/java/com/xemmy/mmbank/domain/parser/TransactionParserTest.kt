@@ -9,6 +9,7 @@ import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TransactionParserTest {
@@ -40,6 +41,50 @@ class TransactionParserTest {
         assertEquals(BigDecimal("12500.00"), result!!.amount)
         assertEquals("SAR", result.currencyCode)
         assertEquals(TransactionDirection.CREDIT, result.direction)
+    }
+
+    // Regression: the real Binance Pay/Wallet notification — title "Binance",
+    // body "You have received a payment of 710 USDT from ..." — was ingested as
+    // a negative USD expense. It never hits the "Binance Mastercard" signature
+    // route, so it falls to the regex phase, where "payment of" trips the DEBIT
+    // keyword rule (builtin.en.debit.amt-cur) even though "received" makes it a
+    // credit. The phase-2 direction override must promote it to CREDIT.
+    //
+    // The earlier version of this test dropped the word "of" ("a payment 710
+    // USDT"), which sidestepped the "payment of" debit keyword and let a credit
+    // rule match directly — so it passed while the real message still broke.
+    @Test
+    fun `Binance received payment parses as positive credit`() {
+        val result = parser.parse(
+            CapturedMessage(
+                source = TransactionSource.PUSH_NOTIFICATION,
+                sender = "com.binance.dev",
+                title = "Binance",
+                body = "You have received a payment of 710 USDT from m_aldhinhani on 2026-07-14 05:53:58(UTC)",
+                timestampMillis = 1_700_000_000_000,
+            )
+        )
+
+        assertNotNull(result)
+        // Amount is stored as a positive magnitude; sign is carried by direction.
+        assertTrue("Received payment must be positive", result!!.amount > BigDecimal.ZERO)
+        assertEquals(BigDecimal("710"), result.amount)
+        assertEquals(TransactionDirection.CREDIT, result.direction)
+        assertEquals("USDT", result.currencyCode)
+    }
+
+    // The one-way nature of the phase-2 promotion: a spend-flavored keyword rule
+    // whose message happens to contain "paid" in an unrelated clause must NOT be
+    // demoted. This is the exact shape of the Tabby cashback credit below, guarded
+    // here at the parser level so the asymmetry can't silently regress.
+    @Test
+    fun `credit rule is not demoted by an incidental debit keyword`() {
+        val r = parser.parse(
+            sms("You received 50 USD after next statement is paid")
+        )
+        assertNotNull(r)
+        // "received" comes before "paid", and we never demote a credit anyway.
+        assertEquals(TransactionDirection.CREDIT, r!!.direction)
     }
 
     @Test
@@ -405,6 +450,82 @@ class TransactionParserTest {
         assertEquals("AED", r.currencyCode)
         assertEquals(TransactionDirection.DEBIT, r.direction)
         assertEquals("NOON", r.merchant)
+    }
+
+    // --- Kah-ching (KAST) purchases with a trailing cashback line ---
+
+    private fun kahChing(body: String) = CapturedMessage(
+        source = TransactionSource.PUSH_NOTIFICATION,
+        sender = "money.kast.app",
+        title = "Kah-ching 🤑",
+        body = body,
+        timestampMillis = 1_700_000_000_000,
+    )
+
+    @Test
+    fun `kah-ching purchase captures purchase amount not cashback - regression`() {
+        // Regression: the generic keyword-first rule skipped over the merchant
+        // and grabbed the $0.42 cashback as the amount instead of $27.71.
+        val r = parser.parse(
+            kahChing("\$27.71 spent at SHABIK ELECTRIC VEHICL\n\$0.42 cashback: 1.5% CASH")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("27.71"), r!!.amount)
+        assertEquals("USD", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("SHABIK ELECTRIC VEHICL", r.merchant)
+    }
+
+    @Test
+    fun `kah-ching purchase with phone number after merchant - regression`() {
+        // Same bug, second shape: extra ", 800 82229" between the merchant and
+        // the cashback line. Amount must be 9.63, not the 0.14 cashback.
+        val r = parser.parse(
+            kahChing("\$9.63 spent at Tabby, 800 82229\n\$0.14 cashback: 1.5% CASH")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("9.63"), r!!.amount)
+        assertEquals("USD", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("Tabby", r.merchant)
+    }
+
+    // Regression: real UAE card SMS "Trx. of AED68.00 on your card ending *876
+    // at MCDONALDS-54176, UAE is Approved. Avl. card bal is 17296.72. Trx Date:
+    // 17/07/26 13:35" carried no spend keyword, no signature and an unregistered
+    // card ending, so it was silently dropped. The "Trx. of … is Approved" rule
+    // now captures it: amount from right after "Trx. of" (not the trailing card
+    // balance), plus the merchant and the "*876" ending.
+    @Test
+    fun `captures keyword-less Trx of Approved card spend`() {
+        val r = parser.parse(
+            sms(
+                "Trx. of AED68.00 on your card ending *876 at MCDONALDS-54176, " +
+                    "UAE is Approved. Avl. card bal is 17296.72. Trx Date: 17/07/26 13:35"
+            )
+        )
+        assertNotNull(r)
+        assertEquals(0, BigDecimal("68.00").compareTo(r!!.amount))
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("MCDONALDS-54176", r.merchant)
+        assertEquals("876", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `captures Trx of Approved fuel spend with multi-word merchant`() {
+        val r = parser.parse(
+            sms(
+                "Trx. of AED275.18 on your card ending *876 at ADNOC SEIH SIDARA 723, " +
+                    "UAE is Approved. Avl. card bal is 17364.72. Trx Date: 17/07/26 13:23"
+            )
+        )
+        assertNotNull(r)
+        assertEquals(0, BigDecimal("275.18").compareTo(r!!.amount))
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("ADNOC SEIH SIDARA 723", r.merchant)
+        assertEquals("876", r.accountNumberSuffix)
     }
 
     @Test

@@ -14,8 +14,8 @@ android {
         applicationId = "com.xemmy.mmbank"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // A fixed debug keystore (committed, standard well-known debug password)
@@ -89,6 +89,16 @@ dependencies {
 
     // Encrypted storage for the Binance read-only API keys
     implementation(libs.androidx.security.crypto)
+
+    // Biometric app lock: BiometricPrompt needs a FragmentActivity host, and
+    // ProcessLifecycleOwner drives the lock-on-background behavior.
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.lifecycle.process)
+
+    // SQLCipher: at-rest encryption of the Room DB (SecureDatabaseFactory +
+    // the one-time plaintext migration in DatabaseEncryptionMigrator).
+    implementation(libs.sqlcipher.android)
 
     testImplementation(libs.junit)
 }

@@ -37,17 +37,33 @@ interface TransactionRepository {
     /** Renames a person on every transaction carrying it; null [to] clears them. */
     suspend fun renamePerson(from: String, to: String?)
     suspend fun delete(transactionId: Long)
+    /** Multi-select edit: sets spending category on every id in [ids] at once. Returns affected count. */
+    suspend fun bulkSetCategory(ids: List<Long>, category: SpendingCategory): Int
+    /** Multi-select edit: sets the analytics-exclusion flag on every id in [ids] at once. Returns affected count. */
+    suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int
+    /** Multi-select delete. Returns the number of rows removed. */
+    suspend fun deleteMany(ids: List<Long>): Int
 }
 
 interface AccountRepository {
+    /** Active accounts for the current view — demo accounts while Demo mode is on. */
     fun observeActive(): Flow<List<Account>>
+    /**
+     * Active REAL accounts only, regardless of Demo mode. Config surfaces (rule
+     * "assign to account", pickers) use this so a rule can't be pinned to a demo
+     * account that vanishes when Demo mode is switched off.
+     */
+    fun observeActiveReal(): Flow<List<Account>>
     suspend fun save(account: Account): Long
     suspend fun archive(account: Account)
     suspend fun delete(account: Account)
 }
 
 interface ParsingRuleRepository {
+    /** All rules for display — demo rules while Demo mode is on. */
     fun observeAll(): Flow<List<ParsingRule>>
+    /** Real rules only, regardless of Demo mode — used by the capture parser. */
+    fun observeAllReal(): Flow<List<ParsingRule>>
     suspend fun getEnabled(): List<ParsingRule>
     suspend fun getById(id: Long): ParsingRule?
     suspend fun save(rule: ParsingRule): Long

@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,8 +34,10 @@ import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,11 +51,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -68,6 +75,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -76,6 +84,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
+        private set
+    var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
+        private set
+    var excludeCryptoFromTotal by mutableStateOf(container.preferences.excludeCryptoFromTotal)
+        private set
+    var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
+        private set
+    var appLockTimeoutMinutes by mutableStateOf(container.preferences.appLockTimeoutMinutes)
+        private set
+    var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
@@ -206,6 +224,92 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         hideZeroBalances = hide
     }
 
+    fun updateHideCryptoBalance(hide: Boolean) {
+        container.preferences.hideCryptoBalance = hide
+        hideCryptoBalance = hide
+    }
+
+    fun updateExcludeCryptoFromTotal(exclude: Boolean) {
+        container.preferences.excludeCryptoFromTotal = exclude
+        excludeCryptoFromTotal = exclude
+    }
+
+    /** Call only after the enabling auth prompt has succeeded (the UI enforces that). */
+    fun updateAppLockEnabled(enabled: Boolean) {
+        container.setAppLockEnabled(enabled)
+        appLockEnabled = enabled
+    }
+
+    fun updateAppLockTimeout(minutes: Int) {
+        container.setAppLockTimeoutMinutes(minutes)
+        appLockTimeoutMinutes = minutes
+    }
+
+    /**
+     * Re-snapshots the app-lock prefs. The root Settings menu and the Security
+     * subpage are separate nav destinations with separate SettingsViewModel
+     * instances, so the menu's subtitle must refresh on resume after the
+     * subpage changed the underlying preference.
+     */
+    fun refreshAppLockState() {
+        appLockEnabled = container.preferences.appLockEnabled
+        appLockTimeoutMinutes = container.preferences.appLockTimeoutMinutes
+    }
+
+    /** Re-snapshots the Demo mode flag (separate VM instances per nav destination). */
+    fun refreshDemoState() {
+        demoModeEnabled = container.preferences.demoModeEnabled
+    }
+
+    /**
+     * Turns Demo mode ON — real data hides, a fresh sample batch appears. Call
+     * only after the enabling auth prompt has succeeded (the UI enforces that).
+     */
+    fun enableDemoMode() {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Loading demo data…"
+            runCatching { container.enableDemoMode() }
+                .onSuccess {
+                    demoModeEnabled = true
+                    persons = container.preferences.persons
+                    recomputeUnlisted()
+                    statusMessage = "Demo mode on — your real data is hidden"
+                }
+                .onFailure {
+                    container.recordError("SettingsViewModel.enableDemoMode", it)
+                    statusMessage = "Couldn't start demo mode: ${it.message}"
+                }
+            busy = false
+        }
+    }
+
+    /**
+     * Turns Demo mode OFF — deletes the sample data and restores the real
+     * ledger, rules and people. Call only after the biometric prompt has
+     * succeeded (revealing real data is the guarded step; the UI enforces it).
+     */
+    fun disableDemoMode() {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            statusMessage = "Removing demo data…"
+            runCatching { container.disableDemoMode() }
+                .onSuccess {
+                    demoModeEnabled = false
+                    persons = container.preferences.persons
+                    recomputeUnlisted()
+                    statusMessage = "Demo mode off — your real data is back"
+                }
+                .onFailure {
+                    container.recordError("SettingsViewModel.disableDemoMode", it)
+                    statusMessage = "Couldn't exit demo mode: ${it.message}"
+                }
+            busy = false
+        }
+    }
+
     fun saveBinanceKeys() {
         container.credentialStore.binanceApiKey = apiKeyInput
         container.credentialStore.binanceSecretKey = secretKeyInput
@@ -302,6 +406,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val blob = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readBytes() }
                 container.backupManager.import(blob, backupPassword.toCharArray())
             }.onSuccess { (accounts, transactions) ->
+                // Import clears every table (demo rows included) and restores real
+                // data, so Demo mode must not stay on pointing at an empty partition.
+                container.forceDemoModeOff()
+                demoModeEnabled = false
                 defaultCurrency = container.preferences.defaultCurrency
                 statusMessage = "Backup restored: $accounts accounts, $transactions transactions"
             }.onFailure {
@@ -328,6 +436,8 @@ fun SettingsScreen(
     LifecycleResumeEffect(Unit) {
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
         crashRecorded = Diagnostics.readCrash(context) != null
+        viewModel.refreshAppLockState()
+        viewModel.refreshDemoState()
         onPauseOrDispose { }
     }
 
@@ -376,6 +486,17 @@ fun SettingsScreen(
                     subtitle = "Teach the app new bank message formats",
                     onClick = { onOpen("rules") },
                 )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Lock,
+                    title = "Security",
+                    subtitle = if (viewModel.appLockEnabled) {
+                        "App lock on · auto-lock ${appLockTimeoutLabel(viewModel.appLockTimeoutMinutes)}"
+                    } else {
+                        "Biometric app lock (off)"
+                    },
+                    onClick = { onOpen("settings_security") },
+                )
             }
         }
 
@@ -396,8 +517,35 @@ fun SettingsScreen(
                     subtitleColor = if (crashRecorded) MaterialTheme.colorScheme.error else null,
                     onClick = { onOpen("settings_diagnostics") },
                 )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Science,
+                    title = "Demo mode",
+                    subtitle = if (viewModel.demoModeEnabled) {
+                        "On — real data hidden behind sample data"
+                    } else {
+                        "Show sample data for demos (your data stays safe)"
+                    },
+                    subtitleColor = if (viewModel.demoModeEnabled) MaterialTheme.colorScheme.primary else null,
+                    onClick = { onOpen("settings_demo") },
+                )
             }
         }
+
+        // App version, read from the package at runtime (no BuildConfig needed).
+        val versionName = remember {
+            runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull() ?: "—"
+        }
+        Text(
+            "Version $versionName",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 8.dp),
+        )
     }
 }
 
@@ -624,6 +772,45 @@ fun PreferencesSettingsScreen(
             )
         }
 
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide crypto balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Removes the Crypto (Binance) section from the Dashboard entirely.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideCryptoBalance,
+                onCheckedChange = viewModel::updateHideCryptoBalance,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Exclude crypto from total balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Net worth on the Dashboard and Insights won't count crypto's value. " +
+                        "Independent of the toggle above — crypto can stay visible while excluded, or vice versa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.excludeCryptoFromTotal,
+                onCheckedChange = viewModel::updateExcludeCryptoFromTotal,
+            )
+        }
+
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
             Text("Refresh Forex rates now")
         }
@@ -635,6 +822,200 @@ fun PreferencesSettingsScreen(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Subpage: Security (biometric app lock)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun SecuritySettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Security", onBack = onBack) {
+        AppLockSection(viewModel)
+    }
+}
+
+/**
+ * Opt-in biometric app lock: the switch, and the idle-timeout picker while it
+ * is on. ENABLING requires passing the biometric/device-credential prompt
+ * right there — both to prove the prompt works on this device before it can
+ * gate the app, and so a passer-by with the phone in hand can't silently arm
+ * a lock. Disabling is immediate (the user already authenticated to be here).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AppLockSection(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val scope = rememberCoroutineScope()
+    val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
+    var enabling by remember { mutableStateOf(false) }
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("App lock", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (canAuthenticate) {
+                    "Require your fingerprint, face, or device PIN once the app has " +
+                        "been closed or idle beyond the auto-lock time below."
+                } else {
+                    "Unavailable: set up a screen lock or enroll biometrics on this device first."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = viewModel.appLockEnabled,
+            enabled = canAuthenticate && !enabling && activity != null,
+            onCheckedChange = { wantEnabled ->
+                if (!wantEnabled) {
+                    viewModel.updateAppLockEnabled(false)
+                } else if (activity != null) {
+                    enabling = true
+                    scope.launch {
+                        try {
+                            val ok = BiometricAuthManagerImpl(activity).promptAuth(
+                                title = "Enable app lock",
+                                subtitle = "Confirm it's you — this prompt will guard the app",
+                            )
+                            if (ok) viewModel.updateAppLockEnabled(true)
+                        } finally {
+                            enabling = false
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    if (viewModel.appLockEnabled) {
+        Text(
+            "Ask again after inactivity",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            "Switching away and back within this window won't ask again.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            APP_LOCK_TIMEOUT_OPTIONS_MIN.forEach { minutes ->
+                FilterChip(
+                    selected = viewModel.appLockTimeoutMinutes == minutes,
+                    onClick = { viewModel.updateAppLockTimeout(minutes) },
+                    label = { Text(appLockTimeoutLabel(minutes)) },
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Demo mode (biometric-gated sample-data toggle)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun DemoSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Demo mode", onBack = onBack) {
+        DemoModeSection(viewModel)
+        viewModel.statusMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+/**
+ * Switch that swaps the real ledger, rules and people for disposable sample
+ * data. Turning it ON is immediate. Turning it OFF — revealing the real data —
+ * requires passing the biometric/device-credential prompt, so someone handed
+ * the phone mid-demo can't get back to the real accounts. Real data is never
+ * modified, only hidden; the whole feature needs a device lock so demo mode can
+ * always be exited.
+ */
+@Composable
+private fun DemoModeSection(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val activity = context as? FragmentActivity
+    val scope = rememberCoroutineScope()
+    val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
+    var disabling by remember { mutableStateOf(false) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text("Demo mode", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (canAuthenticate) {
+                            "Hide your real accounts, transactions, rules and people behind a batch " +
+                                "of randomly generated sample data — handy for screenshots or a " +
+                                "walkthrough. Turning it off asks for your fingerprint, face or " +
+                                "device PIN, then restores your real data untouched."
+                        } else {
+                            "Unavailable: set up a screen lock or enroll biometrics on this device first."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = viewModel.demoModeEnabled,
+                    enabled = canAuthenticate && !viewModel.busy && !disabling && activity != null,
+                    onCheckedChange = { wantEnabled ->
+                        if (wantEnabled) {
+                            viewModel.enableDemoMode()
+                        } else if (activity != null) {
+                            disabling = true
+                            scope.launch {
+                                try {
+                                    val ok = BiometricAuthManagerImpl(activity).promptAuth(
+                                        title = "Exit demo mode",
+                                        subtitle = "Confirm it's you to reveal your real data",
+                                    )
+                                    if (ok) viewModel.disableDemoMode()
+                                } finally {
+                                    disabling = false
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+            if (viewModel.demoModeEnabled) {
+                Text(
+                    "Demo mode is on — your real data is safely hidden. Switch off (with biometrics) " +
+                        "to restore it; switching on again generates a fresh set of sample data.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+/** Auto-lock grace-window choices, in minutes: 1/2/5/15 min, then 1/6/12 hours. */
+val APP_LOCK_TIMEOUT_OPTIONS_MIN = listOf(1, 2, 5, 15, 60, 360, 720)
+
+/** "15 min" / "6 hr" — whole-hour multiples render in hours, else minutes. */
+fun appLockTimeoutLabel(minutes: Int): String =
+    if (minutes >= 60 && minutes % 60 == 0) "${minutes / 60} hr" else "$minutes min"
 
 /** Editable saved-people list: add, rename (updates every transaction), remove. */
 @Composable

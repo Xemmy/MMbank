@@ -1,6 +1,9 @@
 package com.xemmy.mmbank
 
 import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.diagnostics.Diagnostics
 
@@ -14,6 +17,13 @@ class MMBankApp : Application() {
         installCrashRecorder()
         container = AppContainer(this)
         container.seedDefaultRulesOnce()
+        // Whole-app foreground/background transitions drive the opt-in app
+        // lock (ProcessLifecycleOwner, unlike Activity onStop, doesn't fire
+        // on rotation or intra-app navigation).
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = container.appLock.onAppForegrounded()
+            override fun onStop(owner: LifecycleOwner) = container.appLock.onAppBackgrounded()
+        })
     }
 
     /**

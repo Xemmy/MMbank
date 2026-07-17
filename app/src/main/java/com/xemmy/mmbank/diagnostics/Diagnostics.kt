@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.diagnostics
 
 import android.content.Context
+import com.xemmy.mmbank.util.LogRedactor
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -32,7 +33,12 @@ object Diagnostics {
         runCatching {
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            crashFile(context).writeText("Crash at $stamp on thread $threadName\n\n$sw")
+            // Exception messages can embed raw bank-message text (e.g. a parse
+            // failure quoting its input), so card/account digits are masked
+            // before anything reaches this world-readable-in-Settings file.
+            crashFile(context).writeText(
+                LogRedactor.redactSensitiveData("Crash at $stamp on thread $threadName\n\n$sw")
+            )
         }
         runCatching { bumpCrashStreak(context) }
     }
@@ -62,7 +68,7 @@ object Diagnostics {
         runCatching {
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            val entry = "[$stamp] $tag\n$sw\n"
+            val entry = LogRedactor.redactSensitiveData("[$stamp] $tag\n$sw\n")
             val file = errorsFile(context)
             val existing = if (file.exists()) file.readText() else ""
             val combined = (entry + existing).let {

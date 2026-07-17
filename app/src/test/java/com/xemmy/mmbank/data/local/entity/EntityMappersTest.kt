@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.local.entity
 
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
@@ -18,11 +19,12 @@ import org.junit.Test
  * Domain <-> entity mapper round-trips. Every field added to an entity must
  * survive `toDomain()` / `toEntity()` in both directions (project convention),
  * so these tests pin the whole object, with focused assertions on the fields
- * the v9 schema added: Transaction.excludeFromStats and Account.statementCycleDay.
+ * the v9 schema added (Transaction.excludeFromStats, Account.statementCycleDay)
+ * and the v10 schema added (isDemo on both).
  */
 class EntityMappersTest {
 
-    private fun transaction(excludeFromStats: Boolean) = Transaction(
+    private fun transaction(excludeFromStats: Boolean, isDemo: Boolean = false) = Transaction(
         id = 42,
         accountId = 7,
         amount = BigDecimal("229.59"),
@@ -40,9 +42,10 @@ class EntityMappersTest {
         person = "Me",
         spendingCategory = SpendingCategory.GROCERIES,
         excludeFromStats = excludeFromStats,
+        isDemo = isDemo,
     )
 
-    private fun account(statementCycleDay: Int?) = Account(
+    private fun account(statementCycleDay: Int?, isDemo: Boolean = false) = Account(
         id = 3,
         name = "Tabby Card",
         type = AccountType.CREDIT_CARD,
@@ -63,6 +66,7 @@ class EntityMappersTest {
         maturityDateMillis = 1_800_000_000_000,
         loanNotes = "no fees",
         statementCycleDay = statementCycleDay,
+        isDemo = isDemo,
     )
 
     @Test
@@ -124,5 +128,70 @@ class EntityMappersTest {
         val entity = account(statementCycleDay = 10).toEntity()
         assertEquals(10, entity.statementCycleDay)
         assertEquals(entity, entity.toDomain().toEntity())
+    }
+
+    @Test
+    fun `transaction round-trip preserves isDemo in both states`() {
+        val demo = transaction(excludeFromStats = false, isDemo = true).toEntity().toDomain()
+        assertTrue(demo.isDemo)
+        val real = transaction(excludeFromStats = false, isDemo = false).toEntity().toDomain()
+        assertFalse(real.isDemo)
+    }
+
+    @Test
+    fun `account round-trip preserves isDemo in both states`() {
+        val demo = account(statementCycleDay = 10, isDemo = true).toEntity().toDomain()
+        assertTrue(demo.isDemo)
+        val real = account(statementCycleDay = 10, isDemo = false).toEntity().toDomain()
+        assertFalse(real.isDemo)
+    }
+
+    @Test
+    fun `parsing rule round-trip preserves isDemo in both states`() {
+        fun rule(isDemo: Boolean) = ParsingRule(
+            id = 5,
+            name = "Demo Bank card spend",
+            pattern = "You spent (?<amount>\\d+)",
+            senderPattern = "demobank",
+            direction = TransactionDirection.DEBIT,
+            defaultCurrency = "USD",
+            priority = 110,
+            enabled = true,
+            sampleText = "You spent 42",
+            createdAt = 1_700_000_000_000,
+            assignAccountId = 9,
+            isDemo = isDemo,
+        )
+        val demo = rule(isDemo = true)
+        assertEquals(demo, demo.toEntity().toDomain())
+        assertTrue(demo.toEntity().isDemo)
+        val real = rule(isDemo = false)
+        assertEquals(real, real.toEntity().toDomain())
+        assertFalse(real.toEntity().isDemo)
+    }
+
+    @Test
+    fun `entities default isDemo to false`() {
+        // Mirrors the v10 migration's NOT NULL DEFAULT 0: rows predating v10 load real.
+        val txn = TransactionEntity(
+            amount = BigDecimal.ONE,
+            currencyCode = "AED",
+            direction = TransactionDirection.DEBIT,
+            source = TransactionSource.MANUAL,
+            timestamp = 0,
+            createdAt = 0,
+        )
+        assertFalse(txn.isDemo)
+        assertFalse(txn.toDomain().isDemo)
+
+        val acct = AccountEntity(
+            name = "Cash",
+            type = AccountType.CASH,
+            currencyCode = "AED",
+            openingBalance = BigDecimal.ZERO,
+            createdAt = 0,
+        )
+        assertFalse(acct.isDemo)
+        assertFalse(acct.toDomain().isDemo)
     }
 }

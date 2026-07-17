@@ -39,11 +39,16 @@ data class PersonSpend(val person: String, val amount: Double)
 /** Current-month spend grouped by spending category. */
 data class CategorySpend(val category: SpendingCategory, val amount: Double)
 
+/** One donut-chart slice: a category (or the "Other" rollup) with its rank color. */
+data class CategorySlice(val name: String, val amount: Double, val color: Long)
+
 data class DashboardStats(
     /** Oldest -> newest, always six entries. */
     val monthly: List<MonthlyFlow> = emptyList(),
     val personSpends: List<PersonSpend> = emptyList(),
     val categorySpends: List<CategorySpend> = emptyList(),
+    /** [categorySpends] capped to the top 4 + an "Other" rollup, for the donut chart. */
+    val categorySlices: List<CategorySlice> = emptyList(),
     /** Average net flow of the last up-to-3 completed months with activity. */
     val avgMonthlyNet: Double = 0.0,
 )
@@ -69,6 +74,8 @@ data class DashboardUiState(
     /** Sum of everything convertible into the base currency; liabilities negative. */
     val netWorthInBase: Double = 0.0,
     val hasUnconvertedAmounts: Boolean = false,
+    /** True when crypto's value is deliberately left out of [netWorthInBase] (Settings toggle). */
+    val cryptoExcludedFromTotal: Boolean = false,
     val stats: DashboardStats = DashboardStats(),
     val goal: GoalState = GoalState(),
     /**
@@ -126,6 +133,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     ) { accounts, netByAccount, crypto, rates, recent ->
         val base = container.preferences.defaultCurrency
         val hideZeroBalances = container.preferences.hideZeroBalances
+        val hideCryptoBalance = container.preferences.hideCryptoBalance
+        val excludeCryptoFromTotal = container.preferences.excludeCryptoFromTotal
         val ratesFromBase = rates
             .filter { it.baseCode.equals(base, ignoreCase = true) }
             .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
@@ -139,40 +148,30 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             )
         }
 
-        // Dust and zero-USD holdings are noise on the dashboard: a coin worth
-        // $0.002 still displays as "$0.00" at 2-decimal money formatting, and
-        // an unpriced token contributes nothing visible either. Requiring a
-        // real (roundable) USD value hides both, not just a zero token amount.
-        // Users can turn this off in Settings to see every holding, dust included.
-        val visibleCrypto = crypto.assets
-            .filter { !hideZeroBalances || (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
-            .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
-        val visibleWallets = crypto.wallets
-            .filter { !hideZeroBalances || (it.valueUsd?.toDouble() ?: 0.0) >= MIN_VISIBLE_USD }
-            .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
-
-        // The wallet overview covers Earn/Funding/Bots on top of Spot, so it
-        // is the truer total when available; spot-only is the fallback for
-        // API keys that can't read it.
-        val walletTotalUsd = crypto.wallets.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
-        val spotTotalUsd = crypto.assets.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
-        val cryptoTotalUsd = if (walletTotalUsd > 0.0) walletTotalUsd else spotTotalUsd
-        val cryptoInBase = CurrencyMath.toBase(cryptoTotalUsd, "USD", base, ratesFromBase)
+        val cryptoResult = computeCryptoPresentation(
+            assets = crypto.assets,
+            wallets = crypto.wallets,
+            hideZeroBalances = hideZeroBalances,
+            hideCryptoBalance = hideCryptoBalance,
+            excludeCryptoFromTotal = excludeCryptoFromTotal,
+            baseCurrency = base,
+            ratesFromBase = ratesFromBase,
+            minVisibleUsd = MIN_VISIBLE_USD,
+        )
 
         val fiatInBase = accountRows.mapNotNull { it.balanceInBase }.sum()
-        val hasUnconverted = accountRows.any { it.balanceInBase == null } ||
-            (cryptoTotalUsd != 0.0 && cryptoInBase == null) ||
-            crypto.assets.any { it.valueUsd == null && it.total.signum() > 0 }
+        val hasUnconverted = accountRows.any { it.balanceInBase == null } || cryptoResult.hasUnconvertedCrypto
 
         DashboardUiState(
             baseCurrency = base,
             accounts = accountRows,
-            cryptoBalances = visibleCrypto,
-            cryptoWallets = visibleWallets,
-            cryptoTotalUsd = cryptoTotalUsd,
+            cryptoBalances = cryptoResult.visibleAssets,
+            cryptoWallets = cryptoResult.visibleWallets,
+            cryptoTotalUsd = cryptoResult.cryptoTotalUsd,
             recent = recent,
-            netWorthInBase = fiatInBase + (cryptoInBase ?: 0.0),
+            netWorthInBase = fiatInBase + (cryptoResult.cryptoInBase ?: 0.0),
             hasUnconvertedAmounts = hasUnconverted,
+            cryptoExcludedFromTotal = excludeCryptoFromTotal,
         )
     }.recoverAndRetry("DashboardViewModel", container) { e ->
         // Never let a bad row (or a rates/DB hiccup) take the whole app down —
@@ -204,13 +203,19 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     val uiState: StateFlow<DashboardUiState> =
-        combine(ledgerState, senderLabels, statsFlow, uiMeta) { state, labels, stats, meta ->
+        combine(
+            ledgerState,
+            senderLabels,
+            statsFlow,
+            uiMeta,
+            container.hideBalances,
+        ) { state, labels, stats, meta, hidden ->
             state.copy(
                 senderLabels = labels,
                 stats = stats,
                 goal = meta.prefs.goal,
                 showAllLedgerTransactions = meta.showAllLedger,
-                hideBalances = meta.prefs.hideBalances,
+                hideBalances = hidden,
                 refreshing = meta.refreshing,
                 message = meta.message ?: state.message,
             )
@@ -222,8 +227,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun toggleHideBalances() {
-        container.preferences.hideBalances = !container.preferences.hideBalances
-        prefsState.value = readPrefs()
+        // Route through the container's shared flow so every screen updates live.
+        container.toggleHideBalances()
     }
 
     fun saveGoal(targetAmount: Double, monthlySaving: Double) {
@@ -261,6 +266,103 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     fun dismissMessage() {
         message.value = null
     }
+}
+
+/**
+ * This-month net flow: income minus spend. Extracted as a pure top-level
+ * function so the Net stat tile's math is unit-testable off the main thread
+ * (the tile itself only formats the result). A negative result keeps its sign
+ * and digits through [com.xemmy.mmbank.ui.util.asMoney].
+ */
+internal fun netFlow(income: Double, spend: Double): Double = income - spend
+
+/** Rank-ordered donut palette: top 4 categories, then grey for the "Other" rollup. */
+private val SLICE_PALETTE = listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL)
+private const val OTHER_SLICE_COLOR = 0xFF6C757DL
+
+/**
+ * Caps [categorySpends] (already sorted descending) to the top 4 entries and
+ * rolls everything past that into one "Other" slice, for the donut chart.
+ * Colors are assigned by rank, not by category identity, so the same 5-color
+ * palette works regardless of which categories happen to lead this month.
+ */
+internal fun categorySlicesFrom(categorySpends: List<CategorySpend>): List<CategorySlice> {
+    val top = categorySpends.take(4)
+    val other = categorySpends.drop(4).sumOf { it.amount }
+    val slices = top.mapIndexed { index, spend ->
+        CategorySlice(spend.category.label, spend.amount, SLICE_PALETTE[index])
+    }
+    return if (other > 0.0) slices + CategorySlice("Other", other, OTHER_SLICE_COLOR) else slices
+}
+
+/** Everything the Dashboard needs to show/fold in crypto — see [computeCryptoPresentation]. */
+internal data class CryptoPresentation(
+    val visibleAssets: List<AssetBalance>,
+    val visibleWallets: List<WalletBalance>,
+    val cryptoTotalUsd: Double,
+    /** Null when excluded from totals by preference, or when genuinely unconvertible. */
+    val cryptoInBase: Double?,
+    /** True only for a genuine conversion gap — never true just because crypto was excluded. */
+    val hasUnconvertedCrypto: Boolean,
+)
+
+/**
+ * Folds raw crypto holdings into what the Dashboard displays and how much (if
+ * any) counts toward the net-worth total. [hideCryptoBalance] and
+ * [excludeCryptoFromTotal] are independent Settings toggles: hiding the
+ * section from view does not by itself change the total, and excluding the
+ * total does not by itself hide the section.
+ *
+ * Pure and top-level so it runs under plain JVM unit tests, mirroring
+ * [computeDashboardStats].
+ */
+internal fun computeCryptoPresentation(
+    assets: List<AssetBalance>,
+    wallets: List<WalletBalance>,
+    hideZeroBalances: Boolean,
+    hideCryptoBalance: Boolean,
+    excludeCryptoFromTotal: Boolean,
+    baseCurrency: String,
+    ratesFromBase: Map<String, Double>,
+    minVisibleUsd: Double,
+): CryptoPresentation {
+    // Dust and zero-USD holdings are noise on the dashboard: a coin worth
+    // $0.002 still displays as "$0.00" at 2-decimal money formatting, and
+    // an unpriced token contributes nothing visible either. Requiring a
+    // real (roundable) USD value hides both, not just a zero token amount.
+    // Users can turn this off in Settings to see every holding, dust included.
+    val visibleAssets = if (hideCryptoBalance) {
+        emptyList()
+    } else {
+        assets
+            .filter { !hideZeroBalances || (it.valueUsd?.toDouble() ?: 0.0) >= minVisibleUsd }
+            .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
+    }
+    val visibleWallets = if (hideCryptoBalance) {
+        emptyList()
+    } else {
+        wallets
+            .filter { !hideZeroBalances || (it.valueUsd?.toDouble() ?: 0.0) >= minVisibleUsd }
+            .sortedByDescending { it.valueUsd?.toDouble() ?: 0.0 }
+    }
+
+    // The wallet overview covers Earn/Funding/Bots on top of Spot, so it
+    // is the truer total when available; spot-only is the fallback for
+    // API keys that can't read it.
+    val walletTotalUsd = wallets.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
+    val spotTotalUsd = assets.sumOf { it.valueUsd?.toDouble() ?: 0.0 }
+    val cryptoTotalUsd = if (walletTotalUsd > 0.0) walletTotalUsd else spotTotalUsd
+
+    val cryptoInBase = if (excludeCryptoFromTotal) {
+        null
+    } else {
+        CurrencyMath.toBase(cryptoTotalUsd, "USD", baseCurrency, ratesFromBase)
+    }
+    val hasUnconvertedCrypto = !excludeCryptoFromTotal &&
+        ((cryptoTotalUsd != 0.0 && cryptoInBase == null) ||
+            assets.any { it.valueUsd == null && it.total.signum() > 0 })
+
+    return CryptoPresentation(visibleAssets, visibleWallets, cryptoTotalUsd, cryptoInBase, hasUnconvertedCrypto)
 }
 
 /**
@@ -335,6 +437,7 @@ internal fun computeDashboardStats(
         monthly = monthly,
         personSpends = personSpends,
         categorySpends = categorySpends,
+        categorySlices = categorySlicesFrom(categorySpends),
         avgMonthlyNet = avgNet,
     )
 }

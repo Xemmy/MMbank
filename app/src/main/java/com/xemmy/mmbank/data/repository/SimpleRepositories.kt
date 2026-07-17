@@ -19,13 +19,25 @@ import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import java.math.BigDecimal
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
-class AccountRepositoryImpl(private val dao: AccountDao) : AccountRepository {
+class AccountRepositoryImpl(
+    private val dao: AccountDao,
+    /** Whether "Demo mode" is on; see TransactionRepositoryImpl. */
+    private val demoMode: StateFlow<Boolean>,
+) : AccountRepository {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeActive(): Flow<List<Account>> =
-        dao.observeActive().map { list -> list.map(AccountEntity::toDomain) }
+        demoMode.flatMapLatest { demo -> dao.observeActive(demo) }
+            .map { list -> list.map(AccountEntity::toDomain) }
+
+    override fun observeActiveReal(): Flow<List<Account>> =
+        dao.observeActive(false).map { list -> list.map(AccountEntity::toDomain) }
 
     override suspend fun save(account: Account): Long =
         if (account.id == 0L) {
@@ -40,10 +52,19 @@ class AccountRepositoryImpl(private val dao: AccountDao) : AccountRepository {
     override suspend fun delete(account: Account) = dao.delete(account.toEntity())
 }
 
-class ParsingRuleRepositoryImpl(private val dao: ParsingRuleDao) : ParsingRuleRepository {
+class ParsingRuleRepositoryImpl(
+    private val dao: ParsingRuleDao,
+    /** Whether "Demo mode" is on; see TransactionRepositoryImpl. */
+    private val demoMode: StateFlow<Boolean>,
+) : ParsingRuleRepository {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeAll(): Flow<List<ParsingRule>> =
-        dao.observeAll().map { list -> list.map(ParsingRuleEntity::toDomain) }
+        demoMode.flatMapLatest { demo -> dao.observeAll(demo) }
+            .map { list -> list.map(ParsingRuleEntity::toDomain) }
+
+    override fun observeAllReal(): Flow<List<ParsingRule>> =
+        dao.observeAll(false).map { list -> list.map(ParsingRuleEntity::toDomain) }
 
     override suspend fun getEnabled(): List<ParsingRule> =
         dao.getEnabled().map(ParsingRuleEntity::toDomain)

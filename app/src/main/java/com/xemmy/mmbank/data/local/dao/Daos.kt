@@ -44,6 +44,7 @@ interface TransactionDao {
         WHERE amount = :amount
           AND currencyCode = :currencyCode
           AND direction = :direction
+          AND isDemo = 0
           AND ABS(timestamp - :timestamp) <= :windowMillis
         ORDER BY ABS(timestamp - :timestamp) ASC
         LIMIT 1
@@ -57,11 +58,12 @@ interface TransactionDao {
         windowMillis: Long,
     ): TransactionEntity?
 
-    @Query("SELECT * FROM transactions ORDER BY timestamp DESC")
-    fun observeAll(): Flow<List<TransactionEntity>>
+    /** [demo] selects the active partition: real rows (false) or demo rows (true). */
+    @Query("SELECT * FROM transactions WHERE isDemo = :demo ORDER BY timestamp DESC")
+    fun observeAll(demo: Boolean): Flow<List<TransactionEntity>>
 
-    @Query("SELECT * FROM transactions ORDER BY timestamp DESC LIMIT :limit")
-    fun observeRecent(limit: Int): Flow<List<TransactionEntity>>
+    @Query("SELECT * FROM transactions WHERE isDemo = :demo ORDER BY timestamp DESC LIMIT :limit")
+    fun observeRecent(demo: Boolean, limit: Int): Flow<List<TransactionEntity>>
 
     @Query(
         """
@@ -69,11 +71,18 @@ interface TransactionDao {
                SUM(CASE WHEN direction = 'CREDIT' THEN CAST(amount AS REAL)
                         ELSE -CAST(amount AS REAL) END) AS net
         FROM transactions
-        WHERE accountId IS NOT NULL
+        WHERE accountId IS NOT NULL AND isDemo = :demo
         GROUP BY accountId
         """
     )
-    fun observeNetByAccount(): Flow<List<AccountNetRow>>
+    fun observeNetByAccount(demo: Boolean): Flow<List<AccountNetRow>>
+
+    /** Removes every demo transaction. Delete these BEFORE demo accounts (FK SET_NULL). */
+    @Query("DELETE FROM transactions WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE isDemo = 1")
+    suspend fun countDemo(): Int
 
     @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
@@ -101,9 +110,22 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Multi-select edit: sets spending category on every row in [ids] at once. Returns affected count. */
+    @Query("UPDATE transactions SET spendingCategory = :category WHERE id IN (:ids)")
+    suspend fun bulkSetCategory(ids: List<Long>, category: com.xemmy.mmbank.domain.model.SpendingCategory): Int
+
+    /** Multi-select edit: sets the analytics-exclusion flag on every row in [ids] at once. Returns affected count. */
+    @Query("UPDATE transactions SET excludeFromStats = :excluded WHERE id IN (:ids)")
+    suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int
+
+    /** Multi-select delete. Returns the number of rows removed. */
+    @Query("DELETE FROM transactions WHERE id IN (:ids)")
+    suspend fun deleteMany(ids: List<Long>): Int
+
     // --- Backup support ---
 
-    @Query("SELECT * FROM transactions")
+    // Backups carry only real rows — demo data must never leak into an export.
+    @Query("SELECT * FROM transactions WHERE isDemo = 0")
     suspend fun getAll(): List<TransactionEntity>
 
     @Query("DELETE FROM transactions")
@@ -125,18 +147,29 @@ interface AccountDao {
     @Delete
     suspend fun delete(entity: AccountEntity)
 
-    @Query("SELECT * FROM accounts WHERE archived = 0 ORDER BY name")
-    fun observeActive(): Flow<List<AccountEntity>>
+    /** [demo] selects the active partition: real accounts (false) or demo accounts (true). */
+    @Query("SELECT * FROM accounts WHERE archived = 0 AND isDemo = :demo ORDER BY name")
+    fun observeActive(demo: Boolean): Flow<List<AccountEntity>>
 
-    @Query("SELECT * FROM accounts WHERE archived = 0 ORDER BY name")
+    // Capture auto-assignment only ever binds to REAL accounts, so a demo
+    // account can never end up owning a real transaction.
+    @Query("SELECT * FROM accounts WHERE archived = 0 AND isDemo = 0 ORDER BY name")
     suspend fun getActive(): List<AccountEntity>
 
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getById(id: Long): AccountEntity?
 
+    /** Removes every demo account. Delete demo transactions FIRST (FK SET_NULL). */
+    @Query("DELETE FROM accounts WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
+
+    @Query("SELECT COUNT(*) FROM accounts WHERE isDemo = 1")
+    suspend fun countDemo(): Int
+
     // --- Backup support ---
 
-    @Query("SELECT * FROM accounts")
+    // Backups carry only real rows — demo data must never leak into an export.
+    @Query("SELECT * FROM accounts WHERE isDemo = 0")
     suspend fun getAll(): List<AccountEntity>
 
     @Query("DELETE FROM accounts")
@@ -155,18 +188,29 @@ interface ParsingRuleDao {
     @Query("DELETE FROM parsing_rules WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM parsing_rules ORDER BY priority DESC, name")
-    fun observeAll(): Flow<List<ParsingRuleEntity>>
+    /** [demo] selects the active partition: real rules (false) or demo rules (true). */
+    @Query("SELECT * FROM parsing_rules WHERE isDemo = :demo ORDER BY priority DESC, name")
+    fun observeAll(demo: Boolean): Flow<List<ParsingRuleEntity>>
 
-    @Query("SELECT * FROM parsing_rules WHERE enabled = 1 ORDER BY priority DESC")
+    // The parser only ever runs REAL rules — a real message captured during a
+    // demo must be matched against the user's real rules, not the sample ones.
+    @Query("SELECT * FROM parsing_rules WHERE enabled = 1 AND isDemo = 0 ORDER BY priority DESC")
     suspend fun getEnabled(): List<ParsingRuleEntity>
 
     @Query("SELECT * FROM parsing_rules WHERE id = :id")
     suspend fun getById(id: Long): ParsingRuleEntity?
 
+    /** Removes every demo rule. */
+    @Query("DELETE FROM parsing_rules WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
+
+    @Query("SELECT COUNT(*) FROM parsing_rules WHERE isDemo = 1")
+    suspend fun countDemo(): Int
+
     // --- Backup support ---
 
-    @Query("SELECT * FROM parsing_rules")
+    // Backups carry only real rules — demo data must never leak into an export.
+    @Query("SELECT * FROM parsing_rules WHERE isDemo = 0")
     suspend fun getAll(): List<ParsingRuleEntity>
 
     @Query("DELETE FROM parsing_rules")

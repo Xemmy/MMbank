@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.parser
 
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
 
 /**
@@ -20,7 +21,7 @@ object GenericExtractors {
     // symbols and Arabic abbreviations only, so stray 3-letter words are never
     // mistaken for a currency under IGNORE_CASE.
     private const val CUR =
-        "USD|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
+        "USD|USDT|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
             "|[$€£₹₺¥]|ر\\.\\s?س|د\\.\\s?إ|ج\\.\\s?م|د\\.\\s?ك|ر\\.\\s?ق|ر\\.\\s?ع|د\\.\\s?ب|د\\.\\s?ا|ل\\.\\s?ل|ريال|درهم|جنيه"
 
     // "Plausible" number: optional thousands separators, at most 2 decimals.
@@ -34,7 +35,7 @@ object GenericExtractors {
     // with no adjacent currency is deliberately NOT plausible — signature
     // routing must never guess.
     private val AMOUNT = Regex(
-        "(?<![A-Za-z])(?<cur1>$CUR)\\s?(?<amt1>$NUM)(?!\\.?\\d)" +
+        "(?<![A-Za-z])(?<cur1>$CUR)(?![A-Za-z])\\s?(?<amt1>$NUM)(?!\\.?\\d)" +
             "|(?<amt2>$NUM)(?!\\.?\\d)\\s?(?<cur2>$CUR)(?![A-Za-z])",
         RegexOption.IGNORE_CASE,
     )
@@ -55,6 +56,27 @@ object GenericExtractors {
             return ExtractedAmount(amount, currency)
         }
         return null
+    }
+
+    private val CREDIT_DIRECTION_KEYWORDS = Regex("\\b(?:received|incoming|deposited)\\b", RegexOption.IGNORE_CASE)
+    private val DEBIT_DIRECTION_KEYWORDS = Regex("\\b(?:paid|purchased|sent|spent)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * Direction implied by explicit wording in [text], for signature-routed
+     * rules whose direction is otherwise a single static default regardless
+     * of content (e.g. "Binance Mastercard" defaults to DEBIT, but a message
+     * that actually says "received" must still credit the account). Returns
+     * null when neither vocabulary is present, so the caller keeps the rule's
+     * own default; when both appear, the earlier keyword in the text wins.
+     */
+    fun detectDirectionOverride(text: String): TransactionDirection? {
+        val creditAt = CREDIT_DIRECTION_KEYWORDS.find(text)?.range?.first
+        val debitAt = DEBIT_DIRECTION_KEYWORDS.find(text)?.range?.first
+        return when {
+            creditAt == null && debitAt == null -> null
+            debitAt == null || (creditAt != null && creditAt < debitAt) -> TransactionDirection.CREDIT
+            else -> TransactionDirection.DEBIT
+        }
     }
 
     // Merchant clause: text trailing " at " / " to " up to the next sentence,

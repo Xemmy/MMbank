@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.prefs
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.xemmy.mmbank.data.local.DatabaseKeyMaterial
 
 /**
  * Stores the Binance READ-ONLY API key pair in EncryptedSharedPreferences
@@ -39,8 +40,28 @@ class SecureCredentialStore(context: Context) {
         prefs.edit().remove(KEY_BINANCE_API).remove(KEY_BINANCE_SECRET).apply()
     }
 
+    /**
+     * SQLCipher passphrase for the Room database: 32 CSPRNG bytes as hex,
+     * generated exactly once per install and never rotated (rotating would
+     * orphan the encrypted DB). Persisted with synchronous commit() — if the
+     * process died after encrypting the DB but before this key hit disk, the
+     * ledger would be permanently unreadable.
+     *
+     * Losing this entry (e.g. a wiped Keystore) makes the DB unrecoverable;
+     * the JSON backup/export in Settings is the recovery path.
+     */
+    fun getOrCreateDatabasePassphrase(): String {
+        prefs.getString(KEY_DB_PASSPHRASE, null)?.let { return it }
+        val fresh = DatabaseKeyMaterial.generate()
+        check(prefs.edit().putString(KEY_DB_PASSPHRASE, fresh).commit()) {
+            "Failed to persist the database passphrase"
+        }
+        return fresh
+    }
+
     private companion object {
         const val KEY_BINANCE_API = "binance_api_key"
         const val KEY_BINANCE_SECRET = "binance_secret_key"
+        const val KEY_DB_PASSPHRASE = "db_passphrase"
     }
 }

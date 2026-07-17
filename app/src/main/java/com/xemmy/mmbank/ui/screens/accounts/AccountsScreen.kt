@@ -82,9 +82,11 @@ import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.theme.rowEdgeGlow
+import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -119,6 +121,9 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         lastError.value = "Couldn't load accounts: ${e.message}"
         emptyList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Shared, live hide-balances flag — see [AppContainer.hideBalances]. */
+    val hideBalances: StateFlow<Boolean> = container.hideBalances
 
     fun save(account: Account) {
         viewModelScope.launch {
@@ -205,6 +210,7 @@ fun AccountsScreen(
 ) {
     val rows by viewModel.uiState.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
+    val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
     // The account row whose balance is being corrected; null = dialog closed.
@@ -222,7 +228,9 @@ fun AccountsScreen(
                 .fillMaxSize()
                 .obsidianCanvas()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
+            // Bottom clearance so the "+" FAB never floats over the last card's
+            // adjust/delete actions (56dp FAB + 16dp margin + 16dp).
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             lastError?.let { error ->
@@ -249,6 +257,7 @@ fun AccountsScreen(
             items(rows, key = { it.account.id }) { row ->
                 AccountCard(
                     row = row,
+                    hidden = hidden,
                     onEdit = { editing = row.account },
                     onAdjust = { adjusting = row },
                     onDelete = { viewModel.delete(row.account) },
@@ -283,6 +292,7 @@ fun AccountsScreen(
 @Composable
 private fun AccountCard(
     row: AccountWithBalance,
+    hidden: Boolean,
     onEdit: () -> Unit,
     onAdjust: () -> Unit,
     onDelete: () -> Unit,
@@ -325,8 +335,8 @@ private fun AccountCard(
                 }
                 Spacer(Modifier.weight(1f).widthIn(min = 12.dp).padding(horizontal = 6.dp).dottedLeader())
                 AmountText(
-                    display = row.balance.asMoney(a.currencyCode),
-                    color = if (row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
+                    display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
+                    color = if (!hidden && row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
                     style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
                 )
                 IconButton(onClick = onAdjust) {
@@ -340,16 +350,19 @@ private fun AccountCard(
             if (a.outstandingBalance != null || a.nextInstallmentAmount != null) {
                 Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     a.outstandingBalance?.let {
-                        LoanLine("Outstanding", it.asMoney(a.currencyCode))
+                        LoanLine("Outstanding", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode))
                     }
                     a.nextInstallmentAmount?.let {
                         val due = a.dueDayOfMonth?.let { d -> " · due day $d" }.orEmpty()
-                        LoanLine("Next installment", it.asMoney(a.currencyCode) + due)
+                        LoanLine("Next installment", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode) + due)
                     }
                     a.profitRatePa?.let { LoanLine("Profit rate", String.format(java.util.Locale.US, "%.2f%% p.a.", it)) }
                     a.maturityDateMillis?.let { LoanLine("Maturity", it.asDate()) }
                     a.earlySettlementFeeEstimate?.let {
-                        LoanLine("Est. early-settlement fee", "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)")
+                        LoanLine(
+                            "Est. early-settlement fee",
+                            if (hidden) AMOUNT_MASK else "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)",
+                        )
                     }
                     settlementRecommendation(a)?.let {
                         Text(
