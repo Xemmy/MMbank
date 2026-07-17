@@ -780,7 +780,8 @@ fun PreferencesSettingsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Hide crypto balance", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Removes the Crypto (Binance) section from the Dashboard entirely.",
+                    "Removes the Crypto (Binance) section, and any crypto-type account, " +
+                        "from the Dashboard entirely.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

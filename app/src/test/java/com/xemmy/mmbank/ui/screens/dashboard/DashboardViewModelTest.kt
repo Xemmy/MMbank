@@ -1,5 +1,7 @@
 package com.xemmy.mmbank.ui.screens.dashboard
 
+import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -299,5 +301,65 @@ class DashboardCryptoPresentationTest {
         val result = presentation(assets = listOf(asset(100.0)), wallets = listOf(wallet(400.0)))
         assertEquals(400.0, result.cryptoTotalUsd, 1e-9)
         assertEquals(400.0, result.cryptoInBase ?: 0.0, 1e-9)
+    }
+}
+
+/**
+ * [computeAccountsPresentation] covers manually-added accounts of type
+ * [AccountType.CRYPTO_SPOT] (e.g. a hand-entered "Binance" account) — a
+ * different data path from the Binance-API-synced holdings in
+ * [computeCryptoPresentation], but the same two independent Settings toggles
+ * apply: hiding is a display concern, excluding is an accounting concern.
+ */
+class DashboardAccountsPresentationTest {
+
+    private fun row(type: AccountType, balanceInBase: Double?, name: String = "Account") = AccountRow(
+        account = Account(name = name, type = type, currencyCode = "USD"),
+        balance = balanceInBase ?: 0.0,
+        balanceInBase = balanceInBase,
+    )
+
+    @Test
+    fun `regression - both toggles off counts and shows every row`() {
+        val rows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CRYPTO_SPOT, 50.0))
+        val result = computeAccountsPresentation(rows, hideCryptoBalance = false, excludeCryptoFromTotal = false)
+        assertEquals(2, result.visibleRows.size)
+        assertEquals(150.0, result.fiatInBase, 1e-9)
+    }
+
+    @Test
+    fun `hideCryptoBalance drops crypto-type accounts from the visible list only`() {
+        val rows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CRYPTO_SPOT, 50.0))
+        val result = computeAccountsPresentation(rows, hideCryptoBalance = true, excludeCryptoFromTotal = false)
+        assertEquals(1, result.visibleRows.size)
+        assertEquals(AccountType.CHECKING, result.visibleRows.single().account.type)
+        // Hidden, but still counted — hiding and excluding are independent.
+        assertEquals(150.0, result.fiatInBase, 1e-9)
+    }
+
+    @Test
+    fun `excludeCryptoFromTotal drops crypto-type accounts from the total only`() {
+        val rows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CRYPTO_SPOT, 50.0))
+        val result = computeAccountsPresentation(rows, hideCryptoBalance = false, excludeCryptoFromTotal = true)
+        assertEquals(2, result.visibleRows.size)
+        assertEquals(100.0, result.fiatInBase, 1e-9)
+    }
+
+    @Test
+    fun `both toggles on hides and excludes the crypto-type account`() {
+        val rows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CRYPTO_SPOT, 50.0))
+        val result = computeAccountsPresentation(rows, hideCryptoBalance = true, excludeCryptoFromTotal = true)
+        assertEquals(1, result.visibleRows.size)
+        assertEquals(100.0, result.fiatInBase, 1e-9)
+    }
+
+    @Test
+    fun `an unconvertible crypto-type balance stops flagging approximate once excluded`() {
+        val rows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CRYPTO_SPOT, null))
+        val included = computeAccountsPresentation(rows, hideCryptoBalance = false, excludeCryptoFromTotal = false)
+        assertTrue(included.hasUnconvertedFiat)
+
+        val excluded = computeAccountsPresentation(rows, hideCryptoBalance = false, excludeCryptoFromTotal = true)
+        assertFalse(excluded.hasUnconvertedFiat)
     }
 }

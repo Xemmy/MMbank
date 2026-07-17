@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -148,6 +149,11 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             )
         }
 
+        val accountsResult = computeAccountsPresentation(
+            rows = accountRows,
+            hideCryptoBalance = hideCryptoBalance,
+            excludeCryptoFromTotal = excludeCryptoFromTotal,
+        )
         val cryptoResult = computeCryptoPresentation(
             assets = crypto.assets,
             wallets = crypto.wallets,
@@ -159,17 +165,16 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             minVisibleUsd = MIN_VISIBLE_USD,
         )
 
-        val fiatInBase = accountRows.mapNotNull { it.balanceInBase }.sum()
-        val hasUnconverted = accountRows.any { it.balanceInBase == null } || cryptoResult.hasUnconvertedCrypto
+        val hasUnconverted = accountsResult.hasUnconvertedFiat || cryptoResult.hasUnconvertedCrypto
 
         DashboardUiState(
             baseCurrency = base,
-            accounts = accountRows,
+            accounts = accountsResult.visibleRows,
             cryptoBalances = cryptoResult.visibleAssets,
             cryptoWallets = cryptoResult.visibleWallets,
             cryptoTotalUsd = cryptoResult.cryptoTotalUsd,
             recent = recent,
-            netWorthInBase = fiatInBase + (cryptoResult.cryptoInBase ?: 0.0),
+            netWorthInBase = accountsResult.fiatInBase + (cryptoResult.cryptoInBase ?: 0.0),
             hasUnconvertedAmounts = hasUnconverted,
             cryptoExcludedFromTotal = excludeCryptoFromTotal,
         )
@@ -293,6 +298,39 @@ internal fun categorySlicesFrom(categorySpends: List<CategorySpend>): List<Categ
         CategorySlice(spend.category.label, spend.amount, SLICE_PALETTE[index])
     }
     return if (other > 0.0) slices + CategorySlice("Other", other, OTHER_SLICE_COLOR) else slices
+}
+
+/** Everything the Dashboard needs to show/fold in fiat accounts — see [computeAccountsPresentation]. */
+internal data class AccountsPresentation(
+    val visibleRows: List<AccountRow>,
+    val fiatInBase: Double,
+    val hasUnconvertedFiat: Boolean,
+)
+
+/**
+ * A manually-added account of type [AccountType.CRYPTO_SPOT] (e.g. a
+ * "Binance" account entered by hand, distinct from the Binance-API-synced
+ * holdings in [computeCryptoPresentation]) is also "crypto" as far as the
+ * hide/exclude Settings toggles are concerned. [hideCryptoBalance] drops it
+ * from the Dashboard's Accounts list; [excludeCryptoFromTotal] drops its
+ * balance from the net-worth total — independently, same as for synced
+ * crypto. Scoped to the Dashboard only: the Accounts tab is the
+ * manage-everything screen and stays unfiltered (same precedent as
+ * hideZeroBalances never touching it either).
+ */
+internal fun computeAccountsPresentation(
+    rows: List<AccountRow>,
+    hideCryptoBalance: Boolean,
+    excludeCryptoFromTotal: Boolean,
+): AccountsPresentation {
+    fun isCrypto(row: AccountRow) = row.account.type == AccountType.CRYPTO_SPOT
+    val visibleRows = if (hideCryptoBalance) rows.filterNot(::isCrypto) else rows
+    val countedRows = if (excludeCryptoFromTotal) rows.filterNot(::isCrypto) else rows
+    return AccountsPresentation(
+        visibleRows = visibleRows,
+        fiatInBase = countedRows.mapNotNull { it.balanceInBase }.sum(),
+        hasUnconvertedFiat = countedRows.any { it.balanceInBase == null },
+    )
 }
 
 /** Everything the Dashboard needs to show/fold in crypto — see [computeCryptoPresentation]. */
