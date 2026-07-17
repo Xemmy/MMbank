@@ -85,6 +85,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
+    var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
+        private set
+    var excludeCryptoFromTotal by mutableStateOf(container.preferences.excludeCryptoFromTotal)
+        private set
     var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
         private set
     var appLockTimeoutMinutes by mutableStateOf(container.preferences.appLockTimeoutMinutes)
@@ -218,6 +222,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateHideZeroBalances(hide: Boolean) {
         container.preferences.hideZeroBalances = hide
         hideZeroBalances = hide
+    }
+
+    fun updateHideCryptoBalance(hide: Boolean) {
+        container.preferences.hideCryptoBalance = hide
+        hideCryptoBalance = hide
+    }
+
+    fun updateExcludeCryptoFromTotal(exclude: Boolean) {
+        container.preferences.excludeCryptoFromTotal = exclude
+        excludeCryptoFromTotal = exclude
     }
 
     /** Call only after the enabling auth prompt has succeeded (the UI enforces that). */
@@ -755,6 +769,45 @@ fun PreferencesSettingsScreen(
             Switch(
                 checked = viewModel.hideZeroBalances,
                 onCheckedChange = viewModel::updateHideZeroBalances,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide crypto balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Removes the Crypto (Binance) section from the Dashboard entirely.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideCryptoBalance,
+                onCheckedChange = viewModel::updateHideCryptoBalance,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Exclude crypto from total balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Net worth on the Dashboard and Insights won't count crypto's value. " +
+                        "Independent of the toggle above — crypto can stay visible while excluded, or vice versa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.excludeCryptoFromTotal,
+                onCheckedChange = viewModel::updateExcludeCryptoFromTotal,
             )
         }
 

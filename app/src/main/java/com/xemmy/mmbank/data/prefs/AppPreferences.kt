@@ -27,6 +27,20 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_HIDE_ZERO_BALANCES, true)
         set(value) = prefs.edit().putBoolean(KEY_HIDE_ZERO_BALANCES, value).apply()
 
+    /** Hides the whole Crypto (Binance) section from the Dashboard. */
+    var hideCryptoBalance: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_CRYPTO_BALANCE, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIDE_CRYPTO_BALANCE, value).apply()
+
+    /**
+     * Leaves crypto's dollar value out of the net-worth total, independent of
+     * [hideCryptoBalance] — the section can stay visible while its value is
+     * excluded from totals, or vice versa.
+     */
+    var excludeCryptoFromTotal: Boolean
+        get() = prefs.getBoolean(KEY_EXCLUDE_CRYPTO_FROM_TOTAL, false)
+        set(value) = prefs.edit().putBoolean(KEY_EXCLUDE_CRYPTO_FROM_TOTAL, value).apply()
+
     /** Person newly captured transactions are assigned to; null = unassigned. */
     var defaultPerson: String?
         get() = prefs.getString(KEY_DEFAULT_PERSON, null)?.takeIf { it.isNotBlank() }
@@ -112,6 +126,8 @@ class AppPreferences(context: Context) {
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"
         const val KEY_HIDE_ZERO_BALANCES = "hide_zero_balances"
+        const val KEY_HIDE_CRYPTO_BALANCE = "hide_crypto_balance"
+        const val KEY_EXCLUDE_CRYPTO_FROM_TOTAL = "exclude_crypto_from_total"
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"

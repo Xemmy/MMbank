@@ -91,6 +91,7 @@ fun DashboardScreen(
                     netWorth = state.netWorthInBase,
                     currency = state.baseCurrency,
                     approximate = state.hasUnconvertedAmounts,
+                    cryptoExcluded = state.cryptoExcludedFromTotal,
                     refreshing = state.refreshing,
                     hidden = hidden,
                     onToggleHide = viewModel::toggleHideBalances,
@@ -161,6 +162,7 @@ private fun NetWorthCard(
     netWorth: Double,
     currency: String,
     approximate: Boolean,
+    cryptoExcluded: Boolean,
     refreshing: Boolean,
     hidden: Boolean,
     onToggleHide: () -> Unit,
@@ -182,6 +184,13 @@ private fun NetWorthCard(
                 if (approximate && !hidden) {
                     Text(
                         "Some balances lack an exchange rate — refresh rates in Settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (cryptoExcluded && !hidden) {
+                    Text(
+                        "Crypto excluded from total — change in Settings.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

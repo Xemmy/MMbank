@@ -34,5 +34,11 @@ alone.**
   Any field added to one must be added to all three, with a mapper
   round-trip unit test.
 - Every new piece of logic gets a pure-JVM unit test in the same commit.
-- Work one phase at a time per MMbank-PHASED-UPGRADE-PLAN.md. Do not touch
-  files outside the active phase's "Files touched" list.
+- MMbank-PHASED-UPGRADE-PLAN.md (Phases 0-6) is complete — see
+  MMbank-HANDOVER.md for that state. Further work proceeds directly per user
+  request, not phase-gated; the conventions on this page still apply to it.
+- Settings toggles come in two shapes, pick deliberately: a plain
+  AppPreferences boolean re-read inside the one ViewModel's combine (e.g.
+  hideZeroBalances) when only that ViewModel needs it; a reactive StateFlow
+  on AppContainer (e.g. hideBalances) when multiple independent
+  ViewModels/screens must reflect the change live.
