@@ -490,6 +490,44 @@ class TransactionParserTest {
         assertEquals("Tabby", r.merchant)
     }
 
+    // Regression: real UAE card SMS "Trx. of AED68.00 on your card ending *876
+    // at MCDONALDS-54176, UAE is Approved. Avl. card bal is 17296.72. Trx Date:
+    // 17/07/26 13:35" carried no spend keyword, no signature and an unregistered
+    // card ending, so it was silently dropped. The "Trx. of … is Approved" rule
+    // now captures it: amount from right after "Trx. of" (not the trailing card
+    // balance), plus the merchant and the "*876" ending.
+    @Test
+    fun `captures keyword-less Trx of Approved card spend`() {
+        val r = parser.parse(
+            sms(
+                "Trx. of AED68.00 on your card ending *876 at MCDONALDS-54176, " +
+                    "UAE is Approved. Avl. card bal is 17296.72. Trx Date: 17/07/26 13:35"
+            )
+        )
+        assertNotNull(r)
+        assertEquals(0, BigDecimal("68.00").compareTo(r!!.amount))
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("MCDONALDS-54176", r.merchant)
+        assertEquals("876", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `captures Trx of Approved fuel spend with multi-word merchant`() {
+        val r = parser.parse(
+            sms(
+                "Trx. of AED275.18 on your card ending *876 at ADNOC SEIH SIDARA 723, " +
+                    "UAE is Approved. Avl. card bal is 17364.72. Trx Date: 17/07/26 13:23"
+            )
+        )
+        assertNotNull(r)
+        assertEquals(0, BigDecimal("275.18").compareTo(r!!.amount))
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("ADNOC SEIH SIDARA 723", r.merchant)
+        assertEquals("876", r.accountNumberSuffix)
+    }
+
     @Test
     fun `rule compiler rejects invalid patterns`() {
         assertNull(RuleCompiler.compile(ParsingRule(name = "bad", pattern = "([", direction = TransactionDirection.DEBIT)))

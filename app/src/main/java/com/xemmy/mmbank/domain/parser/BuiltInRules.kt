@@ -97,6 +97,24 @@ object BuiltInRules {
         rule("builtin.en.credit.cur-amt", "$KW_CREDIT_EN.{0,30}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
         rule("builtin.en.credit.amt-cur", "$KW_CREDIT_EN.{0,30}?$AMT\\s?$CUR$MERCHANT_EN$ACCTAIL", TransactionDirection.CREDIT, 10),
 
+        // --- UAE card spend confirmations, no verb keyword (priority 10) ---
+        // Issuers post "Trx. of AED68.00 on your card ending *876 at
+        // MCDONALDS-54176, UAE is Approved. Avl. card bal is 17296.72. Trx
+        // Date: 17/07/26 13:35". There is no spend keyword (spent/paid/debited)
+        // and the card ending isn't registered for card-ending routing, so the
+        // message matched nothing and was dropped. The "Trx. of <amount> … is
+        // Approved" frame is the reliable marker; anchoring the amount right
+        // after "Trx. of" keeps the trailing "Avl. card bal" figure from being
+        // captured, and ACCTAIL/MERCHANT sit before the confirmation so both
+        // the "*876" ending and the "at <merchant>" clause are recovered.
+        // Only Approved transactions are recorded — a declined one never posted.
+        rule(
+            "builtin.en.debit.card-trx-approved",
+            "\\bTrx\\.?\\s+of\\s+$CUR\\s?$AMT\\b$ACCTAIL$MERCHANT_EN.{0,60}?\\bApproved\\b",
+            TransactionDirection.DEBIT,
+            10,
+        ),
+
         // --- Tabby purchase confirmations (priority 10) ---
         // "Transaction of AED 20.00 At Tips and Toes was successful. Your
         // available Tabby Card limit is AED 6676.12." / "...At Sephora ME.
