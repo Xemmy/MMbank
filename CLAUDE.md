@@ -45,10 +45,16 @@ alone.**
 
 ## Active workstream: Autonomous local-AI parsing (Gemma via LiteRT-LM)
 
-**Status: target spec — none of the AI stack below exists in the code yet.
-Everything in this section is to be built; do not assume any of it exists.**
-Only pick this work up when the user asks for it; it does not override the
-conventions above.
+**Status: pipeline implemented, engine binding pending.** The extraction
+core (domain/ai/ + data/ai/LocalAiManager.kt), the expedited
+AiParsingWorker, the AiFallbackPipeline and the self-healing
+RegexSynthesizer are in the code with unit tests, and both capture channels
+hand NoMatch messages to the gate. The LiteRT-LM runtime itself is NOT
+bundled: data/ai/LocalAiEngine.kt's LiteRtLmEngineFactory returns null, so
+the whole feature stands down until (a) the engine dependency is added
+there and (b) a model bundle is sideloaded to files/models/*.litertlm.
+AI-evaluated backup retention is not started. Conventions above still
+override this section.
 
 ### Goal
 A fully autonomous, on-device "self-healing" fallback for transaction parsing.
