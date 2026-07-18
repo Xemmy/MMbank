@@ -7,6 +7,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.xemmy.mmbank.data.ai.AiParsingWorker
+import com.xemmy.mmbank.data.ai.LocalAiConfig
 import com.xemmy.mmbank.data.ai.LocalAiManager
 import com.xemmy.mmbank.data.backup.BackupManager
 import com.xemmy.mmbank.data.local.AppDatabase
@@ -51,6 +52,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -268,8 +270,34 @@ class AppContainer(context: Context) {
         CompiledRuleCache(parsingRuleRepository, applicationScope)
     }
 
-    /** Gate 2's local, on-device Gemma 4 E2B / LiteRT-LM gateway. */
-    val localAiManager: LocalAiManager by lazy { LocalAiManager(appContext) }
+    /**
+     * Dedicated client for the Gate-2 local AI server. Short timeouts (the
+     * server is on-device but generation can still take a few seconds) and no
+     * Binance signing interceptor. Cleartext to loopback is permitted by the
+     * network-security-config; LoopbackGuard blocks any non-loopback host.
+     */
+    private val localAiClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(35, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Gate 2's gateway to the local (loopback-only) OpenAI-compatible AI server. */
+    val localAiManager: LocalAiManager by lazy {
+        LocalAiManager(
+            context = appContext,
+            readConfig = {
+                LocalAiConfig(
+                    enabled = preferences.aiParsingEnabled,
+                    endpointUrl = preferences.aiEndpointUrl,
+                    model = preferences.aiModelName,
+                )
+            },
+            httpClientFactory = { localAiClient },
+        )
+    }
 
     val ingestCapturedMessage: IngestCapturedMessageUseCase by lazy {
         IngestCapturedMessageUseCase(

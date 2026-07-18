@@ -32,7 +32,7 @@ class AiParsingWorker(
 
         val container = (applicationContext as MMBankApp).container
         val manager = container.localAiManager
-        if (!manager.isDeviceCapable()) return Result.success()
+        if (!manager.isConfigured()) return Result.success()
 
         val engine = manager.engine()
         if (!engine.isReady) return Result.success()

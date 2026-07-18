@@ -108,6 +108,29 @@ class AppPreferences(context: Context) {
         if (current.none { it.equals(clean, ignoreCase = true) }) persons = current + clean
     }
 
+    /**
+     * Gate-2 local AI parsing: when on, messages the regex/signature parser
+     * misses are forwarded to a local (loopback-only) OpenAI-compatible server
+     * (e.g. the Off Grid app). Off by default; opt-in in Settings.
+     */
+    var aiParsingEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AI_PARSING_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_AI_PARSING_ENABLED, value).apply()
+
+    /**
+     * Full /v1/chat/completions URL of the local AI server. MUST be a loopback
+     * address ([com.xemmy.mmbank.domain.ai.LoopbackGuard] rejects anything
+     * else); the default targets the common on-device server port.
+     */
+    var aiEndpointUrl: String
+        get() = prefs.getString(KEY_AI_ENDPOINT_URL, DEFAULT_AI_ENDPOINT) ?: DEFAULT_AI_ENDPOINT
+        set(value) = prefs.edit().putString(KEY_AI_ENDPOINT_URL, value.trim()).apply()
+
+    /** Model name sent in the chat request. Blank = let the server use its loaded model. */
+    var aiModelName: String
+        get() = prefs.getString(KEY_AI_MODEL_NAME, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_AI_MODEL_NAME, value.trim()).apply()
+
     /** Savings goal target, in the default currency. <= 0 means no goal set. */
     var goalTargetAmount: Double
         get() = prefs.getFloat(KEY_GOAL_TARGET, 0f).toDouble()
@@ -122,6 +145,10 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putFloat(KEY_GOAL_MONTHLY, value.toFloat()).apply()
 
     private companion object {
+        const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
+        const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
+        const val KEY_AI_ENDPOINT_URL = "ai_endpoint_url"
+        const val KEY_AI_MODEL_NAME = "ai_model_name"
         const val KEY_DEFAULT_CURRENCY = "default_currency"
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"
