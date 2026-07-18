@@ -204,13 +204,19 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     val uiState: StateFlow<DashboardUiState> =
-        combine(ledgerState, senderLabels, statsFlow, uiMeta) { state, labels, stats, meta ->
+        combine(
+            ledgerState,
+            senderLabels,
+            statsFlow,
+            uiMeta,
+            container.hideBalances,
+        ) { state, labels, stats, meta, hidden ->
             state.copy(
                 senderLabels = labels,
                 stats = stats,
                 goal = meta.prefs.goal,
                 showAllLedgerTransactions = meta.showAllLedger,
-                hideBalances = meta.prefs.hideBalances,
+                hideBalances = hidden,
                 refreshing = meta.refreshing,
                 message = meta.message ?: state.message,
             )
@@ -222,8 +228,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun toggleHideBalances() {
-        container.preferences.hideBalances = !container.preferences.hideBalances
-        prefsState.value = readPrefs()
+        // Route through the container's shared flow so every screen updates live.
+        container.toggleHideBalances()
     }
 
     fun saveGoal(targetAmount: Double, monthlySaving: Double) {
@@ -262,6 +268,14 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         message.value = null
     }
 }
+
+/**
+ * This-month net flow: income minus spend. Extracted as a pure top-level
+ * function so the Net stat tile's math is unit-testable off the main thread
+ * (the tile itself only formats the result). A negative result keeps its sign
+ * and digits through [com.xemmy.mmbank.ui.util.asMoney].
+ */
+internal fun netFlow(income: Double, spend: Double): Double = income - spend
 
 /**
  * Six months of income/spend plus this month's per-person and per-category

@@ -2,6 +2,10 @@ package com.xemmy.mmbank.ui.util
 
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.TextStyle
 import java.util.Date
 import java.util.Locale
 
@@ -38,6 +42,18 @@ fun splitMoneyDisplay(display: String): MoneyParts {
     }
 }
 
+/**
+ * Splits a numeral like "+1,234.56" or "≈ 129,289.66" into its leading
+ * sign/approximation prefix and the digits, so a drawn currency symbol can
+ * slot between them ("-Đ85.00") the way banking apps place it. Strings that
+ * start with a digit (or contain none at all) come back with an empty prefix.
+ */
+fun splitLeadingSign(numeral: String): Pair<String, String> {
+    val firstDigit = numeral.indexOfFirst { it.isDigit() }
+    return if (firstDigit <= 0) "" to numeral
+    else numeral.substring(0, firstDigit) to numeral.substring(firstDigit)
+}
+
 /** Crypto quantities keep full precision instead of 2-decimal money formatting. */
 fun BigDecimal.asQuantity(): String = stripTrailingZeros().toPlainString()
 
@@ -48,6 +64,24 @@ fun Long.asDateTime(): String = dateTimeFormat.format(Date(this))
 private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.US)
 
 fun Long.asDate(): String = dateFormat.format(Date(this))
+
+/** Calendar day a timestamp falls on, in [zone] — the Activity feed's day-pill grouping key. */
+fun Long.toLocalDate(zone: ZoneId = ZoneId.systemDefault()): LocalDate =
+    Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
+
+/**
+ * Floating day-pill label for the Activity feed (Phase 5 spec 5.3), e.g.
+ * "TODAY · 10 JUL" or "3 JUL" for older days.
+ */
+fun dayPillLabel(day: LocalDate, today: LocalDate = LocalDate.now()): String {
+    val monthAbbrev = day.month.getDisplayName(TextStyle.SHORT, Locale.US).uppercase(Locale.US)
+    val datePart = "${day.dayOfMonth} $monthAbbrev"
+    return when (day) {
+        today -> "TODAY · $datePart"
+        today.minusDays(1) -> "YESTERDAY · $datePart"
+        else -> datePart
+    }
+}
 
 /**
  * Converts amounts into the app's base currency using Forex rates fetched with

@@ -29,6 +29,9 @@ import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -50,6 +53,20 @@ class AppContainer(context: Context) {
 
     val preferences by lazy { AppPreferences(appContext) }
     val credentialStore by lazy { SecureCredentialStore(appContext) }
+
+    // Single reactive source of truth for the hide-balances toggle. The eye
+    // toggle lives on one screen but every screen (Home, Dashboard/Insights,
+    // Accounts) collects this flow, so flipping it propagates live everywhere
+    // instead of each screen snapshotting the pref independently.
+    private val _hideBalances by lazy { MutableStateFlow(preferences.hideBalances) }
+    val hideBalances: StateFlow<Boolean> by lazy { _hideBalances.asStateFlow() }
+
+    fun setHideBalances(hidden: Boolean) {
+        preferences.hideBalances = hidden   // persist across restarts
+        _hideBalances.value = hidden        // notify all collectors live
+    }
+
+    fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
 
     private val database by lazy { AppDatabase.build(appContext) }
 

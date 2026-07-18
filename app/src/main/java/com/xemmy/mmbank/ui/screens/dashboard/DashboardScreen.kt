@@ -48,6 +48,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
+import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
@@ -114,10 +115,10 @@ fun DashboardScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            Text(
-                                row.balance.asMoneyOrMask(row.account.currencyCode, hidden),
-                                style = MaterialTheme.typography.titleMedium,
+                            AmountText(
+                                display = row.balance.asMoneyOrMask(row.account.currencyCode, hidden),
                                 color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.titleMedium,
                             )
                         }
                     }
@@ -173,10 +174,10 @@ private fun NetWorthCard(
             Column(Modifier.weight(1f)) {
                 Text("Net worth", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    if (hidden) AMOUNT_MASK else (if (approximate) "≈ " else "") + netWorth.asMoney(currency),
-                    style = MaterialTheme.typography.headlineMedium,
+                AmountText(
+                    display = if (hidden) AMOUNT_MASK else (if (approximate) "≈ " else "") + netWorth.asMoney(currency),
                     color = if (!hidden && netWorth < 0) LedgerColors.debit else MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.headlineMedium,
                 )
                 if (approximate && !hidden) {
                     Text(
@@ -339,10 +340,10 @@ fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Bool
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            if (hidden) AMOUNT_MASK else (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-            style = MaterialTheme.typography.bodyLarge,
+        AmountText(
+            display = if (hidden) AMOUNT_MASK else (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
             color = if (isCredit) LedgerColors.credit else LedgerColors.debit,
+            style = MaterialTheme.typography.bodyLarge,
         )
         if (tx.excludeFromStats) {
             Icon(

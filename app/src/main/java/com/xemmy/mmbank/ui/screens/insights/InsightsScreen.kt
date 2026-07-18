@@ -22,8 +22,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,11 +47,14 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.screens.dashboard.netFlow
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.ObsidianCard
+import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.glowBackdrop
+import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.LocalDate
@@ -73,26 +76,52 @@ fun InsightsScreen(
     val hasData = state.stats.monthly.any { it.income > 0.0 || it.spend > 0.0 }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().obsidianCanvas(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Low-profile switch between "clean" analytics (excluded rows filtered
         // out, the default) and the raw ledger with every transaction counted.
+        // The (i) reveals what "Raw ledger" means, since it isn't self-evident.
         item(key = "ledger_toggle") {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                FilterChip(
-                    selected = state.showAllLedgerTransactions,
-                    onClick = viewModel::toggleShowAllLedgerTransactions,
-                    label = { Text("Raw ledger") },
-                    leadingIcon = {
+            var showInfo by remember { mutableStateOf(false) }
+            Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { showInfo = !showInfo }, modifier = Modifier.size(32.dp)) {
                         Icon(
-                            Icons.Filled.VisibilityOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
+                            Icons.Outlined.Info,
+                            contentDescription = "What is Raw ledger?",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
                         )
-                    },
-                )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    FilterChip(
+                        selected = state.showAllLedgerTransactions,
+                        onClick = viewModel::toggleShowAllLedgerTransactions,
+                        label = { Text("Raw ledger") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                    )
+                }
+                if (showInfo) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Includes all transactions, like balance adjustments and cashback, " +
+                            "which are normally hidden from spending totals.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
@@ -128,22 +157,22 @@ private fun MonthTiles(state: DashboardUiState) {
     val month = state.stats.monthly.lastOrNull()
     val income = month?.income ?: 0.0
     val spend = month?.spend ?: 0.0
-    val net = income - spend
+    val net = netFlow(income, spend)
     val hidden = state.hideBalances
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         StatTile(
-            "Income", income.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.credit,
+            "Income", income.asMoneyOrMask(state.baseCurrency, hidden), ObsidianTokens.credit,
             Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = true),
         )
         StatTile(
-            "Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), LedgerColors.debit,
+            "Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), ObsidianTokens.debit,
             Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = false),
         )
         StatTile(
             "Net",
             net.asMoneyOrMask(state.baseCurrency, hidden),
-            if (net < 0) LedgerColors.debit else MaterialTheme.colorScheme.primary,
+            if (net < 0) ObsidianTokens.debit else MaterialTheme.colorScheme.primary,
             Modifier.weight(1f),
         )
     }
@@ -157,7 +186,7 @@ private fun StatTile(
     modifier: Modifier = Modifier,
     glow: GlowTone? = null,
 ) {
-    Card(modifier) {
+    ObsidianCard(modifier) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -182,7 +211,7 @@ private fun StatTile(
 /** Card row that opens the full cashback Rewards screen. */
 @Composable
 private fun RewardsRow(onOpenRewards: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    ObsidianCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -221,7 +250,7 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
     val hidden = state.hideBalances
     val currency = state.baseCurrency
 
-    Card(Modifier.fillMaxWidth()) {
+    ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -359,7 +388,7 @@ private fun CashFlowCard(state: DashboardUiState) {
     val hidden = state.hideBalances
     val maxValue = monthly.maxOf { maxOf(it.income, it.spend) }.takeIf { it > 0.0 } ?: 1.0
 
-    Card(Modifier.fillMaxWidth()) {
+    ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text("Cash flow — last 6 months", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(12.dp))
@@ -375,8 +404,8 @@ private fun CashFlowCard(state: DashboardUiState) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            ChartBar(fraction = (month.income / maxValue).toFloat(), color = LedgerColors.credit)
-                            ChartBar(fraction = (month.spend / maxValue).toFloat(), color = LedgerColors.debit)
+                            ChartBar(fraction = (month.income / maxValue).toFloat(), color = ObsidianTokens.credit)
+                            ChartBar(fraction = (month.spend / maxValue).toFloat(), color = ObsidianTokens.debit)
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
@@ -390,13 +419,13 @@ private fun CashFlowCard(state: DashboardUiState) {
             Spacer(Modifier.height(10.dp))
             val current = monthly.last()
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LegendDot(LedgerColors.credit)
+                LegendDot(ObsidianTokens.credit)
                 Text(
                     "In " + current.income.asMoneyOrMask(state.baseCurrency, hidden),
                     style = MaterialTheme.typography.labelSmall,
                 )
                 Spacer(Modifier.width(8.dp))
-                LegendDot(LedgerColors.debit)
+                LegendDot(ObsidianTokens.debit)
                 Text(
                     "Out " + current.spend.asMoneyOrMask(state.baseCurrency, hidden),
                     style = MaterialTheme.typography.labelSmall,
@@ -443,7 +472,7 @@ private fun CategorySpendCard(state: DashboardUiState) {
     val maxAmount = spends.maxOf { it.amount }.takeIf { it > 0.0 } ?: 1.0
     val total = spends.sumOf { it.amount }
 
-    Card(Modifier.fillMaxWidth()) {
+    ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("This month by category", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -499,7 +528,7 @@ private fun PersonSpendCard(state: DashboardUiState) {
         MaterialTheme.colorScheme.error,
     )
 
-    Card(Modifier.fillMaxWidth()) {
+    ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("This month by person", style = MaterialTheme.typography.titleSmall)
             spends.forEachIndexed { index, entry ->

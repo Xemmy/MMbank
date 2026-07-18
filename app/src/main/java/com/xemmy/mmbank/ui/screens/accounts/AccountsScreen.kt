@@ -1,8 +1,11 @@
 package com.xemmy.mmbank.ui.screens.accounts
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -26,7 +30,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -50,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -69,14 +73,20 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
-import com.xemmy.mmbank.ui.theme.GlowPalette
+import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.MetaLabel
+import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.RowAvatar
+import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
-import com.xemmy.mmbank.ui.theme.glowBackdrop
+import com.xemmy.mmbank.ui.theme.obsidianCanvas
+import com.xemmy.mmbank.ui.theme.rowEdgeGlow
+import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -111,6 +121,9 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         lastError.value = "Couldn't load accounts: ${e.message}"
         emptyList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Shared, live hide-balances flag — see [AppContainer.hideBalances]. */
+    val hideBalances: StateFlow<Boolean> = container.hideBalances
 
     fun save(account: Account) {
         viewModelScope.launch {
@@ -197,6 +210,7 @@ fun AccountsScreen(
 ) {
     val rows by viewModel.uiState.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
+    val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
     // The account row whose balance is being corrected; null = dialog closed.
@@ -212,8 +226,11 @@ fun AccountsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .obsidianCanvas()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
+            // Bottom clearance so the "+" FAB never floats over the last card's
+            // adjust/delete actions (56dp FAB + 16dp margin + 16dp).
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             lastError?.let { error ->
@@ -240,6 +257,7 @@ fun AccountsScreen(
             items(rows, key = { it.account.id }) { row ->
                 AccountCard(
                     row = row,
+                    hidden = hidden,
                     onEdit = { editing = row.account },
                     onAdjust = { adjusting = row },
                     onDelete = { viewModel.delete(row.account) },
@@ -274,33 +292,35 @@ fun AccountsScreen(
 @Composable
 private fun AccountCard(
     row: AccountWithBalance,
+    hidden: Boolean,
     onEdit: () -> Unit,
     onAdjust: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val a = row.account
     var confirmingDelete by remember { mutableStateOf(false) }
-    Card(
+    // Edge glow (spec 5.3): the account's brand origin, or a neutral slate
+    // for accounts with none registered.
+    val originTone = GlowTones.forAccountOrigin(a.name, a.bankName) ?: GlowTone.SYSTEM_SLATE
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
         Modifier
             .fillMaxWidth()
             // Loan-section expansion and edits glide instead of snapping.
             .animateContentSize()
-            .clickable { onEdit() },
+            .clickable { onEdit() }
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, ObsidianTokens.hairline, shape)
+            .rowEdgeGlow(originTone),
     ) {
-        Column(
-            Modifier
-                // Faint brand glow when the account's origin has one (Binance/Tabby).
-                .glowBackdrop(
-                    GlowTones.forAccountOrigin(a.name, a.bankName),
-                    GlowPalette.ORIGIN_ALPHA,
-                    atTopEnd = false,
-                )
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(a.name, style = MaterialTheme.typography.titleMedium)
-                    Text(
+                RowAvatar(name = a.bankName ?: a.name, tone = originTone)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f, fill = false)) {
+                    Text(a.name, style = MaterialTheme.typography.bodyMedium, color = ObsidianTokens.textPrimary)
+                    MetaLabel(
                         buildString {
                             a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
                             append(a.type.name.replace('_', ' '))
@@ -311,36 +331,38 @@ private fun AccountCard(
                                 append(it.takeLast(4))
                             }
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Spacer(Modifier.weight(1f).widthIn(min = 12.dp).padding(horizontal = 6.dp).dottedLeader())
                 AmountText(
-                    display = row.balance.asMoney(a.currencyCode),
-                    color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleMedium,
+                    display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
+                    color = if (!hidden && row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
+                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
                 )
                 IconButton(onClick = onAdjust) {
-                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance")
+                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = ObsidianTokens.textMeta)
                 }
                 IconButton(onClick = { confirmingDelete = true }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete account")
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = ObsidianTokens.textMeta)
                 }
             }
 
             if (a.outstandingBalance != null || a.nextInstallmentAmount != null) {
                 Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     a.outstandingBalance?.let {
-                        LoanLine("Outstanding", it.asMoney(a.currencyCode))
+                        LoanLine("Outstanding", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode))
                     }
                     a.nextInstallmentAmount?.let {
                         val due = a.dueDayOfMonth?.let { d -> " · due day $d" }.orEmpty()
-                        LoanLine("Next installment", it.asMoney(a.currencyCode) + due)
+                        LoanLine("Next installment", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode) + due)
                     }
                     a.profitRatePa?.let { LoanLine("Profit rate", String.format(java.util.Locale.US, "%.2f%% p.a.", it)) }
                     a.maturityDateMillis?.let { LoanLine("Maturity", it.asDate()) }
                     a.earlySettlementFeeEstimate?.let {
-                        LoanLine("Est. early-settlement fee", "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)")
+                        LoanLine(
+                            "Est. early-settlement fee",
+                            if (hidden) AMOUNT_MASK else "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)",
+                        )
                     }
                     settlementRecommendation(a)?.let {
                         Text(
@@ -406,10 +428,16 @@ private fun AdjustBalanceDialog(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    label = { Text("Actual balance (${account.currencyCode})") },
+                    label = { MetaLabel("Actual balance (${account.currencyCode})") },
                     supportingText = { Text("Use a negative number for money owed.") },
                     singleLine = true,
                     isError = target == null,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = ObsidianTokens.surfaceGlass,
+                        focusedContainerColor = ObsidianTokens.surfaceGlass,
+                        unfocusedBorderColor = ObsidianTokens.hairline,
+                        focusedBorderColor = Color.White.copy(alpha = 0.28f),
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 when {
@@ -417,7 +445,7 @@ private fun AdjustBalanceDialog(
                     delta.signum() == 0 -> Text(
                         "Already matches — no adjustment needed.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ObsidianTokens.textMeta,
                     )
                     else -> {
                         val credit = delta.signum() > 0
@@ -425,7 +453,7 @@ private fun AdjustBalanceDialog(
                             (if (credit) "Adds a credit of +" else "Adds a debit of −") +
                                 delta.abs().asMoney(account.currencyCode) + ".",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (credit) LedgerColors.credit else LedgerColors.debit,
+                            color = if (credit) ObsidianTokens.credit else ObsidianTokens.debit,
                         )
                     }
                 }
@@ -444,16 +472,11 @@ private fun AdjustBalanceDialog(
 @Composable
 private fun LoanLine(label: String, value: String) {
     Row(Modifier.fillMaxWidth()) {
-        // Editorial meta label: tiny, letter-spaced uppercase.
-        Text(
-            label.uppercase(),
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.8.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        MetaLabel(label)
         Text(
             value,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = ObsidianTokens.textPrimary,
             modifier = Modifier.padding(start = 8.dp),
         )
     }
