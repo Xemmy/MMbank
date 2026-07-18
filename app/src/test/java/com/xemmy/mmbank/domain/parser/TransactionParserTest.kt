@@ -43,6 +43,43 @@ class TransactionParserTest {
     }
 
     @Test
+    fun `received a payment of parses as credit despite the ambiguous debit keyword`() {
+        // KW_DEBIT_EN contains bare "payment of" for genuine outgoing "Your
+        // payment of X to Y" messages, but incoming P2P/crypto notifications
+        // phrase the credit the same way. Regression test for the bug where
+        // this was silently recorded as a DEBIT.
+        val result = parser.parse(sms("Received a payment of 85 USD from Alice"))
+        assertNotNull(result)
+        assertEquals(BigDecimal("85"), result!!.amount)
+        assertEquals("USD", result.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, result.direction)
+        assertEquals("Alice", result.merchant)
+    }
+
+    @Test
+    fun `received a payment of crypto amount still parses as credit`() {
+        // The literal reported case: a Binance Pay-style "you received X USDT"
+        // notification. Amount and direction must be right; USDT itself isn't
+        // a recognized ISO currency code yet (a separate, pre-existing gap),
+        // so currencyCode falls back rather than staying "USDT".
+        val result = parser.parse(sms("Received a payment of 85 USDT from Alice"))
+        assertNotNull(result)
+        assertEquals(BigDecimal("85"), result!!.amount)
+        assertEquals(TransactionDirection.CREDIT, result.direction)
+    }
+
+    @Test
+    fun `outgoing payment-of message still parses as debit`() {
+        // The override above must not swallow genuine outgoing payments that
+        // happen to have no "received" nearby.
+        val result = parser.parse(sms("Your payment of AED 50.00 to John was successful"))
+        assertNotNull(result)
+        assertEquals(BigDecimal("50.00"), result!!.amount)
+        assertEquals("AED", result.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, result.direction)
+    }
+
+    @Test
     fun `parses arabic debit with arabic-indic digits and arabic currency`() {
         val result = parser.parse(sms("تم خصم مبلغ ٢٥٠٫٧٥ ر.س من بطاقتك في كارفور"))
         assertNotNull(result)
