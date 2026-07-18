@@ -35,6 +35,7 @@ import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.ai.AiParseResult
+import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -47,6 +48,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -298,13 +300,22 @@ class AppContainer(context: Context) {
     }
 
     /**
-     * Gate 2 self-healing hook: Phase C wires the actual regex-generation and
-     * reviewable pending-rule staging here. No-op placeholder until then --
-     * nothing is written to the ledger or the rules table from unreviewed AI
-     * output yet.
+     * Gate 2 self-healing hook: stages a *disabled* [ParsingRule] candidate
+     * generated from the AI's own extraction (see
+     * [AiSelfHealingRuleGenerator]) for one-tap human approval in the Rules
+     * screen. Nothing here ever writes a transaction or an enabled rule --
+     * unreviewed AI output can only ever produce a pending suggestion.
      */
     fun onAiTransactionParsed(rawMessage: String, result: AiParseResult) {
-        // Implemented in Phase C.
+        val candidate = AiSelfHealingRuleGenerator.generate(rawMessage, result) ?: return
+        applicationScope.launch {
+            runCatching {
+                val existing = parsingRuleRepository.observeAll().first()
+                if (existing.none { it.pattern == candidate.pattern }) {
+                    parsingRuleRepository.save(candidate)
+                }
+            }.onFailure { recordError("AppContainer.onAiTransactionParsed", it) }
+        }
     }
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */
