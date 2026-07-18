@@ -57,7 +57,9 @@ class BankNotificationListener : NotificationListenerService() {
                         Log.d(TAG, LogRedactor.redactSensitiveData("Captured tx #${result.transactionId} from ${sbn.packageName}"))
                     is IngestResult.Duplicate ->
                         Log.d(TAG, LogRedactor.redactSensitiveData("Deduped against tx #${result.existingTransactionId} (${sbn.packageName})"))
-                    IngestResult.NoMatch -> Unit
+                    // Gate 2: unmatched but money-looking messages get one
+                    // background AI pass (no-op until a model is sideloaded).
+                    IngestResult.NoMatch -> container.maybeScheduleAiParse(message)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for notification from ${sbn.packageName}"), t)

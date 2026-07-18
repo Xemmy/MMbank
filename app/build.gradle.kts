@@ -100,5 +100,9 @@ dependencies {
     // the one-time plaintext migration in DatabaseEncryptionMigrator).
     implementation(libs.sqlcipher.android)
 
+    // Expedited Gate 2 AI-parsing worker (data/ai/AiParsingWorker): inference
+    // must survive the capture services' short lifetimes.
+    implementation(libs.androidx.work.runtime.ktx)
+
     testImplementation(libs.junit)
 }

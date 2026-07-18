@@ -7,6 +7,7 @@ import android.provider.Telephony
 import android.util.Log
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +44,11 @@ class SmsReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         scope.launch {
             try {
-                container.ingestCapturedMessage(message)
+                if (container.ingestCapturedMessage(message) == IngestResult.NoMatch) {
+                    // Gate 2: unmatched but money-looking messages get one
+                    // background AI pass (no-op until a model is sideloaded).
+                    container.maybeScheduleAiParse(message)
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for SMS from $sender"), t)
             } finally {

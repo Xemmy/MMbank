@@ -2,6 +2,8 @@ package com.xemmy.mmbank.di
 
 import android.content.Context
 import androidx.room.withTransaction
+import com.xemmy.mmbank.data.ai.AiParsingWorker
+import com.xemmy.mmbank.data.ai.LocalAiManager
 import com.xemmy.mmbank.data.backup.BackupManager
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.DatabaseEncryptionMigrator
@@ -19,6 +21,8 @@ import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.ai.AiFallbackPipeline
+import com.xemmy.mmbank.domain.ai.AiParseGate
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
@@ -28,6 +32,7 @@ import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
@@ -268,6 +273,32 @@ class AppContainer(context: Context) {
 
     val bulkUpdateTransactions: BulkUpdateTransactionsUseCase by lazy {
         BulkUpdateTransactionsUseCase(transactionRepository)
+    }
+
+    val localAiManager: LocalAiManager by lazy { LocalAiManager(appContext, ::recordError) }
+
+    /** Gate 2 orchestration: model extraction -> dedup+insert -> self-heal the rule table. */
+    val aiFallbackPipeline: AiFallbackPipeline by lazy {
+        AiFallbackPipeline(
+            extract = { localAiManager.parseTransaction(it) },
+            record = { parsed, message -> transactionRepository.recordParsed(parsed, message) },
+            enabledRules = { parsingRuleRepository.getEnabled() },
+            saveRule = { parsingRuleRepository.save(it) },
+            fallbackCurrency = { preferences.defaultCurrency },
+        )
+    }
+
+    /**
+     * Gate 2 hand-off, called by both capture channels when Gate 1 yields
+     * NoMatch. Completely silent: unless the message plausibly carries money
+     * AND the on-device model is actually runnable, nothing is enqueued.
+     */
+    fun maybeScheduleAiParse(message: CapturedMessage) {
+        runCatching {
+            if (AiParseGate.shouldAttempt(message, localAiManager.isAvailable())) {
+                AiParsingWorker.enqueue(appContext, message)
+            }
+        }.onFailure { recordError("AppContainer.maybeScheduleAiParse", it) }
     }
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */
