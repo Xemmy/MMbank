@@ -21,10 +21,18 @@ import com.xemmy.mmbank.domain.repository.TransactionRepository
  * custom rules come precompiled from [CompiledRuleCache] instead of a Room
  * read + regex compile per message. Rule edits still apply immediately —
  * the cache tracks the parsing_rules table.
+ *
+ * Gate 1 / Gate 2: [onGate1Miss] fires only when a message plausibly looked
+ * like a transaction (had rules to try) but none of them matched -- not on
+ * the digit-free or social-app-filtered short-circuits, which are true
+ * negatives rather than parse failures. It never blocks or alters this
+ * function's own NoMatch result; the caller (AppContainer) uses it to
+ * enqueue the local-AI Gate 2 worker as a fire-and-forget side effect.
  */
 class IngestCapturedMessageUseCase(
     private val customRules: CompiledRuleCache,
     private val transactionRepository: TransactionRepository,
+    private val onGate1Miss: (CapturedMessage) -> Unit = {},
     private val fallbackCurrencyProvider: () -> String,
 ) {
 
@@ -54,7 +62,10 @@ class IngestCapturedMessageUseCase(
         if (rules.isEmpty()) return IngestResult.NoMatch
 
         val parser = TransactionParser(rules, fallbackCurrencyProvider())
-        val parsed = parser.parse(message) ?: return IngestResult.NoMatch
+        val parsed = parser.parse(message) ?: run {
+            onGate1Miss(message)
+            return IngestResult.NoMatch
+        }
 
         // "Transaction adjusted" messages (Tabby partial refunds / extra
         // charges) correct an already-recorded purchase rather than describe a

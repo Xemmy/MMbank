@@ -67,13 +67,18 @@ class IngestCapturedMessageUseCaseTest {
     private val recorder = RecordingTransactionRepository()
     private val ruleFlow = MutableStateFlow<List<ParsingRule>>(emptyList())
 
-    private fun useCase(): IngestCapturedMessageUseCase {
+    private fun useCase(onGate1Miss: (CapturedMessage) -> Unit = {}): IngestCapturedMessageUseCase {
         // Unconfined scope: the cache's stateIn collects the fake flow synchronously.
         val cache = CompiledRuleCache(
             FakeRuleRepository(ruleFlow),
             CoroutineScope(Dispatchers.Unconfined),
         )
-        return IngestCapturedMessageUseCase(cache, recorder) { "USD" }
+        return IngestCapturedMessageUseCase(
+            customRules = cache,
+            transactionRepository = recorder,
+            onGate1Miss = onGate1Miss,
+            fallbackCurrencyProvider = { "USD" },
+        )
     }
 
     private fun push(sender: String, body: String, title: String? = null) = CapturedMessage(
@@ -195,5 +200,36 @@ class IngestCapturedMessageUseCaseTest {
         )
         assertTrue(uc.invoke(push("com.adcb.bank", body)) is IngestResult.Inserted)
         assertEquals("EUR", recorder.lastParsed?.currencyCode)
+    }
+
+    @Test
+    fun `gate1 miss hook fires when rules were tried but none matched`() = runBlocking {
+        var missed: CapturedMessage? = null
+        val result = useCase(onGate1Miss = { missed = it }).invoke(
+            push("com.adcb.bank", "Something with a number 42 but no known shape")
+        )
+        assertEquals(IngestResult.NoMatch, result)
+        assertEquals("com.adcb.bank", missed?.sender)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire on the digit-free short-circuit`() = runBlocking {
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(push("com.adcb.bank", "Your statement is ready"))
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire on the social-app short-circuit`() = runBlocking {
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(push("org.telegram.messenger", bankStyleBody))
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire when gate1 matches`() = runBlocking {
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(push("com.adcb.bank", bankStyleBody))
+        assertFalse(fired)
     }
 }

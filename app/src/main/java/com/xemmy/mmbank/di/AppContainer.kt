@@ -2,6 +2,12 @@ package com.xemmy.mmbank.di
 
 import android.content.Context
 import androidx.room.withTransaction
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import com.xemmy.mmbank.data.ai.AiParsingWorker
+import com.xemmy.mmbank.data.ai.LocalAiManager
 import com.xemmy.mmbank.data.backup.BackupManager
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.DatabaseEncryptionMigrator
@@ -28,6 +34,8 @@ import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.ai.AiParseResult
+import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
@@ -258,16 +266,45 @@ class AppContainer(context: Context) {
         CompiledRuleCache(parsingRuleRepository, applicationScope)
     }
 
+    /** Gate 2's local, on-device Gemma 4 E2B / LiteRT-LM gateway. */
+    val localAiManager: LocalAiManager by lazy { LocalAiManager(appContext) }
+
     val ingestCapturedMessage: IngestCapturedMessageUseCase by lazy {
         IngestCapturedMessageUseCase(
             customRules = compiledRuleCache,
             transactionRepository = transactionRepository,
+            onGate1Miss = ::enqueueAiParsingWorker,
             fallbackCurrencyProvider = { preferences.defaultCurrency },
         )
     }
 
     val bulkUpdateTransactions: BulkUpdateTransactionsUseCase by lazy {
         BulkUpdateTransactionsUseCase(transactionRepository)
+    }
+
+    /**
+     * Fire-and-forget: hands a Gate-1 miss to the expedited [AiParsingWorker].
+     * Never awaited, never allowed to affect the ingest pipeline's own result.
+     */
+    private fun enqueueAiParsingWorker(message: CapturedMessage) {
+        val input = Data.Builder()
+            .putString(AiParsingWorker.KEY_RAW_MESSAGE, message.body)
+            .build()
+        val request = OneTimeWorkRequestBuilder<AiParsingWorker>()
+            .setInputData(input)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+        WorkManager.getInstance(appContext).enqueue(request)
+    }
+
+    /**
+     * Gate 2 self-healing hook: Phase C wires the actual regex-generation and
+     * reviewable pending-rule staging here. No-op placeholder until then --
+     * nothing is written to the ledger or the rules table from unreviewed AI
+     * output yet.
+     */
+    fun onAiTransactionParsed(rawMessage: String, result: AiParseResult) {
+        // Implemented in Phase C.
     }
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */

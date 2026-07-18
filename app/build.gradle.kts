@@ -100,5 +100,8 @@ dependencies {
     // the one-time plaintext migration in DatabaseEncryptionMigrator).
     implementation(libs.sqlcipher.android)
 
+    // Gate-2 local-AI parsing: expedited background worker for Gemma/LiteRT-LM
+    implementation(libs.androidx.work.runtime.ktx)
+
     testImplementation(libs.junit)
 }
