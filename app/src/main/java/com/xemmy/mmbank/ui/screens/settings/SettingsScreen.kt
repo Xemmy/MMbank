@@ -74,6 +74,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.data.ai.AiCallLogStore
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
@@ -1022,6 +1023,17 @@ fun AiSettingsScreen(
     val isLocal = viewModel.aiProviderMode == AiProviderMode.LOCAL
     val loopbackValid = LoopbackGuard.isLoopbackUrl(viewModel.aiEndpointUrl.trim())
     val endpointValid = if (isLocal) loopbackValid else viewModel.aiEndpointUrl.isNotBlank()
+
+    val context = LocalContext.current
+    var aiLogText by remember { mutableStateOf<String?>(null) }
+    var aiLogCount by remember { mutableStateOf(0) }
+    var aiLogRefreshKey by remember { mutableStateOf(0) }
+    LifecycleResumeEffect(aiLogRefreshKey) {
+        aiLogText = AiCallLogStore.readLog(context)
+        aiLogCount = AiCallLogStore.callCount(context)
+        onPauseOrDispose { }
+    }
+
     SettingsSubpage(title = "AI parsing", onBack = onBack) {
         Text(
             "When the built-in rules can't read a bank message, MMbank can ask an AI to extract the " +
@@ -1145,6 +1157,31 @@ fun AiSettingsScreen(
 
         viewModel.aiTestStatus?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text("Request log", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "$aiLogCount AI request${if (aiLogCount == 1) "" else "s"} made on this device so far.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val logText = aiLogText
+        if (logText.isNullOrBlank()) {
+            Text(
+                "No requests logged yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            DiagnosticsLogCard(
+                title = "Recent requests (newest first)",
+                text = logText,
+                onClear = {
+                    AiCallLogStore.clearLog(context)
+                    aiLogRefreshKey++
+                },
+            )
         }
     }
 }

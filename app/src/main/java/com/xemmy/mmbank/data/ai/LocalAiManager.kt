@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.ai.AiConfigValidator
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.LocalAiEngine
 import com.xemmy.mmbank.domain.ai.LocalAiEngineCache
+import com.xemmy.mmbank.domain.ai.LoggingLocalAiEngine
 import okhttp3.OkHttpClient
 
 /** Snapshot of the user-configurable Gate-2 AI settings (from AppPreferences / SecureCredentialStore). */
@@ -104,11 +105,14 @@ class LocalAiManager(
         return buildEngine(cfg)
     }
 
-    private fun buildEngine(cfg: LocalAiConfig): OpenAiCompatibleEngine = OpenAiCompatibleEngine(
-        chatCompletionsUrl = cfg.endpointUrl,
-        model = cfg.model,
-        client = httpClientFactory(),
-        apiKey = cfg.apiKey.takeIf { cfg.mode == AiProviderMode.ONLINE },
-        requireLoopback = cfg.mode == AiProviderMode.LOCAL,
-    )
+    private fun buildEngine(cfg: LocalAiConfig): LocalAiEngine {
+        val raw = OpenAiCompatibleEngine(
+            chatCompletionsUrl = cfg.endpointUrl,
+            model = cfg.model,
+            client = httpClientFactory(),
+            apiKey = cfg.apiKey.takeIf { cfg.mode == AiProviderMode.ONLINE },
+            requireLoopback = cfg.mode == AiProviderMode.LOCAL,
+        )
+        return LoggingLocalAiEngine(raw) { prompt, result -> AiCallLogStore.recordCall(appContext, prompt, result) }
+    }
 }
