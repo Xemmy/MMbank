@@ -271,28 +271,32 @@ class AppContainer(context: Context) {
     }
 
     /**
-     * Dedicated client for the Gate-2 local AI server. Short timeouts (the
-     * server is on-device but generation can still take a few seconds) and no
-     * Binance signing interceptor. Cleartext to loopback is permitted by the
-     * network-security-config; LoopbackGuard blocks any non-loopback host.
+     * Client for the Gate-2 AI server -- local (on-device) or online (cloud),
+     * per the user's selected mode. Timeouts are generous enough for a real
+     * internet round-trip (online mode) while staying fine for an on-device
+     * server (local mode). No Binance signing interceptor. Cleartext to
+     * loopback is permitted by the network-security-config; LoopbackGuard
+     * blocks any non-loopback host whenever local mode is selected.
      */
     private val localAiClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(3, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(35, TimeUnit.SECONDS)
+            .callTimeout(40, TimeUnit.SECONDS)
             .build()
     }
 
-    /** Gate 2's gateway to the local (loopback-only) OpenAI-compatible AI server. */
+    /** Gate 2's gateway to the configured AI server (local loopback, or an explicit online provider). */
     val localAiManager: LocalAiManager by lazy {
         LocalAiManager(
             context = appContext,
             readConfig = {
                 LocalAiConfig(
                     enabled = preferences.aiParsingEnabled,
+                    mode = preferences.aiProviderMode,
                     endpointUrl = preferences.aiEndpointUrl,
                     model = preferences.aiModelName,
+                    apiKey = credentialStore.aiApiKey,
                 )
             },
             httpClientFactory = { localAiClient },

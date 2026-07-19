@@ -41,6 +41,20 @@ class SecureCredentialStore(context: Context) {
     }
 
     /**
+     * API key for the Gate-2 online AI provider (sent as an Authorization
+     * header to a cloud endpoint the user explicitly configured). Encrypted
+     * at rest like the Binance keys above -- never stored in plain
+     * SharedPreferences, unlike the endpoint URL/model, which carry no secret.
+     */
+    var aiApiKey: String?
+        get() = prefs.getString(KEY_AI_API_KEY, null)
+        set(value) = prefs.edit().putString(KEY_AI_API_KEY, value?.trim()?.takeIf { it.isNotEmpty() }).apply()
+
+    fun clearAiApiKey() {
+        prefs.edit().remove(KEY_AI_API_KEY).apply()
+    }
+
+    /**
      * SQLCipher passphrase for the Room database: 32 CSPRNG bytes as hex,
      * generated exactly once per install and never rotated (rotating would
      * orphan the encrypted DB). Persisted with synchronous commit() — if the
@@ -63,5 +77,6 @@ class SecureCredentialStore(context: Context) {
         const val KEY_BINANCE_API = "binance_api_key"
         const val KEY_BINANCE_SECRET = "binance_secret_key"
         const val KEY_DB_PASSPHRASE = "db_passphrase"
+        const val KEY_AI_API_KEY = "ai_api_key"
     }
 }

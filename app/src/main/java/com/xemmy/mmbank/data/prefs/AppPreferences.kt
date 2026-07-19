@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.data.prefs
 
 import android.content.Context
+import com.xemmy.mmbank.domain.ai.AiProviderMode
 
 /** Non-sensitive app settings. */
 class AppPreferences(context: Context) {
@@ -131,6 +132,19 @@ class AppPreferences(context: Context) {
         get() = prefs.getString(KEY_AI_MODEL_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_AI_MODEL_NAME, value.trim()).apply()
 
+    /**
+     * LOCAL (default): loopback-only, enforced in code and by the network
+     * security config -- the original, hard privacy boundary. ONLINE is an
+     * explicit opt-in to a cloud OpenAI-compatible API; the API key itself is
+     * NOT stored here (see [com.xemmy.mmbank.data.prefs.SecureCredentialStore.aiApiKey]),
+     * only this non-secret mode flag.
+     */
+    var aiProviderMode: AiProviderMode
+        get() = runCatching {
+            AiProviderMode.valueOf(prefs.getString(KEY_AI_PROVIDER_MODE, null) ?: AiProviderMode.LOCAL.name)
+        }.getOrDefault(AiProviderMode.LOCAL)
+        set(value) = prefs.edit().putString(KEY_AI_PROVIDER_MODE, value.name).apply()
+
     /** Savings goal target, in the default currency. <= 0 means no goal set. */
     var goalTargetAmount: Double
         get() = prefs.getFloat(KEY_GOAL_TARGET, 0f).toDouble()
@@ -149,6 +163,7 @@ class AppPreferences(context: Context) {
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
         const val KEY_AI_ENDPOINT_URL = "ai_endpoint_url"
         const val KEY_AI_MODEL_NAME = "ai_model_name"
+        const val KEY_AI_PROVIDER_MODE = "ai_provider_mode"
         const val KEY_DEFAULT_CURRENCY = "default_currency"
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"

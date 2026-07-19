@@ -75,6 +75,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
@@ -98,11 +99,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
 
-    // --- Gate-2 local AI parsing (Off Grid / any loopback OpenAI-compatible server) ---
+    // --- Gate-2 AI parsing: local (loopback-only, e.g. Off Grid) or an explicit online provider ---
     var aiParsingEnabled by mutableStateOf(container.preferences.aiParsingEnabled)
+        private set
+    var aiProviderMode by mutableStateOf(container.preferences.aiProviderMode)
         private set
     var aiEndpointUrl by mutableStateOf(container.preferences.aiEndpointUrl)
     var aiModelName by mutableStateOf(container.preferences.aiModelName)
+    var aiApiKeyInput by mutableStateOf(container.credentialStore.aiApiKey.orEmpty())
     var aiTestStatus by mutableStateOf<String?>(null)
         private set
     var aiTesting by mutableStateOf(false)
@@ -274,14 +278,25 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         demoModeEnabled = container.preferences.demoModeEnabled
     }
 
-    // --- Local AI parsing settings ---
+    // --- AI parsing settings (local loopback, or an explicit online provider) ---
 
     fun updateAiParsingEnabled(enabled: Boolean) {
         container.preferences.aiParsingEnabled = enabled
         aiParsingEnabled = enabled
     }
 
-    /** Persists the endpoint + model fields (validated for loopback at call time by the engine). */
+    /**
+     * Switching modes clears any Test-connection status from the other mode
+     * (a stale "Connected" from Local shouldn't linger once Online is picked,
+     * or vice versa) but never touches the saved endpoint/model/key fields.
+     */
+    fun updateAiProviderMode(mode: AiProviderMode) {
+        container.preferences.aiProviderMode = mode
+        aiProviderMode = mode
+        aiTestStatus = null
+    }
+
+    /** Persists the endpoint + model fields (mode-appropriate validation happens at call time by the engine). */
     fun saveAiEndpoint() {
         container.preferences.aiEndpointUrl = aiEndpointUrl.trim()
         container.preferences.aiModelName = aiModelName.trim()
@@ -290,22 +305,37 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         aiTestStatus = "Saved"
     }
 
+    /** Persists the online-provider API key, encrypted (SecureCredentialStore), never in plain prefs. */
+    fun saveAiApiKey() {
+        container.credentialStore.aiApiKey = aiApiKeyInput.trim()
+        aiApiKeyInput = container.credentialStore.aiApiKey.orEmpty()
+        aiTestStatus = "Saved"
+    }
+
+    fun clearAiApiKey() {
+        container.credentialStore.clearAiApiKey()
+        aiApiKeyInput = ""
+    }
+
     /** Re-snapshots AI settings (separate VM instances per nav destination). */
     fun refreshAiState() {
         aiParsingEnabled = container.preferences.aiParsingEnabled
+        aiProviderMode = container.preferences.aiProviderMode
         aiEndpointUrl = container.preferences.aiEndpointUrl
         aiModelName = container.preferences.aiModelName
+        aiApiKeyInput = container.credentialStore.aiApiKey.orEmpty()
     }
 
-    /** Saves the current fields, then probes the local server over loopback and reports the result. */
+    /** Saves the current fields (+ key, if online), then probes the configured server and reports the result. */
     fun testAiConnection() {
         if (aiTesting) return
         saveAiEndpoint()
+        if (aiProviderMode == AiProviderMode.ONLINE) saveAiApiKey()
         viewModelScope.launch {
             aiTesting = true
             aiTestStatus = "Testing…"
             aiTestStatus = container.localAiManager.testConnection().fold(
-                onSuccess = { "Connected — local AI server is reachable" },
+                onSuccess = { "Connected — AI server is reachable" },
                 onFailure = { "Failed: ${it.message ?: "unreachable"}" },
             )
             aiTesting = false
@@ -977,7 +1007,7 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
 }
 
 // ---------------------------------------------------------------------------
-// Subpage: Local AI parsing (Gate 2 — loopback-only OpenAI-compatible server)
+// Subpage: AI parsing (Gate 2 — local loopback-only server, or an online provider)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -989,13 +1019,14 @@ fun AiSettingsScreen(
         viewModel.refreshAiState()
         onPauseOrDispose { }
     }
+    val isLocal = viewModel.aiProviderMode == AiProviderMode.LOCAL
     val loopbackValid = LoopbackGuard.isLoopbackUrl(viewModel.aiEndpointUrl.trim())
-    SettingsSubpage(title = "Local AI parsing", onBack = onBack) {
+    val endpointValid = if (isLocal) loopbackValid else viewModel.aiEndpointUrl.isNotBlank()
+    SettingsSubpage(title = "AI parsing", onBack = onBack) {
         Text(
-            "When the built-in rules can't read a bank message, MMbank can ask a local AI app " +
-                "(e.g. Off Grid) running on this phone to extract the transaction. Everything stays " +
-                "on-device — MMbank only ever calls a loopback address, never the internet. AI suggestions " +
-                "appear as disabled rules you approve under Parsing rules.",
+            "When the built-in rules can't read a bank message, MMbank can ask an AI to extract the " +
+                "transaction. AI suggestions never write to the ledger directly — they appear as disabled " +
+                "rules you approve under Parsing rules.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1006,7 +1037,7 @@ fun AiSettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Use local AI parsing", style = MaterialTheme.typography.bodyLarge)
+                Text("Use AI parsing", style = MaterialTheme.typography.bodyLarge)
                 Text(
                     "Off by default. Runs only on messages the built-in rules miss.",
                     style = MaterialTheme.typography.bodySmall,
@@ -1019,20 +1050,55 @@ fun AiSettingsScreen(
             )
         }
 
+        Text("Provider", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = isLocal,
+                onClick = { viewModel.updateAiProviderMode(AiProviderMode.LOCAL) },
+                label = { Text("On-device (local)") },
+            )
+            FilterChip(
+                selected = !isLocal,
+                onClick = { viewModel.updateAiProviderMode(AiProviderMode.ONLINE) },
+                label = { Text("Online (cloud API)") },
+            )
+        }
+
+        if (isLocal) {
+            Text(
+                "On-device only: MMbank calls a local AI app (e.g. Off Grid) running on this phone. " +
+                    "It only ever reaches a loopback address — never the internet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "⚠ Sends message text to a third party: the raw bank/payment notification is sent over " +
+                    "the internet to whatever endpoint you configure below. Only enable this if you trust " +
+                    "that provider with your financial data.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+
         OutlinedTextField(
             value = viewModel.aiEndpointUrl,
             onValueChange = { viewModel.aiEndpointUrl = it },
             label = { Text("Server endpoint") },
             supportingText = {
                 Text(
-                    if (loopbackValid) {
-                        "On-device only: 127.0.0.1 or localhost, e.g. http://127.0.0.1:11434/v1/chat/completions"
+                    if (isLocal) {
+                        if (loopbackValid) {
+                            "On-device only: 127.0.0.1 or localhost, e.g. http://127.0.0.1:11434/v1/chat/completions"
+                        } else {
+                            "Not a loopback address — only 127.0.0.1 / localhost is allowed for the on-device mode."
+                        }
                     } else {
-                        "Not a loopback address — only 127.0.0.1 / localhost is allowed."
+                        "OpenAI-compatible /v1/chat/completions URL, e.g. https://api.openai.com/v1/chat/completions"
                     },
                 )
             },
-            isError = !loopbackValid,
+            isError = !endpointValid,
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -1040,11 +1106,35 @@ fun AiSettingsScreen(
         OutlinedTextField(
             value = viewModel.aiModelName,
             onValueChange = { viewModel.aiModelName = it },
-            label = { Text("Model (optional)") },
-            supportingText = { Text("Leave blank to use the server's currently loaded model.") },
+            label = { Text(if (isLocal) "Model (optional)" else "Model") },
+            supportingText = {
+                Text(
+                    if (isLocal) {
+                        "Leave blank to use the server's currently loaded model."
+                    } else {
+                        "Required by most cloud providers, e.g. gpt-4o-mini."
+                    },
+                )
+            },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        if (!isLocal) {
+            OutlinedTextField(
+                value = viewModel.aiApiKeyInput,
+                onValueChange = { viewModel.aiApiKeyInput = it },
+                label = { Text("API key") },
+                supportingText = { Text("Stored encrypted on this device (Android Keystore), sent only to the endpoint above.") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = viewModel::saveAiApiKey) { Text("Save key") }
+                TextButton(onClick = viewModel::clearAiApiKey) { Text("Clear", color = MaterialTheme.colorScheme.error) }
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = viewModel::saveAiEndpoint) { Text("Save") }

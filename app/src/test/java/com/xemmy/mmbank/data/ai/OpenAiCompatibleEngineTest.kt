@@ -80,4 +80,49 @@ class OpenAiCompatibleEngineTest {
         assertFalse(engine.isReady)
         assertEquals(0, server.requestCount)
     }
+
+    @Test
+    fun `online mode allows a non-loopback endpoint`() = runBlocking {
+        // MockWebServer itself binds 127.0.0.1, so this only proves the guard is
+        // actually skipped (not merely that the URL happens to be loopback) --
+        // requireLoopback = false must let a real request through regardless.
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":[]}"""))
+        val engine = OpenAiCompatibleEngine(
+            chatCompletionsUrl = server.url("/v1/chat/completions").toString(),
+            model = "gpt-4o-mini",
+            client = client,
+            requireLoopback = false,
+        )
+        assertTrue(engine.initialize().isSuccess)
+        assertTrue(engine.isReady)
+    }
+
+    @Test
+    fun `an api key is sent as a bearer authorization header`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":[]}"""))
+        val engine = OpenAiCompatibleEngine(
+            chatCompletionsUrl = server.url("/v1/chat/completions").toString(),
+            model = "gpt-4o-mini",
+            client = client,
+            apiKey = "sk-test-123",
+            requireLoopback = false,
+        )
+        engine.initialize()
+        val recorded = server.takeRequest()
+        assertEquals("Bearer sk-test-123", recorded.getHeader("Authorization"))
+    }
+
+    @Test
+    fun `no authorization header is sent when the api key is blank`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":[]}"""))
+        val engine = OpenAiCompatibleEngine(
+            chatCompletionsUrl = server.url("/v1/chat/completions").toString(),
+            model = "gemma",
+            client = client,
+            apiKey = null,
+        )
+        engine.initialize()
+        val recorded = server.takeRequest()
+        assertEquals(null, recorded.getHeader("Authorization"))
+    }
 }
