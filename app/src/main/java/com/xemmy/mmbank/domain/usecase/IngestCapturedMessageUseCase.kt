@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.usecase
 
+import com.xemmy.mmbank.domain.ai.AiForwardGate
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -23,11 +24,15 @@ import com.xemmy.mmbank.domain.repository.TransactionRepository
  * the cache tracks the parsing_rules table.
  *
  * Gate 1 / Gate 2: [onGate1Miss] fires only when a message plausibly looked
- * like a transaction (had rules to try) but none of them matched -- not on
- * the digit-free or social-app-filtered short-circuits, which are true
- * negatives rather than parse failures. It never blocks or alters this
- * function's own NoMatch result; the caller (AppContainer) uses it to
- * enqueue the local-AI Gate 2 worker as a fire-and-forget side effect.
+ * like a transaction (had rules to try, none matched, AND
+ * [AiForwardGate] finds a currency-adjacent amount somewhere in it) -- not on
+ * the digit-free or social-app-filtered short-circuits (true negatives, not
+ * parse failures), and not on a digit-bearing but non-financial notification
+ * (e.g. "Download complete - 26.96 MB") that would otherwise reach Gate 2's
+ * AI engine -- local or, worse, an online provider -- for nothing. It never
+ * blocks or alters this function's own NoMatch result; the caller
+ * (AppContainer) uses it to enqueue the Gate 2 worker as a fire-and-forget
+ * side effect.
  */
 class IngestCapturedMessageUseCase(
     private val customRules: CompiledRuleCache,
@@ -63,7 +68,9 @@ class IngestCapturedMessageUseCase(
 
         val parser = TransactionParser(rules, fallbackCurrencyProvider())
         val parsed = parser.parse(message) ?: run {
-            onGate1Miss(message)
+            if (AiForwardGate.isPlausibleTransaction(message.title, message.body)) {
+                onGate1Miss(message)
+            }
             return IngestResult.NoMatch
         }
 

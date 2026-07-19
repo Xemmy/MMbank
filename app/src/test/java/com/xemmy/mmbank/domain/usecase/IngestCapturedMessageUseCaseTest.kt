@@ -203,13 +203,27 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
-    fun `gate1 miss hook fires when rules were tried but none matched`() = runBlocking {
+    fun `gate1 miss hook fires when rules were tried but none matched and an amount is plausible`() = runBlocking {
         var missed: CapturedMessage? = null
         val result = useCase(onGate1Miss = { missed = it }).invoke(
-            push("com.adcb.bank", "Something with a number 42 but no known shape")
+            push("com.adcb.bank", "AED 42.00 in an unusual new message format we don't recognize")
         )
         assertEquals(IngestResult.NoMatch, result)
         assertEquals("com.adcb.bank", missed?.sender)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire when no currency-adjacent amount is present`() = runBlocking {
+        // A bare digit with no financial shape (AiForwardGate) must never reach
+        // Gate 2 -- this is the "Download complete - 26.96 MB" case: it clears
+        // the digit gate and has no matching rule, but isn't plausibly a
+        // transaction, so it must not be forwarded to the AI engine (online or
+        // local).
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(
+            push("com.adcb.bank", "Something with a number 42 but no known shape")
+        )
+        assertFalse(fired)
     }
 
     @Test

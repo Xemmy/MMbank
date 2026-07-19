@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,12 +78,17 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.data.ai.AiCallLogStore
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.ai.AiProviderMode
+import com.xemmy.mmbank.domain.ai.AiResponseParser
+import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+
+/** Obviously-fake sample used by the "Send test message" button -- never persisted, only logged. */
+private const val TEST_AI_MESSAGE = "TEST MESSAGE — You spent AED 42.00 at Test Merchant. Your available balance is now AED 958.00."
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -111,6 +117,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var aiTestStatus by mutableStateOf<String?>(null)
         private set
     var aiTesting by mutableStateOf(false)
+        private set
+    var aiTestMessageStatus by mutableStateOf<String?>(null)
+        private set
+    var sendingTestAiMessage by mutableStateOf(false)
         private set
 
     var apiKeyInput by mutableStateOf("")
@@ -340,6 +350,40 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 onFailure = { "Failed: ${it.message ?: "unreachable"}" },
             )
             aiTesting = false
+        }
+    }
+
+    /**
+     * Sends a canned, obviously-fake bank message through the real configured
+     * engine (local or online) and its logging wrapper, so the request/response
+     * log below can be exercised without waiting for a genuine unparsed
+     * notification. Ignores the enabled flag, like [testAiConnection] --
+     * lets a provider be tried before AI parsing is switched on. Deliberately
+     * calls the engine directly rather than routing through the Gate-2
+     * self-healing hook: this must only ever produce a log entry, never a
+     * pending rule or a ledger write.
+     */
+    fun sendTestAiMessage() {
+        if (sendingTestAiMessage) return
+        saveAiEndpoint()
+        if (aiProviderMode == AiProviderMode.ONLINE) saveAiApiKey()
+        viewModelScope.launch {
+            sendingTestAiMessage = true
+            aiTestMessageStatus = "Sending…"
+            val prompt = AiTransactionPrompt.build(TEST_AI_MESSAGE)
+            aiTestMessageStatus = container.localAiManager.testGenerate(prompt).fold(
+                onSuccess = { raw ->
+                    val parsed = AiResponseParser.parse(raw)
+                    if (parsed?.transactionIntent == true) {
+                        "Test sent — parsed ${parsed.currency ?: ""} ${parsed.amount ?: ""} at " +
+                            "${parsed.merchant ?: "?"}. See the log below."
+                    } else {
+                        "Test sent — response logged below, but it didn't parse as a transaction."
+                    }
+                },
+                onFailure = { "Test failed: ${it.message ?: "unknown error"}" },
+            )
+            sendingTestAiMessage = false
         }
     }
 
@@ -1033,6 +1077,15 @@ fun AiSettingsScreen(
         aiLogCount = AiCallLogStore.callCount(context)
         onPauseOrDispose { }
     }
+    // Every change to the test-message status (including the final result) means
+    // a request just completed, so re-read the log to show the new entry
+    // without waiting for the screen to pause/resume.
+    LaunchedEffect(viewModel.aiTestMessageStatus) {
+        if (viewModel.aiTestMessageStatus != null) {
+            aiLogText = AiCallLogStore.readLog(context)
+            aiLogCount = AiCallLogStore.callCount(context)
+        }
+    }
 
     SettingsSubpage(title = "AI parsing", onBack = onBack) {
         Text(
@@ -1166,6 +1219,23 @@ fun AiSettingsScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = viewModel::sendTestAiMessage,
+                enabled = !viewModel.sendingTestAiMessage,
+            ) {
+                Text(if (viewModel.sendingTestAiMessage) "Sending…" else "Send test message")
+            }
+        }
+        Text(
+            "Sends an obviously-fake sample transaction to the configured engine so you can see a " +
+                "request appear below without waiting for a real one. Never written to the ledger or rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        viewModel.aiTestMessageStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
         val logText = aiLogText
         if (logText.isNullOrBlank()) {
             Text(

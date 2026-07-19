@@ -88,14 +88,31 @@ class LocalAiManager(
      */
     suspend fun testConnection(): Result<Unit> {
         val cfg = readConfig()
-        if (!isValidForMode(cfg)) {
-            val reason = when (cfg.mode) {
-                AiProviderMode.LOCAL -> "Endpoint must be a loopback address (127.0.0.1 or localhost)"
-                AiProviderMode.ONLINE -> "Endpoint and API key are both required for an online provider"
-            }
-            return Result.failure(SecurityException(reason))
-        }
+        validationFailure(cfg)?.let { return Result.failure(it) }
         return buildEngine(cfg).initialize()
+    }
+
+    /**
+     * Builds a transient engine (ignoring the enabled flag, like
+     * [testConnection]) and runs one real generation through it -- routed
+     * through the same [LoggingLocalAiEngine] wrapper the live Gate-2 engine
+     * uses, so this shows up in the Settings request log. For the "Send test
+     * message" button: exercises a full round-trip on demand without waiting
+     * for a genuine unparsed notification.
+     */
+    suspend fun testGenerate(prompt: String): Result<String> {
+        val cfg = readConfig()
+        validationFailure(cfg)?.let { return Result.failure(it) }
+        return buildEngine(cfg).generate(prompt)
+    }
+
+    private fun validationFailure(cfg: LocalAiConfig): SecurityException? {
+        if (isValidForMode(cfg)) return null
+        val reason = when (cfg.mode) {
+            AiProviderMode.LOCAL -> "Endpoint must be a loopback address (127.0.0.1 or localhost)"
+            AiProviderMode.ONLINE -> "Endpoint and API key are both required for an online provider"
+        }
+        return SecurityException(reason)
     }
 
     private fun createEngine(): LocalAiEngine {
