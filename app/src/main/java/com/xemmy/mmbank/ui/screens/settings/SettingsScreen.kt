@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
@@ -74,6 +75,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
@@ -95,6 +97,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
+
+    // --- Gate-2 local AI parsing (Off Grid / any loopback OpenAI-compatible server) ---
+    var aiParsingEnabled by mutableStateOf(container.preferences.aiParsingEnabled)
+        private set
+    var aiEndpointUrl by mutableStateOf(container.preferences.aiEndpointUrl)
+    var aiModelName by mutableStateOf(container.preferences.aiModelName)
+    var aiTestStatus by mutableStateOf<String?>(null)
+        private set
+    var aiTesting by mutableStateOf(false)
+        private set
+
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
     var hasBinanceKeys by mutableStateOf(container.credentialStore.hasBinanceCredentials)
@@ -259,6 +272,44 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** Re-snapshots the Demo mode flag (separate VM instances per nav destination). */
     fun refreshDemoState() {
         demoModeEnabled = container.preferences.demoModeEnabled
+    }
+
+    // --- Local AI parsing settings ---
+
+    fun updateAiParsingEnabled(enabled: Boolean) {
+        container.preferences.aiParsingEnabled = enabled
+        aiParsingEnabled = enabled
+    }
+
+    /** Persists the endpoint + model fields (validated for loopback at call time by the engine). */
+    fun saveAiEndpoint() {
+        container.preferences.aiEndpointUrl = aiEndpointUrl.trim()
+        container.preferences.aiModelName = aiModelName.trim()
+        aiEndpointUrl = container.preferences.aiEndpointUrl
+        aiModelName = container.preferences.aiModelName
+        aiTestStatus = "Saved"
+    }
+
+    /** Re-snapshots AI settings (separate VM instances per nav destination). */
+    fun refreshAiState() {
+        aiParsingEnabled = container.preferences.aiParsingEnabled
+        aiEndpointUrl = container.preferences.aiEndpointUrl
+        aiModelName = container.preferences.aiModelName
+    }
+
+    /** Saves the current fields, then probes the local server over loopback and reports the result. */
+    fun testAiConnection() {
+        if (aiTesting) return
+        saveAiEndpoint()
+        viewModelScope.launch {
+            aiTesting = true
+            aiTestStatus = "Testing…"
+            aiTestStatus = container.localAiManager.testConnection().fold(
+                onSuccess = { "Connected — local AI server is reachable" },
+                onFailure = { "Failed: ${it.message ?: "unreachable"}" },
+            )
+            aiTesting = false
+        }
     }
 
     /**
@@ -438,6 +489,7 @@ fun SettingsScreen(
         crashRecorded = Diagnostics.readCrash(context) != null
         viewModel.refreshAppLockState()
         viewModel.refreshDemoState()
+        viewModel.refreshAiState()
         onPauseOrDispose { }
     }
 
@@ -485,6 +537,13 @@ fun SettingsScreen(
                     title = "Parsing rules",
                     subtitle = "Teach the app new bank message formats",
                     onClick = { onOpen("rules") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.AutoAwesome,
+                    title = "Local AI parsing",
+                    subtitle = if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
+                    onClick = { onOpen("settings_ai") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
@@ -913,6 +972,89 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
                     label = { Text(appLockTimeoutLabel(minutes)) },
                 )
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Local AI parsing (Gate 2 — loopback-only OpenAI-compatible server)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun AiSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshAiState()
+        onPauseOrDispose { }
+    }
+    val loopbackValid = LoopbackGuard.isLoopbackUrl(viewModel.aiEndpointUrl.trim())
+    SettingsSubpage(title = "Local AI parsing", onBack = onBack) {
+        Text(
+            "When the built-in rules can't read a bank message, MMbank can ask a local AI app " +
+                "(e.g. Off Grid) running on this phone to extract the transaction. Everything stays " +
+                "on-device — MMbank only ever calls a loopback address, never the internet. AI suggestions " +
+                "appear as disabled rules you approve under Parsing rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Use local AI parsing", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Off by default. Runs only on messages the built-in rules miss.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.aiParsingEnabled,
+                onCheckedChange = viewModel::updateAiParsingEnabled,
+            )
+        }
+
+        OutlinedTextField(
+            value = viewModel.aiEndpointUrl,
+            onValueChange = { viewModel.aiEndpointUrl = it },
+            label = { Text("Server endpoint") },
+            supportingText = {
+                Text(
+                    if (loopbackValid) {
+                        "On-device only: 127.0.0.1 or localhost, e.g. http://127.0.0.1:11434/v1/chat/completions"
+                    } else {
+                        "Not a loopback address — only 127.0.0.1 / localhost is allowed."
+                    },
+                )
+            },
+            isError = !loopbackValid,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = viewModel.aiModelName,
+            onValueChange = { viewModel.aiModelName = it },
+            label = { Text("Model (optional)") },
+            supportingText = { Text("Leave blank to use the server's currently loaded model.") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = viewModel::saveAiEndpoint) { Text("Save") }
+            OutlinedButton(onClick = viewModel::testAiConnection, enabled = !viewModel.aiTesting) {
+                Text(if (viewModel.aiTesting) "Testing…" else "Test connection")
+            }
+        }
+
+        viewModel.aiTestStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

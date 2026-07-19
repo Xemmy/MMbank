@@ -66,6 +66,20 @@ class LocalAiManager(
         return engine
     }
 
+    /**
+     * Builds a transient engine from the current endpoint/model and probes it,
+     * for the Settings "Test connection" button. Ignores the enabled flag (so
+     * the user can verify the server before switching the feature on) but still
+     * enforces the loopback guard.
+     */
+    suspend fun testConnection(): Result<Unit> {
+        val cfg = readConfig()
+        if (!LoopbackGuard.isLoopbackUrl(cfg.endpointUrl)) {
+            return Result.failure(SecurityException("Endpoint must be a loopback address (127.0.0.1 or localhost)"))
+        }
+        return OpenAiCompatibleEngine(cfg.endpointUrl, cfg.model, httpClientFactory()).initialize()
+    }
+
     private fun createEngine(): LocalAiEngine {
         val cfg = readConfig()
         if (!cfg.enabled) return UnavailableLocalAiEngine

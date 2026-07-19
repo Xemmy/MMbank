@@ -55,6 +55,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,6 +115,9 @@ import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.ai.AiResponseParser
+import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
+import com.xemmy.mmbank.domain.parser.GenericExtractors
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -173,6 +178,14 @@ private data class BulkModeState(
 internal fun toggleSelection(current: Set<Long>, id: Long): Set<Long> =
     if (id in current) current - id else current + id
 
+/** Editor field values extracted by the local AI from a pasted message. */
+data class AiEditorFill(
+    val amount: java.math.BigDecimal,
+    val currency: String,
+    val merchant: String?,
+    val direction: TransactionDirection,
+)
+
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val filters = MutableStateFlow(ActivityFilters())
@@ -214,6 +227,29 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }.recoverAndRetry("TransactionsViewModel", container) {
         TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
+
+    /** Manual "Parse with AI" is offered only when the feature is on + a valid loopback endpoint is set. */
+    val aiParsingConfigured: Boolean get() = container.localAiManager.isConfigured()
+
+    /**
+     * Runs the local (loopback-only) AI over a pasted message and maps the
+     * result to editor fields. Returns null when the feature is off/unreachable
+     * or the text isn't a transaction — the caller then leaves the form as-is.
+     * Direction (absent from the AI's JSON keyset) is inferred with the same
+     * shared parser vocabulary the self-healing path uses.
+     */
+    suspend fun parseWithAi(raw: String): AiEditorFill? {
+        if (raw.isBlank()) return null
+        val engine = container.localAiManager.engine()
+        if (!engine.isReady) return null
+        val generated = engine.generate(AiTransactionPrompt.build(raw)).getOrNull() ?: return null
+        val parsed = AiResponseParser.parse(generated) ?: return null
+        if (!parsed.transactionIntent) return null
+        val amount = parsed.amount ?: return null
+        val currency = parsed.currency ?: return null
+        val direction = GenericExtractors.detectDirectionOverride(raw) ?: TransactionDirection.DEBIT
+        return AiEditorFill(amount, currency, parsed.merchant, direction)
+    }
 
     fun setDateRange(range: DateRangeFilter) { filters.value = filters.value.copy(dateRange = range) }
     fun setQuery(query: String) { filters.value = filters.value.copy(query = query) }
@@ -536,6 +572,8 @@ fun TransactionsScreen(
             accounts = state.accounts,
             knownPersons = state.knownPersons,
             defaultCurrency = state.defaultCurrency,
+            aiEnabled = viewModel.aiParsingConfigured,
+            onAiParse = viewModel::parseWithAi,
             onDismiss = { addOpen = false },
             onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
                 viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
@@ -1686,6 +1724,8 @@ private fun TransactionEditorDialog(
     accounts: List<Account>,
     knownPersons: List<String>,
     defaultCurrency: String,
+    aiEnabled: Boolean = false,
+    onAiParse: (suspend (String) -> AiEditorFill?)? = null,
     onDismiss: () -> Unit,
     onSave: (
         amount: java.math.BigDecimal,
@@ -1746,6 +1786,56 @@ private fun TransactionEditorDialog(
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
+                // Manual "Parse with AI" (add mode only): paste a bank message
+                // the built-in rules missed and let the local (loopback-only) AI
+                // fill amount/currency/merchant/direction. Only shown when the
+                // feature is configured; failures leave the form untouched.
+                if (!isEdit && aiEnabled && onAiParse != null) {
+                    val aiParse = onAiParse
+                    val aiScope = rememberCoroutineScope()
+                    var rawMessage by remember { mutableStateOf("") }
+                    var parsing by remember { mutableStateOf(false) }
+                    var parseError by remember { mutableStateOf<String?>(null) }
+                    OutlinedTextField(
+                        value = rawMessage,
+                        onValueChange = { rawMessage = it },
+                        label = { MetaLabel("Paste bank message") },
+                        minLines = 2,
+                        colors = glassFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            enabled = rawMessage.isNotBlank() && !parsing,
+                            onClick = {
+                                parsing = true
+                                parseError = null
+                                aiScope.launch {
+                                    val fill = aiParse(rawMessage)
+                                    if (fill != null) {
+                                        amount = fill.amount.stripTrailingZeros().toPlainString()
+                                        currency = fill.currency
+                                        merchant = fill.merchant.orEmpty()
+                                        direction = fill.direction
+                                    } else {
+                                        parseError = "Couldn't read a transaction. Check the AI server in Settings."
+                                    }
+                                    parsing = false
+                                }
+                            },
+                        ) { Text(if (parsing) "Parsing…" else "Parse with AI") }
+                        if (parsing) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                    parseError?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                }
                 // Debit / credit picker: drives the sign in every balance sum.
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TransactionDirection.entries.forEach { entry ->
