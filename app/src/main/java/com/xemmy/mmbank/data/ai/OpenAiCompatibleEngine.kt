@@ -51,7 +51,7 @@ class OpenAiCompatibleEngine(
                 val request = authorizedRequestBuilder(modelsProbeUrl()).get().build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException("AI server probe failed: HTTP ${response.code}")
+                        throw httpError("AI server probe failed", response)
                     }
                 }
                 ready = true
@@ -67,7 +67,7 @@ class OpenAiCompatibleEngine(
                 val request = authorizedRequestBuilder(chatCompletionsUrl).post(body).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw IOException("AI generation failed: HTTP ${response.code}")
+                        throw httpError("AI generation failed", response)
                     }
                     val payload = response.body?.string().orEmpty()
                     OpenAiChatProtocol.extractContent(payload)
@@ -75,6 +75,22 @@ class OpenAiCompatibleEngine(
                 }
             }
         }
+    }
+
+    /**
+     * Non-2xx responses carry the server's own reason ("API key not valid",
+     * "API keys with Android application restrictions cannot be used with this
+     * API", quota details, ...). Surfacing a compact slice of it -- into the
+     * Settings test status and the request log -- turns an opaque "HTTP 401"
+     * into a diagnosable one. The body flows through LogRedactor before it
+     * ever reaches the on-device log.
+     */
+    private fun httpError(prefix: String, response: okhttp3.Response): IOException {
+        val detail = runCatching { response.body?.string() }.getOrNull()
+            ?.replace(Regex("\\s+"), " ")?.trim()?.take(300)
+        return IOException(
+            if (detail.isNullOrBlank()) "$prefix: HTTP ${response.code}" else "$prefix: HTTP ${response.code} — $detail"
+        )
     }
 
     private fun loopbackFailure(): SecurityException? {

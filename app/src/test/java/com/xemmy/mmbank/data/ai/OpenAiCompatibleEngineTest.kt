@@ -113,6 +113,19 @@ class OpenAiCompatibleEngineTest {
     }
 
     @Test
+    fun `a non-2xx response surfaces the server's error body in the failure message`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(401).setBody(
+                """{"error":{"code":401,"message":"API keys with Android application restrictions cannot be used with this API.","status":"UNAUTHENTICATED"}}"""
+            )
+        )
+        val failure = engine().generate("prompt").exceptionOrNull()
+        val message = failure?.message.orEmpty()
+        assertTrue(message.contains("HTTP 401"))
+        assertTrue(message.contains("Android application restrictions"))
+    }
+
+    @Test
     fun `no authorization header is sent when the api key is blank`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"data":[]}"""))
         val engine = OpenAiCompatibleEngine(

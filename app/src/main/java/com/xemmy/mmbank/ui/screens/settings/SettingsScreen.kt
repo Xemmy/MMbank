@@ -77,6 +77,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.data.ai.AiCallLogStore
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.ai.AiEndpointNormalizer
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
@@ -309,11 +310,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Persists the endpoint + model fields (mode-appropriate validation happens at call time by the engine). */
     fun saveAiEndpoint() {
-        container.preferences.aiEndpointUrl = aiEndpointUrl.trim()
+        // Normalize at save time (not request time) so the corrected URL is
+        // visible in the field: completes base URLs to /chat/completions and
+        // rewrites Google's native Gemini path -- which rejects Bearer auth
+        // with a bare 401 -- to Google's OpenAI-compatibility endpoint.
+        val normalized = AiEndpointNormalizer.normalize(aiEndpointUrl)
+        val corrected = normalized != aiEndpointUrl.trim().trimEnd('/')
+        container.preferences.aiEndpointUrl = normalized
         container.preferences.aiModelName = aiModelName.trim()
         aiEndpointUrl = container.preferences.aiEndpointUrl
         aiModelName = container.preferences.aiModelName
-        aiTestStatus = "Saved"
+        aiTestStatus = if (corrected) "Saved — endpoint completed to $normalized" else "Saved"
     }
 
     /** Persists the online-provider API key, encrypted (SecureCredentialStore), never in plain prefs. */
