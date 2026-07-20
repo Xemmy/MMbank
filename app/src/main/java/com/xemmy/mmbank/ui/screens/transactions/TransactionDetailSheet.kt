@@ -5,24 +5,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -31,13 +30,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Read-only detail overlay for a tapped transaction. Built as an [AlertDialog]
+ * — a real dialog window — rather than a ModalBottomSheet: only a dialog window
+ * lets [GlassDialogBackdrop] apply the API 31+ backdrop blur (its view.parent is
+ * a DialogWindowProvider), and the glass panel + hairline read correctly on top.
+ * The earlier bottom-sheet incarnation could never blur its backdrop and rendered
+ * as a translucent, then empty, panel on some devices; this mirrors the editor
+ * dialog's proven treatment exactly.
+ */
 @Composable
 fun TransactionDetailSheet(
     transaction: Transaction,
@@ -48,35 +56,15 @@ fun TransactionDetailSheet(
     onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        modifier = Modifier.glassSurface(
-            RoundedCornerShape(topStart = ObsidianTokens.dialogRadius, topEnd = ObsidianTokens.dialogRadius),
-        ),
-        // Solid canvas, not Color.Transparent: a bottom sheet is not a dialog
-        // window, so GlassDialogBackdrop's window-blur never applies here
-        // (view.parent isn't a DialogWindowProvider) and a transparent
-        // container leaves the sheet invisible on devices where the
-        // glassSurface translucency alone doesn't read -- the reported
-        // "empty popup". glassSurface still paints the glass panel + hairline
-        // on top, so the look matches the editor dialog.
-        containerColor = ObsidianTokens.canvas,
-        contentColor = ObsidianTokens.textPrimary,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp),
-        ) {
+        // Glass overlay: translucent container + hairline border, with a real
+        // backdrop blur on API 31+ (falls back to a more opaque surface below).
+        modifier = Modifier.glassSurface(AlertDialogDefaults.shape),
+        containerColor = Color.Transparent,
+        title = {
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -103,57 +91,60 @@ fun TransactionDetailSheet(
                     ),
                 )
             }
-
-            HorizontalDivider(color = ObsidianTokens.hairlineDialog, modifier = Modifier.padding(vertical = 12.dp))
-
-            DetailRow("Category", "${transaction.spendingCategory.emoji}  ${transaction.spendingCategory.label}")
-            DetailRow("Account", accountName ?: "Unassigned")
-            DetailRow("Date & time", transaction.timestampMillis.asDateTime())
-            (bankName ?: transaction.sender)?.let { DetailRow("Sender", it) }
-            DetailRow("Source", sourceLabel(transaction.source))
-
-            transaction.rawMessage?.takeIf { it.isNotBlank() }?.let { message ->
-                Text(
-                    "Message",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ObsidianTokens.textMeta,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
-                )
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = ObsidianTokens.textPrimary,
-                )
-            }
-
-            if (transaction.excludeFromStats) {
-                Text(
-                    "⚠ Excluded from analytics",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ObsidianTokens.textMeta,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-
-            Row(
+        },
+        text = {
+            GlassDialogBackdrop()
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
             ) {
-                OutlinedButton(onClick = onEditClick, modifier = Modifier.weight(1f)) {
-                    Text("Edit")
+                DetailRow("Category", "${transaction.spendingCategory.emoji}  ${transaction.spendingCategory.label}")
+                DetailRow("Account", accountName ?: "Unassigned")
+                DetailRow("Date & time", transaction.timestampMillis.asDateTime())
+                (bankName ?: transaction.sender)?.let { DetailRow("Sender", it) }
+                DetailRow("Source", sourceLabel(transaction.source))
+
+                transaction.rawMessage?.takeIf { it.isNotBlank() }?.let { message ->
+                    HorizontalDivider(color = ObsidianTokens.hairlineDialog, modifier = Modifier.padding(vertical = 10.dp))
+                    Text(
+                        "Message",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = ObsidianTokens.textMeta,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ObsidianTokens.textPrimary,
+                    )
                 }
-                TextButton(
-                    onClick = onDeleteClick,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Delete")
+
+                if (transaction.excludeFromStats) {
+                    Text(
+                        "⚠ Excluded from analytics",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = ObsidianTokens.textMeta,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                 }
             }
-        }
-    }
+        },
+        confirmButton = {
+            OutlinedButton(onClick = onEditClick) {
+                Text("Edit")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDeleteClick,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text("Delete")
+            }
+        },
+    )
 }
 
 @Composable
