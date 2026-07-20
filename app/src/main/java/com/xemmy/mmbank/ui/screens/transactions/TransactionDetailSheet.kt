@@ -23,7 +23,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -32,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
-import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.AmountText
@@ -57,11 +55,17 @@ fun TransactionDetailSheet(
         modifier = Modifier.glassSurface(
             RoundedCornerShape(topStart = ObsidianTokens.dialogRadius, topEnd = ObsidianTokens.dialogRadius),
         ),
-        containerColor = Color.Transparent,
+        // Solid canvas, not Color.Transparent: a bottom sheet is not a dialog
+        // window, so GlassDialogBackdrop's window-blur never applies here
+        // (view.parent isn't a DialogWindowProvider) and a transparent
+        // container leaves the sheet invisible on devices where the
+        // glassSurface translucency alone doesn't read -- the reported
+        // "empty popup". glassSurface still paints the glass panel + hairline
+        // on top, so the look matches the editor dialog.
+        containerColor = ObsidianTokens.canvas,
         contentColor = ObsidianTokens.textPrimary,
         dragHandle = { BottomSheetDefaults.DragHandle() },
     ) {
-        GlassDialogBackdrop()
         Column(
             Modifier
                 .fillMaxWidth()
