@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
@@ -75,6 +76,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.data.ai.AiCallLogStore
@@ -84,9 +86,11 @@ import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
+import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
@@ -108,6 +112,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
+
+    // Classic vs Premium: a reactive flow (not a mutableStateOf snapshot) since
+    // the root theme wrapper, the AI-parsing indicator and the transaction
+    // detail dialog all need to see a toggle here live, not just this screen.
+    val designMode: StateFlow<DesignMode> = container.designMode
+    fun setDesignMode(mode: DesignMode) = container.setDesignMode(mode)
 
     // --- Gate-2 AI parsing: local (loopback-only, e.g. Off Grid) or an explicit online provider ---
     var aiParsingEnabled by mutableStateOf(container.preferences.aiParsingEnabled)
@@ -592,6 +602,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     var captureOk by remember { mutableStateOf(true) }
     var crashRecorded by remember { mutableStateOf(false) }
+    val designMode by viewModel.designMode.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
@@ -653,6 +664,13 @@ fun SettingsScreen(
                     title = "Local AI parsing",
                     subtitle = if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
                     onClick = { onOpen("settings_ai") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Palette,
+                    title = "Design",
+                    subtitle = if (designMode == DesignMode.PREMIUM) "Premium · Material 3 Expressive" else "Classic",
+                    onClick = { onOpen("settings_design") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
@@ -1303,6 +1321,42 @@ fun AiSettingsScreen(
                 onClear = {
                     AiCallLogStore.clearLog(context)
                     aiLogRefreshKey++
+                },
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Design (Classic vs Premium)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun DesignSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    val designMode by viewModel.designMode.collectAsStateWithLifecycle()
+    SettingsSubpage(title = "Design", onBack = onBack) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Premium design", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Material 3 Expressive theming, a GPU-shader AI-parsing indicator, and a " +
+                        "springier transaction detail dialog. Falls back to the plain Classic look " +
+                        "on anything that can't render an effect.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = designMode == DesignMode.PREMIUM,
+                onCheckedChange = { checked ->
+                    viewModel.setDesignMode(if (checked) DesignMode.PREMIUM else DesignMode.CLASSIC)
                 },
             )
         }

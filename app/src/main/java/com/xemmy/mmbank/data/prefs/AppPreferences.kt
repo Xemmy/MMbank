@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.prefs
 
 import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
+import com.xemmy.mmbank.domain.model.DesignMode
 
 /** Non-sensitive app settings. */
 class AppPreferences(context: Context) {
@@ -164,6 +165,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getInt(KEY_AI_BUDGET_DAY_COUNT, 0)
         set(value) = prefs.edit().putInt(KEY_AI_BUDGET_DAY_COUNT, value).apply()
 
+    /**
+     * Classic (Material 3 baseline) vs Premium (Material 3 Expressive theme +
+     * AGSL AI-parsing indicator + springier motion). Classic by default.
+     */
+    var designMode: DesignMode
+        get() = runCatching {
+            DesignMode.valueOf(prefs.getString(KEY_DESIGN_MODE, null) ?: DesignMode.CLASSIC.name)
+        }.getOrDefault(DesignMode.CLASSIC)
+        set(value) = prefs.edit().putString(KEY_DESIGN_MODE, value.name).apply()
+
     /** Savings goal target, in the default currency. <= 0 means no goal set. */
     var goalTargetAmount: Double
         get() = prefs.getFloat(KEY_GOAL_TARGET, 0f).toDouble()
@@ -203,5 +214,6 @@ class AppPreferences(context: Context) {
         const val KEY_APP_LOCK_LAST_ACTIVE = "app_lock_last_active_at"
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
+        const val KEY_DESIGN_MODE = "design_mode"
     }
 }

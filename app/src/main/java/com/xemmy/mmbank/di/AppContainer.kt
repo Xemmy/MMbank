@@ -39,6 +39,7 @@ import com.xemmy.mmbank.domain.ai.AiDailyBudget
 import com.xemmy.mmbank.domain.ai.AiParseResult
 import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
@@ -90,6 +91,18 @@ class AppContainer(context: Context) {
     }
 
     fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
+
+    // Single reactive source of truth for Classic vs Premium design mode. The
+    // toggle lives in Settings but the root theme wrapper (MainActivity), the
+    // AI-parsing indicator and the transaction detail dialog all need it live,
+    // so it's a container-level flow rather than a per-screen pref snapshot.
+    private val _designMode by lazy { MutableStateFlow(preferences.designMode) }
+    val designMode: StateFlow<DesignMode> by lazy { _designMode.asStateFlow() }
+
+    fun setDesignMode(mode: DesignMode) {
+        preferences.designMode = mode   // persist across restarts
+        _designMode.value = mode        // notify all collectors live
+    }
 
     // Single reactive source of truth for "Demo mode". The repositories collect
     // this to switch the ledger between the real partition (false) and the

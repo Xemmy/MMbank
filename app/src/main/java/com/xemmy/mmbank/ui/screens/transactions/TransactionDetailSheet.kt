@@ -1,5 +1,8 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,18 +22,23 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
+import com.xemmy.mmbank.ui.theme.LocalDesignMode
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.AmountText
@@ -45,6 +53,13 @@ import com.xemmy.mmbank.ui.util.asMoney
  * The earlier bottom-sheet incarnation could never blur its backdrop and rendered
  * as a translucent, then empty, panel on some devices; this mirrors the editor
  * dialog's proven treatment exactly.
+ *
+ * That same separate-window boundary is why this uses a spring scale-in rather
+ * than a true `SharedTransitionLayout` element shared with the tapped row:
+ * shared elements only resolve within one `LookaheadScope`, and a Dialog's
+ * content is composed into its own window, outside the app window's scope.
+ * The spring pop (Premium only; Classic is instant, as before) is the closest
+ * same-window-safe stand-in for that continuity.
  */
 @Composable
 fun TransactionDetailSheet(
@@ -55,6 +70,7 @@ fun TransactionDetailSheet(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
+    designMode: DesignMode = LocalDesignMode.current,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -94,10 +110,28 @@ fun TransactionDetailSheet(
         },
         text = {
             GlassDialogBackdrop()
+            val entranceScale = remember { Animatable(if (designMode == DesignMode.PREMIUM) 0.92f else 1f) }
+            LaunchedEffect(designMode) {
+                if (designMode == DesignMode.PREMIUM) {
+                    entranceScale.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium,
+                        ),
+                    )
+                } else {
+                    entranceScale.snapTo(1f)
+                }
+            }
             Column(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 460.dp)
+                    .graphicsLayer {
+                        scaleX = entranceScale.value
+                        scaleY = entranceScale.value
+                    }
                     .verticalScroll(rememberScrollState()),
             ) {
                 DetailRow("Category", "${transaction.spendingCategory.emoji}  ${transaction.spendingCategory.label}")

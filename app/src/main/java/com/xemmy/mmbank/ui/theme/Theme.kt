@@ -1,11 +1,16 @@
 package com.xemmy.mmbank.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.xemmy.mmbank.domain.model.DesignMode
 
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF4FC3F7),
@@ -63,14 +68,35 @@ object GlowPalette {
     }
 }
 
+/** Read by any composable that needs to branch on Classic vs Premium without threading a parameter through. */
+val LocalDesignMode = staticCompositionLocalOf { DesignMode.CLASSIC }
+
+/**
+ * Classic renders the original Material 3 baseline theme. Premium opts into
+ * [MaterialExpressiveTheme] -- same brand color scheme, but Material 3
+ * Expressive's springier default motion scheme and expanded shape system.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MMbankTheme(
+    designMode: DesignMode = DesignMode.CLASSIC,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = ObsidianTypography,
-        content = content,
-    )
+    val colorScheme = if (darkTheme) DarkColors else LightColors
+    CompositionLocalProvider(LocalDesignMode provides designMode) {
+        if (designMode == DesignMode.PREMIUM) {
+            MaterialExpressiveTheme(
+                colorScheme = colorScheme,
+                typography = ObsidianTypography,
+                content = content,
+            )
+        } else {
+            MaterialTheme(
+                colorScheme = colorScheme,
+                typography = ObsidianTypography,
+                content = content,
+            )
+        }
+    }
 }

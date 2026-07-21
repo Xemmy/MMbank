@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +59,7 @@ import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DemoSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.DesignSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
@@ -75,7 +77,8 @@ class MainActivity : FragmentActivity() {
         val container = (application as MMBankApp).container
         val biometricAuth = BiometricAuthManagerImpl(this)
         setContent {
-            MMbankTheme {
+            val designMode by container.designMode.collectAsStateWithLifecycle()
+            MMbankTheme(designMode = designMode) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 Box {
                     MMbankApp()
@@ -186,6 +189,14 @@ fun MMbankApp() {
                                 maxLines = 1,
                             )
                         },
+                        // Pinned explicitly (Material3 1.4 changed the selected-label
+                        // default to secondary) so the bottom bar's look is unaffected
+                        // by the Compose BOM bump, in both Classic and Premium.
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            selectedIndicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
                     )
                 }
             }
@@ -259,6 +270,7 @@ private fun AppNavHost(
         composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_security") { SecuritySettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_ai") { AiSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_design") { DesignSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_demo") { DemoSettingsScreen(onBack = { navController.popBackStack() }) }
     }
 }
