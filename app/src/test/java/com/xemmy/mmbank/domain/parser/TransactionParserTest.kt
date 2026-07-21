@@ -120,6 +120,24 @@ class TransactionParserTest {
     }
 
     @Test
+    fun `order confirmation with a long order-id number is not mistaken for a transaction - regression`() {
+        // Regression: "received" is a KW_CREDIT_EN keyword, and the priority-0
+        // bare-fallback rule (no currency required) used to grab the 16-digit
+        // order id as if it were a multi-trillion amount. AMT's ungrouped
+        // alternative is now capped at 9 digits and fenced so it can only
+        // match a WHOLE standalone digit run, never a truncated slice of a
+        // longer one -- so this correctly falls through to no match at all.
+        val result = parser.parse(
+            sms(
+                "Great News 🎉 We received your order 7840200018688161! It's being prepared " +
+                    "with care and we'll let you know as soon as it's on the way. Thanks for shopping with us!",
+                sender = "ASWAT",
+            )
+        )
+        assertNull(result)
+    }
+
+    @Test
     fun `custom rule outranks built-ins and respects sender filter`() {
         val custom = RuleCompiler.compile(
             ParsingRule(

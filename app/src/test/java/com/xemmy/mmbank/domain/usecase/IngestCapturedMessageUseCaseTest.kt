@@ -249,6 +249,26 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
+    fun `order confirmation with a long order-id number is not recorded and never reaches gate 2`() = runBlocking {
+        // Regression: this used to mis-parse as a credit of the 16-digit
+        // order id (see BuiltInRules.AMT). Confirms end-to-end that it's
+        // NoMatch, nothing was recorded, and -- since there's no
+        // currency-adjacent amount anywhere in the text -- it doesn't even
+        // reach Gate 2's AI engine.
+        var fired = false
+        val result = useCase(onGate1Miss = { fired = true }).invoke(
+            push(
+                "ASWAT",
+                "Great News 🎉 We received your order 7840200018688161! It's being prepared with care " +
+                    "and we'll let you know as soon as it's on the way. Thanks for shopping with us!",
+            )
+        )
+        assertEquals(IngestResult.NoMatch, result)
+        assertNull(recorder.lastParsed)
+        assertFalse(fired)
+    }
+
+    @Test
     fun `gate1 miss hook does not fire when no currency-adjacent amount is present`() = runBlocking {
         // A bare digit with no financial shape (AiForwardGate) must never reach
         // Gate 2 -- this is the "Download complete - 26.96 MB" case: it clears

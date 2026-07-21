@@ -31,11 +31,20 @@ object BuiltInRules {
     // "T". Mirrors the \b guard the priority-8 af rules already rely on.
     private const val CUR = "(?<currency>$CUR_BODY)(?![A-Za-z])"
 
-    private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
+    // The ungrouped (no thousands separator) alternative is capped at 9 digits
+    // and fenced with (?<!\d)/(?!\d) so it can only ever match a WHOLE
+    // standalone digit run, never a truncated prefix/suffix/substring of a
+    // longer one -- without both fences, a 16-digit order/tracking number
+    // sitting near a bare keyword rule (e.g. "We received your order
+    // 7840200018688161!") gets grabbed as a multi-trillion "amount" instead
+    // of being rejected outright. No real personal-finance amount is ever a
+    // 10+ digit integer with no thousands separator, so this only ever
+    // rejects non-money digit runs, never a real amount.
+    private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|(?<!\\d)\\d{1,9}(?:\\.\\d+)?)(?!\\d)"
 
     // Same shape as AMT but non-capturing, for amounts that must NOT become
     // the transaction amount (e.g. the cashback figure after a purchase).
-    private const val AMT_NC = "(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
+    private const val AMT_NC = "(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|(?<!\\d)\\d{1,9}(?:\\.\\d+)?)(?!\\d)"
 
     // Merchant capture stops at punctuation and at "*" so a trailing "*617"
     // account marker is left for ACCTAIL rather than swallowed into the name.
