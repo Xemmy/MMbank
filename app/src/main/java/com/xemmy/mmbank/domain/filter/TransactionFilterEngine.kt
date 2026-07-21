@@ -111,6 +111,21 @@ object TransactionFilterEngine {
     fun activeAccount(filter: AccountFilter, accounts: List<Account>): Account? =
         (filter as? AccountFilter.Specific)?.let { spec -> accounts.firstOrNull { it.id == spec.id } }
 
+    /**
+     * How many independent secondary-filter categories (person, triage,
+     * amount, source, analytics status) are active — drives the "More
+     * filters" badge count in the single-row filter bar.
+     */
+    fun activeSecondaryFilterCount(filters: ActivityFilters): Int {
+        var count = 0
+        if (filters.person != PersonFilter.Any) count++
+        if (filters.triageOnly) count++
+        if (filters.minAmount != null || filters.maxAmount != null) count++
+        if (filters.source != null) count++
+        if (filters.analyticsStatus != null) count++
+        return count
+    }
+
     /** Resolves a date filter to a concrete window; null = unbounded (All). */
     fun resolveDateWindow(
         range: DateRangeFilter,

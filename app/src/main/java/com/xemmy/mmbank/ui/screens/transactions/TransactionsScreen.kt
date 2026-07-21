@@ -110,6 +110,7 @@ import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -166,6 +167,8 @@ data class TransactionsUiState(
     val isInBulkMode: Boolean = false,
     /** Ids currently checked while in bulk mode. */
     val selectedTransactionIds: Set<Long> = emptySet(),
+    /** Single-row (Premium) vs Classic wrapped-chip filter bar; see Settings > Design. */
+    val filterBarLayout: FilterBarLayout = FilterBarLayout.SINGLE_ROW,
 )
 
 /** Bulk-mode selection is UI-only state, layered onto the Room-backed pipeline below. */
@@ -221,6 +224,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             knownPersons = persons,
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
+            filterBarLayout = container.preferences.filterBarLayout,
         )
     }.combine(bulkMode) { base, bulk ->
         base.copy(isInBulkMode = bulk.isInBulkMode, selectedTransactionIds = bulk.selectedIds)
@@ -480,19 +484,34 @@ fun TransactionsScreen(
                         }
                         .graphicsLayer { alpha = 1f - collapseFraction },
                 ) {
-                    ActivityFilterBar(
-                        state = state,
-                        onQuery = viewModel::setQuery,
-                        onDateRange = viewModel::setDateRange,
-                        onDirectionFilter = viewModel::setDirectionFilter,
-                        onAccountFilter = viewModel::setAccountFilter,
-                        onPersonFilter = viewModel::setPersonFilter,
-                        onTriageOnly = viewModel::setTriageOnly,
-                        onAmountRange = viewModel::setAmountRange,
-                        onSourceFilter = viewModel::setSourceFilter,
-                        onAnalyticsStatus = viewModel::setAnalyticsStatus,
-                        onClear = viewModel::clearFilters,
-                    )
+                    when (state.filterBarLayout) {
+                        FilterBarLayout.SINGLE_ROW -> TransactionFilterBar(
+                            state = state,
+                            onQuery = viewModel::setQuery,
+                            onDateRange = viewModel::setDateRange,
+                            onDirectionFilter = viewModel::setDirectionFilter,
+                            onAccountFilter = viewModel::setAccountFilter,
+                            onPersonFilter = viewModel::setPersonFilter,
+                            onTriageOnly = viewModel::setTriageOnly,
+                            onAmountRange = viewModel::setAmountRange,
+                            onSourceFilter = viewModel::setSourceFilter,
+                            onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                            onClear = viewModel::clearFilters,
+                        )
+                        FilterBarLayout.CLASSIC -> ActivityFilterBar(
+                            state = state,
+                            onQuery = viewModel::setQuery,
+                            onDateRange = viewModel::setDateRange,
+                            onDirectionFilter = viewModel::setDirectionFilter,
+                            onAccountFilter = viewModel::setAccountFilter,
+                            onPersonFilter = viewModel::setPersonFilter,
+                            onTriageOnly = viewModel::setTriageOnly,
+                            onAmountRange = viewModel::setAmountRange,
+                            onSourceFilter = viewModel::setSourceFilter,
+                            onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                            onClear = viewModel::clearFilters,
+                        )
+                    }
                 }
             }
 
@@ -810,7 +829,7 @@ private fun ObsidianChip(
  * Material's chip defaults.
  */
 @Composable
-private fun FilterBarChip(
+internal fun FilterBarChip(
     selected: Boolean,
     onClick: () -> Unit,
     label: String,
@@ -851,7 +870,7 @@ private fun FilterBarChip(
  * reads a clear step below the primary [FilterBarChip]s.
  */
 @Composable
-private fun SecondaryActionChip(
+internal fun SecondaryActionChip(
     selected: Boolean,
     onClick: () -> Unit,
     label: String,
@@ -889,7 +908,7 @@ private fun SecondaryActionChip(
  * can't be reduced without clipping.
  */
 @Composable
-private fun CompactSearchField(
+internal fun CompactSearchField(
     query: String,
     onQuery: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -955,7 +974,7 @@ private fun CompactSearchField(
 
 /** Glass field colors (spec 5.3): surfaceGlass fill, hairline/focus border — shared by every OutlinedTextField in the glass dialogs. */
 @Composable
-private fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
+internal fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedContainerColor = ObsidianTokens.surfaceGlass,
     focusedContainerColor = ObsidianTokens.surfaceGlass,
     unfocusedBorderColor = ObsidianTokens.hairline,
@@ -1247,12 +1266,12 @@ internal fun sourceLabel(source: TransactionSource): String = when (source) {
     TransactionSource.BINANCE_SYNC -> "Binance sync"
 }
 
-private val chipDateFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")
+internal val chipDateFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")
 
 /** Twin-calendar picker for an arbitrary inclusive Start→End window. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CustomDateRangeDialog(
+internal fun CustomDateRangeDialog(
     initial: DateRangeFilter.Custom?,
     onDismiss: () -> Unit,
     onSelect: (java.time.LocalDate, java.time.LocalDate) -> Unit,
@@ -1292,7 +1311,7 @@ private fun CustomDateRangeDialog(
 
 /** Min/max amount bounds; either side may be left blank for an open threshold. */
 @Composable
-private fun AmountRangeDialog(
+internal fun AmountRangeDialog(
     currentMin: java.math.BigDecimal?,
     currentMax: java.math.BigDecimal?,
     onDismiss: () -> Unit,

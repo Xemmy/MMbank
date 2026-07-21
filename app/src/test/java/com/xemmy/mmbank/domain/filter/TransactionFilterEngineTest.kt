@@ -368,4 +368,47 @@ class TransactionFilterEngineTest {
         assertTrue(ActivityFilters(source = TransactionSource.MANUAL).active)
         assertTrue(ActivityFilters(analyticsStatus = AnalyticsStatusFilter.EXCLUDED_ONLY).active)
     }
+
+    @Test
+    fun `active secondary filter count - zero when nothing beyond time-type-account is set`() {
+        assertEquals(0, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters()))
+        // Date range and direction aren't "secondary" -- they get their own chips.
+        assertEquals(
+            0,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(dateRange = DateRangeFilter.Past7Days, direction = TransactionDirection.DEBIT)
+            ),
+        )
+    }
+
+    @Test
+    fun `active secondary filter count - counts each dimension once, min and max amount as one`() {
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(person = PersonFilter.Unassigned)),
+        )
+        assertEquals(1, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(triageOnly = true)))
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(minAmount = BigDecimal.ONE)),
+        )
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(minAmount = BigDecimal.ONE, maxAmount = BigDecimal.TEN)
+            ),
+        )
+        assertEquals(
+            5,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(
+                    person = PersonFilter.Specific("Ahmed"),
+                    triageOnly = true,
+                    minAmount = BigDecimal.ONE,
+                    source = TransactionSource.MANUAL,
+                    analyticsStatus = AnalyticsStatusFilter.EXCLUDED_ONLY,
+                )
+            ),
+        )
+    }
 }

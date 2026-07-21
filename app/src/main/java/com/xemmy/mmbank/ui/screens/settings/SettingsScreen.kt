@@ -87,6 +87,7 @@ import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
@@ -122,6 +123,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     // detail dialog all need to see a toggle here live, not just this screen.
     val designMode: StateFlow<DesignMode> = container.designMode
     fun setDesignMode(mode: DesignMode) = container.setDesignMode(mode)
+
+    // Activity tab filter bar layout: only that one screen reads it, so a
+    // plain re-read (not a reactive AppContainer flow like designMode above).
+    var filterBarLayout by mutableStateOf(container.preferences.filterBarLayout)
+        private set
+    fun updateFilterBarLayout(layout: FilterBarLayout) {
+        container.preferences.filterBarLayout = layout
+        filterBarLayout = layout
+    }
 
     // --- Gate-2 AI parsing: local (loopback-only, e.g. Off Grid) or an explicit online provider ---
     var aiParsingEnabled by mutableStateOf(container.preferences.aiParsingEnabled)
@@ -1410,6 +1420,31 @@ fun DesignSettingsScreen(
                 checked = designMode == DesignMode.PREMIUM,
                 onCheckedChange = { checked ->
                     viewModel.setDesignMode(if (checked) DesignMode.PREMIUM else DesignMode.CLASSIC)
+                },
+            )
+        }
+
+        HorizontalDivider()
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Single-row filter bar", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Time, Type, and Account collapse into one scrollable row of dropdown chips on the " +
+                        "Activity tab, with the rest tucked behind a More filters dialog. Off reverts to the " +
+                        "classic filter chips wrapped across multiple lines.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.filterBarLayout == FilterBarLayout.SINGLE_ROW,
+                onCheckedChange = { checked ->
+                    viewModel.updateFilterBarLayout(if (checked) FilterBarLayout.SINGLE_ROW else FilterBarLayout.CLASSIC)
                 },
             )
         }
