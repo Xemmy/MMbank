@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -139,6 +140,8 @@ data class DashboardUiState(
     val hasUnconvertedAmounts: Boolean = false,
     /** True when crypto's value is deliberately left out of [netWorthInBase] (Settings toggle). */
     val cryptoExcludedFromTotal: Boolean = false,
+    /** True when credit card balances are deliberately left out of [netWorthInBase] (Settings toggle). */
+    val creditCardExcludedFromTotal: Boolean = false,
     val stats: DashboardStats = DashboardStats(),
     val goal: GoalState = GoalState(),
     /**
@@ -201,11 +204,13 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         val hideZeroBalances = container.preferences.hideZeroBalances
         val hideCryptoBalance = container.preferences.hideCryptoBalance
         val excludeCryptoFromTotal = container.preferences.excludeCryptoFromTotal
+        val hideCreditCardBalance = container.preferences.hideCreditCardBalance
+        val excludeCreditCardFromTotal = container.preferences.excludeCreditCardFromTotal
         val ratesFromBase = rates
             .filter { it.baseCode.equals(base, ignoreCase = true) }
             .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
 
-        val accountRows = accounts.map { account ->
+        val allAccountRows = accounts.map { account ->
             val balance = account.openingBalance.toDouble() + (netByAccount[account.id] ?: 0.0)
             AccountRow(
                 account = account,
@@ -213,6 +218,12 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 balanceInBase = CurrencyMath.toBase(balance, account.currencyCode, base, ratesFromBase),
             )
         }
+
+        val accountsResult = computeAccountsPresentation(
+            accountRows = allAccountRows,
+            hideCreditCardBalance = hideCreditCardBalance,
+            excludeCreditCardFromTotal = excludeCreditCardFromTotal,
+        )
 
         val cryptoResult = computeCryptoPresentation(
             assets = crypto.assets,
@@ -225,12 +236,12 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             minVisibleUsd = MIN_VISIBLE_USD,
         )
 
-        val fiatInBase = accountRows.mapNotNull { it.balanceInBase }.sum()
-        val hasUnconverted = accountRows.any { it.balanceInBase == null } || cryptoResult.hasUnconvertedCrypto
+        val fiatInBase = accountsResult.fiatTotalInBase
+        val hasUnconverted = accountsResult.hasUnconvertedFiat || cryptoResult.hasUnconvertedCrypto
 
         DashboardUiState(
             baseCurrency = base,
-            accounts = accountRows,
+            accounts = accountsResult.visibleAccounts,
             cryptoBalances = cryptoResult.visibleAssets,
             cryptoWallets = cryptoResult.visibleWallets,
             cryptoTotalUsd = cryptoResult.cryptoTotalUsd,
@@ -238,6 +249,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             netWorthInBase = fiatInBase + (cryptoResult.cryptoInBase ?: 0.0),
             hasUnconvertedAmounts = hasUnconverted,
             cryptoExcludedFromTotal = excludeCryptoFromTotal,
+            creditCardExcludedFromTotal = excludeCreditCardFromTotal,
         )
     }.recoverAndRetry("DashboardViewModel", container) { e ->
         // Never let a bad row (or a rates/DB hiccup) take the whole app down —
@@ -373,6 +385,44 @@ internal fun categorySlicesFrom(categorySpends: List<CategorySpend>): List<Categ
         CategorySlice(spend.category.label, spend.amount, SLICE_PALETTE[index])
     }
     return if (other > 0.0) slices + CategorySlice("Other", other, OTHER_SLICE_COLOR) else slices
+}
+
+/** Everything the Dashboard needs to show/fold in fiat accounts — see [computeAccountsPresentation]. */
+internal data class AccountsPresentation(
+    val visibleAccounts: List<AccountRow>,
+    val fiatTotalInBase: Double,
+    /** True only for a genuine conversion gap among rows counted toward the total. */
+    val hasUnconvertedFiat: Boolean,
+)
+
+/**
+ * Folds every fiat [AccountRow] into what the Dashboard displays and how much
+ * counts toward the net-worth total. [hideCreditCardBalance] and
+ * [excludeCreditCardFromTotal] are independent Settings toggles: hiding
+ * credit card accounts from the list does not by itself change the total,
+ * and excluding the total does not by itself hide the accounts.
+ *
+ * Pure and top-level so it runs under plain JVM unit tests, mirroring
+ * [computeCryptoPresentation].
+ */
+internal fun computeAccountsPresentation(
+    accountRows: List<AccountRow>,
+    hideCreditCardBalance: Boolean,
+    excludeCreditCardFromTotal: Boolean,
+): AccountsPresentation {
+    val visibleAccounts = if (hideCreditCardBalance) {
+        accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
+    } else {
+        accountRows
+    }
+    val totalRows = if (excludeCreditCardFromTotal) {
+        accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
+    } else {
+        accountRows
+    }
+    val fiatTotalInBase = totalRows.mapNotNull { it.balanceInBase }.sum()
+    val hasUnconvertedFiat = totalRows.any { it.balanceInBase == null }
+    return AccountsPresentation(visibleAccounts, fiatTotalInBase, hasUnconvertedFiat)
 }
 
 /** Everything the Dashboard needs to show/fold in crypto — see [computeCryptoPresentation]. */

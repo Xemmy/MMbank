@@ -92,6 +92,7 @@ fun DashboardScreen(
                     currency = state.baseCurrency,
                     approximate = state.hasUnconvertedAmounts,
                     cryptoExcluded = state.cryptoExcludedFromTotal,
+                    creditCardExcluded = state.creditCardExcludedFromTotal,
                     refreshing = state.refreshing,
                     hidden = hidden,
                     onToggleHide = viewModel::toggleHideBalances,
@@ -163,6 +164,7 @@ private fun NetWorthCard(
     currency: String,
     approximate: Boolean,
     cryptoExcluded: Boolean,
+    creditCardExcluded: Boolean,
     refreshing: Boolean,
     hidden: Boolean,
     onToggleHide: () -> Unit,
@@ -191,6 +193,13 @@ private fun NetWorthCard(
                 if (cryptoExcluded && !hidden) {
                     Text(
                         "Crypto excluded from total — change in Settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (creditCardExcluded && !hidden) {
+                    Text(
+                        "Credit card excluded from total — change in Settings.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

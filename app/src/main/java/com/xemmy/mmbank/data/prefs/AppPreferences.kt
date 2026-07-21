@@ -43,6 +43,20 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_EXCLUDE_CRYPTO_FROM_TOTAL, false)
         set(value) = prefs.edit().putBoolean(KEY_EXCLUDE_CRYPTO_FROM_TOTAL, value).apply()
 
+    /** Hides CREDIT_CARD accounts from the Dashboard's account list entirely. */
+    var hideCreditCardBalance: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_CREDIT_CARD_BALANCE, false)
+        set(value) = prefs.edit().putBoolean(KEY_HIDE_CREDIT_CARD_BALANCE, value).apply()
+
+    /**
+     * Leaves CREDIT_CARD accounts' balance out of the net-worth total,
+     * independent of [hideCreditCardBalance] — the accounts can stay visible
+     * while their value is excluded from totals, or vice versa.
+     */
+    var excludeCreditCardFromTotal: Boolean
+        get() = prefs.getBoolean(KEY_EXCLUDE_CREDIT_CARD_FROM_TOTAL, false)
+        set(value) = prefs.edit().putBoolean(KEY_EXCLUDE_CREDIT_CARD_FROM_TOTAL, value).apply()
+
     /** Person newly captured transactions are assigned to; null = unassigned. */
     var defaultPerson: String?
         get() = prefs.getString(KEY_DEFAULT_PERSON, null)?.takeIf { it.isNotBlank() }
@@ -204,6 +218,8 @@ class AppPreferences(context: Context) {
         const val KEY_HIDE_ZERO_BALANCES = "hide_zero_balances"
         const val KEY_HIDE_CRYPTO_BALANCE = "hide_crypto_balance"
         const val KEY_EXCLUDE_CRYPTO_FROM_TOTAL = "exclude_crypto_from_total"
+        const val KEY_HIDE_CREDIT_CARD_BALANCE = "hide_credit_card_balance"
+        const val KEY_EXCLUDE_CREDIT_CARD_FROM_TOTAL = "exclude_credit_card_from_total"
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"

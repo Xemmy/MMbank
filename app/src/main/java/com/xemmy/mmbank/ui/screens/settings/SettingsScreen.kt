@@ -106,6 +106,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var excludeCryptoFromTotal by mutableStateOf(container.preferences.excludeCryptoFromTotal)
         private set
+    var hideCreditCardBalance by mutableStateOf(container.preferences.hideCreditCardBalance)
+        private set
+    var excludeCreditCardFromTotal by mutableStateOf(container.preferences.excludeCreditCardFromTotal)
+        private set
     var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
         private set
     var appLockTimeoutMinutes by mutableStateOf(container.preferences.appLockTimeoutMinutes)
@@ -278,6 +282,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateExcludeCryptoFromTotal(exclude: Boolean) {
         container.preferences.excludeCryptoFromTotal = exclude
         excludeCryptoFromTotal = exclude
+    }
+
+    fun updateHideCreditCardBalance(hide: Boolean) {
+        container.preferences.hideCreditCardBalance = hide
+        hideCreditCardBalance = hide
+    }
+
+    fun updateExcludeCreditCardFromTotal(exclude: Boolean) {
+        container.preferences.excludeCreditCardFromTotal = exclude
+        excludeCreditCardFromTotal = exclude
     }
 
     /** Call only after the enabling auth prompt has succeeded (the UI enforces that). */
@@ -994,6 +1008,45 @@ fun PreferencesSettingsScreen(
             Switch(
                 checked = viewModel.excludeCryptoFromTotal,
                 onCheckedChange = viewModel::updateExcludeCryptoFromTotal,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide credit card balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Removes credit card accounts from the Dashboard's Accounts list entirely.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideCreditCardBalance,
+                onCheckedChange = viewModel::updateHideCreditCardBalance,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Exclude credit card from total balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Net worth on the Dashboard and Insights won't count credit card balances. " +
+                        "Independent of the toggle above — credit cards can stay visible while excluded, or vice versa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.excludeCreditCardFromTotal,
+                onCheckedChange = viewModel::updateExcludeCreditCardFromTotal,
             )
         }
 

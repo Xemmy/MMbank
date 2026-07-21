@@ -1,6 +1,8 @@
 package com.xemmy.mmbank.ui.screens.dashboard
 
 import com.xemmy.mmbank.domain.filter.DateWindow
+import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -373,6 +375,86 @@ class DashboardCryptoPresentationTest {
         val result = presentation(assets = listOf(asset(100.0)), wallets = listOf(wallet(400.0)))
         assertEquals(400.0, result.cryptoTotalUsd, 1e-9)
         assertEquals(400.0, result.cryptoInBase ?: 0.0, 1e-9)
+    }
+}
+
+/**
+ * [computeAccountsPresentation] folds fiat accounts into what the Dashboard
+ * shows and how much (if any) counts toward net worth. hideCreditCardBalance
+ * (visibility) and excludeCreditCardFromTotal (accounting) are independent
+ * Settings toggles, mirroring [computeCryptoPresentation] — the key thing
+ * these tests pin is that neither implies the other.
+ */
+class DashboardAccountsPresentationTest {
+
+    private fun row(
+        type: AccountType,
+        balanceInBase: Double?,
+        name: String = "Account",
+    ) = AccountRow(
+        account = Account(id = 1, name = name, type = type, currencyCode = "AED"),
+        balance = balanceInBase ?: 0.0,
+        balanceInBase = balanceInBase,
+    )
+
+    @Test
+    fun `hideCreditCardBalance drops credit card rows from the visible list`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = true,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(1, result.visibleAccounts.size)
+        assertEquals(AccountType.CHECKING, result.visibleAccounts.first().account.type)
+    }
+
+    @Test
+    fun `hiding credit cards does not by itself exclude them from the total`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = true,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(50.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `excluding the total does not by itself hide credit cards`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = true,
+        )
+        assertEquals(2, result.visibleAccounts.size)
+        assertEquals(100.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `neither toggle set keeps everything visible and summed`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(2, result.visibleAccounts.size)
+        assertEquals(50.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `an unconverted credit card row only flags hasUnconvertedFiat when not excluded`() {
+        val included = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CREDIT_CARD, null)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertTrue(included.hasUnconvertedFiat)
+
+        val excluded = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CREDIT_CARD, null)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = true,
+        )
+        assertFalse(excluded.hasUnconvertedFiat)
     }
 }
 
