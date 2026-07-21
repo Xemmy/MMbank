@@ -35,6 +35,7 @@ import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.ai.AiDailyBudget
 import com.xemmy.mmbank.domain.ai.AiParseResult
 import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.CapturedMessage
@@ -52,6 +53,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -317,10 +321,26 @@ class AppContainer(context: Context) {
     }
 
     /**
-     * Fire-and-forget: hands a Gate-1 miss to the expedited [AiParsingWorker].
-     * Never awaited, never allowed to affect the ingest pipeline's own result.
+     * A fresh [SimpleDateFormat] per call -- it's not thread-safe, and this is
+     * read from both the capture threads (notification listener / SMS
+     * receiver, via [consumeAiBudget]) and the UI thread (via
+     * [aiRequestsUsedToday]), so a single shared instance could corrupt under
+     * concurrent access.
+     */
+    private fun todaysAiBudgetDayKey(): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
+    /**
+     * Fire-and-forget: hands a Gate-1 miss to the expedited [AiParsingWorker],
+     * unless today's automatic-parsing budget ([AppPreferences.aiDailyRequestLimit],
+     * see [AiDailyBudget]) is already used up -- the message simply stays
+     * unparsed, same as any other Gate-2 skip. Never awaited, never allowed to
+     * affect the ingest pipeline's own result. The budget is only consulted
+     * while AI parsing is enabled, so it can't pre-exhaust itself while the
+     * feature is off.
      */
     private fun enqueueAiParsingWorker(message: CapturedMessage) {
+        if (preferences.aiParsingEnabled && !consumeAiBudget()) return
         val input = Data.Builder()
             .putString(AiParsingWorker.KEY_RAW_MESSAGE, message.body)
             .build()
@@ -329,6 +349,24 @@ class AppContainer(context: Context) {
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         WorkManager.getInstance(appContext).enqueue(request)
+    }
+
+    /** True and consumed if today's automatic-parsing budget has room; false (and untouched) once it's spent. */
+    private fun consumeAiBudget(): Boolean {
+        val today = todaysAiBudgetDayKey()
+        val dayKey = preferences.aiBudgetDayKey
+        val state = if (dayKey.isEmpty()) null else AiDailyBudget.State(dayKey, preferences.aiBudgetDayCount)
+        if (AiDailyBudget.isExhausted(state, today, preferences.aiDailyRequestLimit)) return false
+        val next = AiDailyBudget.next(state, today)
+        preferences.aiBudgetDayKey = next.dayKey
+        preferences.aiBudgetDayCount = next.count
+        return true
+    }
+
+    /** Automatic Gate-2 requests consumed so far today (read-only; for Settings' "used X / limit" display). */
+    fun aiRequestsUsedToday(): Int {
+        val today = todaysAiBudgetDayKey()
+        return if (preferences.aiBudgetDayKey == today) preferences.aiBudgetDayCount else 0
     }
 
     /**

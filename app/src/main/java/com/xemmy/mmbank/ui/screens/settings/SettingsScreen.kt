@@ -66,6 +66,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
@@ -112,6 +114,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var aiProviderMode by mutableStateOf(container.preferences.aiProviderMode)
         private set
+    var aiDailyRequestLimit by mutableStateOf(container.preferences.aiDailyRequestLimit)
+        private set
+    var aiDailyRequestLimitInput by mutableStateOf(container.preferences.aiDailyRequestLimit.toString())
     var aiEndpointUrl by mutableStateOf(container.preferences.aiEndpointUrl)
     var aiModelName by mutableStateOf(container.preferences.aiModelName)
     var aiApiKeyInput by mutableStateOf(container.credentialStore.aiApiKey.orEmpty())
@@ -122,6 +127,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var aiTestMessageStatus by mutableStateOf<String?>(null)
         private set
     var sendingTestAiMessage by mutableStateOf(false)
+        private set
+    var aiRequestsUsedToday by mutableStateOf(container.aiRequestsUsedToday())
         private set
 
     var apiKeyInput by mutableStateOf("")
@@ -308,6 +315,23 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         aiTestStatus = null
     }
 
+    /**
+     * Persists the daily cap on automatic Gate-2 escalations (background
+     * parsing only -- manual "Parse with AI" and the test buttons below stay
+     * uncapped). Invalid/blank input is ignored, leaving the field showing
+     * the last saved value rather than silently zeroing the limit.
+     */
+    fun saveAiDailyRequestLimit() {
+        val limit = aiDailyRequestLimitInput.toIntOrNull()
+        if (limit == null || limit < 1) {
+            aiDailyRequestLimitInput = aiDailyRequestLimit.toString()
+            return
+        }
+        container.preferences.aiDailyRequestLimit = limit
+        aiDailyRequestLimit = container.preferences.aiDailyRequestLimit
+        aiDailyRequestLimitInput = aiDailyRequestLimit.toString()
+    }
+
     /** Persists the endpoint + model fields (mode-appropriate validation happens at call time by the engine). */
     fun saveAiEndpoint() {
         // Normalize at save time (not request time) so the corrected URL is
@@ -339,6 +363,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun refreshAiState() {
         aiParsingEnabled = container.preferences.aiParsingEnabled
         aiProviderMode = container.preferences.aiProviderMode
+        aiDailyRequestLimit = container.preferences.aiDailyRequestLimit
+        aiDailyRequestLimitInput = aiDailyRequestLimit.toString()
+        aiRequestsUsedToday = container.aiRequestsUsedToday()
         aiEndpointUrl = container.preferences.aiEndpointUrl
         aiModelName = container.preferences.aiModelName
         aiApiKeyInput = container.credentialStore.aiApiKey.orEmpty()
@@ -1120,6 +1147,25 @@ fun AiSettingsScreen(
                 checked = viewModel.aiParsingEnabled,
                 onCheckedChange = viewModel::updateAiParsingEnabled,
             )
+        }
+
+        OutlinedTextField(
+            value = viewModel.aiDailyRequestLimitInput,
+            onValueChange = { viewModel.aiDailyRequestLimitInput = it.filter(Char::isDigit) },
+            label = { Text("Daily automatic-parsing limit") },
+            supportingText = {
+                Text(
+                    "Used today: ${viewModel.aiRequestsUsedToday} / ${viewModel.aiDailyRequestLimit}. " +
+                        "Caps background parsing only — manual \"Parse with AI\" and the test button below " +
+                        "are never limited.",
+                )
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = viewModel::saveAiDailyRequestLimit) { Text("Save limit") }
         }
 
         Text("Provider", style = MaterialTheme.typography.labelLarge)

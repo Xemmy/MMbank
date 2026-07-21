@@ -145,6 +145,25 @@ class AppPreferences(context: Context) {
         }.getOrDefault(AiProviderMode.LOCAL)
         set(value) = prefs.edit().putString(KEY_AI_PROVIDER_MODE, value.name).apply()
 
+    /**
+     * Caps automatic Gate-2 escalations (see [com.xemmy.mmbank.domain.ai.AiDailyBudget]) to
+     * this many per local day. Only the unattended background path is capped; the manual
+     * "Parse with AI" action and the Settings test buttons are unaffected.
+     */
+    var aiDailyRequestLimit: Int
+        get() = prefs.getInt(KEY_AI_DAILY_LIMIT, DEFAULT_AI_DAILY_LIMIT)
+        set(value) = prefs.edit().putInt(KEY_AI_DAILY_LIMIT, value.coerceAtLeast(1)).apply()
+
+    /** Local-day key (e.g. "2026-07-21") the automatic-parsing budget below was last consumed for. */
+    var aiBudgetDayKey: String
+        get() = prefs.getString(KEY_AI_BUDGET_DAY_KEY, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_AI_BUDGET_DAY_KEY, value).apply()
+
+    /** Automatic Gate-2 requests consumed so far on [aiBudgetDayKey]. Stale once the day rolls over. */
+    var aiBudgetDayCount: Int
+        get() = prefs.getInt(KEY_AI_BUDGET_DAY_COUNT, 0)
+        set(value) = prefs.edit().putInt(KEY_AI_BUDGET_DAY_COUNT, value).apply()
+
     /** Savings goal target, in the default currency. <= 0 means no goal set. */
     var goalTargetAmount: Double
         get() = prefs.getFloat(KEY_GOAL_TARGET, 0f).toDouble()
@@ -164,6 +183,10 @@ class AppPreferences(context: Context) {
         const val KEY_AI_ENDPOINT_URL = "ai_endpoint_url"
         const val KEY_AI_MODEL_NAME = "ai_model_name"
         const val KEY_AI_PROVIDER_MODE = "ai_provider_mode"
+        const val KEY_AI_DAILY_LIMIT = "ai_daily_limit"
+        const val KEY_AI_BUDGET_DAY_KEY = "ai_budget_day_key"
+        const val KEY_AI_BUDGET_DAY_COUNT = "ai_budget_day_count"
+        const val DEFAULT_AI_DAILY_LIMIT = 50
         const val KEY_DEFAULT_CURRENCY = "default_currency"
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"
