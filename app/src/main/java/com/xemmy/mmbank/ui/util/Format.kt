@@ -12,12 +12,25 @@ import java.util.Locale
 fun Double.asMoney(currencyCode: String): String =
     String.format(Locale.US, "%,.2f %s", this, currencyCode)
 
+/**
+ * Whole-currency-unit rendering (cents rounded off) for compact stat tiles
+ * — e.g. the Dashboard's Income/Spent/Net — where a full 2-decimal figure
+ * plus the drawn AED glyph doesn't reliably fit a narrow column. Display
+ * only: the underlying amount stays full-precision everywhere else.
+ */
+fun Double.asMoneyWhole(currencyCode: String): String =
+    String.format(Locale.US, "%,.0f %s", this, currencyCode)
+
 /** What the hide-balances toggle shows instead of any amount. */
 const val AMOUNT_MASK = "••••••"
 
 /** All maskable money rendering goes through this so the eye toggle works everywhere. */
 fun Double.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
     if (hidden) AMOUNT_MASK else asMoney(currencyCode)
+
+/** [asMoneyWhole] variant of [asMoneyOrMask], for compact stat tiles. */
+fun Double.asMoneyWholeOrMask(currencyCode: String, hidden: Boolean): String =
+    if (hidden) AMOUNT_MASK else asMoneyWhole(currencyCode)
 
 fun BigDecimal.asMoney(currencyCode: String): String =
     toDouble().asMoney(currencyCode)

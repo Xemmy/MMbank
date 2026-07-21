@@ -69,6 +69,7 @@ import com.xemmy.mmbank.ui.theme.glowBackdrop
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
+import com.xemmy.mmbank.ui.util.asMoneyWholeOrMask
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -338,16 +339,16 @@ private fun PeriodTiles(state: DashboardUiState) {
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         StatTile(
-            "Income", income.asMoneyOrMask(state.baseCurrency, hidden), ObsidianTokens.credit,
+            "Income", income.asMoneyWholeOrMask(state.baseCurrency, hidden), ObsidianTokens.credit,
             Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = true),
         )
         StatTile(
-            "Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), ObsidianTokens.debit,
+            "Spent", spend.asMoneyWholeOrMask(state.baseCurrency, hidden), ObsidianTokens.debit,
             Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = false),
         )
         StatTile(
             "Net",
-            net.asMoneyOrMask(state.baseCurrency, hidden),
+            net.asMoneyWholeOrMask(state.baseCurrency, hidden),
             if (net < 0) ObsidianTokens.debit else MaterialTheme.colorScheme.primary,
             Modifier.weight(1f),
         )
