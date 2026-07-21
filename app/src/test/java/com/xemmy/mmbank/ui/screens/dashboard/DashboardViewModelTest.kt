@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.dashboard
 
+import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -8,6 +9,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.model.WalletBalance
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -181,6 +183,78 @@ class DashboardViewModelTest {
         )
         assertTrue(result.categorySlices.none { it.name == "Other" })
     }
+
+    @Test
+    fun `default date range scopes period figures to this month, same as the old this-month behavior`() {
+        val result = stats(mixed, includeExcluded = false)
+        assertEquals("This month", result.periodLabel)
+        assertEquals(1000.0, result.periodIncome, 1e-9)
+        assertEquals(250.0, result.periodSpend, 1e-9)
+    }
+
+    @Test
+    fun `Last3Months pulls in spend from two months back that ThisMonth would miss`() {
+        val transactions = listOf(
+            tx("100.00", TransactionDirection.DEBIT, category = SpendingCategory.GROCERIES),
+            tx("60.00", TransactionDirection.DEBIT, category = SpendingCategory.DINING, month = thisMonth.minusMonths(2)),
+            // Outside the 3-month window entirely.
+            tx("500.00", TransactionDirection.DEBIT, month = thisMonth.minusMonths(3)),
+        )
+        val result = computeDashboardStats(
+            transactions = transactions,
+            rates = noRates,
+            baseCurrency = "AED",
+            zone = zone,
+            thisMonth = thisMonth,
+            dateRange = DashboardDateRange.Last3Months,
+        )
+        assertEquals("Last 3 months", result.periodLabel)
+        assertEquals(160.0, result.periodSpend, 1e-9)
+    }
+
+    @Test
+    fun `AllTime has no previous period, so no spend-trend insight fires`() {
+        val transactions = listOf(
+            tx("100.00", TransactionDirection.DEBIT, month = thisMonth.minusMonths(20)),
+            tx("200.00", TransactionDirection.CREDIT, month = thisMonth.minusMonths(20)),
+        )
+        val result = computeDashboardStats(
+            transactions = transactions,
+            rates = noRates,
+            baseCurrency = "AED",
+            zone = zone,
+            thisMonth = thisMonth,
+            dateRange = DashboardDateRange.AllTime,
+        )
+        assertEquals("All time", result.periodLabel)
+        assertEquals(100.0, result.periodSpend, 1e-9)
+        assertTrue(result.insights.none { it is SmartInsight.SpendTrend })
+    }
+
+    @Test
+    fun `a period with spend but no income yields a NoIncomeSpend insight, not a savings rate`() {
+        val transactions = listOf(tx("50.00", TransactionDirection.DEBIT))
+        val result = stats(transactions, includeExcluded = false)
+        assertTrue(result.insights.any { it is SmartInsight.NoIncomeSpend })
+        assertTrue(result.insights.none { it is SmartInsight.SavingsRate })
+    }
+
+    @Test
+    fun `the biggest debit in the period surfaces as a BiggestExpense insight`() {
+        val big = Transaction(
+            amount = BigDecimal("300.00"),
+            currencyCode = "AED",
+            direction = TransactionDirection.DEBIT,
+            source = TransactionSource.MANUAL,
+            timestampMillis = thisMonth.atDay(10).atStartOfDay(zone).toInstant().toEpochMilli(),
+            merchant = "Big Mart",
+            spendingCategory = SpendingCategory.SHOPPING,
+        )
+        val result = stats(mixed + big, includeExcluded = false)
+        val biggest = result.insights.filterIsInstance<SmartInsight.BiggestExpense>().single()
+        assertEquals("Big Mart", biggest.merchant)
+        assertEquals(300.0, biggest.amount, 1e-9)
+    }
 }
 
 /**
@@ -299,5 +373,188 @@ class DashboardCryptoPresentationTest {
         val result = presentation(assets = listOf(asset(100.0)), wallets = listOf(wallet(400.0)))
         assertEquals(400.0, result.cryptoTotalUsd, 1e-9)
         assertEquals(400.0, result.cryptoInBase ?: 0.0, 1e-9)
+    }
+}
+
+/**
+ * [resolveDashboardWindow] and [dashboardPeriodLabel] are the Dashboard's own
+ * date-filter presets, anchored on a [YearMonth] (not a live "today") so
+ * every preset's window is deterministic under test.
+ */
+class DashboardDateRangeTest {
+
+    private val thisMonth = YearMonth.of(2026, 6)
+
+    @Test
+    fun `ThisMonth resolves to the calendar month`() {
+        val window = resolveDashboardWindow(DashboardDateRange.ThisMonth, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `Last3Months spans this month and the two before it`() {
+        val window = resolveDashboardWindow(DashboardDateRange.Last3Months, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 4, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `Last6Months spans this month and the five before it`() {
+        val window = resolveDashboardWindow(DashboardDateRange.Last6Months, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `YearToDate starts on January 1st of thisMonth's year`() {
+        val window = resolveDashboardWindow(DashboardDateRange.YearToDate, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `AllTime is unbounded`() {
+        assertNull(resolveDashboardWindow(DashboardDateRange.AllTime, thisMonth))
+    }
+
+    @Test
+    fun `Custom normalizes a reversed start-end pair`() {
+        val reversed = DashboardDateRange.Custom(LocalDate.of(2026, 6, 20), LocalDate.of(2026, 6, 10))
+        val window = resolveDashboardWindow(reversed, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 6, 10), LocalDate.of(2026, 6, 20)), window)
+    }
+
+    @Test
+    fun `labels are human-readable for every preset, and Custom formats its span`() {
+        assertEquals("This month", dashboardPeriodLabel(DashboardDateRange.ThisMonth))
+        assertEquals("Last 3 months", dashboardPeriodLabel(DashboardDateRange.Last3Months))
+        assertEquals("Last 6 months", dashboardPeriodLabel(DashboardDateRange.Last6Months))
+        assertEquals("Year to date", dashboardPeriodLabel(DashboardDateRange.YearToDate))
+        assertEquals("All time", dashboardPeriodLabel(DashboardDateRange.AllTime))
+        assertEquals(
+            "Jun 1, 2026 – Jun 10, 2026",
+            dashboardPeriodLabel(DashboardDateRange.Custom(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 10))),
+        )
+    }
+}
+
+/**
+ * [computeSmartInsights] turns a period's raw totals into plain-English
+ * observations. Each insight kind is independent and only fires when it has
+ * enough signal — these tests pin both the firing conditions and the silence
+ * when a condition isn't met.
+ */
+class DashboardSmartInsightsTest {
+
+    private fun insights(
+        periodIncome: Double = 0.0,
+        periodSpend: Double = 0.0,
+        categorySpends: List<CategorySpend> = emptyList(),
+        previousPeriodSpend: Double? = null,
+        previousCategorySpends: List<CategorySpend> = emptyList(),
+        biggestExpense: Pair<String, Double>? = null,
+    ) = computeSmartInsights(
+        periodIncome, periodSpend, categorySpends, previousPeriodSpend, previousCategorySpends, biggestExpense,
+    )
+
+    @Test
+    fun `no signal yields no insights`() {
+        assertTrue(insights().isEmpty())
+    }
+
+    @Test
+    fun `spend trend fires negative when spend rose vs the previous period`() {
+        val result = insights(periodSpend = 150.0, previousPeriodSpend = 100.0)
+        val trend = result.filterIsInstance<SmartInsight.SpendTrend>().single()
+        assertEquals(50.0, trend.percentChange, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, trend.tone)
+    }
+
+    @Test
+    fun `spend trend fires positive when spend fell vs the previous period`() {
+        val result = insights(periodSpend = 50.0, previousPeriodSpend = 100.0)
+        val trend = result.filterIsInstance<SmartInsight.SpendTrend>().single()
+        assertEquals(-50.0, trend.percentChange, 1e-9)
+        assertEquals(InsightTone.POSITIVE, trend.tone)
+    }
+
+    @Test
+    fun `spend trend is silent below a 1 percent change`() {
+        val result = insights(periodSpend = 100.5, previousPeriodSpend = 100.0)
+        assertTrue(result.none { it is SmartInsight.SpendTrend })
+    }
+
+    @Test
+    fun `spend trend is silent when there is no previous period`() {
+        val result = insights(periodSpend = 500.0, previousPeriodSpend = null)
+        assertTrue(result.none { it is SmartInsight.SpendTrend })
+    }
+
+    @Test
+    fun `savings rate is positive when income exceeds spend`() {
+        val result = insights(periodIncome = 1000.0, periodSpend = 400.0)
+        val rate = result.filterIsInstance<SmartInsight.SavingsRate>().single()
+        assertEquals(60.0, rate.ratePercent, 1e-9)
+        assertEquals(InsightTone.POSITIVE, rate.tone)
+    }
+
+    @Test
+    fun `savings rate goes negative when spend exceeds income`() {
+        val result = insights(periodIncome = 400.0, periodSpend = 1000.0)
+        val rate = result.filterIsInstance<SmartInsight.SavingsRate>().single()
+        assertEquals(-150.0, rate.ratePercent, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, rate.tone)
+    }
+
+    @Test
+    fun `zero income with spend yields NoIncomeSpend instead of a savings rate`() {
+        val result = insights(periodIncome = 0.0, periodSpend = 250.0)
+        assertEquals(250.0, result.filterIsInstance<SmartInsight.NoIncomeSpend>().single().spend, 1e-9)
+        assertTrue(result.none { it is SmartInsight.SavingsRate })
+    }
+
+    @Test
+    fun `top category reports its share of total spend`() {
+        val result = insights(
+            categorySpends = listOf(
+                CategorySpend(SpendingCategory.GROCERIES, 300.0),
+                CategorySpend(SpendingCategory.DINING, 100.0),
+            ),
+        )
+        val top = result.filterIsInstance<SmartInsight.TopCategory>().single()
+        assertEquals(SpendingCategory.GROCERIES, top.category)
+        assertEquals(75.0, top.sharePercent, 1e-9)
+    }
+
+    @Test
+    fun `category spike fires for a category up at least 25 percent, picking the biggest mover`() {
+        val result = insights(
+            categorySpends = listOf(
+                CategorySpend(SpendingCategory.DINING, 130.0), // +30%
+                CategorySpend(SpendingCategory.TRANSPORT, 200.0), // +100%
+            ),
+            previousCategorySpends = listOf(
+                CategorySpend(SpendingCategory.DINING, 100.0),
+                CategorySpend(SpendingCategory.TRANSPORT, 100.0),
+            ),
+        )
+        val spike = result.filterIsInstance<SmartInsight.CategorySpike>().single()
+        assertEquals(SpendingCategory.TRANSPORT, spike.category)
+        assertEquals(100.0, spike.percentChange, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, spike.tone)
+    }
+
+    @Test
+    fun `category spike is silent below the 25 percent threshold`() {
+        val result = insights(
+            categorySpends = listOf(CategorySpend(SpendingCategory.DINING, 110.0)), // +10%
+            previousCategorySpends = listOf(CategorySpend(SpendingCategory.DINING, 100.0)),
+        )
+        assertTrue(result.none { it is SmartInsight.CategorySpike })
+    }
+
+    @Test
+    fun `biggest expense passes the merchant and amount through unchanged`() {
+        val result = insights(biggestExpense = "Corner Store" to 42.0)
+        val biggest = result.filterIsInstance<SmartInsight.BiggestExpense>().single()
+        assertEquals("Corner Store", biggest.merchant)
+        assertEquals(42.0, biggest.amount, 1e-9)
     }
 }

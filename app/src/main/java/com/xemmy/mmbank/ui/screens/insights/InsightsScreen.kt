@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,8 +24,12 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,9 +53,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.DonutChart
+import com.xemmy.mmbank.ui.screens.dashboard.DashboardDateRange
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.screens.dashboard.InsightTone
+import com.xemmy.mmbank.ui.screens.dashboard.SmartInsight
 import com.xemmy.mmbank.ui.screens.dashboard.netFlow
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
@@ -59,15 +69,20 @@ import com.xemmy.mmbank.ui.theme.glowBackdrop
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
- * The Dashboard tab: this-month stat tiles, savings goal, cash-flow chart,
- * per-person spend, and the doorway to cashback rewards. Reuses
- * [DashboardViewModel], which already assembles stats/goal/hide state.
+ * The Dashboard tab: a date-filterable period with stat tiles, smart-analysis
+ * insights, savings goal, a 6-month cash-flow chart, and per-category/person
+ * spend, plus the doorway to cashback rewards. Reuses [DashboardViewModel],
+ * which already assembles stats/goal/hide state.
  */
 @Composable
 fun InsightsScreen(
@@ -127,7 +142,15 @@ fun InsightsScreen(
             }
         }
 
-        item(key = "month_tiles") { MonthTiles(state) }
+        item(key = "date_filter_row") {
+            DateRangeFilterRow(selected = state.dateRange, onSelect = viewModel::setDateRange)
+        }
+
+        item(key = "period_tiles") { PeriodTiles(state) }
+
+        if (state.stats.insights.isNotEmpty()) {
+            item(key = "insights_card") { SmartInsightsCard(state) }
+        }
 
         item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
 
@@ -153,12 +176,163 @@ fun InsightsScreen(
     }
 }
 
-/** Income / Spent / Net for the current month as three stat tiles. */
+/**
+ * Chips for the Dashboard's own date filter (month-oriented, unlike the
+ * Activity tab's day-oriented presets) — drives [DashboardUiState.stats]'s
+ * period-scoped fields: the stat tiles, category/person breakdowns, and the
+ * smart-analysis insights. The 6-month cash-flow trend chart is unaffected.
+ */
 @Composable
-private fun MonthTiles(state: DashboardUiState) {
-    val month = state.stats.monthly.lastOrNull()
-    val income = month?.income ?: 0.0
-    val spend = month?.spend ?: 0.0
+private fun DateRangeFilterRow(selected: DashboardDateRange, onSelect: (DashboardDateRange) -> Unit) {
+    var customOpen by remember { mutableStateOf(false) }
+    val presets = listOf(
+        "This month" to DashboardDateRange.ThisMonth,
+        "3mo" to DashboardDateRange.Last3Months,
+        "6mo" to DashboardDateRange.Last6Months,
+        "YTD" to DashboardDateRange.YearToDate,
+        "All" to DashboardDateRange.AllTime,
+    )
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(presets) { (label, range) ->
+            FilterChip(
+                selected = selected == range,
+                onClick = { onSelect(range) },
+                label = { Text(label) },
+            )
+        }
+        item {
+            val isCustom = selected is DashboardDateRange.Custom
+            FilterChip(
+                selected = isCustom,
+                onClick = { customOpen = true },
+                label = {
+                    Text(
+                        if (isCustom) {
+                            val custom = selected as DashboardDateRange.Custom
+                            "${custom.start.format(chipDateFormat)} – ${custom.end.format(chipDateFormat)}"
+                        } else {
+                            "Custom"
+                        },
+                    )
+                },
+                leadingIcon = {
+                    Icon(Icons.Outlined.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                },
+            )
+        }
+    }
+
+    if (customOpen) {
+        DashboardCustomDateRangeDialog(
+            initial = selected as? DashboardDateRange.Custom,
+            onDismiss = { customOpen = false },
+            onSelect = { start, end ->
+                onSelect(DashboardDateRange.Custom(start, end))
+                customOpen = false
+            },
+        )
+    }
+}
+
+private val chipDateFormat = DateTimeFormatter.ofPattern("d MMM")
+
+/** Twin-calendar picker for the Dashboard's custom date range. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DashboardCustomDateRangeDialog(
+    initial: DashboardDateRange.Custom?,
+    onDismiss: () -> Unit,
+    onSelect: (LocalDate, LocalDate) -> Unit,
+) {
+    // The Material picker works in UTC day-millis, so conversions stay in UTC.
+    fun LocalDate.toUtcMillis() = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    fun Long.toUtcDate() = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
+
+    val pickerState = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = initial?.start?.toUtcMillis(),
+        initialSelectedEndDateMillis = initial?.end?.toUtcMillis(),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = pickerState.selectedStartDateMillis != null && pickerState.selectedEndDateMillis != null,
+                onClick = {
+                    val start = pickerState.selectedStartDateMillis
+                    val end = pickerState.selectedEndDateMillis
+                    if (start != null && end != null) onSelect(start.toUtcDate(), end.toUtcDate())
+                },
+            ) { Text("Apply") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DateRangePicker(state = pickerState, modifier = Modifier.weight(1f), showModeToggle = false)
+    }
+}
+
+/** Smart analysis of the selected period's money flow: trend, savings rate, top mover, standouts. */
+@Composable
+private fun SmartInsightsCard(state: DashboardUiState) {
+    val hidden = state.hideBalances
+    val currency = state.baseCurrency
+
+    ObsidianCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Smart insights", style = MaterialTheme.typography.titleSmall)
+            state.stats.insights.forEach { insight ->
+                Row(verticalAlignment = Alignment.Top) {
+                    val dotColor = when (insight.tone) {
+                        InsightTone.POSITIVE -> ObsidianTokens.credit
+                        InsightTone.NEGATIVE -> ObsidianTokens.debit
+                        InsightTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Box(
+                        Modifier
+                            .padding(top = 5.dp)
+                            .size(6.dp)
+                            .background(dotColor, CircleShape),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        insightText(insight, currency, hidden),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Renders one [SmartInsight] into plain English, applying money formatting and the hide-balances mask. */
+private fun insightText(insight: SmartInsight, currency: String, hidden: Boolean): String = when (insight) {
+    is SmartInsight.SpendTrend -> {
+        val direction = if (insight.percentChange > 0) "up" else "down"
+        "Spending is ${abs(insight.percentChange).roundToInt()}% $direction vs. the previous period"
+    }
+    is SmartInsight.SavingsRate ->
+        if (insight.ratePercent >= 0) {
+            "You saved ${insight.ratePercent.roundToInt()}% of your income this period"
+        } else {
+            "You spent ${(-insight.ratePercent).roundToInt()}% more than you earned this period"
+        }
+    is SmartInsight.TopCategory ->
+        "${insight.category.label} is your biggest expense at ${insight.sharePercent.roundToInt()}% " +
+            "(${insight.amount.asMoneyOrMask(currency, hidden)})"
+    is SmartInsight.CategorySpike ->
+        "${insight.category.label} spending jumped ${insight.percentChange.roundToInt()}% to " +
+            insight.amount.asMoneyOrMask(currency, hidden)
+    is SmartInsight.NoIncomeSpend ->
+        "No income recorded this period — ${insight.spend.asMoneyOrMask(currency, hidden)} went out"
+    is SmartInsight.BiggestExpense ->
+        "Your biggest expense was ${insight.amount.asMoneyOrMask(currency, hidden)} at ${insight.merchant}"
+}
+
+/** Income / Spent / Net for the selected period as three stat tiles. */
+@Composable
+private fun PeriodTiles(state: DashboardUiState) {
+    val income = state.stats.periodIncome
+    val spend = state.stats.periodSpend
     val net = netFlow(income, spend)
     val hidden = state.hideBalances
 
@@ -476,7 +650,11 @@ private fun CategorySpendCard(state: DashboardUiState) {
     ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("This month by category", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    "${state.stats.periodLabel} by category",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
                 Text(
                     total.asMoneyOrMask(state.baseCurrency, hidden),
                     style = MaterialTheme.typography.labelSmall,
@@ -528,7 +706,7 @@ private fun PersonSpendCard(state: DashboardUiState) {
 
     ObsidianCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("This month by person", style = MaterialTheme.typography.titleSmall)
+            Text("${state.stats.periodLabel} by person", style = MaterialTheme.typography.titleSmall)
             spends.forEachIndexed { index, entry ->
                 Column {
                     Row {
