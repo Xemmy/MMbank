@@ -683,7 +683,7 @@ fun SettingsScreen(
                 MenuRow(
                     icon = Icons.Filled.Palette,
                     title = "Design",
-                    subtitle = if (designMode == DesignMode.PREMIUM) "Premium · Material 3 Expressive" else "Classic",
+                    subtitle = if (designMode == DesignMode.PREMIUM) "Premium · AGSL indicator + springier motion" else "Classic",
                     onClick = { onOpen("settings_design") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
@@ -1399,8 +1399,8 @@ fun DesignSettingsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Premium design", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Material 3 Expressive theming, a GPU-shader AI-parsing indicator, and a " +
-                        "springier transaction detail dialog. Falls back to the plain Classic look " +
+                    "A GPU-shader AI-parsing indicator and a springier transaction detail dialog, " +
+                        "on top of the same Material 3 theme. Falls back to the plain Classic look " +
                         "on anything that can't render an effect.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -195,7 +195,7 @@ fun MMbankApp() {
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
-                            selectedIndicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
                     )
                 }

@@ -1,8 +1,6 @@
 package com.xemmy.mmbank.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -72,11 +70,13 @@ object GlowPalette {
 val LocalDesignMode = staticCompositionLocalOf { DesignMode.CLASSIC }
 
 /**
- * Classic renders the original Material 3 baseline theme. Premium opts into
- * [MaterialExpressiveTheme] -- same brand color scheme, but Material 3
- * Expressive's springier default motion scheme and expanded shape system.
+ * Classic and Premium share the same Material 3 baseline theme.
+ * MaterialExpressiveTheme stays `internal` in material3 until the library
+ * graduates it out of the 1.5.0-alpha train -- the compose-bom this project
+ * pins (stable, 1.4.x material3) can't reach it. Premium's distinct feel
+ * (springier entrance motion, AGSL AI-parsing indicator) instead comes from
+ * [LocalDesignMode] consumers branching on the mode directly.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MMbankTheme(
     designMode: DesignMode = DesignMode.CLASSIC,
@@ -85,18 +85,10 @@ fun MMbankTheme(
 ) {
     val colorScheme = if (darkTheme) DarkColors else LightColors
     CompositionLocalProvider(LocalDesignMode provides designMode) {
-        if (designMode == DesignMode.PREMIUM) {
-            MaterialExpressiveTheme(
-                colorScheme = colorScheme,
-                typography = ObsidianTypography,
-                content = content,
-            )
-        } else {
-            MaterialTheme(
-                colorScheme = colorScheme,
-                typography = ObsidianTypography,
-                content = content,
-            )
-        }
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = ObsidianTypography,
+            content = content,
+        )
     }
 }

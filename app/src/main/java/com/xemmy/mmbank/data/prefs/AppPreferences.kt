@@ -180,8 +180,9 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putInt(KEY_AI_BUDGET_DAY_COUNT, value).apply()
 
     /**
-     * Classic (Material 3 baseline) vs Premium (Material 3 Expressive theme +
-     * AGSL AI-parsing indicator + springier motion). Classic by default.
+     * Classic vs Premium (AGSL AI-parsing indicator + springier motion on top
+     * of the same Material 3 baseline theme -- see [com.xemmy.mmbank.ui.theme.MMbankTheme]).
+     * Classic by default.
      */
     var designMode: DesignMode
         get() = runCatching {
