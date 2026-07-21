@@ -164,6 +164,27 @@ object BuiltInRules {
             20,
         ),
 
+        // --- Credit-card statement payment landing on the card (priority 15) ---
+        // "Dear Customer, your payment of AED3600.00 on 7/20/2026 for card
+        // ending with *876 has been credited. Thank you" -- the funding side
+        // ("AED 3600.00 was debited from your account *963") is an ordinary
+        // debit and parses fine on its own, but this credit side contains
+        // "payment of" (a DEBIT keyword) before its actual direction word
+        // ("credited") appears, and "credited" isn't one of
+        // GenericExtractors' direction-override words -- so without this
+        // rule it's misclassified as a second, bogus debit of the same
+        // amount. Priority 15 outranks the generic priority-10 "payment of"
+        // debit rule so this specific, more-informative shape wins the
+        // match outright. IngestCapturedMessageUseCase tags anything matched
+        // here as excludeFromStats + SpendingCategory.TRANSFERS, and
+        // TransferMatcher then looks for the matching debit leg to link.
+        rule(
+            "builtin.en.transfer.card-payment-credit",
+            "payment\\s+of\\s+$CUR\\s?$AMT.{0,20}?\\bfor\\s+card\\s+ending\\b$ACCTAIL.{0,30}?\\bcredited\\b",
+            TransactionDirection.CREDIT,
+            15,
+        ),
+
         // --- Tabby cashback-earned notifications (priority 10) ---
         // "You earned AED 1.00! You got cashback with Tabby+. Your cashback
         // will be processed after next statement is paid." Tagged so the

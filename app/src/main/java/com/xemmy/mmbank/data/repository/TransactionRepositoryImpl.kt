@@ -9,9 +9,11 @@ import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.usecase.TransferMatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,28 +77,49 @@ class TransactionRepositoryImpl(
             val detectedAccountId = parsed.assignAccountId
                 ?: parsed.accountNumberSuffix?.let { detectAccountByNumber(it, parsed.currencyCode) }
 
-            val id = dao.insert(
-                TransactionEntity(
-                    amount = parsed.amount,
-                    currencyCode = parsed.currencyCode,
-                    direction = parsed.direction,
-                    merchant = parsed.merchant,
-                    source = message.source,
-                    sender = message.sender,
-                    rawMessage = message.body,
-                    matchedRuleName = parsed.matchedRuleName,
-                    timestamp = message.timestampMillis,
-                    createdAt = System.currentTimeMillis(),
-                    accountNumberSuffix = parsed.accountNumberSuffix,
-                    accountId = detectedAccountId,
-                    category = parsed.category,
-                    person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
-                    spendingCategory = MerchantCategorizer.categorize(parsed.merchant, message.body),
-                    excludeFromStats = parsed.excludeFromStats,
-                )
+            val entity = TransactionEntity(
+                amount = parsed.amount,
+                currencyCode = parsed.currencyCode,
+                direction = parsed.direction,
+                merchant = parsed.merchant,
+                source = message.source,
+                sender = message.sender,
+                rawMessage = message.body,
+                matchedRuleName = parsed.matchedRuleName,
+                timestamp = message.timestampMillis,
+                createdAt = System.currentTimeMillis(),
+                accountNumberSuffix = parsed.accountNumberSuffix,
+                accountId = detectedAccountId,
+                category = parsed.category,
+                person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
+                spendingCategory = parsed.spendingCategoryOverride
+                    ?: MerchantCategorizer.categorize(parsed.merchant, message.body),
+                excludeFromStats = parsed.excludeFromStats,
             )
+            val id = dao.insert(entity)
+            tryLinkTransfer(entity.copy(id = id))
             IngestResult.Inserted(id)
         }
+    }
+
+    /**
+     * Reconciles a credit-card statement payment's two legs (see
+     * [TransferMatcher]) right after inserting [inserted], inside the same
+     * Room transaction as the insert itself — matching [recordParsed]'s own
+     * atomicity guarantee, so a second, unrelated pair racing in can never
+     * grab an already-linked row.
+     */
+    private suspend fun tryLinkTransfer(inserted: TransactionEntity) {
+        val candidates = dao.findUnlinkedOppositeDirectionCandidates(
+            amount = inserted.amount,
+            currencyCode = inserted.currencyCode,
+            direction = inserted.direction,
+            timestamp = inserted.timestamp,
+            windowMillis = TransferMatcher.MATCH_WINDOW_MILLIS,
+        )
+        val match = TransferMatcher.bestMatch(inserted.toDomain(), candidates.map(TransactionEntity::toDomain)) ?: return
+        dao.linkAsTransfer(inserted.id, match.id, SpendingCategory.TRANSFERS)
+        dao.linkAsTransfer(match.id, inserted.id, SpendingCategory.TRANSFERS)
     }
 
     override suspend fun recordManual(transaction: Transaction): Long =

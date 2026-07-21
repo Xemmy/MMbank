@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -450,6 +451,48 @@ class TransactionParserTest {
         assertEquals("AED", r.currencyCode)
         assertEquals(TransactionDirection.DEBIT, r.direction)
         assertEquals("NOON", r.merchant)
+    }
+
+    // --- Credit-card statement payment landing on the card ---
+
+    @Test
+    fun `card payment credited message parses as a credit, not a bogus debit`() {
+        // "payment of" alone is a DEBIT keyword and "credited" isn't one of
+        // GenericExtractors' direction-override words, so without the
+        // dedicated builtin.en.transfer rule this mis-parses as a second
+        // debit of the same amount as the real funding-account debit.
+        val r = parser.parse(
+            sms("Dear Customer, your payment of AED3600.00 on 7/20/2026 for card ending with *876 has been credited. Thank you")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("3600.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("builtin.en.transfer.card-payment-credit", r.matchedRuleName)
+        assertEquals("876", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `the funding-account debit side of a card payment still parses as an ordinary debit`() {
+        // Regression guard: the new transfer rule must not affect this
+        // message's parsing -- it's an everyday debit, indistinguishable
+        // from any other, and TransferMatcher (not the parser) is what
+        // later recognizes it belongs with the credit above.
+        val r = parser.parse(
+            sms("Dear Customer, AED 3600.00 was debited from your account *963. Your available account balance is AED 5529.95")
+        )
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertEquals("963", r.accountNumberSuffix)
+        assertTrue(r.matchedRuleName.startsWith("builtin.en.debit."))
+    }
+
+    @Test
+    fun `an ordinary payment-of purchase is not mistaken for a card-payment credit`() {
+        val r = parser.parse(sms("Payment of AED 250.00 at CARREFOUR was made from your account *617"))
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertNotEquals("builtin.en.transfer.card-payment-credit", r.matchedRuleName)
     }
 
     // --- Kah-ching (KAST) purchases with a trailing cashback line ---

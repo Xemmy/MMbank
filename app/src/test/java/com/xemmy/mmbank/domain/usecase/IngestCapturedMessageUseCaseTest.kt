@@ -185,6 +185,42 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
+    fun `card payment credited message is excluded from stats and tagged as a transfer`() = runBlocking {
+        val result = useCase().invoke(
+            push(
+                "com.adcb.bank",
+                "Dear Customer, your payment of AED3600.00 on 7/20/2026 for card ending with *876 has been credited. Thank you",
+            )
+        )
+        assertTrue(result is IngestResult.Inserted)
+        val parsed = recorder.lastParsed!!
+        assertEquals("builtin.en.transfer.card-payment-credit", parsed.matchedRuleName)
+        assertEquals(TransactionDirection.CREDIT, parsed.direction)
+        assertTrue(parsed.excludeFromStats)
+        assertEquals(
+            com.xemmy.mmbank.domain.model.SpendingCategory.TRANSFERS,
+            parsed.spendingCategoryOverride,
+        )
+    }
+
+    @Test
+    fun `the funding debit side of a card payment is not itself tagged as a transfer`() = runBlocking {
+        // Only TransferMatcher (in TransactionRepositoryImpl, once it finds
+        // the matching credit) retags this side -- the parser/ingest layer
+        // alone can't distinguish it from any other ordinary debit.
+        val result = useCase().invoke(
+            push(
+                "com.adcb.bank",
+                "Dear Customer, AED 3600.00 was debited from your account *963. Your available account balance is AED 5529.95",
+            )
+        )
+        assertTrue(result is IngestResult.Inserted)
+        val parsed = recorder.lastParsed!!
+        assertFalse(parsed.excludeFromStats)
+        assertNull(parsed.spendingCategoryOverride)
+    }
+
+    @Test
     fun `rule edits take effect without rebuilding the use case`() = runBlocking {
         val uc = useCase()
         val body = "TXN:99.90/EUR"

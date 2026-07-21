@@ -24,7 +24,11 @@ import org.junit.Test
  */
 class EntityMappersTest {
 
-    private fun transaction(excludeFromStats: Boolean, isDemo: Boolean = false) = Transaction(
+    private fun transaction(
+        excludeFromStats: Boolean,
+        isDemo: Boolean = false,
+        linkedTransactionId: Long? = null,
+    ) = Transaction(
         id = 42,
         accountId = 7,
         amount = BigDecimal("229.59"),
@@ -42,6 +46,7 @@ class EntityMappersTest {
         person = "Me",
         spendingCategory = SpendingCategory.GROCERIES,
         excludeFromStats = excludeFromStats,
+        linkedTransactionId = linkedTransactionId,
         isDemo = isDemo,
     )
 
@@ -128,6 +133,37 @@ class EntityMappersTest {
         val entity = account(statementCycleDay = 10).toEntity()
         assertEquals(10, entity.statementCycleDay)
         assertEquals(entity, entity.toDomain().toEntity())
+    }
+
+    @Test
+    fun `transaction round-trip preserves a non-null linkedTransactionId`() {
+        val original = transaction(excludeFromStats = true, linkedTransactionId = 99)
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(99L, roundTripped.linkedTransactionId)
+    }
+
+    @Test
+    fun `transaction round-trip preserves a null linkedTransactionId`() {
+        val original = transaction(excludeFromStats = false, linkedTransactionId = null)
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.linkedTransactionId)
+    }
+
+    @Test
+    fun `transaction entity defaults linkedTransactionId to null`() {
+        // Mirrors the v12 migration: rows predating it load unlinked.
+        val entity = TransactionEntity(
+            amount = BigDecimal.ONE,
+            currencyCode = "AED",
+            direction = TransactionDirection.DEBIT,
+            source = TransactionSource.MANUAL,
+            timestamp = 0,
+            createdAt = 0,
+        )
+        assertNull(entity.linkedTransactionId)
+        assertNull(entity.toDomain().linkedTransactionId)
     }
 
     @Test

@@ -90,6 +90,8 @@ data class TransactionEntity(
     val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
     /** Kept in the ledger but omitted from analytics (corrections, refund adjustments, transfers). */
     val excludeFromStats: Boolean = false,
+    /** The counterpart transaction this one was reconciled with (see TransferMatcher); null until matched. */
+    val linkedTransactionId: Long? = null,
     /** True for sample rows created by the Settings "Demo mode" toggle. */
     val isDemo: Boolean = false,
 )
@@ -160,7 +162,7 @@ fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sen
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
-    spendingCategory, excludeFromStats, isDemo,
+    spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -181,6 +183,7 @@ fun Transaction.toEntity() = TransactionEntity(
     person = person,
     spendingCategory = spendingCategory,
     excludeFromStats = excludeFromStats,
+    linkedTransactionId = linkedTransactionId,
     isDemo = isDemo,
 )
 

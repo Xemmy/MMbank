@@ -32,7 +32,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -177,6 +177,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v11 -> v12: transfer reconciliation. A credit-card statement payment
+         * posts as two separate messages (a generic debit from the funding
+         * account, a credit landing on the card); this links the pair once
+         * TransferMatcher recognizes them, so neither leg double-counts in the
+         * Dashboard's Income/Spent stats. Null until/unless matched.
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN linkedTransactionId INTEGER")
+            }
+        }
+
         const val DB_NAME = "mmbank.db"
 
         /**
@@ -191,7 +204,7 @@ abstract class AppDatabase : RoomDatabase() {
             Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

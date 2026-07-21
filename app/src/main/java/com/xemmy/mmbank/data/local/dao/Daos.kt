@@ -122,6 +122,39 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id IN (:ids)")
     suspend fun deleteMany(ids: List<Long>): Int
 
+    /**
+     * Still-unlinked, opposite-direction, same amount+currency real rows
+     * within a broad time bound, for [com.xemmy.mmbank.domain.usecase.TransferMatcher]
+     * to narrow down to a final counterpart. `linkedTransactionId IS NULL`
+     * means an already-linked pair can never be reused by a later match.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE amount = :amount
+          AND currencyCode = :currencyCode
+          AND direction != :direction
+          AND isDemo = 0
+          AND linkedTransactionId IS NULL
+          AND ABS(timestamp - :timestamp) <= :windowMillis
+        ORDER BY ABS(timestamp - :timestamp) ASC
+        """
+    )
+    suspend fun findUnlinkedOppositeDirectionCandidates(
+        amount: BigDecimal,
+        currencyCode: String,
+        direction: TransactionDirection,
+        timestamp: Long,
+        windowMillis: Long,
+    ): List<TransactionEntity>
+
+    /** Marks a transfer-reconciliation match: both sides call this with each other's id. */
+    @Query(
+        "UPDATE transactions SET linkedTransactionId = :linkedId, excludeFromStats = 1, spendingCategory = :category " +
+            "WHERE id = :id"
+    )
+    suspend fun linkAsTransfer(id: Long, linkedId: Long, category: com.xemmy.mmbank.domain.model.SpendingCategory)
+
     // --- Backup support ---
 
     // Backups carry only real rows — demo data must never leak into an export.

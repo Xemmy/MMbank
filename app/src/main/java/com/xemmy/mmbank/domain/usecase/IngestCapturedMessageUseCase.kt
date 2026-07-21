@@ -3,6 +3,7 @@ package com.xemmy.mmbank.domain.usecase
 import com.xemmy.mmbank.domain.ai.AiForwardGate
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BuiltInRules
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
@@ -78,17 +79,26 @@ class IngestCapturedMessageUseCase(
         // charges) correct an already-recorded purchase rather than describe a
         // new spend, so they must not skew analytics. They stay in the ledger
         // (balances remain right) but carry the exclusion flag.
-        val flagged =
-            if (parsed.matchedRuleName.startsWith(ADJUSTMENT_RULE_PREFIX)) {
-                parsed.copy(excludeFromStats = true)
-            } else {
-                parsed
-            }
+        //
+        // A recognized credit-card statement payment (the credit leg landing
+        // on the card) is similarly not a fresh spend or fresh income — it's
+        // one side of an internal transfer. Tagging it here (excludeFromStats
+        // + SpendingCategory.TRANSFERS) is what lets TransactionRepositoryImpl's
+        // TransferMatcher step later find and re-tag its debit counterpart too.
+        val flagged = when {
+            parsed.matchedRuleName.startsWith(ADJUSTMENT_RULE_PREFIX) -> parsed.copy(excludeFromStats = true)
+            parsed.matchedRuleName.startsWith(TRANSFER_RULE_PREFIX) ->
+                parsed.copy(excludeFromStats = true, spendingCategoryOverride = SpendingCategory.TRANSFERS)
+            else -> parsed
+        }
         return transactionRepository.recordParsed(flagged, message)
     }
 
     companion object {
         /** The priority-20 builtin.en.adjust.* rules in [BuiltInRules]. */
         const val ADJUSTMENT_RULE_PREFIX = "builtin.en.adjust."
+
+        /** The priority-15 builtin.en.transfer.* rules in [BuiltInRules] (credit-card statement payments). */
+        const val TRANSFER_RULE_PREFIX = "builtin.en.transfer."
     }
 }

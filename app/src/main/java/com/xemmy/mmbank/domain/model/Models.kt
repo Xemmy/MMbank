@@ -63,6 +63,14 @@ data class ParsedTransaction(
     val assignAccountId: Long? = null,
     /** Persisted onto the transaction: keep it in the ledger but out of analytics. */
     val excludeFromStats: Boolean = false,
+    /**
+     * Pins the spending category instead of leaving it to
+     * [com.xemmy.mmbank.domain.parser.MerchantCategorizer]'s merchant-text
+     * guess — set by rules that already know what the message is (e.g. a
+     * recognized credit-card statement payment is [SpendingCategory.TRANSFERS]
+     * regardless of what "merchant" text happens to be nearby).
+     */
+    val spendingCategoryOverride: SpendingCategory? = null,
 )
 
 data class Account(
@@ -144,6 +152,14 @@ data class Transaction(
      * refund adjustments, internal transfers, cash refunds.
      */
     val excludeFromStats: Boolean = false,
+    /**
+     * The counterpart transaction this one was reconciled with — the other
+     * leg of a credit-card statement payment (see
+     * [com.xemmy.mmbank.domain.usecase.TransferMatcher]). Null until/unless
+     * a matching opposite-direction transaction is found; set on both rows
+     * at once, so it's always symmetric.
+     */
+    val linkedTransactionId: Long? = null,
     /** True for sample rows created by the Settings "Demo mode" toggle. */
     val isDemo: Boolean = false,
 )
