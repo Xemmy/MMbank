@@ -91,6 +91,7 @@ import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -101,6 +102,12 @@ private const val TEST_AI_MESSAGE = "TEST MESSAGE — You spent AED 42.00 at Tes
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
+    // Activity tab Premium hero card's budget consumption bar. <= 0 (or blank)
+    // means no budget is set; the input mirrors aiDailyRequestLimitInput's
+    // "type freely, Save commits" shape rather than saving on every keystroke.
+    var monthlySpendBudgetInput by mutableStateOf(
+        container.preferences.monthlySpendBudget.takeIf { it > 0.0 }?.toString().orEmpty()
+    )
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
@@ -277,6 +284,25 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             statusMessage = "Currency must be a 3-letter ISO code"
         }
+    }
+
+    /** Blank input clears the budget (the hero card then shows the total with no consumption bar). */
+    fun saveMonthlySpendBudget() {
+        val trimmed = monthlySpendBudgetInput.trim()
+        if (trimmed.isEmpty()) {
+            container.preferences.monthlySpendBudget = 0.0
+            statusMessage = "Monthly budget cleared"
+            return
+        }
+        val amount = trimmed.toDoubleOrNull()
+        if (amount == null || amount <= 0.0) {
+            monthlySpendBudgetInput =
+                container.preferences.monthlySpendBudget.takeIf { it > 0.0 }?.toString().orEmpty()
+            statusMessage = "Budget must be a positive amount"
+            return
+        }
+        container.preferences.monthlySpendBudget = amount
+        statusMessage = "Monthly budget set to ${amount.asMoney(defaultCurrency)}"
     }
 
     fun updateHideZeroBalances(hide: Boolean) {
@@ -949,6 +975,19 @@ fun PreferencesSettingsScreen(
                 modifier = Modifier.weight(1f),
             )
             Button(onClick = viewModel::saveDefaultCurrency) { Text("Save") }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = viewModel.monthlySpendBudgetInput,
+                onValueChange = { viewModel.monthlySpendBudgetInput = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Monthly spend budget") },
+                supportingText = { Text("Drives the Activity tab's Premium hero card. Leave blank for no budget.") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = viewModel::saveMonthlySpendBudget) { Text("Save") }
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

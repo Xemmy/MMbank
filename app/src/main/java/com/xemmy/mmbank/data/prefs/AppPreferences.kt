@@ -216,6 +216,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getFloat(KEY_GOAL_MONTHLY, 0f).toDouble()
         set(value) = prefs.edit().putFloat(KEY_GOAL_MONTHLY, value.toFloat()).apply()
 
+    /**
+     * Monthly spend threshold, in [defaultCurrency], that the Activity tab's
+     * Premium hero card measures the currently filtered total against.
+     * <= 0 means no budget is set — the hero card then shows the total
+     * without a consumption bar.
+     */
+    var monthlySpendBudget: Double
+        get() = prefs.getFloat(KEY_MONTHLY_SPEND_BUDGET, 0f).toDouble()
+        set(value) = prefs.edit().putFloat(KEY_MONTHLY_SPEND_BUDGET, value.toFloat()).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -244,6 +254,7 @@ class AppPreferences(context: Context) {
         const val KEY_APP_LOCK_LAST_ACTIVE = "app_lock_last_active_at"
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
+        const val KEY_MONTHLY_SPEND_BUDGET = "monthly_spend_budget"
         const val KEY_DESIGN_MODE = "design_mode"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
     }

@@ -69,7 +69,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -110,6 +112,8 @@ import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
@@ -127,6 +131,7 @@ import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
+import com.xemmy.mmbank.ui.theme.LocalDesignMode
 import com.xemmy.mmbank.ui.theme.MetaLabel
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
@@ -137,6 +142,7 @@ import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MAX_LENGTH
 import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MIN_LENGTH
+import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.dayPillLabel
@@ -189,6 +195,52 @@ data class AiEditorFill(
     val direction: TransactionDirection,
 )
 
+/**
+ * [TransactionsViewModel.spendSummaryState]: the currently filtered feed's
+ * total spend (Time/Type/Account chips plus any secondary filter — see
+ * [TransactionsUiState.transactions]) and how much of the monthly budget
+ * threshold ([com.xemmy.mmbank.data.prefs.AppPreferences.monthlySpendBudget])
+ * that consumes. Premium-only; see [HeroSpendSummaryCard].
+ */
+data class SpendSummaryState(
+    val totalSpent: Double = 0.0,
+    val currencyCode: String = "USD",
+    /** Monthly budget threshold from Settings; <= 0 means none is set. */
+    val budgetAmount: Double = 0.0,
+    val hasBudget: Boolean = false,
+    /** 0 when [hasBudget] is false. Can exceed 100 when over budget. */
+    val budgetConsumedPercent: Double = 0.0,
+)
+
+/**
+ * Sums the DEBIT amount of every already-filtered [transactions] row into
+ * [baseCurrency] using the latest Forex [rates] — the same FX handling as
+ * [com.xemmy.mmbank.ui.screens.dashboard.computeDashboardStats]. A row whose
+ * currency has no rate to [baseCurrency] is skipped, same as the Dashboard.
+ * Pure and top-level so it's JVM-testable off the main thread.
+ */
+internal fun computeSpendSummary(
+    transactions: List<Transaction>,
+    rates: List<ExchangeRate>,
+    baseCurrency: String,
+    monthlyBudget: Double,
+): SpendSummaryState {
+    val ratesFromBase = rates
+        .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+        .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+    val totalSpent = transactions
+        .filter { it.direction == TransactionDirection.DEBIT }
+        .sumOf { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase) ?: 0.0 }
+    val hasBudget = monthlyBudget > 0.0
+    return SpendSummaryState(
+        totalSpent = totalSpent,
+        currencyCode = baseCurrency,
+        budgetAmount = monthlyBudget,
+        hasBudget = hasBudget,
+        budgetConsumedPercent = if (hasBudget) totalSpent / monthlyBudget * 100.0 else 0.0,
+    )
+}
+
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val filters = MutableStateFlow(ActivityFilters())
@@ -231,6 +283,25 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }.recoverAndRetry("TransactionsViewModel", container) {
         TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
+
+    /**
+     * Premium hero card's total spend + budget consumption for the currently
+     * filtered feed (see [computeSpendSummary]). Riding [uiState] means it
+     * reflects every active filter, not just Time/Type/Account.
+     */
+    val spendSummaryState: StateFlow<SpendSummaryState> = combine(
+        uiState,
+        container.ratesRepository.observeRates(),
+    ) { state, rates ->
+        computeSpendSummary(
+            transactions = state.transactions,
+            rates = rates,
+            baseCurrency = container.preferences.defaultCurrency,
+            monthlyBudget = container.preferences.monthlySpendBudget,
+        )
+    }.recoverAndRetry("TransactionsViewModel.spendSummary", container) {
+        SpendSummaryState()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpendSummaryState())
 
     /** Manual "Parse with AI" is offered only when the feature is on + a valid loopback endpoint is set. */
     val aiParsingConfigured: Boolean get() = container.localAiManager.isConfigured()
@@ -396,12 +467,13 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -438,7 +510,27 @@ fun TransactionsScreen(
         }
     }
 
+    // Standard Material 3 collapse behavior for the Premium hero card, kept
+    // separate from the filter header's own hand-rolled FilterBarCollapse
+    // above. Attached as the OUTER nestedScroll (on the Scaffold, below) so it
+    // gets first claim on upward scroll: the hero collapses away completely
+    // before any leftover delta reaches feedScrollConnection to compact the
+    // filter header, and expands back in the reverse order on scroll down.
+    val heroScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val heroVisible = LocalDesignMode.current == DesignMode.PREMIUM && !state.isInBulkMode
+    // The hero card stops measuring (and so stops updating heightOffsetLimit)
+    // whenever it's not shown -- Classic, or bulk mode temporarily hiding it.
+    // Without this, a mid-collapse offset from before it disappeared would
+    // silently keep eating scroll deltas meant for the list underneath.
+    LaunchedEffect(heroVisible) {
+        if (!heroVisible) {
+            heroScrollBehavior.state.heightOffsetLimit = 0f
+            heroScrollBehavior.state.heightOffset = 0f
+        }
+    }
+
     Scaffold(
+        modifier = Modifier.nestedScroll(heroScrollBehavior.nestedScrollConnection),
         floatingActionButton = {
             FloatingActionButton(onClick = { addOpen = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add transaction")
@@ -471,6 +563,25 @@ fun TransactionsScreen(
                         collapseFraction = 0f
                     },
                 )
+                // Premium-only hero spend summary, directly above the filter bar.
+                if (heroVisible) {
+                    Box(
+                        Modifier
+                            .clipToBounds()
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                heroScrollBehavior.state.heightOffsetLimit = -placeable.height.toFloat()
+                                val heroFraction = heroScrollBehavior.state.collapsedFraction
+                                val visibleHeight = (placeable.height * (1f - heroFraction)).roundToInt()
+                                layout(placeable.width, visibleHeight) {
+                                    placeable.placeRelative(0, visibleHeight - placeable.height)
+                                }
+                            }
+                            .graphicsLayer { alpha = 1f - heroScrollBehavior.state.collapsedFraction },
+                    ) {
+                        HeroSpendSummaryCard(state = spendSummary)
+                    }
+                }
                 Box(
                     Modifier
                         .clipToBounds()
