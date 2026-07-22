@@ -301,6 +301,25 @@ class TransactionParserTest {
     }
 
     @Test
+    fun `arabic Dr message with period after account label still extracts account`() {
+        // Regression: this bank's template punctuates every field label
+        // ("رقم:", "مبلغ:") but uses a period before the account digits
+        // ("حسابك رقم. XXX810001"). ACCTAIL's "حساب رقم\s*" required
+        // whitespace right before the digits, so the stray period made the
+        // whole optional account group silently match nothing -- direction
+        // and amount still came out right off "Dr.", only the account was
+        // dropped.
+        val r = parser.parse(
+            sms("تم بنجاح إنجاز المعاملة رقم: Dr. مبلغ: AED 5500.00 على حسابك رقم. XXX810001 والرصيد المتاح هو AED 35994.95.")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("5500.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("XXX810001", r.accountNumberSuffix)
+    }
+
+    @Test
     fun `amount 1 AED with account marker is not mistaken for the account number`() {
         // Regression: the fallback bare rule used to capture "617" (from *617)
         // as the amount. The amount must be 1.00 and the account must be 617.

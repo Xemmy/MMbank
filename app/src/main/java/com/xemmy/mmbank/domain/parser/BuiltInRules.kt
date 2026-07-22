@@ -64,9 +64,15 @@ object BuiltInRules {
      * tries to find a number first and only falls back to matching nothing, so
      * it captures "*617", "account *963" (English) and "حساب(ك) رقم XXX810001"
      * (Arabic) when present, and stays out of the way otherwise.
+     *
+     * "[.:]?" after رقم tolerates templates that punctuate every field label
+     * (e.g. "...على حسابك رقم. XXX810001 والرصيد...") -- without it the stray
+     * period sits between رقم and the digits and the whole optional group
+     * quietly matches nothing, dropping the account silently while direction
+     * and amount still parse fine off the "Dr."/"Cr." keyword.
      */
     private const val ACCTAIL =
-        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,9}))?"
+        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم[.:]?\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,9}))?"
 
     private const val KW_DEBIT_EN =
         "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase)|dr)\\b"
@@ -78,7 +84,13 @@ object BuiltInRules {
     private const val KW_CREDIT_AR =
         "(?:تم\\s+)?(?:إيداع|استلام|إضافة)|تحويل\\s+وارد|حوالة\\s+واردة|دائن|راتب"
 
-    // Arabic account markers for the transfer rules below.
+    // Arabic account markers for the transfer rules below. Deliberately NOT
+    // given ACCTAIL's "[.:]?" punctuation tolerance: transfer.in/out infer
+    // CREDIT/DEBIT purely from إلى/على vs. من with no Dr./Cr. cross-check, so
+    // loosening this would let them hijack a Dr.-tagged debit message whose
+    // "على حسابك رقم." happens to use على for an unrelated reason, stealing
+    // the match from the keyword rules below (which read Dr./Cr. correctly)
+    // at a higher priority.
     private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})"
 
     private fun rule(
