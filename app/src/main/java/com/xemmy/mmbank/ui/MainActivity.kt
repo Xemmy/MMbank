@@ -65,6 +65,7 @@ import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
+import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import kotlinx.coroutines.delay
 
@@ -242,7 +243,12 @@ private fun AppNavHost(
         modifier = modifier,
     ) {
         composable("home") { DashboardScreen() }
-        composable("transactions") { TransactionsScreen() }
+        composable("transactions") {
+            TransactionsScreen(onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") })
+        }
+        composable("uncategorized_queue") {
+            UncategorizedQueueScreen(onBack = { navController.popBackStack() })
+        }
         composable("insights") {
             InsightsScreen(onOpenRewards = { navController.navigate("cashback") })
         }

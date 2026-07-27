@@ -162,6 +162,23 @@ data class Transaction(
     val linkedTransactionId: Long? = null,
     /** True for sample rows created by the Settings "Demo mode" toggle. */
     val isDemo: Boolean = false,
+    /**
+     * Dynamic [Category] assigned to this transaction (see [CategoryRepository]
+     * / [com.xemmy.mmbank.domain.parser.CategoryMatcher]), independent of the
+     * fixed [spendingCategory] enum. Null until a merchant mapping matches or
+     * the user/AI-suggestion flow assigns one.
+     */
+    val categoryId: Long? = null,
+    /**
+     * True while an AI-suggested category (the suggested* fields below) is
+     * awaiting human approval in the Uncategorized queue -- never auto-applied,
+     * same invariant as [com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator]'s
+     * pending rules.
+     */
+    val needsCategoryApproval: Boolean = false,
+    val suggestedCategoryName: String? = null,
+    val suggestedCategoryIcon: String? = null,
+    val suggestedCategoryColorHex: String? = null,
 )
 
 /**

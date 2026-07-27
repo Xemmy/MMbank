@@ -122,6 +122,65 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id IN (:ids)")
     suspend fun deleteMany(ids: List<Long>): Int
 
+    // --- Dynamic category assignment (see CategoryRepository / CategoryMatcher) ---
+
+    /** Assigns a dynamic category and clears any pending AI suggestion on the row (manual pick or accept). */
+    @Query(
+        "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
+            "WHERE id = :transactionId"
+    )
+    suspend fun setCategory(transactionId: Long, categoryId: Long?)
+
+    /** Dismisses a pending AI suggestion without assigning a category -- the row stays uncategorized. */
+    @Query(
+        "UPDATE transactions SET needsCategoryApproval = 0, suggestedCategoryName = NULL, " +
+            "suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL WHERE id = :transactionId"
+    )
+    suspend fun dismissCategorySuggestion(transactionId: Long)
+
+    /**
+     * Backfills a newly learned/confirmed merchant->category rule onto every
+     * still-uncategorized real row from that merchant (mirrors
+     * [assignAccountByRuleName]'s backfill pattern). Returns the count.
+     */
+    @Query(
+        "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
+            "WHERE merchant = :merchant COLLATE NOCASE AND categoryId IS NULL"
+    )
+    suspend fun backfillCategoryByMerchant(merchant: String, categoryId: Long): Int
+
+    /** Flags every still-uncategorized row from [merchant] with a pending AI category suggestion. Returns the count. */
+    @Query(
+        "UPDATE transactions SET needsCategoryApproval = 1, suggestedCategoryName = :name, " +
+            "suggestedCategoryIcon = :icon, suggestedCategoryColorHex = :colorHex " +
+            "WHERE merchant = :merchant COLLATE NOCASE AND categoryId IS NULL"
+    )
+    suspend fun backfillCategorySuggestionByMerchant(merchant: String, name: String, icon: String?, colorHex: String?): Int
+
+    /**
+     * Real, non-excluded transactions still missing a dynamic category: either
+     * a static-enum Uncategorized row, or one carrying a pending AI suggestion.
+     * Backs the Uncategorized queue screen.
+     */
+    @Query(
+        "SELECT * FROM transactions WHERE isDemo = :demo AND " +
+            "(needsCategoryApproval = 1 OR (categoryId IS NULL AND spendingCategory = 'UNCATEGORIZED')) " +
+            "ORDER BY timestamp DESC"
+    )
+    fun observeUncategorized(demo: Boolean): Flow<List<TransactionEntity>>
+
+    /** Total real debit spend (analytics-eligible) in [currencyCode] within [ [startMillis], [endMillis] ) -- feeds [com.xemmy.mmbank.domain.budget.DailyBudgetPacing]. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(CAST(amount AS REAL)), 0.0) FROM transactions
+        WHERE isDemo = 0 AND excludeFromStats = 0 AND direction = 'DEBIT' AND currencyCode = :currencyCode
+          AND timestamp >= :startMillis AND timestamp < :endMillis
+        """
+    )
+    suspend fun sumDebitsInRange(currencyCode: String, startMillis: Long, endMillis: Long): Double
+
     /**
      * Still-unlinked, opposite-direction, same amount+currency real rows
      * within a broad time bound, for [com.xemmy.mmbank.domain.usecase.TransferMatcher]

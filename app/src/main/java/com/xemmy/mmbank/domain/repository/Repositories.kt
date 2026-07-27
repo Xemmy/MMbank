@@ -3,8 +3,10 @@ package com.xemmy.mmbank.domain.repository
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.IngestResult
+import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SenderLabel
@@ -43,6 +45,12 @@ interface TransactionRepository {
     suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int
     /** Multi-select delete. Returns the number of rows removed. */
     suspend fun deleteMany(ids: List<Long>): Int
+    /** Real, non-demo rows still missing a dynamic category (plain Uncategorized or a pending AI suggestion). */
+    fun observeUncategorized(): Flow<List<Transaction>>
+    /** Assigns (or clears, with null) a dynamic [Category] on a transaction; clears any pending suggestion. */
+    suspend fun setCategory(transactionId: Long, categoryId: Long?)
+    /** Dismisses a pending AI category suggestion without assigning a category. */
+    suspend fun dismissCategorySuggestion(transactionId: Long)
 }
 
 interface AccountRepository {
@@ -93,4 +101,33 @@ interface RatesRepository {
     fun observeRates(): Flow<List<ExchangeRate>>
     /** Refreshes Forex rates for [baseCurrency]. Returns the number of rates stored. */
     suspend fun refresh(baseCurrency: String): Result<Int>
+}
+
+/**
+ * Dynamic categories + learned merchant mappings (Phase 1/2 of the smart
+ * categorization engine). Independent of the fixed [SpendingCategory] enum,
+ * which stays in place for the Dashboard/Insights breakdowns.
+ */
+interface CategoryRepository {
+    fun observeAll(): Flow<List<Category>>
+    fun observeMappings(): Flow<List<MerchantCategoryMapping>>
+    suspend fun getById(id: Long): Category?
+    /** Inserts a new category (id = 0) or updates an existing one; returns its id. */
+    suspend fun save(category: Category): Long
+    suspend fun delete(id: Long)
+    /** Resolves [merchant] against confirmed mappings only (see [com.xemmy.mmbank.domain.parser.CategoryMatcher]). */
+    suspend fun findCategoryForMerchant(merchant: String): Long?
+    /** An unconfirmed AI guess staged for [merchant], if any. */
+    suspend fun findPendingSuggestion(merchant: String): MerchantCategoryMapping?
+    /**
+     * Confirms merchant -> category and backfills every still-uncategorized
+     * real transaction from that merchant onto it. Returns rows backfilled.
+     */
+    suspend fun learnMapping(merchant: String, categoryId: Long, isExactMatch: Boolean = true): Int
+    /**
+     * Stages an unconfirmed AI category guess for [merchant] and flags every
+     * still-uncategorized real transaction from that merchant for review.
+     * Returns rows flagged.
+     */
+    suspend fun suggestPending(merchant: String, name: String, icon: String?, colorHex: String?): Int
 }

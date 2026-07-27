@@ -28,7 +28,15 @@ object AiResponseParser {
     /** Widest {...} span in the raw text -- the fallback when there's no code fence to strip. */
     private val bareJsonObject = Regex("\\{[\\s\\S]*\\}")
 
-    fun parse(raw: String, fallbackCurrency: String? = null): AiParseResult? = runCatching {
+    /**
+     * [knownCategoryNames] is the caller's current category list; when
+     * non-empty, `category_name` / `suggested_category` are also read (see
+     * [AiTransactionPrompt]). A `category_name` that doesn't case-insensitively
+     * match one of [knownCategoryNames] is dropped rather than trusted --
+     * same fail-closed stance as every other field here -- so a hallucinated
+     * category can never masquerade as a real one.
+     */
+    fun parse(raw: String, fallbackCurrency: String? = null, knownCategoryNames: List<String> = emptyList()): AiParseResult? = runCatching {
         val candidate = extractJsonCandidate(raw)
         if (candidate.isEmpty()) return null
         val obj = json.parseToJsonElement(candidate).jsonObject
@@ -43,8 +51,30 @@ object AiResponseParser {
 
         if (amount == null || amount <= BigDecimal.ZERO || currency.isNullOrBlank()) return null
 
-        AiParseResult(transactionIntent = true, amount = amount, currency = currency.uppercase(), merchant = merchant)
+        val categoryName = stringField(obj, "category_name")
+            ?.let { name -> knownCategoryNames.firstOrNull { it.equals(name, ignoreCase = true) } }
+
+        val suggested = if (categoryName == null) suggestedCategory(obj) else null
+
+        AiParseResult(
+            transactionIntent = true,
+            amount = amount,
+            currency = currency.uppercase(),
+            merchant = merchant,
+            categoryName = categoryName,
+            suggestedCategoryName = suggested?.first,
+            suggestedCategoryIcon = suggested?.second,
+            suggestedCategoryColorHex = suggested?.third,
+        )
     }.getOrNull()
+
+    /** (name, icon, color), only when `suggested_category` is a JSON object with a non-blank name. */
+    private fun suggestedCategory(obj: JsonObject): Triple<String, String?, String?>? {
+        val element = obj["suggested_category"] ?: return null
+        if (element !is JsonObject) return null
+        val name = stringField(element, "name")?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        return Triple(name, stringField(element, "icon"), stringField(element, "color"))
+    }
 
     private fun stringField(obj: JsonObject, key: String): String? {
         val element = obj[key] ?: return null

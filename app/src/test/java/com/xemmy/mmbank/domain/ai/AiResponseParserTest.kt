@@ -146,4 +146,67 @@ class AiResponseParserTest {
         )
         assertTrue(result?.currency == "USD")
     }
+
+    @Test
+    fun `category_name matching a known category is canonicalized to the caller's casing`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "USD", "merchant": "Carrefour", "category_name": "groceries"}""",
+            knownCategoryNames = listOf("Groceries", "Dining"),
+        )
+        assertEquals("Groceries", result?.categoryName)
+        assertNull(result?.suggestedCategoryName)
+    }
+
+    @Test
+    fun `category_name that does not match any known category is dropped instead of trusted`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "USD", "merchant": "x", "category_name": "Made Up Category"}""",
+            knownCategoryNames = listOf("Groceries", "Dining"),
+        )
+        assertNull(result?.categoryName)
+    }
+
+    @Test
+    fun `suggested_category is parsed when no category_name is present`() {
+        val result = AiResponseParser.parse(
+            """
+            {"transaction_intent": true, "amount": 40, "currency": "AED", "merchant": "Pet Zone",
+             "suggested_category": {"name": "Pets", "icon": "🐾", "color": "#8D6E63"}}
+            """.trimIndent(),
+            knownCategoryNames = listOf("Groceries", "Dining"),
+        )
+        assertNull(result?.categoryName)
+        assertEquals("Pets", result?.suggestedCategoryName)
+        assertEquals("🐾", result?.suggestedCategoryIcon)
+        assertEquals("#8D6E63", result?.suggestedCategoryColorHex)
+    }
+
+    @Test
+    fun `suggested_category with a blank name is ignored`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "USD", "merchant": "x",
+                "suggested_category": {"name": "  ", "icon": "x", "color": "#000000"}}""",
+            knownCategoryNames = listOf("Groceries"),
+        )
+        assertNull(result?.suggestedCategoryName)
+    }
+
+    @Test
+    fun `category_name wins over suggested_category when both are present`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "USD", "merchant": "x",
+                "category_name": "Dining", "suggested_category": {"name": "Foodstuffs"}}""",
+            knownCategoryNames = listOf("Groceries", "Dining"),
+        )
+        assertEquals("Dining", result?.categoryName)
+        assertNull(result?.suggestedCategoryName)
+    }
+
+    @Test
+    fun `no known category names leaves category fields null even if the model supplies them`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "USD", "merchant": "x", "category_name": "Groceries"}"""
+        )
+        assertNull(result?.categoryName)
+    }
 }

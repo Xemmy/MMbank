@@ -2,6 +2,8 @@ package com.xemmy.mmbank.data.local.entity
 
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
@@ -28,6 +30,11 @@ class EntityMappersTest {
         excludeFromStats: Boolean,
         isDemo: Boolean = false,
         linkedTransactionId: Long? = null,
+        categoryId: Long? = null,
+        needsCategoryApproval: Boolean = false,
+        suggestedCategoryName: String? = null,
+        suggestedCategoryIcon: String? = null,
+        suggestedCategoryColorHex: String? = null,
     ) = Transaction(
         id = 42,
         accountId = 7,
@@ -48,6 +55,11 @@ class EntityMappersTest {
         excludeFromStats = excludeFromStats,
         linkedTransactionId = linkedTransactionId,
         isDemo = isDemo,
+        categoryId = categoryId,
+        needsCategoryApproval = needsCategoryApproval,
+        suggestedCategoryName = suggestedCategoryName,
+        suggestedCategoryIcon = suggestedCategoryIcon,
+        suggestedCategoryColorHex = suggestedCategoryColorHex,
     )
 
     private fun account(statementCycleDay: Int?, isDemo: Boolean = false) = Account(
@@ -229,5 +241,112 @@ class EntityMappersTest {
         )
         assertFalse(acct.isDemo)
         assertFalse(acct.toDomain().isDemo)
+    }
+
+    @Test
+    fun `transaction round-trip preserves an assigned dynamic category id`() {
+        val original = transaction(excludeFromStats = false, categoryId = 3)
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(3L, roundTripped.categoryId)
+        assertFalse(roundTripped.needsCategoryApproval)
+    }
+
+    @Test
+    fun `transaction round-trip preserves a pending AI category suggestion`() {
+        val original = transaction(
+            excludeFromStats = false,
+            needsCategoryApproval = true,
+            suggestedCategoryName = "Pets",
+            suggestedCategoryIcon = "🐾",
+            suggestedCategoryColorHex = "#8D6E63",
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertTrue(roundTripped.needsCategoryApproval)
+        assertEquals("Pets", roundTripped.suggestedCategoryName)
+        assertEquals("🐾", roundTripped.suggestedCategoryIcon)
+        assertEquals("#8D6E63", roundTripped.suggestedCategoryColorHex)
+    }
+
+    @Test
+    fun `transaction entity defaults dynamic category fields to unset`() {
+        // Mirrors the v13 migration: rows predating it load with no dynamic category.
+        val entity = TransactionEntity(
+            amount = BigDecimal.ONE,
+            currencyCode = "AED",
+            direction = TransactionDirection.DEBIT,
+            source = TransactionSource.MANUAL,
+            timestamp = 0,
+            createdAt = 0,
+        )
+        assertNull(entity.categoryId)
+        assertFalse(entity.needsCategoryApproval)
+        assertNull(entity.suggestedCategoryName)
+        assertNull(entity.toDomain().categoryId)
+        assertFalse(entity.toDomain().needsCategoryApproval)
+    }
+
+    @Test
+    fun `category round-trip preserves a non-null monthlyCap`() {
+        val original = Category(
+            id = 4,
+            name = "Groceries",
+            icon = "🛒",
+            colorHex = "#4CAF50",
+            isCustom = false,
+            monthlyCap = BigDecimal("1500.00"),
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(BigDecimal("1500.00"), roundTripped.monthlyCap)
+    }
+
+    @Test
+    fun `category round-trip preserves a null monthlyCap and isCustom = true`() {
+        val original = Category(
+            id = 12,
+            name = "Pets",
+            icon = "🐾",
+            colorHex = "#8D6E63",
+            isCustom = true,
+            monthlyCap = null,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.monthlyCap)
+        assertTrue(roundTripped.isCustom)
+    }
+
+    @Test
+    fun `merchant category mapping round-trip preserves a confirmed exact-match mapping`() {
+        val original = MerchantCategoryMapping(
+            id = 1,
+            merchantPattern = "Carrefour",
+            categoryId = 4,
+            isExactMatch = true,
+            pending = false,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.suggestedName)
+    }
+
+    @Test
+    fun `merchant category mapping round-trip preserves a pending AI suggestion`() {
+        val original = MerchantCategoryMapping(
+            id = 2,
+            merchantPattern = "Pet Zone",
+            categoryId = null,
+            isExactMatch = true,
+            pending = true,
+            suggestedName = "Pets",
+            suggestedIcon = "🐾",
+            suggestedColorHex = "#8D6E63",
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.categoryId)
+        assertTrue(roundTripped.pending)
     }
 }

@@ -226,6 +226,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getFloat(KEY_MONTHLY_SPEND_BUDGET, 0f).toDouble()
         set(value) = prefs.edit().putFloat(KEY_MONTHLY_SPEND_BUDGET, value.toFloat()).apply()
 
+    /**
+     * Committed monthly spend (rent, installments, subscriptions, …) subtracted
+     * from [monthlySpendBudget] before splitting the rest across the days left
+     * in the month -- see [com.xemmy.mmbank.domain.budget.DailyBudgetPacing].
+     * 0 (default) means the whole budget is treated as discretionary.
+     */
+    var fixedMonthlyExpenses: Double
+        get() = prefs.getFloat(KEY_FIXED_MONTHLY_EXPENSES, 0f).toDouble()
+        set(value) = prefs.edit().putFloat(KEY_FIXED_MONTHLY_EXPENSES, value.toFloat()).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -255,6 +265,7 @@ class AppPreferences(context: Context) {
         const val KEY_GOAL_TARGET = "goal_target"
         const val KEY_GOAL_MONTHLY = "goal_monthly"
         const val KEY_MONTHLY_SPEND_BUDGET = "monthly_spend_budget"
+        const val KEY_FIXED_MONTHLY_EXPENSES = "fixed_monthly_expenses"
         const val KEY_DESIGN_MODE = "design_mode"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
     }

@@ -8,7 +8,9 @@ import androidx.room.PrimaryKey
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
+import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
@@ -94,6 +96,39 @@ data class TransactionEntity(
     val linkedTransactionId: Long? = null,
     /** True for sample rows created by the Settings "Demo mode" toggle. */
     val isDemo: Boolean = false,
+    /** Dynamic [CategoryEntity] id assigned to this transaction; independent of [spendingCategory]. */
+    val categoryId: Long? = null,
+    /** True while [suggestedCategoryName] is an unconfirmed AI guess awaiting human approval. */
+    val needsCategoryApproval: Boolean = false,
+    val suggestedCategoryName: String? = null,
+    val suggestedCategoryIcon: String? = null,
+    val suggestedCategoryColorHex: String? = null,
+)
+
+@Entity(tableName = "categories")
+data class CategoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val icon: String,
+    val colorHex: String,
+    val isCustom: Boolean = false,
+    val monthlyCap: BigDecimal? = null,
+)
+
+@Entity(
+    tableName = "merchant_category_mappings",
+    indices = [Index(value = ["merchantPattern"], unique = true)],
+)
+data class MerchantCategoryMappingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val merchantPattern: String,
+    val categoryId: Long? = null,
+    val isExactMatch: Boolean = true,
+    /** True for an unconfirmed AI category guess awaiting human approval. */
+    val pending: Boolean = false,
+    val suggestedName: String? = null,
+    val suggestedIcon: String? = null,
+    val suggestedColorHex: String? = null,
 )
 
 @Entity(tableName = "parsing_rules")
@@ -163,6 +198,7 @@ fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
+    categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -185,6 +221,22 @@ fun Transaction.toEntity() = TransactionEntity(
     excludeFromStats = excludeFromStats,
     linkedTransactionId = linkedTransactionId,
     isDemo = isDemo,
+    categoryId = categoryId,
+    needsCategoryApproval = needsCategoryApproval,
+    suggestedCategoryName = suggestedCategoryName,
+    suggestedCategoryIcon = suggestedCategoryIcon,
+    suggestedCategoryColorHex = suggestedCategoryColorHex,
+)
+
+fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap)
+fun Category.toEntity() = CategoryEntity(id, name, icon, colorHex, isCustom, monthlyCap)
+
+fun MerchantCategoryMappingEntity.toDomain() = MerchantCategoryMapping(
+    id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
+)
+
+fun MerchantCategoryMapping.toEntity() = MerchantCategoryMappingEntity(
+    id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

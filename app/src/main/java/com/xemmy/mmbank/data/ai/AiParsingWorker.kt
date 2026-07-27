@@ -7,6 +7,7 @@ import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LocalAiEngine
+import kotlinx.coroutines.flow.first
 
 /**
  * Gate 2 of the dual-gate parser: an expedited, best-effort worker enqueued
@@ -37,10 +38,19 @@ class AiParsingWorker(
         val engine = manager.engine()
         if (!engine.isReady) return Result.success()
 
-        val generated = engine.generate(AiTransactionPrompt.build(rawMessage), LocalAiEngine.DEFAULT_MAX_TOKENS)
-            .getOrNull() ?: return Result.success()
+        // Current category names (built-ins + custom), so the model can either
+        // name an existing one or propose a new one -- see AiTransactionPrompt /
+        // AiResponseParser and AppContainer.onAiCategorySuggested.
+        val categoryNames = runCatching { container.categoryRepository.observeAll().first().map { it.name } }
+            .getOrDefault(emptyList())
 
-        val parsed = AiResponseParser.parse(generated, container.preferences.defaultCurrency) ?: return Result.success()
+        val generated = engine.generate(
+            AiTransactionPrompt.build(rawMessage, categoryNames),
+            LocalAiEngine.DEFAULT_MAX_TOKENS,
+        ).getOrNull() ?: return Result.success()
+
+        val parsed = AiResponseParser.parse(generated, container.preferences.defaultCurrency, categoryNames)
+            ?: return Result.success()
         if (parsed.transactionIntent) {
             container.onAiTransactionParsed(rawMessage, parsed)
         }

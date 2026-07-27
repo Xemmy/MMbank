@@ -12,6 +12,7 @@ import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
+import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.usecase.TransferMatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,6 +32,15 @@ class TransactionRepositoryImpl(
     private val demoMode: StateFlow<Boolean>,
     /** Person newly captured transactions default to (Settings > Default person). */
     private val defaultPersonProvider: () -> String? = { null },
+    /** Dynamic category lookup for newly captured transactions (see [CategoryMatcher]). */
+    private val categoryRepository: CategoryRepository? = null,
+    /**
+     * Fire-and-forget hook run after a real, dedup-passing transaction is
+     * inserted -- used by [com.xemmy.mmbank.di.AppContainer] to run the daily
+     * budget pacing check. Never awaited and never allowed to affect the
+     * ingest pipeline's own result.
+     */
+    private val onTransactionRecorded: (Transaction) -> Unit = {},
 ) : TransactionRepository {
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -77,6 +87,15 @@ class TransactionRepositoryImpl(
             val detectedAccountId = parsed.assignAccountId
                 ?: parsed.accountNumberSuffix?.let { detectAccountByNumber(it, parsed.currencyCode) }
 
+            // Dynamic category: a confirmed merchant mapping wins outright; failing
+            // that, an unconfirmed AI guess for the same merchant rides along as a
+            // pending suggestion rather than being silently applied (see
+            // AppContainer.onAiCategorySuggested).
+            val categoryId = parsed.merchant?.let { categoryRepository?.findCategoryForMerchant(it) }
+            val pendingSuggestion = if (categoryId == null) {
+                parsed.merchant?.let { categoryRepository?.findPendingSuggestion(it) }
+            } else null
+
             val entity = TransactionEntity(
                 amount = parsed.amount,
                 currencyCode = parsed.currencyCode,
@@ -95,9 +114,16 @@ class TransactionRepositoryImpl(
                 spendingCategory = parsed.spendingCategoryOverride
                     ?: MerchantCategorizer.categorize(parsed.merchant, message.body),
                 excludeFromStats = parsed.excludeFromStats,
+                categoryId = categoryId,
+                needsCategoryApproval = pendingSuggestion != null,
+                suggestedCategoryName = pendingSuggestion?.suggestedName,
+                suggestedCategoryIcon = pendingSuggestion?.suggestedIcon,
+                suggestedCategoryColorHex = pendingSuggestion?.suggestedColorHex,
             )
             val id = dao.insert(entity)
-            tryLinkTransfer(entity.copy(id = id))
+            val inserted = entity.copy(id = id)
+            tryLinkTransfer(inserted)
+            onTransactionRecorded(inserted.toDomain())
             IngestResult.Inserted(id)
         }
     }
@@ -156,6 +182,17 @@ class TransactionRepositoryImpl(
         dao.bulkSetExcludeFromStats(ids, excluded)
 
     override suspend fun deleteMany(ids: List<Long>): Int = dao.deleteMany(ids)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeUncategorized(): Flow<List<Transaction>> =
+        demoMode.flatMapLatest { demo -> dao.observeUncategorized(demo) }
+            .map { list -> list.map(TransactionEntity::toDomain) }
+
+    override suspend fun setCategory(transactionId: Long, categoryId: Long?) =
+        dao.setCategory(transactionId, categoryId)
+
+    override suspend fun dismissCategorySuggestion(transactionId: Long) =
+        dao.dismissCategorySuggestion(transactionId)
 
     /**
      * Matches the account/card number pulled from a bank message (e.g. "*617",

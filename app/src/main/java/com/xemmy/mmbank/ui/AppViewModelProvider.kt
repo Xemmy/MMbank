@@ -13,6 +13,7 @@ import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
 import com.xemmy.mmbank.ui.screens.settings.SettingsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsViewModel
+import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueViewModel
 
 /** Central factory wiring every ViewModel to the manual [AppContainer]. */
 object AppViewModelProvider {
@@ -25,6 +26,7 @@ object AppViewModelProvider {
         initializer { RulesViewModel(mmBankApp().container) }
         initializer { RuleEditorViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SettingsViewModel(mmBankApp().container) }
+        initializer { UncategorizedQueueViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

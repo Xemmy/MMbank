@@ -47,6 +47,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DropdownMenu
@@ -152,6 +154,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -241,6 +244,39 @@ internal fun computeSpendSummary(
     )
 }
 
+/** Entry point into [UncategorizedQueueScreen] -- shown only while there's something to review. */
+@Composable
+private fun UncategorizedBanner(count: Int, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Category, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                if (count == 1) "1 transaction needs a category" else "$count transactions need a category",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Review",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    }
+}
+
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val filters = MutableStateFlow(ActivityFilters())
@@ -302,6 +338,12 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }.recoverAndRetry("TransactionsViewModel.spendSummary", container) {
         SpendSummaryState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpendSummaryState())
+
+    /** How many real transactions still need a dynamic category -- drives the Uncategorized queue entry point. */
+    val uncategorizedCount: StateFlow<Int> = container.transactionRepository.observeUncategorized()
+        .map { it.size }
+        .recoverAndRetry("TransactionsViewModel.uncategorizedCount", container) { 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** Manual "Parse with AI" is offered only when the feature is on + a valid loopback endpoint is set. */
     val aiParsingConfigured: Boolean get() = container.localAiManager.isConfigured()
@@ -470,10 +512,12 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
+    onOpenUncategorizedQueue: () -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
+    val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -563,6 +607,9 @@ fun TransactionsScreen(
                         collapseFraction = 0f
                     },
                 )
+                if (uncategorizedCount > 0) {
+                    UncategorizedBanner(count = uncategorizedCount, onClick = onOpenUncategorizedQueue)
+                }
                 // Premium-only hero spend summary, directly above the filter bar.
                 if (heroVisible) {
                     Box(

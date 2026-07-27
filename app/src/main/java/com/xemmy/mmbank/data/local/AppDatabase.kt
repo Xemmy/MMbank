@@ -9,14 +9,18 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
+import com.xemmy.mmbank.data.local.dao.CategoryDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
+import com.xemmy.mmbank.data.local.dao.MerchantCategoryDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
+import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
+import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -31,8 +35,10 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         WalletBalanceEntity::class,
         ExchangeRateEntity::class,
         SenderLabelEntity::class,
+        CategoryEntity::class,
+        MerchantCategoryMappingEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -45,6 +51,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun walletBalanceDao(): WalletBalanceDao
     abstract fun exchangeRateDao(): ExchangeRateDao
     abstract fun senderLabelDao(): SenderLabelDao
+    abstract fun categoryDao(): CategoryDao
+    abstract fun merchantCategoryDao(): MerchantCategoryDao
 
     companion object {
         /**
@@ -190,6 +198,69 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v12 -> v13: dynamic spending categories. A `categories` table
+         * (seeded once with the starter set) and a `merchant_category_mappings`
+         * table of learned/AI-suggested merchant->category rules, plus the
+         * per-transaction category assignment + pending-AI-suggestion fields
+         * that ride alongside the existing [SpendingCategory] enum rather than
+         * replacing it.
+         */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN categoryId INTEGER")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN needsCategoryApproval INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN suggestedCategoryName TEXT")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN suggestedCategoryIcon TEXT")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN suggestedCategoryColorHex TEXT")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS categories (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
+                        "name TEXT NOT NULL, " +
+                        "icon TEXT NOT NULL, " +
+                        "colorHex TEXT NOT NULL, " +
+                        "isCustom INTEGER NOT NULL DEFAULT 0, " +
+                        "monthlyCap TEXT)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS merchant_category_mappings (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
+                        "merchantPattern TEXT NOT NULL, " +
+                        "categoryId INTEGER, " +
+                        "isExactMatch INTEGER NOT NULL DEFAULT 1, " +
+                        "pending INTEGER NOT NULL DEFAULT 0, " +
+                        "suggestedName TEXT, suggestedIcon TEXT, suggestedColorHex TEXT)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_merchant_category_mappings_merchantPattern " +
+                        "ON merchant_category_mappings(merchantPattern)"
+                )
+
+                // Starter categories, seeded exactly once (fresh v13 table is
+                // always empty at this point, migration or not).
+                DEFAULT_CATEGORIES.forEach { (name, icon, colorHex) ->
+                    db.execSQL(
+                        "INSERT INTO categories (name, icon, colorHex, isCustom) VALUES (?, ?, ?, 0)",
+                        arrayOf<Any?>(name, icon, colorHex),
+                    )
+                }
+            }
+        }
+
+        /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
+        val DEFAULT_CATEGORIES = listOf(
+            Triple("Groceries", "🛒", "#4CAF50"),
+            Triple("Dining", "🍽️", "#FF7043"),
+            Triple("Transport", "🚕", "#29B6F6"),
+            Triple("Utilities", "💡", "#FFCA28"),
+            Triple("Subscriptions", "🔔", "#AB47BC"),
+            Triple("Shopping", "🛍️", "#EC407A"),
+            Triple("Health", "🩺", "#26A69A"),
+            Triple("Income", "💰", "#66BB6A"),
+            Triple("Uncategorized", "🏷️", "#9E9E9E"),
+        )
+
         const val DB_NAME = "mmbank.db"
 
         /**
@@ -204,7 +275,7 @@ abstract class AppDatabase : RoomDatabase() {
             Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
-                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
+                    MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

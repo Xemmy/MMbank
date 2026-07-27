@@ -22,16 +22,19 @@ import com.xemmy.mmbank.data.remote.binance.BinanceSigningInterceptor
 import com.xemmy.mmbank.data.remote.binance.BinanceWalletAssetsService
 import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
+import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
 import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
 import com.xemmy.mmbank.domain.repository.AccountRepository
+import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
@@ -43,10 +46,13 @@ import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
 import com.xemmy.mmbank.domain.usecase.BulkUpdateTransactionsUseCase
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
+import com.xemmy.mmbank.util.BudgetNotificationHelper
+import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +63,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -251,11 +259,19 @@ class AppContainer(context: Context) {
 
     val transactionRepository: TransactionRepository by lazy {
         TransactionRepositoryImpl(
-            database, database.transactionDao(), demoModeEnabled,
-        ) { preferences.defaultPerson }
+            database = database,
+            dao = database.transactionDao(),
+            demoMode = demoModeEnabled,
+            defaultPersonProvider = { preferences.defaultPerson },
+            categoryRepository = categoryRepository,
+            onTransactionRecorded = ::checkDailyBudgetPacing,
+        )
     }
     val accountRepository: AccountRepository by lazy {
         AccountRepositoryImpl(database.accountDao(), demoModeEnabled)
+    }
+    val categoryRepository: CategoryRepository by lazy {
+        CategoryRepositoryImpl(database)
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao(), demoModeEnabled)
@@ -401,14 +417,84 @@ class AppContainer(context: Context) {
      * unreviewed AI output can only ever produce a pending suggestion.
      */
     fun onAiTransactionParsed(rawMessage: String, result: AiParseResult) {
-        val candidate = AiSelfHealingRuleGenerator.generate(rawMessage, result) ?: return
+        AiSelfHealingRuleGenerator.generate(rawMessage, result)?.let { candidate ->
+            applicationScope.launch {
+                runCatching {
+                    val existing = parsingRuleRepository.observeAll().first()
+                    if (existing.none { it.pattern == candidate.pattern }) {
+                        parsingRuleRepository.save(candidate)
+                    }
+                }.onFailure { recordError("AppContainer.onAiTransactionParsed", it) }
+            }
+        }
+        onAiCategorySuggested(result)
+    }
+
+    /**
+     * Gate 2's category counterpart to the rule-candidate hook above: a
+     * confident `category_name` match is learned as a confirmed merchant
+     * mapping (backfilling any already-captured, still-uncategorized
+     * transactions from that merchant); a brand-new `suggested_category` is
+     * staged as a *pending* mapping instead -- surfaced for one-tap approval
+     * in the Uncategorized queue, never auto-applied. No-op when the AI named
+     * neither (or there's no merchant to key off of).
+     */
+    private fun onAiCategorySuggested(result: AiParseResult) {
+        val merchant = result.merchant?.takeIf { it.isNotBlank() } ?: return
         applicationScope.launch {
             runCatching {
-                val existing = parsingRuleRepository.observeAll().first()
-                if (existing.none { it.pattern == candidate.pattern }) {
-                    parsingRuleRepository.save(candidate)
+                when {
+                    result.categoryName != null -> {
+                        val category = categoryRepository.observeAll().first()
+                            .firstOrNull { it.name.equals(result.categoryName, ignoreCase = true) }
+                        if (category != null) categoryRepository.learnMapping(merchant, category.id)
+                    }
+                    result.suggestedCategoryName != null -> categoryRepository.suggestPending(
+                        merchant, result.suggestedCategoryName, result.suggestedCategoryIcon, result.suggestedCategoryColorHex,
+                    )
                 }
-            }.onFailure { recordError("AppContainer.onAiTransactionParsed", it) }
+            }.onFailure { recordError("AppContainer.onAiCategorySuggested", it) }
+        }
+    }
+
+    /**
+     * Real-time daily budget pacing (see [DailyBudgetPacing]): after a real
+     * debit is recorded, checks it against
+     * `(monthlySpendBudget - fixedMonthlyExpenses - spentSoFarThisMonth) / remainingDaysInMonth`
+     * and posts a local notification if it pushed the day over its allowance.
+     * A no-op while no monthly budget is configured. Fire-and-forget, same as
+     * every other post-insert side effect here -- it must never affect the
+     * ingest pipeline's own result.
+     */
+    private fun checkDailyBudgetPacing(transaction: Transaction) {
+        if (transaction.direction != TransactionDirection.DEBIT || transaction.excludeFromStats) return
+        val monthlyBudget = preferences.monthlySpendBudget
+        if (monthlyBudget <= 0.0) return
+
+        applicationScope.launch {
+            runCatching {
+                val zone = ZoneId.systemDefault()
+                val today = Instant.ofEpochMilli(transaction.timestampMillis).atZone(zone).toLocalDate()
+                val monthStart = today.withDayOfMonth(1)
+                val nextMonthStart = monthStart.plusMonths(1)
+                val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+                val endMillis = nextMonthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+
+                val spentSoFar = database.transactionDao()
+                    .sumDebitsInRange(transaction.currencyCode, startMillis, endMillis)
+                    .toBigDecimal()
+
+                val result = DailyBudgetPacing.checkPacing(
+                    transactionAmount = transaction.amount,
+                    monthlyBudget = BigDecimal.valueOf(monthlyBudget),
+                    fixedExpenses = BigDecimal.valueOf(preferences.fixedMonthlyExpenses),
+                    spentSoFarIncludingThis = spentSoFar,
+                    remainingDaysInMonth = DailyBudgetPacing.remainingDaysInMonth(today),
+                )
+                if (result is DailyBudgetPacing.PacingResult.Overspend) {
+                    BudgetNotificationHelper.postOverspendAlert(appContext, transaction, result)
+                }
+            }.onFailure { recordError("AppContainer.checkDailyBudgetPacing", it) }
         }
     }
 
