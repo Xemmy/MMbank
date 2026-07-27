@@ -2,7 +2,9 @@ package com.xemmy.mmbank.di
 
 import android.content.Context
 import androidx.room.withTransaction
+import androidx.work.Constraints
 import androidx.work.Data
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
@@ -359,6 +361,15 @@ class AppContainer(context: Context) {
             .build()
         val request = OneTimeWorkRequestBuilder<AiParsingWorker>()
             .setInputData(input)
+            // Local mode talks to a loopback server that's reachable with or
+            // without a WAN connection, but this constraint only delays the
+            // one-shot run until *some* network is up -- cheap, and it saves
+            // the online mode's HTTP call from firing while offline. The
+            // worker still never retries (see its doc comment): re-sending a
+            // user's raw message text to an online provider on every backoff
+            // tick is a privacy cost this app doesn't take on for a
+            // best-effort background parse.
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         WorkManager.getInstance(appContext).enqueue(request)

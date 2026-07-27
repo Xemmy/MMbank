@@ -23,10 +23,18 @@ import java.math.BigDecimal
  * screen (see AppContainer.onAiTransactionParsed).
  */
 object AiSelfHealingRuleGenerator {
+    /**
+     * Name prefix stamped on every AI-generated candidate (full name is
+     * "$PENDING_RULE_PREFIX.<epoch millis>"). The Rules screen filters on this
+     * to separate the "Suggested rules" queue from ordinary custom rules,
+     * rather than duplicating the literal string in two places.
+     */
+    const val PENDING_RULE_PREFIX = "ai.pending"
+
     private const val AMOUNT_GROUP_PATTERN = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
     private const val MERCHANT_GROUP_PATTERN = "(?<merchant>[^.,;\\n*]{1,60}?)"
 
-    fun generate(rawMessage: String, result: AiParseResult, ruleNamePrefix: String = "ai.pending"): ParsingRule? {
+    fun generate(rawMessage: String, result: AiParseResult, ruleNamePrefix: String = PENDING_RULE_PREFIX): ParsingRule? {
         if (!result.transactionIntent) return null
         val amount = result.amount ?: return null
         val currency = result.currency ?: return null

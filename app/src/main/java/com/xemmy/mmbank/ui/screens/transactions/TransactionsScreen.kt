@@ -318,7 +318,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         val engine = container.localAiManager.engine()
         if (!engine.isReady) return null
         val generated = engine.generate(AiTransactionPrompt.build(raw)).getOrNull() ?: return null
-        val parsed = AiResponseParser.parse(generated) ?: return null
+        val parsed = AiResponseParser.parse(generated, container.preferences.defaultCurrency) ?: return null
         if (!parsed.transactionIntent) return null
         val amount = parsed.amount ?: return null
         val currency = parsed.currency ?: return null

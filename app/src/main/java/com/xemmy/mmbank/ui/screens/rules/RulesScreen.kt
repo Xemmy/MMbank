@@ -12,15 +12,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -30,13 +38,19 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.parser.RuleHistoryTester
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Name prefix every AI-generated candidate rule carries; see [AiSelfHealingRuleGenerator.PENDING_RULE_PREFIX]. */
+private val SUGGESTED_NAME_PREFIX = "${AiSelfHealingRuleGenerator.PENDING_RULE_PREFIX}."
 
 class RulesViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -47,10 +61,36 @@ class RulesViewModel(private val container: AppContainer) : ViewModel() {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Raw message text of every recorded transaction -- the corpus "Test against history" runs a candidate over. */
+    val historicalMessages: StateFlow<List<String>> = container.transactionRepository.observeTransactions()
+        .map { txs -> txs.mapNotNull { it.rawMessage } }
+        .catch { emit(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun toggleEnabled(rule: ParsingRule) {
         viewModelScope.launch {
             runCatching { container.parsingRuleRepository.save(rule.copy(enabled = !rule.enabled)) }
                 .onFailure { container.recordError("RulesViewModel.toggleEnabled", it) }
+        }
+    }
+
+    /** How many already-recorded transactions this candidate's pattern would also match. */
+    fun historyMatchCount(rule: ParsingRule): Int =
+        RuleHistoryTester.countMatches(rule, historicalMessages.value, container.preferences.defaultCurrency)
+
+    /** Turns a suggested candidate into an active rule -- the only path that ever enables AI-generated output. */
+    fun approve(rule: ParsingRule) {
+        viewModelScope.launch {
+            runCatching { container.parsingRuleRepository.save(rule.copy(enabled = true)) }
+                .onFailure { container.recordError("RulesViewModel.approve", it) }
+        }
+    }
+
+    /** Rejects a suggestion outright, removing it from the candidate queue. */
+    fun discard(rule: ParsingRule) {
+        viewModelScope.launch {
+            runCatching { container.parsingRuleRepository.delete(rule.id) }
+                .onFailure { container.recordError("RulesViewModel.discard", it) }
         }
     }
 }
@@ -66,6 +106,8 @@ fun RulesScreen(
     viewModel: RulesViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val rules by viewModel.rules.collectAsStateWithLifecycle()
+    val suggested = rules.filter { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
+    val custom = rules.filterNot { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
 
     Scaffold(
         floatingActionButton = {
@@ -81,6 +123,32 @@ fun RulesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (suggested.isNotEmpty()) {
+                item {
+                    Text(
+                        "Suggested rules (${suggested.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                item {
+                    Text(
+                        "The AI recovered a transaction from a message the rules missed and built a pattern " +
+                            "for it. Nothing here runs until you approve it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                items(suggested, key = { it.id }) { rule ->
+                    SuggestedRuleCard(
+                        rule = rule,
+                        onTest = { viewModel.historyMatchCount(rule) },
+                        onApprove = { viewModel.approve(rule) },
+                        onDiscard = { viewModel.discard(rule) },
+                        onEdit = { onEditRule(rule.id) },
+                    )
+                }
+            }
             item {
                 Text(
                     "Custom parsing rules run before the built-in English/Arabic rules. " +
@@ -90,7 +158,7 @@ fun RulesScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            items(rules, key = { it.id }) { rule ->
+            items(custom, key = { it.id }) { rule ->
                 Card(
                     Modifier
                         .fillMaxWidth()
@@ -121,6 +189,79 @@ fun RulesScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * A pending AI-generated candidate awaiting human review. Distinct from an
+ * ordinary custom rule's card: no enabled Switch (a suggestion is only ever
+ * turned on via [onApprove], never silently), a sparkle icon, its sample
+ * message, an on-demand "Test against history" match count, and Approve /
+ * Discard actions. Tapping the card still opens the full editor for a closer
+ * look or manual tweaks before approving.
+ */
+@Composable
+private fun SuggestedRuleCard(
+    rule: ParsingRule,
+    onTest: () -> Int,
+    onApprove: () -> Unit,
+    onDiscard: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    var matchCount by remember(rule.id) { mutableStateOf<Int?>(null) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEdit() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+                Text("Suggested from AI", style = MaterialTheme.typography.titleSmall)
+            }
+            Text(
+                rule.pattern,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+            )
+            rule.sampleText?.let { sample ->
+                Text(
+                    "\"$sample\"",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                )
+            }
+            Text(
+                "${rule.direction.name}" + (rule.defaultCurrency?.let { " · $it" } ?: ""),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            matchCount?.let { count ->
+                Text(
+                    if (count == 0) {
+                        "Matches no other recorded transaction."
+                    } else {
+                        "Also matches $count other recorded transaction${if (count == 1) "" else "s"}."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { matchCount = onTest() }) { Text("Test against history") }
+                Button(onClick = onApprove) { Text("Approve") }
+                TextButton(onClick = onDiscard) { Text("Discard") }
             }
         }
     }

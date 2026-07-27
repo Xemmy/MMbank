@@ -40,7 +40,7 @@ class AiParsingWorker(
         val generated = engine.generate(AiTransactionPrompt.build(rawMessage), LocalAiEngine.DEFAULT_MAX_TOKENS)
             .getOrNull() ?: return Result.success()
 
-        val parsed = AiResponseParser.parse(generated) ?: return Result.success()
+        val parsed = AiResponseParser.parse(generated, container.preferences.defaultCurrency) ?: return Result.success()
         if (parsed.transactionIntent) {
             container.onAiTransactionParsed(rawMessage, parsed)
         }

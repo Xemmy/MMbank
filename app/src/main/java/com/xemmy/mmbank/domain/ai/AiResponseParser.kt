@@ -8,17 +8,28 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Decodes and validates Gemma 4 E2B's Gate-2 JSON output. LLM text output is
- * untrusted: fenced code blocks are stripped, unknown keys are ignored, and
- * any shape/type mismatch fails closed to null instead of throwing, so a
- * single bad generation can never crash the ingestion pipeline.
+ * Decodes and validates Gate-2's JSON output (local Gemma or an online LLM).
+ * LLM text output is untrusted: fenced code blocks are stripped, a bare JSON
+ * object is recovered even behind a conversational preamble/postamble with no
+ * fence, unknown keys are ignored, and any shape/type mismatch fails closed to
+ * null instead of throwing, so a single bad generation can never crash the
+ * ingestion pipeline. A missing/blank currency falls back to
+ * [fallbackCurrency] (the caller passes the app's default currency) rather
+ * than failing the whole parse; a missing merchant falls back to
+ * [FALLBACK_MERCHANT].
  */
 object AiResponseParser {
+    /** Used when the model omits `merchant` (or emits null) on a positive intent. */
+    const val FALLBACK_MERCHANT = "Uncategorized Merchant"
+
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val codeFence = Regex("```(?:json)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
 
-    fun parse(raw: String): AiParseResult? = runCatching {
-        val candidate = stripCodeFence(raw).trim()
+    /** Widest {...} span in the raw text -- the fallback when there's no code fence to strip. */
+    private val bareJsonObject = Regex("\\{[\\s\\S]*\\}")
+
+    fun parse(raw: String, fallbackCurrency: String? = null): AiParseResult? = runCatching {
+        val candidate = extractJsonCandidate(raw)
         if (candidate.isEmpty()) return null
         val obj = json.parseToJsonElement(candidate).jsonObject
 
@@ -27,8 +38,8 @@ object AiResponseParser {
         if (!intent) return AiParseResult(transactionIntent = false, amount = null, currency = null, merchant = null)
 
         val amount = stringField(obj, "amount")?.toBigDecimalOrNull()
-        val currency = stringField(obj, "currency")
-        val merchant = stringField(obj, "merchant")
+        val currency = (stringField(obj, "currency") ?: fallbackCurrency)?.trim()
+        val merchant = stringField(obj, "merchant") ?: FALLBACK_MERCHANT
 
         if (amount == null || amount <= BigDecimal.ZERO || currency.isNullOrBlank()) return null
 
@@ -41,6 +52,16 @@ object AiResponseParser {
         return element.jsonPrimitive.content
     }
 
-    private fun stripCodeFence(text: String): String =
-        codeFence.find(text)?.groupValues?.get(1) ?: text
+    /**
+     * Fenced code block first; failing that, a bare object spanning the whole
+     * trimmed text is used as-is. Otherwise -- a conversational preamble
+     * and/or postamble around the object with no fence -- falls back to the
+     * widest {...} span found anywhere in the raw text.
+     */
+    private fun extractJsonCandidate(raw: String): String {
+        codeFence.find(raw)?.groupValues?.get(1)?.trim()?.let { return it }
+        val trimmed = raw.trim()
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed
+        return bareJsonObject.find(raw)?.value ?: trimmed
+    }
 }

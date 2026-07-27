@@ -467,7 +467,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             val prompt = AiTransactionPrompt.build(TEST_AI_MESSAGE)
             aiTestMessageStatus = container.localAiManager.testGenerate(prompt).fold(
                 onSuccess = { raw ->
-                    val parsed = AiResponseParser.parse(raw)
+                    val parsed = AiResponseParser.parse(raw, container.preferences.defaultCurrency)
                     if (parsed?.transactionIntent == true) {
                         "Test sent — parsed ${parsed.currency ?: ""} ${parsed.amount ?: ""} at " +
                             "${parsed.merchant ?: "?"}. See the log below."

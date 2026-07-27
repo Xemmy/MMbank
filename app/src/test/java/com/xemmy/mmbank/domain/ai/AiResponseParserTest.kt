@@ -31,7 +31,58 @@ class AiResponseParserTest {
         assertEquals(true, result?.transactionIntent)
         assertEquals(BigDecimal("10"), result?.amount)
         assertEquals("USD", result?.currency)
-        assertNull(result?.merchant)
+        assertEquals(AiResponseParser.FALLBACK_MERCHANT, result?.merchant)
+    }
+
+    @Test
+    fun `conversational preamble with no code fence still recovers the JSON object`() {
+        val raw = """Sure! Here's the transaction: {"transaction_intent": true, "amount": 10, "currency": "USD", "merchant": "Shop"}"""
+        val result = AiResponseParser.parse(raw)
+        assertEquals(true, result?.transactionIntent)
+        assertEquals(BigDecimal("10"), result?.amount)
+        assertEquals("USD", result?.currency)
+        assertEquals("Shop", result?.merchant)
+    }
+
+    @Test
+    fun `conversational preamble and postamble around the JSON both get stripped`() {
+        val raw = """
+            Here's what I found:
+            {"transaction_intent": true, "amount": 25.5, "currency": "AED", "merchant": "Cafe"}
+            Let me know if you need anything else!
+        """.trimIndent()
+        val result = AiResponseParser.parse(raw)
+        assertEquals(true, result?.transactionIntent)
+        assertEquals(BigDecimal("25.5"), result?.amount)
+        assertEquals("AED", result?.currency)
+        assertEquals("Cafe", result?.merchant)
+    }
+
+    @Test
+    fun `missing currency falls back to the caller-supplied default instead of failing`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "merchant": "Shop"}""",
+            fallbackCurrency = "USD",
+        )
+        assertEquals("USD", result?.currency)
+    }
+
+    @Test
+    fun `currency in the response wins over the fallback`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "aed", "merchant": "Shop"}""",
+            fallbackCurrency = "USD",
+        )
+        assertEquals("AED", result?.currency)
+    }
+
+    @Test
+    fun `missing merchant defaults to the fallback merchant label`() {
+        val result = AiResponseParser.parse(
+            """{"transaction_intent": true, "amount": 5, "currency": "USD"}""",
+            fallbackCurrency = "USD",
+        )
+        assertEquals(AiResponseParser.FALLBACK_MERCHANT, result?.merchant)
     }
 
     @Test
