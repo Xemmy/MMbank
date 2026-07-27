@@ -23,9 +23,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DatePickerDialog
@@ -88,6 +90,8 @@ import kotlin.math.roundToInt
 @Composable
 fun InsightsScreen(
     onOpenRewards: () -> Unit,
+    onOpenSubscriptions: () -> Unit = {},
+    onOpenAnalytics: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -173,7 +177,58 @@ fun InsightsScreen(
             }
         }
 
+        item(key = "analytics_row") {
+            NavigationRow(
+                icon = Icons.Outlined.Insights,
+                title = "Spending analytics",
+                subtitle = "Heatmap, category donut and pacing gauge",
+                onClick = onOpenAnalytics,
+            )
+        }
+        item(key = "subscriptions_row") {
+            NavigationRow(
+                icon = Icons.Filled.Repeat,
+                title = "Subscriptions radar",
+                subtitle = "Detected recurring charges and renewal dates",
+                onClick = onOpenSubscriptions,
+            )
+        }
         item(key = "rewards_row") { RewardsRow(onOpenRewards) }
+    }
+}
+
+/** Generic doorway row into a secondary screen, sharing [RewardsRow]'s layout with a swappable icon/label. */
+@Composable
+private fun NavigationRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    ObsidianCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

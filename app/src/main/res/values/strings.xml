@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">MMbank</string>
     <string name="notification_listener_label">MMbank transaction capture</string>
+    <string name="daily_budget_widget_description">Today\'s safe-to-spend allowance, with a shortcut to review uncategorized transactions.</string>
 </resources>

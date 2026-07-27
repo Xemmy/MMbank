@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
+import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
@@ -259,6 +260,27 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
     private val senderLabels = container.senderLabelRepository.observeLabels()
         .recoverAndRetry("DashboardViewModel.senderLabels", container) { emptyMap() }
+
+    /**
+     * "AI Weekly Digest" hero card: this week's spend vs last week's and the
+     * single biggest expense, via [AiWeeklyDigestGenerator]. Kept as its own
+     * flow (not folded into [statsFlow]) since it reads the whole ledger on a
+     * rolling 14-day window, independent of the Dashboard's own date filter.
+     */
+    val weeklyDigest: StateFlow<AiWeeklyDigestGenerator.WeeklyDigest?> = combine(
+        container.transactionRepository.observeTransactions(),
+        container.ratesRepository.observeRates(),
+    ) { transactions, rates ->
+        val base = container.preferences.defaultCurrency
+        val ratesFromBase = rates
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+        AiWeeklyDigestGenerator.generate(
+            transactions = transactions,
+            toBase = { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase) },
+        )
+    }.recoverAndRetry("DashboardViewModel.weeklyDigest", container) { null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val statsFlow = combine(
         container.transactionRepository.observeTransactions(),

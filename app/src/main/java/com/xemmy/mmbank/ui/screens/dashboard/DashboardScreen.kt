@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -42,10 +45,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.WalletCard
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
@@ -53,6 +58,8 @@ import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.asQuantity
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Home: net worth, account balances, crypto and recent activity. Stats, the
@@ -63,6 +70,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
 
@@ -86,6 +94,12 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            weeklyDigest?.let { digest ->
+                item(key = "weekly_digest") {
+                    WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
+                }
+            }
+
             item {
                 NetWorthCard(
                     netWorth = state.netWorthInBase,
@@ -101,6 +115,16 @@ fun DashboardScreen(
             }
 
             if (state.accounts.isNotEmpty()) {
+                item(key = "wallet_carousel") {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                    ) {
+                        items(state.accounts, key = { "wallet_${it.account.id}" }) { row ->
+                            WalletCard(account = row.account, balance = row.balance, hidden = hidden)
+                        }
+                    }
+                }
                 item { SectionTitle("Accounts") }
                 items(state.accounts, key = { "account_${it.account.id}" }) { row ->
                     Card(Modifier.fillMaxWidth()) {
@@ -221,6 +245,54 @@ private fun NetWorthCard(
             }
         }
     }
+}
+
+/**
+ * "AI Weekly Digest" hero card at the top of the Dashboard: a plain-English
+ * read of this week's spend vs last week's plus the single biggest expense —
+ * e.g. "Spent 12% less this week ($320 vs $365). Top spend: $85 at Target."
+ */
+@Composable
+private fun WeeklyDigestCard(
+    digest: AiWeeklyDigestGenerator.WeeklyDigest,
+    currency: String,
+    hidden: Boolean,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("This week", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    weeklyDigestText(digest, currency, hidden),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+/** Renders a [AiWeeklyDigestGenerator.WeeklyDigest] into plain English, same split as [SmartInsight]'s formatting. */
+private fun weeklyDigestText(digest: AiWeeklyDigestGenerator.WeeklyDigest, currency: String, hidden: Boolean): String {
+    val trend = digest.percentChange?.let { change ->
+        val direction = if (change > 0) "more" else "less"
+        "Spent ${abs(change).roundToInt()}% $direction this week " +
+            "(${digest.thisWeekSpend.asMoneyOrMask(currency, hidden)} vs ${digest.lastWeekSpend.asMoneyOrMask(currency, hidden)})"
+    } ?: "Spent ${digest.thisWeekSpend.asMoneyOrMask(currency, hidden)} this week"
+    val top = digest.topSpend?.let { top ->
+        " Top spend: ${top.amount.asMoneyOrMask(currency, hidden)} at ${top.merchant}."
+    } ?: ""
+    return "$trend.$top"
 }
 
 @Composable

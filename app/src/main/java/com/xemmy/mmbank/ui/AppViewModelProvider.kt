@@ -7,11 +7,13 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.ui.screens.accounts.AccountsViewModel
+import com.xemmy.mmbank.ui.screens.analytics.AnalyticsViewModel
 import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
 import com.xemmy.mmbank.ui.screens.settings.SettingsViewModel
+import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueViewModel
 
@@ -27,6 +29,8 @@ object AppViewModelProvider {
         initializer { RuleEditorViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SettingsViewModel(mmBankApp().container) }
         initializer { UncategorizedQueueViewModel(mmBankApp().container) }
+        initializer { SubscriptionsViewModel(mmBankApp().container) }
+        initializer { AnalyticsViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

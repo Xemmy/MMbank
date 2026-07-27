@@ -52,8 +52,10 @@ import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
 import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
+import com.xemmy.mmbank.ui.screens.analytics.AnalyticsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
+import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsScreen
 import com.xemmy.mmbank.ui.screens.settings.AiSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
@@ -73,16 +75,23 @@ import kotlinx.coroutines.delay
 // a fragment host; it is a ComponentActivity subclass, so setContent and the
 // rest of the Compose wiring are unaffected.
 class MainActivity : FragmentActivity() {
+
+    companion object {
+        /** Set by the Daily Budget Glance widget's shortcut button — see DailyBudgetWidget.kt. */
+        const val EXTRA_OPEN_UNCATEGORIZED = "open_uncategorized"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as MMBankApp).container
         val biometricAuth = BiometricAuthManagerImpl(this)
+        val openUncategorizedQueue = intent?.getBooleanExtra(EXTRA_OPEN_UNCATEGORIZED, false) == true
         setContent {
             val designMode by container.designMode.collectAsStateWithLifecycle()
             MMbankTheme(designMode = designMode) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 Box {
-                    MMbankApp()
+                    MMbankApp(openUncategorizedQueue = openUncategorizedQueue)
                     // Opaque gate over (not instead of) the app so navigation
                     // and screen state survive a lock/unlock round-trip.
                     if (locked) {
@@ -140,7 +149,7 @@ private val topLevelDestinations = listOf(
 )
 
 @Composable
-fun MMbankApp() {
+fun MMbankApp(openUncategorizedQueue: Boolean = false) {
     val context = LocalContext.current
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -159,6 +168,11 @@ fun MMbankApp() {
         // next launch also opens Settings, instead of alternating.
         delay(4_000)
         Diagnostics.clearCrashStreak(context)
+    }
+
+    // Daily Budget widget's "Review uncategorized" shortcut (see MainActivity.EXTRA_OPEN_UNCATEGORIZED).
+    LaunchedEffect(openUncategorizedQueue) {
+        if (openUncategorizedQueue) navController.navigate("uncategorized_queue")
     }
 
     Scaffold(
@@ -250,10 +264,16 @@ private fun AppNavHost(
             UncategorizedQueueScreen(onBack = { navController.popBackStack() })
         }
         composable("insights") {
-            InsightsScreen(onOpenRewards = { navController.navigate("cashback") })
+            InsightsScreen(
+                onOpenRewards = { navController.navigate("cashback") },
+                onOpenSubscriptions = { navController.navigate("subscriptions") },
+                onOpenAnalytics = { navController.navigate("analytics") },
+            )
         }
+        composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
         composable("accounts") { AccountsScreen() }
         composable("cashback") { CashbackScreen() }
+        composable("subscriptions") { SubscriptionsScreen(onBack = { navController.popBackStack() }) }
         composable("rules") {
             RulesScreen(
                 onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },

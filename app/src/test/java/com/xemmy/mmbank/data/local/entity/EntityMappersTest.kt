@@ -6,6 +6,8 @@ import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.Subscription
+import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -348,5 +350,42 @@ class EntityMappersTest {
         assertEquals(original, roundTripped)
         assertNull(roundTripped.categoryId)
         assertTrue(roundTripped.pending)
+    }
+
+    @Test
+    fun `subscription round-trip preserves cadence and dismissed state`() {
+        val original = Subscription(
+            id = 6,
+            merchant = "Netflix",
+            averageAmount = BigDecimal("39.99"),
+            currencyCode = "AED",
+            cadence = SubscriptionCadence.MONTHLY,
+            nextDueDateMillis = 1_700_000_000_000,
+            lastSeenMillis = 1_697_408_000_000,
+            occurrenceCount = 4,
+            dismissed = false,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(SubscriptionCadence.MONTHLY, roundTripped.cadence)
+        assertFalse(roundTripped.dismissed)
+    }
+
+    @Test
+    fun `subscription round-trip preserves dismissed = true and weekly cadence`() {
+        val original = Subscription(
+            id = 7,
+            merchant = "Weekly Cleaner",
+            averageAmount = BigDecimal("50.00"),
+            currencyCode = "USD",
+            cadence = SubscriptionCadence.WEEKLY,
+            nextDueDateMillis = 1_700_000_000_000,
+            lastSeenMillis = 1_699_395_200_000,
+            occurrenceCount = 6,
+            dismissed = true,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertTrue(roundTripped.dismissed)
     }
 }

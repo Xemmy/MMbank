@@ -14,8 +14,8 @@ android {
         applicationId = "com.xemmy.mmbank"
         minSdk = 26
         targetSdk = 35
-        versionCode = 25
-        versionName = "0.17.0"
+        versionCode = 26
+        versionName = "0.18.0"
     }
 
     // A fixed debug keystore (committed, standard well-known debug password)
@@ -102,6 +102,9 @@ dependencies {
 
     // Gate-2 local-AI parsing: expedited background worker for Gemma/LiteRT-LM
     implementation(libs.androidx.work.runtime.ktx)
+
+    // Jetpack Glance: home screen widget (DailyBudgetWidget)
+    implementation(libs.androidx.glance.appwidget)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

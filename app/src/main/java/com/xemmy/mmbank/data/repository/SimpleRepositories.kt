@@ -4,6 +4,7 @@ import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
+import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
@@ -14,10 +15,12 @@ import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
+import com.xemmy.mmbank.domain.repository.SubscriptionRepository
 import java.math.BigDecimal
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -114,4 +117,27 @@ class RatesRepositoryImpl(
         dao.upsertAll(entities)
         entities.size
     }
+}
+
+class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : SubscriptionRepository {
+
+    override fun observeActive(): Flow<List<Subscription>> =
+        dao.observeActive().map { list -> list.map { it.toDomain() } }
+
+    /**
+     * A fresh scan's results replace the stored set one merchant at a time
+     * (REPLACE on the unique merchant index -- see [SubscriptionDao.upsert]),
+     * preserving a merchant's [Subscription.dismissed] flag if it was already
+     * dismissed and is detected again, so a re-scan can't silently un-dismiss
+     * something the user already dealt with.
+     */
+    override suspend fun replaceAll(detected: List<Subscription>) {
+        val dismissedMerchants = dao.getAll().filter { it.dismissed }.map { it.merchant }.toSet()
+        detected.forEach { subscription ->
+            val alreadyDismissed = subscription.merchant in dismissedMerchants
+            dao.upsert(subscription.copy(dismissed = alreadyDismissed).toEntity())
+        }
+    }
+
+    override suspend fun dismiss(id: Long) = dao.dismiss(id)
 }

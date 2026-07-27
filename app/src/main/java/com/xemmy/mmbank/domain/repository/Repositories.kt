@@ -11,6 +11,7 @@ import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SenderLabel
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.WalletBalance
 import kotlinx.coroutines.flow.Flow
@@ -130,4 +131,17 @@ interface CategoryRepository {
      * Returns rows flagged.
      */
     suspend fun suggestPending(merchant: String, name: String, icon: String?, colorHex: String?): Int
+}
+
+/**
+ * Detected recurring charges (see [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]),
+ * persisted so the Subscriptions Radar screen has something to show without
+ * re-scanning the whole ledger on every launch.
+ */
+interface SubscriptionRepository {
+    /** Active (non-dismissed) detections, soonest renewal first. */
+    fun observeActive(): Flow<List<Subscription>>
+    /** Replaces the stored detection set with a fresh scan's results (one row per merchant). */
+    suspend fun replaceAll(detected: List<Subscription>)
+    suspend fun dismiss(id: Long)
 }

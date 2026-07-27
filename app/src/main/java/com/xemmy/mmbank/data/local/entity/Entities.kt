@@ -13,6 +13,8 @@ import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.Subscription
+import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -175,6 +177,22 @@ data class ExchangeRateEntity(
     val fetchedAt: Long,
 )
 
+@Entity(
+    tableName = "subscriptions",
+    indices = [Index(value = ["merchant"], unique = true)],
+)
+data class SubscriptionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val merchant: String,
+    val averageAmount: BigDecimal,
+    val currencyCode: String,
+    val cadence: SubscriptionCadence,
+    val nextDueDateMillis: Long,
+    val lastSeenMillis: Long,
+    val occurrenceCount: Int,
+    val dismissed: Boolean = false,
+)
+
 // --- Entity <-> domain mappers ---
 
 fun AccountEntity.toDomain() = Account(
@@ -254,3 +272,11 @@ fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, 
 fun WalletBalanceEntity.toDomain() = WalletBalance(walletName, balanceBtc, valueUsd, updatedAt)
 
 fun ExchangeRateEntity.toDomain() = ExchangeRate(baseCode, quoteCode, rate, fetchedAt)
+
+fun SubscriptionEntity.toDomain() = Subscription(
+    id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
+)
+
+fun Subscription.toEntity() = SubscriptionEntity(
+    id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
+)

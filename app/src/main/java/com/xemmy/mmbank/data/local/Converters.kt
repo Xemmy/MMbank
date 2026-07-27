@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.local
 import androidx.room.TypeConverter
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -57,4 +58,11 @@ class Converters {
     @TypeConverter
     fun stringToSpendingCategory(value: String?): SpendingCategory? =
         value?.let { runCatching { SpendingCategory.valueOf(it) }.getOrDefault(SpendingCategory.UNCATEGORIZED) }
+
+    @TypeConverter
+    fun cadenceToString(value: SubscriptionCadence?): String? = value?.name
+
+    @TypeConverter
+    fun stringToCadence(value: String?): SubscriptionCadence? =
+        value?.let { SubscriptionCadence.valueOf(it) }
 }

@@ -11,6 +11,7 @@ import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
+import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -370,4 +371,21 @@ interface ExchangeRateDao {
 
     @Query("SELECT * FROM exchange_rates")
     fun observeAll(): Flow<List<ExchangeRateEntity>>
+}
+
+@Dao
+interface SubscriptionDao {
+
+    /** Replaces the detection for a merchant on every re-scan (one row per merchant, see the unique index). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SubscriptionEntity): Long
+
+    @Query("SELECT * FROM subscriptions WHERE dismissed = 0 ORDER BY nextDueDateMillis ASC")
+    fun observeActive(): Flow<List<SubscriptionEntity>>
+
+    @Query("UPDATE subscriptions SET dismissed = 1 WHERE id = :id")
+    suspend fun dismiss(id: Long)
+
+    @Query("SELECT * FROM subscriptions")
+    suspend fun getAll(): List<SubscriptionEntity>
 }

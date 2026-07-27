@@ -269,3 +269,28 @@ sealed interface IngestResult {
     data class Duplicate(val existingTransactionId: Long) : IngestResult
     data object NoMatch : IngestResult
 }
+
+/** Detected repeat-charge rhythm — see [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]. */
+enum class SubscriptionCadence(val nominalDays: Long) { WEEKLY(7L), MONTHLY(30L) }
+
+/**
+ * A recurring charge detected by [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]
+ * from historical transactions grouped by merchant, persisted so the Subscriptions
+ * Radar & Renewal Calendar screen has something to show without re-scanning on
+ * every launch.
+ */
+data class Subscription(
+    val id: Long = 0,
+    val merchant: String,
+    val averageAmount: BigDecimal,
+    val currencyCode: String,
+    val cadence: SubscriptionCadence,
+    /** Millis of the next expected charge, projected from the last seen occurrence. */
+    val nextDueDateMillis: Long,
+    /** Millis of the most recent occurrence this detection was based on. */
+    val lastSeenMillis: Long,
+    /** How many qualifying charges were found — higher means a more confident detection. */
+    val occurrenceCount: Int,
+    /** User dismissed this as a false positive; kept around so it isn't re-detected as new. */
+    val dismissed: Boolean = false,
+)

@@ -40,7 +40,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
@@ -69,9 +71,12 @@ import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,10 +95,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -431,6 +438,12 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             container.transactionRepository.setPerson(transactionId, person)
         }
 
+    /** Swipe-to-flag: quick toggle of the analytics-exclusion flag without opening the edit dialog. */
+    fun toggleExcludeFromStats(transaction: Transaction) =
+        safeWrite("toggleExcludeFromStats") {
+            container.transactionRepository.update(transaction.copy(excludeFromStats = !transaction.excludeFromStats))
+        }
+
     fun setCategory(transactionId: Long, category: SpendingCategory) =
         safeWrite("setCategory") { container.transactionRepository.setSpendingCategory(transactionId, category) }
 
@@ -521,6 +534,9 @@ fun TransactionsScreen(
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
+    // Swipe-to-categorize (see SwipeToActionBox): set by an end-to-start swipe
+    // on a row, cleared once a category is picked or the dialog is dismissed.
+    var quickCategorizeFor by remember { mutableStateOf<Transaction?>(null) }
 
     // Brand accent for a specific-account filter, reusing the same GlowTone
     // mapping every row already uses for its own origin glow — one source of
@@ -707,25 +723,31 @@ fun TransactionsScreen(
                         }
                         items(dayTransactions, key = { it.id }) { tx ->
                             Column {
-                                TransactionCard(
-                                    tx = tx,
-                                    accounts = state.accounts,
-                                    knownPersons = state.knownPersons,
-                                    bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
-                                    accountFilterTint = activeAccountGlow,
-                                    isInBulkMode = state.isInBulkMode,
-                                    isSelected = tx.id in state.selectedTransactionIds,
-                                    onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
-                                    onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
-                                    onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
-                                    onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
-                                    onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                                    onEdit = { editing = tx },
-                                    onDelete = { viewModel.delete(tx.id) },
-                                    onCardClick = { selectedTransaction = tx },
-                                    onLongPress = { viewModel.enterBulkMode(tx.id) },
-                                    onToggleSelected = { viewModel.toggleSelected(tx.id) },
-                                )
+                                SwipeToActionBox(
+                                    enabled = !state.isInBulkMode,
+                                    onFlag = { viewModel.toggleExcludeFromStats(tx) },
+                                    onCategorize = { quickCategorizeFor = tx },
+                                ) {
+                                    TransactionCard(
+                                        tx = tx,
+                                        accounts = state.accounts,
+                                        knownPersons = state.knownPersons,
+                                        bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                                        accountFilterTint = activeAccountGlow,
+                                        isInBulkMode = state.isInBulkMode,
+                                        isSelected = tx.id in state.selectedTransactionIds,
+                                        onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
+                                        onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                                        onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
+                                        onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
+                                        onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                                        onEdit = { editing = tx },
+                                        onDelete = { viewModel.delete(tx.id) },
+                                        onCardClick = { selectedTransaction = tx },
+                                        onLongPress = { viewModel.enterBulkMode(tx.id) },
+                                        onToggleSelected = { viewModel.toggleSelected(tx.id) },
+                                    )
+                                }
                                 // White base, not DividerDefaults: the theme's divider
                                 // gray at 10% alpha would vanish on the obsidian canvas.
                                 HorizontalDivider(
@@ -773,6 +795,17 @@ fun TransactionsScreen(
         )
     }
 
+    quickCategorizeFor?.let { tx ->
+        QuickCategorizeDialog(
+            current = tx.spendingCategory,
+            onSelect = { category ->
+                viewModel.setCategory(tx.id, category)
+                quickCategorizeFor = null
+            },
+            onDismiss = { quickCategorizeFor = null },
+        )
+    }
+
     selectedTransaction?.let { tx ->
         TransactionDetailSheet(
             transaction = tx,
@@ -815,6 +848,106 @@ private fun DayPill(day: LocalDate, today: LocalDate) {
             )
         }
     }
+}
+
+/**
+ * Tactile micro-interaction: wraps a transaction row in a two-way swipe.
+ * Swiping start-to-end toggles the analytics-exclusion "flag"; swiping
+ * end-to-start opens a quick category picker. Neither direction actually
+ * dismisses the row -- [confirmValueChange] always returns false so the card
+ * snaps back after firing its action, mirroring a Gmail-style "swipe to
+ * archive without removing from view" interaction rather than a real delete.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToActionBox(
+    enabled: Boolean,
+    onFlag: () -> Unit,
+    onCategorize: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    val haptic = LocalHapticFeedback.current
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onFlag()
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onCategorize()
+                }
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            false
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = { SwipeActionBackground(dismissState.dismissDirection) },
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun SwipeActionBackground(direction: SwipeToDismissBoxValue) {
+    val (background, icon, alignment) = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd ->
+            Triple(ObsidianTokens.debit.copy(alpha = 0.28f), Icons.Filled.Flag, Alignment.CenterStart)
+        SwipeToDismissBoxValue.EndToStart ->
+            Triple(ObsidianTokens.credit.copy(alpha = 0.28f), Icons.Filled.Label, Alignment.CenterEnd)
+        SwipeToDismissBoxValue.Settled -> Triple(Color.Transparent, null, Alignment.Center)
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(background, RoundedCornerShape(ObsidianTokens.rowRadius))
+            .padding(horizontal = 22.dp),
+        contentAlignment = alignment,
+    ) {
+        icon?.let { Icon(it, contentDescription = null, tint = Color.White) }
+    }
+}
+
+/** Quick spending-category picker for a swiped row -- the same fixed [SpendingCategory] set as [BulkModeBar]'s menu. */
+@Composable
+private fun QuickCategorizeDialog(
+    current: SpendingCategory,
+    onSelect: (SpendingCategory) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose a category") },
+        text = {
+            Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                SpendingCategory.entries.forEach { category ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(category) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(category.emoji)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            category.label,
+                            fontWeight = if (category == current) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
