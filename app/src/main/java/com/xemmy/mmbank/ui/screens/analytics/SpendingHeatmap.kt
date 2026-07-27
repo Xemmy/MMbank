@@ -39,7 +39,12 @@ internal fun spendPercentileBucket(amount: Double, allAmounts: List<Double>): In
     if (amount <= 0.0) return 0
     val positive = allAmounts.filter { it > 0.0 }.sorted()
     if (positive.isEmpty()) return 0
-    val rank = positive.count { it <= amount }.toDouble() / positive.size
+    if (positive.size == 1) return 4
+    // 0-indexed rank of the highest element <= amount, normalized to [0, 1] by
+    // the min/max of positive -- using positive.size (rather than size - 1) as
+    // the denominator would push the minimum of a small set past the first
+    // quartile cutoff (e.g. 1/3 > 0.25) even though it's the lowest value.
+    val rank = (positive.count { it <= amount } - 1).toDouble() / (positive.size - 1)
     return when {
         rank <= 0.25 -> 1
         rank <= 0.50 -> 2
