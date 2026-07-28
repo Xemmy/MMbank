@@ -139,6 +139,7 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
  * Vacation, Debt Payoff, …) with a progress bar each, plus "Auto-Allocate
  * Surplus" to sweep this month's net surplus into a chosen goal.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun GoalsScreen(
     onBack: () -> Unit,
