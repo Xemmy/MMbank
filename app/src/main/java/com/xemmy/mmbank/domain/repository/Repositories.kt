@@ -9,10 +9,12 @@ import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SenderLabel
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.Transaction
+import java.math.BigDecimal
 import com.xemmy.mmbank.domain.model.WalletBalance
 import kotlinx.coroutines.flow.Flow
 
@@ -144,4 +146,21 @@ interface SubscriptionRepository {
     /** Replaces the stored detection set with a fresh scan's results (one row per merchant). */
     suspend fun replaceAll(detected: List<Subscription>)
     suspend fun dismiss(id: Long)
+}
+
+/**
+ * Named savings/debt-payoff targets (see [com.xemmy.mmbank.ui.screens.goals.GoalsScreen]).
+ * Independent of [com.xemmy.mmbank.ui.screens.dashboard.GoalState], the
+ * Dashboard's single net-worth target — a ledger can hold several of these
+ * at once (Emergency Fund, Vacation, Debt Payoff, …).
+ */
+interface SavingsGoalRepository {
+    /** Non-archived goals, newest first. */
+    fun observeActive(): Flow<List<SavingsGoal>>
+    /** Inserts a new goal (id = 0) or updates an existing one; returns its id. */
+    suspend fun save(goal: SavingsGoal): Long
+    /** Adds [amount] to the goal's current progress ("Auto-Allocate Surplus"). */
+    suspend fun allocate(goalId: Long, amount: BigDecimal)
+    suspend fun archive(goalId: Long)
+    suspend fun delete(goalId: Long)
 }

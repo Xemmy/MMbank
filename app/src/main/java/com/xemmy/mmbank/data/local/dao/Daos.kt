@@ -10,6 +10,7 @@ import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
+import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -388,4 +389,29 @@ interface SubscriptionDao {
 
     @Query("SELECT * FROM subscriptions")
     suspend fun getAll(): List<SubscriptionEntity>
+}
+
+@Dao
+interface SavingsGoalDao {
+
+    @Insert
+    suspend fun insert(entity: SavingsGoalEntity): Long
+
+    @Update
+    suspend fun update(entity: SavingsGoalEntity)
+
+    @Query("SELECT * FROM savings_goals WHERE archived = 0 ORDER BY createdAt DESC")
+    fun observeActive(): Flow<List<SavingsGoalEntity>>
+
+    @Query("SELECT * FROM savings_goals WHERE id = :id")
+    suspend fun getById(id: Long): SavingsGoalEntity?
+
+    @Query("UPDATE savings_goals SET currentAmount = :amount WHERE id = :id")
+    suspend fun setCurrentAmount(id: Long, amount: BigDecimal)
+
+    @Query("UPDATE savings_goals SET archived = 1 WHERE id = :id")
+    suspend fun archive(id: Long)
+
+    @Query("DELETE FROM savings_goals WHERE id = :id")
+    suspend fun delete(id: Long)
 }

@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.repository
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
+import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
@@ -15,10 +16,12 @@ import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
+import com.xemmy.mmbank.domain.repository.SavingsGoalRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
 import com.xemmy.mmbank.domain.repository.SubscriptionRepository
 import java.math.BigDecimal
@@ -140,4 +143,27 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
     }
 
     override suspend fun dismiss(id: Long) = dao.dismiss(id)
+}
+
+class SavingsGoalRepositoryImpl(private val dao: SavingsGoalDao) : SavingsGoalRepository {
+
+    override fun observeActive(): Flow<List<SavingsGoal>> =
+        dao.observeActive().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun save(goal: SavingsGoal): Long =
+        if (goal.id == 0L) {
+            dao.insert(goal.toEntity())
+        } else {
+            dao.update(goal.toEntity())
+            goal.id
+        }
+
+    override suspend fun allocate(goalId: Long, amount: BigDecimal) {
+        val current = dao.getById(goalId) ?: return
+        dao.setCurrentAmount(goalId, current.currentAmount + amount)
+    }
+
+    override suspend fun archive(goalId: Long) = dao.archive(goalId)
+
+    override suspend fun delete(goalId: Long) = dao.delete(goalId)
 }

@@ -46,7 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
+import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -57,7 +59,12 @@ import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
+import com.xemmy.mmbank.ui.util.asMoneyWholeOrMask
 import com.xemmy.mmbank.ui.util.asQuantity
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -71,6 +78,7 @@ fun DashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
+    val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
 
@@ -112,6 +120,12 @@ fun DashboardScreen(
                     onToggleHide = viewModel::toggleHideBalances,
                     onRefresh = viewModel::refreshRemote,
                 )
+            }
+
+            financialHealth.metrics?.let { metrics ->
+                item(key = "financial_health") {
+                    FinancialHealthCard(metrics, financialHealth.cashFlow, state.baseCurrency, hidden)
+                }
             }
 
             if (state.accounts.isNotEmpty()) {
@@ -293,6 +307,67 @@ private fun weeklyDigestText(digest: AiWeeklyDigestGenerator.WeeklyDigest, curre
         " Top spend: ${top.amount.asMoneyOrMask(currency, hidden)} at ${top.merchant}."
     } ?: ""
     return "$trend.$top"
+}
+
+/**
+ * Financial Health Summary Card: this month's savings rate, cash runway and
+ * net cash flow (see [FinancialHealthEngine]), plus a "safe to spend until
+ * payday" cash-flow forecast (see [CashFlowForecaster]) when a payday can be
+ * determined.
+ */
+@Composable
+private fun FinancialHealthCard(
+    metrics: FinancialHealthMetrics,
+    cashFlow: CashFlowForecaster.SafeToSpendResult?,
+    currency: String,
+    hidden: Boolean,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Financial health", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                HealthMetricTile(
+                    label = "Savings rate",
+                    value = "${metrics.savingsRatePercent.roundToInt()}%",
+                    valueColor = if (metrics.savingsRatePercent >= 0) LedgerColors.credit else LedgerColors.debit,
+                )
+                HealthMetricTile(
+                    label = "Cash runway",
+                    value = metrics.cashRunwayMonths?.let { "${it.roundToInt()} mo" } ?: "—",
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                )
+                HealthMetricTile(
+                    label = "Net cash flow",
+                    value = metrics.netCashFlow.asMoneyWholeOrMask(currency, hidden),
+                    valueColor = if (metrics.netCashFlow >= 0) LedgerColors.credit else LedgerColors.debit,
+                )
+            }
+            if (cashFlow != null) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(10.dp))
+                val paydayLabel = Instant.ofEpochMilli(cashFlow.nextPaydayMillis).atZone(ZoneId.systemDefault())
+                    .toLocalDate().format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
+                Text(
+                    "Safe to spend until payday ($paydayLabel, ${cashFlow.daysUntilPayday}d): " +
+                        "${cashFlow.safeToSpend.toDouble().asMoneyOrMask(currency, hidden)} " +
+                        "(${cashFlow.dailyAllowance.toDouble().asMoneyOrMask(currency, hidden)}/day)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthMetricTile(label: String, value: String, valueColor: androidx.compose.ui.graphics.Color) {
+    Column {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(2.dp))
+        AmountText(display = value, color = valueColor, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable

@@ -12,6 +12,7 @@ import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
@@ -193,6 +194,18 @@ data class SubscriptionEntity(
     val dismissed: Boolean = false,
 )
 
+@Entity(tableName = "savings_goals")
+data class SavingsGoalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val targetAmount: BigDecimal,
+    val currentAmount: BigDecimal = BigDecimal.ZERO,
+    val targetDateMillis: Long? = null,
+    val icon: String = "🎯",
+    val createdAt: Long,
+    val archived: Boolean = false,
+)
+
 // --- Entity <-> domain mappers ---
 
 fun AccountEntity.toDomain() = Account(
@@ -279,4 +292,12 @@ fun SubscriptionEntity.toDomain() = Subscription(
 
 fun Subscription.toEntity() = SubscriptionEntity(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
+)
+
+fun SavingsGoalEntity.toDomain() = SavingsGoal(
+    id, title, targetAmount, currentAmount, targetDateMillis, icon, createdAt, archived,
+)
+
+fun SavingsGoal.toEntity() = SavingsGoalEntity(
+    id, title, targetAmount, currentAmount, targetDateMillis, icon, createdAt, archived,
 )

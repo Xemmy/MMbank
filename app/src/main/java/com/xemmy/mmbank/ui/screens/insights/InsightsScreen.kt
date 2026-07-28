@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Info
@@ -92,6 +94,8 @@ fun InsightsScreen(
     onOpenRewards: () -> Unit,
     onOpenSubscriptions: () -> Unit = {},
     onOpenAnalytics: () -> Unit = {},
+    onOpenGoals: () -> Unit = {},
+    onOpenCopilot: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -191,6 +195,22 @@ fun InsightsScreen(
                 title = "Subscriptions radar",
                 subtitle = "Detected recurring charges and renewal dates",
                 onClick = onOpenSubscriptions,
+            )
+        }
+        item(key = "goals_row") {
+            NavigationRow(
+                icon = Icons.Filled.Savings,
+                title = "Savings goals",
+                subtitle = "Progress bars, debt payoff and surplus allocation",
+                onClick = onOpenGoals,
+            )
+        }
+        item(key = "copilot_row") {
+            NavigationRow(
+                icon = Icons.Filled.SmartToy,
+                title = "Financial Copilot",
+                subtitle = "Ask questions about your spending in plain English",
+                onClick = onOpenCopilot,
             )
         }
         item(key = "rewards_row") { RewardsRow(onOpenRewards) }

@@ -50,7 +50,9 @@ import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.auth.LockScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
+import com.xemmy.mmbank.ui.screens.copilot.CopilotChatScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
+import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
 import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
@@ -268,12 +270,16 @@ private fun AppNavHost(
                 onOpenRewards = { navController.navigate("cashback") },
                 onOpenSubscriptions = { navController.navigate("subscriptions") },
                 onOpenAnalytics = { navController.navigate("analytics") },
+                onOpenGoals = { navController.navigate("goals") },
+                onOpenCopilot = { navController.navigate("copilot") },
             )
         }
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
         composable("accounts") { AccountsScreen() }
         composable("cashback") { CashbackScreen() }
         composable("subscriptions") { SubscriptionsScreen(onBack = { navController.popBackStack() }) }
+        composable("goals") { GoalsScreen(onBack = { navController.popBackStack() }) }
+        composable("copilot") { CopilotChatScreen(onBack = { navController.popBackStack() }) }
         composable("rules") {
             RulesScreen(
                 onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },

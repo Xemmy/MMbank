@@ -5,10 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
+import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
+import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.ExchangeRate
+import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -125,6 +128,12 @@ data class GoalState(
 ) {
     val isSet: Boolean get() = targetAmount > 0.0
 }
+
+/** [DashboardViewModel.financialHealth]'s output: the health metrics plus an optional cash-flow forecast. */
+data class FinancialHealthState(
+    val metrics: FinancialHealthMetrics? = null,
+    val cashFlow: CashFlowForecaster.SafeToSpendResult? = null,
+)
 
 data class DashboardUiState(
     val baseCurrency: String = "USD",
@@ -281,6 +290,32 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         )
     }.recoverAndRetry("DashboardViewModel.weeklyDigest", container) { null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Financial Health Summary Card: this month's savings rate / cash runway
+     * / net cash flow (see [FinancialHealthEngine]), plus a "safe to spend
+     * until payday" cash-flow forecast (see [CashFlowForecaster]). Kept as
+     * its own flow (not folded into [statsFlow]) since it's always scoped to
+     * the current calendar month, independent of the Dashboard tab's own
+     * date filter -- same reasoning as [weeklyDigest]'s rolling window.
+     */
+    val financialHealth: StateFlow<FinancialHealthState> = combine(
+        ledgerState,
+        container.transactionRepository.observeTransactions(),
+        container.subscriptionRepository.observeActive(),
+        container.ratesRepository.observeRates(),
+    ) { ledger, transactions, subscriptions, rates ->
+        computeFinancialHealth(
+            accounts = ledger.accounts,
+            transactions = transactions,
+            subscriptions = subscriptions,
+            rates = rates,
+            baseCurrency = container.preferences.defaultCurrency,
+            fixedMonthlyExpenses = container.preferences.fixedMonthlyExpenses,
+            manualPaydayOfMonth = container.preferences.paycheckDayOfMonth.takeIf { it in 1..31 },
+        )
+    }.recoverAndRetry("DashboardViewModel.financialHealth", container) { FinancialHealthState() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinancialHealthState())
 
     private val statsFlow = combine(
         container.transactionRepository.observeTransactions(),
@@ -742,4 +777,83 @@ internal fun computeDashboardStats(
         periodSpend = periodSpend,
         insights = insights,
     )
+}
+
+/** Account types counted as "liquid" for [computeFinancialHealth]'s cash-runway and safe-to-spend math. */
+private val LIQUID_ACCOUNT_TYPES = setOf(AccountType.CHECKING, AccountType.SAVINGS, AccountType.CASH)
+
+/**
+ * This calendar month's Financial Health Summary Card: savings rate, cash
+ * runway and net cash flow (see [FinancialHealthEngine]), plus a "safe to
+ * spend until payday" forecast (see [CashFlowForecaster]) once a payday can
+ * be determined (auto-detected recurring income, or [manualPaydayOfMonth]).
+ * Mandatory bills reserved ahead of payday are the active, non-dismissed
+ * subscriptions due in that window -- the app's only existing notion of a
+ * recurring committed charge (see [com.xemmy.mmbank.domain.model.Subscription]).
+ *
+ * Pure and top-level so it's JVM-testable; [zone] and [today] are injectable
+ * for determinism and default to the device values.
+ */
+internal fun computeFinancialHealth(
+    accounts: List<AccountRow>,
+    transactions: List<Transaction>,
+    subscriptions: List<com.xemmy.mmbank.domain.model.Subscription>,
+    rates: List<ExchangeRate>,
+    baseCurrency: String,
+    fixedMonthlyExpenses: Double,
+    manualPaydayOfMonth: Int?,
+    zone: ZoneId = ZoneId.systemDefault(),
+    today: LocalDate = LocalDate.now(zone),
+): FinancialHealthState {
+    val ratesFromBase = rates
+        .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+        .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+
+    fun inBase(tx: Transaction): Double? =
+        CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase)
+
+    val monthStart = today.withDayOfMonth(1)
+    val monthStartMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+    val nextMonthStartMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val monthTx = transactions.filter {
+        !it.excludeFromStats && it.timestampMillis >= monthStartMillis && it.timestampMillis < nextMonthStartMillis
+    }
+    val income = monthTx.filter { it.direction == TransactionDirection.CREDIT }.sumOf { inBase(it) ?: 0.0 }
+    val expenses = monthTx.filter { it.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
+
+    val liquidBalance = accounts
+        .filter { it.account.type in LIQUID_ACCOUNT_TYPES }
+        .sumOf { it.balanceInBase ?: 0.0 }
+
+    val metrics = FinancialHealthEngine.calculate(
+        FinancialHealthEngine.HealthInputs(
+            periodIncome = income,
+            periodExpenses = expenses,
+            liquidBalance = liquidBalance,
+            averageMonthlyFixedExpenses = fixedMonthlyExpenses,
+        )
+    )
+
+    val pattern = CashFlowForecaster.detectIncomePattern(transactions, baseCurrency)
+    val nextPayday = CashFlowForecaster.projectNextPayday(pattern, manualPaydayOfMonth, today, zone)
+    val cashFlow = nextPayday?.let { payday ->
+        val billsDue = subscriptions
+            .filter { !it.dismissed }
+            .filter { sub ->
+                val dueDate = Instant.ofEpochMilli(sub.nextDueDateMillis).atZone(zone).toLocalDate()
+                !dueDate.isBefore(today) && !dueDate.isAfter(payday)
+            }
+            .sumOf { sub ->
+                CurrencyMath.toBase(sub.averageAmount.toDouble(), sub.currencyCode, baseCurrency, ratesFromBase) ?: 0.0
+            }
+        CashFlowForecaster.computeSafeToSpend(
+            currentLiquidBalance = java.math.BigDecimal.valueOf(liquidBalance),
+            mandatoryBillsDueBeforePayday = java.math.BigDecimal.valueOf(billsDue),
+            nextPayday = payday,
+            today = today,
+            zone = zone,
+        )
+    }
+
+    return FinancialHealthState(metrics = metrics, cashFlow = cashFlow)
 }

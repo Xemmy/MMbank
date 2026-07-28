@@ -5,6 +5,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
@@ -387,5 +388,41 @@ class EntityMappersTest {
         val roundTripped = original.toEntity().toDomain()
         assertEquals(original, roundTripped)
         assertTrue(roundTripped.dismissed)
+    }
+
+    @Test
+    fun `savings goal round-trip preserves a non-null target date`() {
+        val original = SavingsGoal(
+            id = 8,
+            title = "Emergency Fund",
+            targetAmount = BigDecimal("10000.00"),
+            currentAmount = BigDecimal("2500.00"),
+            targetDateMillis = 1_800_000_000_000,
+            icon = "🛟",
+            createdAt = 1_690_000_000_000,
+            archived = false,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(1_800_000_000_000, roundTripped.targetDateMillis)
+        assertFalse(roundTripped.archived)
+    }
+
+    @Test
+    fun `savings goal round-trip preserves a null target date and archived = true`() {
+        val original = SavingsGoal(
+            id = 9,
+            title = "Old Goal",
+            targetAmount = BigDecimal("500.00"),
+            currentAmount = BigDecimal("500.00"),
+            targetDateMillis = null,
+            icon = "🎯",
+            createdAt = 1_690_000_000_000,
+            archived = true,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.targetDateMillis)
+        assertTrue(roundTripped.archived)
     }
 }

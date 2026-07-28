@@ -236,6 +236,15 @@ class AppPreferences(context: Context) {
         get() = prefs.getFloat(KEY_FIXED_MONTHLY_EXPENSES, 0f).toDouble()
         set(value) = prefs.edit().putFloat(KEY_FIXED_MONTHLY_EXPENSES, value.toFloat()).apply()
 
+    /**
+     * Manual payday override (day of month, 1-31) for
+     * [com.xemmy.mmbank.domain.intelligence.CashFlowForecaster] — wins over
+     * the auto-detected recurring-income pattern when set. 0 = no override.
+     */
+    var paycheckDayOfMonth: Int
+        get() = prefs.getInt(KEY_PAYCHECK_DAY_OF_MONTH, 0)
+        set(value) = prefs.edit().putInt(KEY_PAYCHECK_DAY_OF_MONTH, value.coerceIn(0, 31)).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -266,6 +275,7 @@ class AppPreferences(context: Context) {
         const val KEY_GOAL_MONTHLY = "goal_monthly"
         const val KEY_MONTHLY_SPEND_BUDGET = "monthly_spend_budget"
         const val KEY_FIXED_MONTHLY_EXPENSES = "fixed_monthly_expenses"
+        const val KEY_PAYCHECK_DAY_OF_MONTH = "paycheck_day_of_month"
         const val KEY_DESIGN_MODE = "design_mode"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
     }

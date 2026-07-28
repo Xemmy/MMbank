@@ -274,6 +274,65 @@ sealed interface IngestResult {
 enum class SubscriptionCadence(val nominalDays: Long) { WEEKLY(7L), MONTHLY(30L) }
 
 /**
+ * One detected or manually confirmed salary/income event — see
+ * [com.xemmy.mmbank.domain.intelligence.CashFlowForecaster]. Not persisted;
+ * derived on demand from the transaction ledger.
+ */
+data class Paycheck(
+    val amount: BigDecimal,
+    val currencyCode: String,
+    val timestampMillis: Long,
+    val merchant: String? = null,
+)
+
+/**
+ * Manual payday override (Settings): the day of the month salary is expected
+ * to land on, wins over auto-detection when set. `dayOfMonth` = 0 means no
+ * override — [com.xemmy.mmbank.domain.intelligence.CashFlowForecaster] falls
+ * back to the pattern it detects from recurring credits.
+ */
+data class PaycheckSchedule(val dayOfMonth: Int = 0)
+
+/**
+ * A named savings/debt-payoff target with progress tracked in [currentAmount]
+ * — see the Goals screen (ui/screens/goals/GoalsScreen.kt). Progress can be
+ * built up manually or via "Auto-Allocate Surplus" (month-end surplus applied
+ * to a chosen goal).
+ */
+data class SavingsGoal(
+    val id: Long = 0,
+    val title: String,
+    val targetAmount: BigDecimal,
+    val currentAmount: BigDecimal = BigDecimal.ZERO,
+    val targetDateMillis: Long? = null,
+    val icon: String = "🎯",
+    val createdAt: Long = System.currentTimeMillis(),
+    val archived: Boolean = false,
+) {
+    val progressFraction: Double
+        get() = if (targetAmount.signum() <= 0) {
+            0.0
+        } else {
+            (currentAmount.toDouble() / targetAmount.toDouble()).coerceIn(0.0, 1.0)
+        }
+}
+
+/**
+ * Snapshot of the Dashboard's Financial Health Summary Card — see
+ * [com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine].
+ */
+data class FinancialHealthMetrics(
+    /** ((Income - Expenses) / Income) * 100; 0 when there's no income to divide by. */
+    val savingsRatePercent: Double,
+    /** LiquidBalance / AverageMonthlyFixedExpenses; null when there are no fixed expenses to divide by. */
+    val cashRunwayMonths: Double?,
+    /** Income - Expenses for the period. */
+    val netCashFlow: Double,
+    val income: Double,
+    val expenses: Double,
+)
+
+/**
  * A recurring charge detected by [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]
  * from historical transactions grouped by merchant, persisted so the Subscriptions
  * Radar & Renewal Calendar screen has something to show without re-scanning on
