@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -169,7 +170,19 @@ fun MMbankTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = ObsidianTypography,
-            content = content,
-        )
+        ) {
+            // The app root Scaffold (MainActivity) uses a transparent
+            // container so the ambient background shows through; that
+            // Color.Transparent doesn't match any ColorScheme role, so M3's
+            // contentColorFor() falls back to LocalContentColor's own
+            // default (Color.Black) instead of onSurface. Any Text() below
+            // it without an explicit color would render black on the dark
+            // canvas. Providing onSurface here fixes that fallback for the
+            // whole tree; nested Surface/Scaffold/Card composables still
+            // override it correctly per their own container color.
+            CompositionLocalProvider(LocalContentColor provides colorScheme.onSurface) {
+                content()
+            }
+        }
     }
 }
