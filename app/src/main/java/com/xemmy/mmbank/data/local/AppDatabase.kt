@@ -44,7 +44,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         SubscriptionEntity::class,
         SavingsGoalEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -318,6 +318,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v16 -> v17: High-Detail Transaction Review screen. Captures the
+         * parser's raw merchant guess separately from the (possibly later
+         * edited) `merchant` column, plus a 0-100 automated-categorization
+         * confidence score, so the review queue can show a confidence chip
+         * and a raw-vs-current merchant comparison.
+         */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN extractedMerchant TEXT")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN aiConfidence INTEGER")
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -346,7 +360,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                    MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
+                    MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

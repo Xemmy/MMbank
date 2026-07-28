@@ -38,6 +38,8 @@ class EntityMappersTest {
         suggestedCategoryName: String? = null,
         suggestedCategoryIcon: String? = null,
         suggestedCategoryColorHex: String? = null,
+        extractedMerchant: String? = null,
+        aiConfidence: Int? = null,
     ) = Transaction(
         id = 42,
         accountId = 7,
@@ -63,6 +65,8 @@ class EntityMappersTest {
         suggestedCategoryName = suggestedCategoryName,
         suggestedCategoryIcon = suggestedCategoryIcon,
         suggestedCategoryColorHex = suggestedCategoryColorHex,
+        extractedMerchant = extractedMerchant,
+        aiConfidence = aiConfidence,
     )
 
     private fun account(statementCycleDay: Int?, isDemo: Boolean = false, hiddenFromDashboard: Boolean = false) = Account(
@@ -297,6 +301,36 @@ class EntityMappersTest {
         assertNull(entity.suggestedCategoryName)
         assertNull(entity.toDomain().categoryId)
         assertFalse(entity.toDomain().needsCategoryApproval)
+    }
+
+    @Test
+    fun `transaction round-trip preserves extractedMerchant and aiConfidence`() {
+        val original = transaction(
+            excludeFromStats = false,
+            extractedMerchant = "CARREFOUR-MAF MKT",
+            aiConfidence = 70,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals("CARREFOUR-MAF MKT", roundTripped.extractedMerchant)
+        assertEquals(70, roundTripped.aiConfidence)
+    }
+
+    @Test
+    fun `transaction entity defaults extractedMerchant and aiConfidence to null`() {
+        // Mirrors the v17 migration: rows predating it load unscored.
+        val entity = TransactionEntity(
+            amount = BigDecimal.ONE,
+            currencyCode = "AED",
+            direction = TransactionDirection.DEBIT,
+            source = TransactionSource.MANUAL,
+            timestamp = 0,
+            createdAt = 0,
+        )
+        assertNull(entity.extractedMerchant)
+        assertNull(entity.aiConfidence)
+        assertNull(entity.toDomain().extractedMerchant)
+        assertNull(entity.toDomain().aiConfidence)
     }
 
     @Test

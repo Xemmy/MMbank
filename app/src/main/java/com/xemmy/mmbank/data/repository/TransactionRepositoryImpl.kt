@@ -11,6 +11,7 @@ import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.parser.AiConfidenceScorer
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
@@ -95,6 +96,8 @@ class TransactionRepositoryImpl(
             val pendingSuggestion = if (categoryId == null) {
                 parsed.merchant?.let { categoryRepository?.findPendingSuggestion(it) }
             } else null
+            val spendingCategory = parsed.spendingCategoryOverride
+                ?: MerchantCategorizer.categorize(parsed.merchant, message.body)
 
             val entity = TransactionEntity(
                 amount = parsed.amount,
@@ -111,14 +114,19 @@ class TransactionRepositoryImpl(
                 accountId = detectedAccountId,
                 category = parsed.category,
                 person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
-                spendingCategory = parsed.spendingCategoryOverride
-                    ?: MerchantCategorizer.categorize(parsed.merchant, message.body),
+                spendingCategory = spendingCategory,
                 excludeFromStats = parsed.excludeFromStats,
                 categoryId = categoryId,
                 needsCategoryApproval = pendingSuggestion != null,
                 suggestedCategoryName = pendingSuggestion?.suggestedName,
                 suggestedCategoryIcon = pendingSuggestion?.suggestedIcon,
                 suggestedCategoryColorHex = pendingSuggestion?.suggestedColorHex,
+                extractedMerchant = parsed.merchant,
+                aiConfidence = AiConfidenceScorer.score(
+                    hasConfirmedCategory = categoryId != null,
+                    hasPendingSuggestion = pendingSuggestion != null,
+                    spendingCategory = spendingCategory,
+                ),
             )
             val id = dao.insert(entity)
             val inserted = entity.copy(id = id)

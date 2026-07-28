@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -309,6 +310,12 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         )
     }.recoverAndRetry("DashboardViewModel.weeklyDigest", container) { null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Badge count for the Home tab's "Review Transactions" entry point -- still-uncategorized real transactions. */
+    val pendingReviewCount: StateFlow<Int> = container.transactionRepository.observeUncategorized()
+        .map { it.size }
+        .recoverAndRetry("DashboardViewModel.pendingReviewCount", container) { 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /**
      * Financial Health Summary Card: this month's savings rate / cash runway

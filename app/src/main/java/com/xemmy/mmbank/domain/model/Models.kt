@@ -186,6 +186,18 @@ data class Transaction(
     val suggestedCategoryName: String? = null,
     val suggestedCategoryIcon: String? = null,
     val suggestedCategoryColorHex: String? = null,
+    /**
+     * Raw merchant text as pulled from [rawMessage] at capture time, before any
+     * later editing of [merchant] -- lets the Review screen show what the
+     * parser/AI actually saw, independent of a subsequent manual correction.
+     */
+    val extractedMerchant: String? = null,
+    /**
+     * 0-100 confidence in this transaction's automated categorization, scored
+     * at capture time by [com.xemmy.mmbank.domain.parser.AiConfidenceScorer].
+     * Null for rows recorded before this field existed or entered manually.
+     */
+    val aiConfidence: Int? = null,
 )
 
 /**

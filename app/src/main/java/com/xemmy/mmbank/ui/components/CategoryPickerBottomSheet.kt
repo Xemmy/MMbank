@@ -67,6 +67,10 @@ fun CategoryPickerBottomSheet(
     var newName by remember { mutableStateOf("") }
     var newColor by remember { mutableStateOf(PRESET_COLORS.first()) }
     var newCap by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    val filteredCategories = remember(categories, query) {
+        if (query.isBlank()) categories else categories.filter { it.name.contains(query, ignoreCase = true) }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -120,8 +124,24 @@ fun CategoryPickerBottomSheet(
                         .fillMaxWidth()
                         .heightIn(max = 400.dp),
                 ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text("Search categories") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                    )
+                    if (filteredCategories.isEmpty()) {
+                        Text(
+                            "No categories match \"$query\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
+                    }
                     LazyColumn {
-                        items(categories, key = { it.id }) { category ->
+                        items(filteredCategories, key = { it.id }) { category ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()
@@ -155,7 +175,10 @@ fun CategoryPickerBottomSheet(
                     enabled = newName.isNotBlank(),
                 ) { Text("Create") }
             } else {
-                TextButton(onClick = { creating = true }) {
+                TextButton(onClick = {
+                    newName = query.trim()
+                    creating = true
+                }) {
                     Text("+ New Category", fontWeight = FontWeight.SemiBold)
                 }
             }

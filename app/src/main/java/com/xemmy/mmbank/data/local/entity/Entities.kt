@@ -108,6 +108,10 @@ data class TransactionEntity(
     val suggestedCategoryName: String? = null,
     val suggestedCategoryIcon: String? = null,
     val suggestedCategoryColorHex: String? = null,
+    /** Raw merchant text as pulled from [rawMessage] at capture time; see [Transaction.extractedMerchant]. */
+    val extractedMerchant: String? = null,
+    /** 0-100 automated-categorization confidence; see [Transaction.aiConfidence]. */
+    val aiConfidence: Int? = null,
 )
 
 @Entity(tableName = "categories")
@@ -232,6 +236,7 @@ fun TransactionEntity.toDomain() = Transaction(
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
+    extractedMerchant, aiConfidence,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -259,6 +264,8 @@ fun Transaction.toEntity() = TransactionEntity(
     suggestedCategoryName = suggestedCategoryName,
     suggestedCategoryIcon = suggestedCategoryIcon,
     suggestedCategoryColorHex = suggestedCategoryColorHex,
+    extractedMerchant = extractedMerchant,
+    aiConfidence = aiConfidence,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap)

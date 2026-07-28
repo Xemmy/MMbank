@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -77,11 +78,13 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun DashboardScreen(
+    onOpenReview: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
     val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
+    val pendingReviewCount by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
     var showManageAccounts by remember { mutableStateOf(false) }
@@ -107,6 +110,12 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (pendingReviewCount > 0) {
+                item(key = "review_badge") {
+                    ReviewBadgeCard(count = pendingReviewCount, onClick = onOpenReview)
+                }
+            }
+
             weeklyDigest?.let { digest ->
                 item(key = "weekly_digest") {
                     WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
@@ -223,6 +232,43 @@ private fun AccountFilterChip(label: String, onClear: () -> Unit) {
             labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ),
     )
+}
+
+/** "N items to review" entry point into the High-Detail Review Transactions screen; hidden by the caller when count is 0. */
+@Composable
+private fun ReviewBadgeCard(count: Int, onClick: () -> Unit) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                "$count ${if (count == 1) "item" else "items"} to review",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    }
 }
 
 @Composable

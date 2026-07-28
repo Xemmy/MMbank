@@ -57,6 +57,7 @@ import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
 import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
 import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsScreen
+import com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
 import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsScreen
@@ -265,12 +266,17 @@ private fun AppNavHost(
         startDestination = startDestination,
         modifier = modifier,
     ) {
-        composable("home") { DashboardScreen() }
+        composable("home") {
+            DashboardScreen(onOpenReview = { navController.navigate("review_transactions") })
+        }
         composable("transactions") {
             TransactionsScreen(onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") })
         }
         composable("uncategorized_queue") {
             UncategorizedQueueScreen(onBack = { navController.popBackStack() })
+        }
+        composable("review_transactions") {
+            ReviewTransactionsScreen(onBack = { navController.popBackStack() })
         }
         composable("insights") {
             InsightsScreen(
