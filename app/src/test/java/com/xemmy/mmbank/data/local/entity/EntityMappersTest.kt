@@ -65,7 +65,7 @@ class EntityMappersTest {
         suggestedCategoryColorHex = suggestedCategoryColorHex,
     )
 
-    private fun account(statementCycleDay: Int?, isDemo: Boolean = false) = Account(
+    private fun account(statementCycleDay: Int?, isDemo: Boolean = false, hiddenFromDashboard: Boolean = false) = Account(
         id = 3,
         name = "Tabby Card",
         type = AccountType.CREDIT_CARD,
@@ -87,6 +87,7 @@ class EntityMappersTest {
         loanNotes = "no fees",
         statementCycleDay = statementCycleDay,
         isDemo = isDemo,
+        hiddenFromDashboard = hiddenFromDashboard,
     )
 
     @Test
@@ -195,6 +196,14 @@ class EntityMappersTest {
         assertTrue(demo.isDemo)
         val real = account(statementCycleDay = 10, isDemo = false).toEntity().toDomain()
         assertFalse(real.isDemo)
+    }
+
+    @Test
+    fun `account round-trip preserves hiddenFromDashboard in both states`() {
+        val hidden = account(statementCycleDay = 10, hiddenFromDashboard = true).toEntity().toDomain()
+        assertTrue(hidden.hiddenFromDashboard)
+        val visible = account(statementCycleDay = 10, hiddenFromDashboard = false).toEntity().toDomain()
+        assertFalse(visible.hiddenFromDashboard)
     }
 
     @Test

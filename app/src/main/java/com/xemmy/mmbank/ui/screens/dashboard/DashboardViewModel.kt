@@ -10,6 +10,7 @@ import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.BackgroundPreset
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -147,6 +148,8 @@ data class DashboardUiState(
     val senderLabels: Map<String, String> = emptyMap(),
     /** Sum of everything convertible into the base currency; liabilities negative. */
     val netWorthInBase: Double = 0.0,
+    /** Sum of visible fiat accounts only (no crypto) — the "All Accounts" carousel card's total. */
+    val fiatTotalInBase: Double = 0.0,
     val hasUnconvertedAmounts: Boolean = false,
     /** True when crypto's value is deliberately left out of [netWorthInBase] (Settings toggle). */
     val cryptoExcludedFromTotal: Boolean = false,
@@ -165,19 +168,31 @@ data class DashboardUiState(
     val hideBalances: Boolean = false,
     val refreshing: Boolean = false,
     val message: String? = null,
+    /** Account the carousel/transaction feed are filtered to; null = "All Accounts". */
+    val selectedAccountId: Long? = null,
 )
 
 class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
+    /** Ambient background style for the header's style picker (see [com.xemmy.mmbank.ui.theme.ambientBackground]). */
+    val backgroundPreset: StateFlow<BackgroundPreset> = container.backgroundPreset
+
+    fun setBackgroundPreset(preset: BackgroundPreset) = container.setBackgroundPreset(preset)
+
     private companion object {
         /** Below this, a holding rounds to "$0.00" at 2-decimal money formatting. */
         const val MIN_VISIBLE_USD = 0.005
+
+        /** Recent-activity feed cap — was a fixed observeRecent(10); now needs headroom to filter by account after the fact. */
+        const val FEED_LIMIT = 30
     }
 
     private val refreshing = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
     private val showAllLedgerTransactions = MutableStateFlow(false)
     private val dateRange = MutableStateFlow<DashboardDateRange>(DashboardDateRange.ThisMonth)
+    /** Carousel selection driving the transaction feed below it; null = "All Accounts". */
+    private val selectedAccountId = MutableStateFlow<Long?>(null)
 
     private data class PrefsSnapshot(val hideBalances: Boolean, val goal: GoalState)
 
@@ -208,8 +223,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.transactionRepository.observeNetByAccount(),
         cryptoFlow,
         container.ratesRepository.observeRates(),
-        container.transactionRepository.observeRecent(10),
-    ) { accounts, netByAccount, crypto, rates, recent ->
+    ) { accounts, netByAccount, crypto, rates ->
         val base = container.preferences.defaultCurrency
         val hideZeroBalances = container.preferences.hideZeroBalances
         val hideCryptoBalance = container.preferences.hideCryptoBalance
@@ -255,8 +269,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             cryptoBalances = cryptoResult.visibleAssets,
             cryptoWallets = cryptoResult.visibleWallets,
             cryptoTotalUsd = cryptoResult.cryptoTotalUsd,
-            recent = recent,
             netWorthInBase = fiatInBase + (cryptoResult.cryptoInBase ?: 0.0),
+            fiatTotalInBase = fiatInBase,
             hasUnconvertedAmounts = hasUnconverted,
             cryptoExcludedFromTotal = excludeCryptoFromTotal,
             creditCardExcludedFromTotal = excludeCreditCardFromTotal,
@@ -269,6 +283,17 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
     private val senderLabels = container.senderLabelRepository.observeLabels()
         .recoverAndRetry("DashboardViewModel.senderLabels", container) { emptyMap() }
+
+    /**
+     * "Recent activity" feed, scoped to [selectedAccountId] when the carousel
+     * has a specific account selected (null = every account, the old
+     * behavior). See [filterAccountFeed] for the pure filter/sort/cap logic.
+     */
+    private val feedState = combine(
+        container.transactionRepository.observeTransactions(),
+        selectedAccountId,
+    ) { transactions, accountId -> filterAccountFeed(transactions, accountId, FEED_LIMIT) }
+        .recoverAndRetry("DashboardViewModel.feed", container) { emptyList() }
 
     /**
      * "AI Weekly Digest" hero card: this week's spend vs last week's and the
@@ -345,29 +370,59 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         UiMeta(busy, msg, prefs, showAll, range)
     }
 
+    /** [uiMeta] plus the carousel selection + its filtered feed, folded together so the final combine stays within five slots. */
+    private data class MetaBundle(val meta: UiMeta, val selectedAccountId: Long?, val feed: List<Transaction>)
+
+    private val metaBundle = combine(uiMeta, selectedAccountId, feedState) { meta, accountId, feed ->
+        MetaBundle(meta, accountId, feed)
+    }
+
     val uiState: StateFlow<DashboardUiState> =
         combine(
             ledgerState,
             senderLabels,
             statsFlow,
-            uiMeta,
+            metaBundle,
             container.hideBalances,
-        ) { state, labels, stats, meta, hidden ->
+        ) { state, labels, stats, bundle, hidden ->
             state.copy(
                 senderLabels = labels,
                 stats = stats,
-                goal = meta.prefs.goal,
-                showAllLedgerTransactions = meta.showAllLedger,
-                dateRange = meta.dateRange,
+                goal = bundle.meta.prefs.goal,
+                showAllLedgerTransactions = bundle.meta.showAllLedger,
+                dateRange = bundle.meta.dateRange,
                 hideBalances = hidden,
-                refreshing = meta.refreshing,
-                message = meta.message ?: state.message,
+                refreshing = bundle.meta.refreshing,
+                message = bundle.meta.message ?: state.message,
+                selectedAccountId = bundle.selectedAccountId,
+                recent = bundle.feed,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     /** Flips analytics between "clean" (default) and raw-ledger figures. */
     fun toggleShowAllLedgerTransactions() {
         showAllLedgerTransactions.value = !showAllLedgerTransactions.value
+    }
+
+    /** Selects an [com.xemmy.mmbank.ui.components.AccountCarousel] card; null selects "All Accounts" and clears the feed filter. */
+    fun selectAccount(accountId: Long?) {
+        selectedAccountId.value = accountId
+    }
+
+    /** Renames an account from [com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet] -- purely cosmetic, doesn't touch its ledger rows. */
+    fun renameAccount(account: Account, newName: String) {
+        viewModelScope.launch {
+            runCatching { container.accountRepository.save(account.copy(name = newName)) }
+                .onFailure { container.recordError("DashboardViewModel.renameAccount", it) }
+        }
+    }
+
+    /** Flips whether [account]'s card shows in the carousel; independent of net worth (see [computeAccountsPresentation]). */
+    fun toggleAccountVisibility(account: Account) {
+        viewModelScope.launch {
+            runCatching { container.accountRepository.save(account.copy(hiddenFromDashboard = !account.hiddenFromDashboard)) }
+                .onFailure { container.recordError("DashboardViewModel.toggleAccountVisibility", it) }
+        }
     }
 
     /** Changes the period stats/insights are computed over; the 6-month trend chart is unaffected. */
@@ -425,6 +480,19 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
  */
 internal fun netFlow(income: Double, spend: Double): Double = income - spend
 
+/**
+ * The Dashboard's "Recent activity" feed: every transaction when [accountId]
+ * is null (the "All Accounts" carousel card), otherwise only that account's
+ * rows -- newest first, capped at [limit]. Pure and top-level so the
+ * account-carousel <-> feed wiring is JVM-testable without a running
+ * ViewModel/Flow pipeline.
+ */
+internal fun filterAccountFeed(transactions: List<Transaction>, accountId: Long?, limit: Int): List<Transaction> =
+    transactions
+        .filter { accountId == null || it.accountId == accountId }
+        .sortedByDescending { it.timestampMillis }
+        .take(limit)
+
 /** Rank-ordered donut palette: top 4 categories, then grey for the "Other" rollup. */
 private val SLICE_PALETTE = listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL)
 private const val OTHER_SLICE_COLOR = 0xFF6C757DL
@@ -467,11 +535,17 @@ internal fun computeAccountsPresentation(
     hideCreditCardBalance: Boolean,
     excludeCreditCardFromTotal: Boolean,
 ): AccountsPresentation {
-    val visibleAccounts = if (hideCreditCardBalance) {
-        accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
-    } else {
-        accountRows
-    }
+    val visibleAccounts = (
+        if (hideCreditCardBalance) {
+            accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
+        } else {
+            accountRows
+        }
+        )
+        // Per-account Dashboard visibility (ManageAccountsBottomSheet) never
+        // affects the net-worth total -- only whether its card shows in the
+        // carousel, same independence as hideCreditCardBalance/excludeCreditCardFromTotal.
+        .filter { !it.account.hiddenFromDashboard }
     val totalRows = if (excludeCreditCardFromTotal) {
         accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
     } else {

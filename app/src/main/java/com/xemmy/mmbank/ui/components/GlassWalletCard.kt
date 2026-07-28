@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -10,10 +11,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -42,25 +48,37 @@ internal fun maskedAccountNumber(rawAccountNumber: String?): String {
     return if (digits.isNullOrEmpty()) "•••• ····" else "•••• $digits"
 }
 
+private val CARD_SHAPE = RoundedCornerShape(20.dp)
+private val CARD_WIDTH = 260.dp
+private val CARD_HEIGHT = 160.dp
+
 /**
  * Glassmorphism bank-account card: a brand-gradient background (by
  * [AccountType]) with a translucent sheen overlay and a masked account
  * number, in the same visual language as [com.xemmy.mmbank.ui.theme.glassSurface].
+ * Tappable to select it in [AccountCarousel]; [selected] draws a bright ring
+ * and a checkmark badge so the active card is unambiguous in a scrolling row.
  */
 @Composable
-fun WalletCard(
+fun GlassWalletCard(
     account: Account,
     balance: Double,
     hidden: Boolean,
+    selected: Boolean = false,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(20.dp)
     Box(
         modifier
-            .size(width = 260.dp, height = 160.dp)
-            .clip(shape)
-            .background(Brush.verticalGradient(walletGradient(account.type)), shape)
-            .border(1.dp, Color.White.copy(alpha = 0.22f), shape),
+            .size(width = CARD_WIDTH, height = CARD_HEIGHT)
+            .clip(CARD_SHAPE)
+            .background(Brush.verticalGradient(walletGradient(account.type)), CARD_SHAPE)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.22f),
+                shape = CARD_SHAPE,
+            )
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
         // Glass translucent overlay: a soft sheen from the top-left, same
         // "glass over a colored surface" trick as glassSurface's blur fallback.
@@ -71,7 +89,7 @@ fun WalletCard(
                     Brush.linearGradient(
                         colors = listOf(Color.White.copy(alpha = 0.16f), Color.Transparent),
                     ),
-                    shape,
+                    CARD_SHAPE,
                 ),
         )
         Column(Modifier.fillMaxSize().padding(20.dp)) {
@@ -96,6 +114,23 @@ fun WalletCard(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
+        }
+        if (selected) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.92f)),
+            ) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = "Selected",
+                    tint = Color(0xFF1B1B1B),
+                    modifier = Modifier.padding(4.dp),
+                )
+            }
         }
     }
 }

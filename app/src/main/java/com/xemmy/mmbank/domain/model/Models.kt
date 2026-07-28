@@ -114,6 +114,13 @@ data class Account(
      * these, then deletes them when switched off.
      */
     val isDemo: Boolean = false,
+    /**
+     * Hides this account's card from the Dashboard's [com.xemmy.mmbank.ui.components.AccountCarousel]
+     * (set from [com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet]). Independent
+     * of [archived]: a hidden account still counts toward net worth and can be
+     * unhidden any time, where an archived one is retired from the ledger entirely.
+     */
+    val hiddenFromDashboard: Boolean = false,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement

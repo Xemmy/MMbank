@@ -391,8 +391,9 @@ class DashboardAccountsPresentationTest {
         type: AccountType,
         balanceInBase: Double?,
         name: String = "Account",
+        hiddenFromDashboard: Boolean = false,
     ) = AccountRow(
-        account = Account(id = 1, name = name, type = type, currencyCode = "AED"),
+        account = Account(id = 1, name = name, type = type, currencyCode = "AED", hiddenFromDashboard = hiddenFromDashboard),
         balance = balanceInBase ?: 0.0,
         balanceInBase = balanceInBase,
     )
@@ -441,6 +442,18 @@ class DashboardAccountsPresentationTest {
     }
 
     @Test
+    fun `hiddenFromDashboard drops a row from the carousel but not from the total`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.SAVINGS, 50.0, hiddenFromDashboard = true)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(1, result.visibleAccounts.size)
+        assertEquals(AccountType.CHECKING, result.visibleAccounts.first().account.type)
+        assertEquals(150.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
     fun `an unconverted credit card row only flags hasUnconvertedFiat when not excluded`() {
         val included = computeAccountsPresentation(
             accountRows = listOf(row(AccountType.CREDIT_CARD, null)),
@@ -455,6 +468,59 @@ class DashboardAccountsPresentationTest {
             excludeCreditCardFromTotal = true,
         )
         assertFalse(excluded.hasUnconvertedFiat)
+    }
+}
+
+/**
+ * [filterAccountFeed] is the pure logic behind the "Recent activity" feed's
+ * account-carousel wiring: selecting a card in [com.xemmy.mmbank.ui.components.AccountCarousel]
+ * scopes the feed to just that account; "All Accounts" (null) shows everything.
+ */
+class DashboardFeedFilterTest {
+
+    private fun tx(id: Long, accountId: Long?, timestampMillis: Long) = Transaction(
+        id = id,
+        accountId = accountId,
+        amount = BigDecimal("10.00"),
+        currencyCode = "AED",
+        direction = TransactionDirection.DEBIT,
+        source = TransactionSource.MANUAL,
+        timestampMillis = timestampMillis,
+    )
+
+    @Test
+    fun `null accountId returns every transaction, newest first`() {
+        val transactions = listOf(
+            tx(1, accountId = 1, timestampMillis = 100),
+            tx(2, accountId = 2, timestampMillis = 300),
+            tx(3, accountId = null, timestampMillis = 200),
+        )
+        val feed = filterAccountFeed(transactions, accountId = null, limit = 10)
+        assertEquals(listOf(2L, 3L, 1L), feed.map { it.id })
+    }
+
+    @Test
+    fun `a specific accountId only returns that account's rows`() {
+        val transactions = listOf(
+            tx(1, accountId = 1, timestampMillis = 100),
+            tx(2, accountId = 2, timestampMillis = 300),
+            tx(3, accountId = 1, timestampMillis = 200),
+        )
+        val feed = filterAccountFeed(transactions, accountId = 1, limit = 10)
+        assertEquals(listOf(3L, 1L), feed.map { it.id })
+    }
+
+    @Test
+    fun `limit caps the result even when more rows match`() {
+        val transactions = (1..5).map { tx(it.toLong(), accountId = 1, timestampMillis = it.toLong()) }
+        val feed = filterAccountFeed(transactions, accountId = 1, limit = 2)
+        assertEquals(listOf(5L, 4L), feed.map { it.id })
+    }
+
+    @Test
+    fun `an account with no transactions yields an empty feed, not a crash`() {
+        val transactions = listOf(tx(1, accountId = 1, timestampMillis = 100))
+        assertTrue(filterAccountFeed(transactions, accountId = 99, limit = 10).isEmpty())
     }
 }
 

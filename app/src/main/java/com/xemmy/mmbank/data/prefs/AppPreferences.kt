@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.prefs
 
 import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
+import com.xemmy.mmbank.domain.model.BackgroundPreset
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 
@@ -203,6 +204,13 @@ class AppPreferences(context: Context) {
         }.getOrDefault(FilterBarLayout.SINGLE_ROW)
         set(value) = prefs.edit().putString(KEY_FILTER_BAR_LAYOUT, value.name).apply()
 
+    /** Ambient background style drawn behind the Dashboard's content. Minimal Frost by default. */
+    var backgroundPreset: BackgroundPreset
+        get() = runCatching {
+            BackgroundPreset.valueOf(prefs.getString(KEY_BACKGROUND_PRESET, null) ?: BackgroundPreset.MINIMAL_FROST.name)
+        }.getOrDefault(BackgroundPreset.MINIMAL_FROST)
+        set(value) = prefs.edit().putString(KEY_BACKGROUND_PRESET, value.name).apply()
+
     /** Savings goal target, in the default currency. <= 0 means no goal set. */
     var goalTargetAmount: Double
         get() = prefs.getFloat(KEY_GOAL_TARGET, 0f).toDouble()
@@ -278,5 +286,6 @@ class AppPreferences(context: Context) {
         const val KEY_PAYCHECK_DAY_OF_MONTH = "paycheck_day_of_month"
         const val KEY_DESIGN_MODE = "design_mode"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
+        const val KEY_BACKGROUND_PRESET = "background_preset"
     }
 }

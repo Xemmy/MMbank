@@ -44,7 +44,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         SubscriptionEntity::class,
         SavingsGoalEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -304,6 +304,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v15 -> v16: per-account Dashboard visibility. Lets an account be
+         * hidden from the Dashboard's account carousel (see
+         * ManageAccountsBottomSheet) without archiving it -- it still counts
+         * toward net worth and can be unhidden any time.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE accounts ADD COLUMN hiddenFromDashboard INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -332,7 +346,7 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
-                    MIGRATION_13_14, MIGRATION_14_15,
+                    MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
