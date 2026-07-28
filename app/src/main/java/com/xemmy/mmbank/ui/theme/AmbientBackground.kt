@@ -1,107 +1,117 @@
 package com.xemmy.mmbank.ui.theme
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import com.xemmy.mmbank.domain.model.BackgroundPreset
-import kotlin.math.cos
-import kotlin.math.sin
+import com.xemmy.mmbank.domain.model.BackgroundStyle
 
-/** Base fill + drifting blob colors for one [BackgroundPreset] — pure data, no drawing logic. */
-private data class AmbientSpec(
-    val base: Color,
-    val blobs: List<Color>,
-    /** One full drift cycle, in ms. Slower = calmer, cheaper to redraw. */
-    val cycleMillis: Int,
+/** One soft radial glow — pure data, no drawing logic, so [specFor] stays JVM-testable. */
+internal data class GlowSpec(
+    val color: Color,
+    /** Center as a fraction of the draw area's size; may fall outside 0f..1f to anchor off-canvas. */
+    val centerFraction: Offset,
+    /** Peak alpha at the glow's core. Kept in the 0.08f-0.15f band so it reads as a hint, not a wash. */
+    val alpha: Float,
+    /** Radius as a fraction of the canvas's longest side. */
+    val radiusFraction: Float = 0.9f,
 )
 
-private fun specFor(preset: BackgroundPreset): AmbientSpec = when (preset) {
-    BackgroundPreset.AURORA -> AmbientSpec(
-        base = Color(0xFF120F1E),
-        blobs = listOf(Color(0xFF6C5CE7), Color(0xFF00D2D3), Color(0xFFE84393)),
-        cycleMillis = 18_000,
+/** Base fill + glow layers for one [BackgroundStyle] — pure data, no drawing logic. */
+internal data class AmbientSpec(
+    val surface: Color,
+    val glows: List<GlowSpec>,
+)
+
+internal fun specFor(style: BackgroundStyle): AmbientSpec = when (style) {
+    BackgroundStyle.OLED_OBSIDIAN -> AmbientSpec(
+        surface = Color(0xFF000000),
+        glows = listOf(
+            GlowSpec(color = Color(0xFF6C3CE9), centerFraction = Offset(0.8f, -0.2f), alpha = 0.14f),
+        ),
     )
-    BackgroundPreset.MIDNIGHT_OLED -> AmbientSpec(
-        base = Color(0xFF000000),
-        blobs = listOf(Color(0xFF101010)),
-        cycleMillis = 30_000,
+    BackgroundStyle.AURORA_MUTED -> AmbientSpec(
+        surface = Color(0xFF0E0F1A),
+        glows = listOf(
+            GlowSpec(color = Color(0xFF4C5FD6), centerFraction = Offset(0.1f, 0.05f), alpha = 0.12f),
+            GlowSpec(color = Color(0xFF1FA391), centerFraction = Offset(0.95f, 0.9f), alpha = 0.10f),
+        ),
     )
-    BackgroundPreset.CYBER_NEON -> AmbientSpec(
-        base = Color(0xFF0A0014),
-        blobs = listOf(Color(0xFFFF00E5), Color(0xFF00F0FF)),
-        cycleMillis = 9_000,
+    BackgroundStyle.WARM_CASHMERE -> AmbientSpec(
+        surface = Color(0xFFF3EAE0),
+        glows = listOf(
+            GlowSpec(color = Color(0xFFE0A45C), centerFraction = Offset(0.85f, -0.1f), alpha = 0.12f),
+            GlowSpec(color = Color(0xFF4A3222), centerFraction = Offset(0.05f, 1.05f), alpha = 0.08f),
+        ),
     )
-    BackgroundPreset.MINIMAL_FROST -> AmbientSpec(
-        base = Color(0xFFF4F6F9),
-        blobs = listOf(Color(0xFFDCE6F5), Color(0xFFE8ECF3)),
-        cycleMillis = 24_000,
+    BackgroundStyle.MINIMAL_SLATE -> AmbientSpec(
+        surface = Color(0xFFEDEEF2),
+        glows = emptyList(),
     )
 }
 
-/** Label shown in the Dashboard header's background-style picker. */
-val BackgroundPreset.displayName: String
+/** Label shown in the Appearance settings' style picker. */
+val BackgroundStyle.displayName: String
     get() = when (this) {
-        BackgroundPreset.AURORA -> "Aurora"
-        BackgroundPreset.MIDNIGHT_OLED -> "Midnight OLED"
-        BackgroundPreset.CYBER_NEON -> "Cyber Neon"
-        BackgroundPreset.MINIMAL_FROST -> "Minimal Frost"
+        BackgroundStyle.OLED_OBSIDIAN -> "OLED Obsidian"
+        BackgroundStyle.AURORA_MUTED -> "Aurora Muted"
+        BackgroundStyle.WARM_CASHMERE -> "Warm Cashmere"
+        BackgroundStyle.MINIMAL_SLATE -> "Minimal Slate"
+    }
+
+/** One-line description shown under each preset's name in the Appearance settings picker. */
+val BackgroundStyle.description: String
+    get() = when (this) {
+        BackgroundStyle.OLED_OBSIDIAN -> "Deep violet glow, pure black surface"
+        BackgroundStyle.AURORA_MUTED -> "Indigo and teal, soft wide falloff"
+        BackgroundStyle.WARM_CASHMERE -> "Faint amber and espresso warmth"
+        BackgroundStyle.MINIMAL_SLATE -> "Flat surface, zero color bleed"
     }
 
 /**
- * Draws [preset]'s subtle animated radial-gradient wash behind whatever this
- * modifier is attached to (typically a full-screen Box sitting behind a
- * LazyColumn whose own item surfaces cover most of it). Every frame's motion
- * is confined to [drawBehind]'s draw phase — reading the animated [Float]
- * there invalidates only that layer's drawing, never triggers a recomposition
- * of this modifier's content, so it stays cheap during list scrolling (see
- * Glow.kt's [glowBackdrop] for the same static-case idiom this builds on).
+ * Draws [style]'s ultra-subtle ambient wash behind whatever this modifier is
+ * attached to: an opaque base fill, one or two low-alpha radial glows, then a
+ * translucent scrim of the current [MaterialTheme] background on top so text
+ * and card contrast stay crisp regardless of preset. [drawWithCache] rebuilds
+ * the brushes only when the draw area's size changes, never on recomposition
+ * (e.g. a balance tick or a list scroll), so this stays cheap everywhere it's
+ * applied. A true Gaussian blur (RenderEffect) isn't used for the glows: it
+ * would blur every layer sharing this modifier's chain, including the app's
+ * content, not just the wash — the soft radial falloff below approximates the
+ * "100dp blur" look without that cost or side effect.
  */
-fun Modifier.ambientBackground(preset: BackgroundPreset): Modifier = composed {
-    val spec = specFor(preset)
-    val transition = rememberInfiniteTransition(label = "ambientBackground")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = spec.cycleMillis, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "ambientPhase",
-    )
-    this
-        .background(spec.base)
-        .drawBehind {
-            if (size.minDimension <= 0f) return@drawBehind
-            val maxRadius = size.maxDimension * 0.65f
-            spec.blobs.forEachIndexed { index, color ->
-                // Each blob orbits its own anchor corner at a slightly different
-                // speed/phase offset so they drift independently, not in lockstep.
-                val angle = (phase * 2f * Math.PI.toFloat()) + (index * 2.1f)
-                val anchorX = size.width * (0.2f + 0.6f * (index % 2))
-                val anchorY = size.height * (0.15f + 0.7f * ((index + 1) % 2))
-                val driftX = cos(angle) * size.width * 0.12f
-                val driftY = sin(angle) * size.height * 0.12f
-                val center = Offset(anchorX + driftX, anchorY + driftY)
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(color.copy(alpha = 0.28f), Color.Transparent),
-                        center = center,
-                        radius = maxRadius,
+@Composable
+fun Modifier.ambientBackground(style: BackgroundStyle): Modifier {
+    val scrimColor = MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
+    return drawWithCache {
+        val spec = specFor(style)
+        val maxDimension = size.maxDimension
+        val brushes = spec.glows.map { glow ->
+            val center = Offset(size.width * glow.centerFraction.x, size.height * glow.centerFraction.y)
+            val radius = (maxDimension * glow.radiusFraction).coerceAtLeast(1f)
+            Triple(
+                Brush.radialGradient(
+                    colors = listOf(
+                        glow.color.copy(alpha = glow.alpha),
+                        glow.color.copy(alpha = glow.alpha * 0.35f),
+                        Color.Transparent,
                     ),
-                    radius = maxRadius,
                     center = center,
-                )
-            }
+                    radius = radius,
+                ),
+                center,
+                radius,
+            )
         }
+        onDrawBehind {
+            drawRect(color = spec.surface)
+            brushes.forEach { (brush, center, radius) ->
+                drawCircle(brush = brush, radius = radius, center = center)
+            }
+            drawRect(color = scrimColor)
+        }
+    }
 }

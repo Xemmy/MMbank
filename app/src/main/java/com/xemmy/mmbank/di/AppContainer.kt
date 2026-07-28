@@ -47,7 +47,7 @@ import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.ai.AiDailyBudget
 import com.xemmy.mmbank.domain.ai.AiParseResult
 import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
-import com.xemmy.mmbank.domain.model.BackgroundPreset
+import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -119,16 +119,17 @@ class AppContainer(context: Context) {
         _designMode.value = mode        // notify all collectors live
     }
 
-    // Single reactive source of truth for the Dashboard's ambient background
-    // style. Read/written from the Dashboard header's picker; kept at the
-    // container level (not a per-screen pref snapshot) so it survives the
-    // screen's own recompositions the same way hideBalances/designMode do.
+    // Single reactive source of truth for the app-wide ambient background
+    // style. Read/written from the Appearance settings screen; kept at the
+    // container level (not a per-screen pref snapshot) since the root app
+    // scaffold and Settings both need it live, the same way hideBalances/
+    // designMode do.
     private val _backgroundPreset by lazy { MutableStateFlow(preferences.backgroundPreset) }
-    val backgroundPreset: StateFlow<BackgroundPreset> by lazy { _backgroundPreset.asStateFlow() }
+    val backgroundPreset: StateFlow<BackgroundStyle> by lazy { _backgroundPreset.asStateFlow() }
 
-    fun setBackgroundPreset(preset: BackgroundPreset) {
-        preferences.backgroundPreset = preset   // persist across restarts
-        _backgroundPreset.value = preset        // notify all collectors live
+    fun setBackgroundPreset(style: BackgroundStyle) {
+        preferences.backgroundPreset = style   // persist across restarts
+        _backgroundPreset.value = style        // notify all collectors live
     }
 
     // Single reactive source of truth for "Demo mode". The repositories collect

@@ -2,7 +2,7 @@ package com.xemmy.mmbank.data.prefs
 
 import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
-import com.xemmy.mmbank.domain.model.BackgroundPreset
+import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 
@@ -204,11 +204,11 @@ class AppPreferences(context: Context) {
         }.getOrDefault(FilterBarLayout.SINGLE_ROW)
         set(value) = prefs.edit().putString(KEY_FILTER_BAR_LAYOUT, value.name).apply()
 
-    /** Ambient background style drawn behind the Dashboard's content. Minimal Frost by default. */
-    var backgroundPreset: BackgroundPreset
+    /** Ambient background style drawn behind the whole app. Minimal Slate by default. */
+    var backgroundPreset: BackgroundStyle
         get() = runCatching {
-            BackgroundPreset.valueOf(prefs.getString(KEY_BACKGROUND_PRESET, null) ?: BackgroundPreset.MINIMAL_FROST.name)
-        }.getOrDefault(BackgroundPreset.MINIMAL_FROST)
+            BackgroundStyle.valueOf(prefs.getString(KEY_BACKGROUND_PRESET, null) ?: BackgroundStyle.MINIMAL_SLATE.name)
+        }.getOrDefault(BackgroundStyle.MINIMAL_SLATE)
         set(value) = prefs.edit().putString(KEY_BACKGROUND_PRESET, value.name).apply()
 
     /** Savings goal target, in the default currency. <= 0 means no goal set. */

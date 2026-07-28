@@ -3,7 +3,6 @@ package com.xemmy.mmbank.ui.screens.dashboard
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,11 +16,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -30,8 +27,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,7 +49,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
-import com.xemmy.mmbank.domain.model.BackgroundPreset
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
@@ -63,8 +57,6 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.AccountCarousel
 import com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet
 import com.xemmy.mmbank.ui.theme.LedgerColors
-import com.xemmy.mmbank.ui.theme.ambientBackground
-import com.xemmy.mmbank.ui.theme.displayName
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
@@ -90,7 +82,6 @@ fun DashboardScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
     val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
-    val backgroundPreset by viewModel.backgroundPreset.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
     var showManageAccounts by remember { mutableStateOf(false) }
@@ -102,101 +93,96 @@ fun DashboardScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().ambientBackground(backgroundPreset)) {
-        Column(Modifier.fillMaxSize()) {
-            DashboardHeader(
-                currentPreset = backgroundPreset,
-                onPresetSelected = viewModel::setBackgroundPreset,
-            )
-            // This single LazyColumn hosts several separate items() blocks (accounts,
-            // crypto, recent transactions). Compose requires keys to be unique
-            // across the WHOLE list, not just within one items() call — Account
-            // and Transaction are different Room tables with independent
-            // auto-increment ids, so an unprefixed `it.id` collides the moment an
-            // account and a transaction share the same numeric id. Every key below
-            // must stay prefixed per section.
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                weeklyDigest?.let { digest ->
-                    item(key = "weekly_digest") {
-                        WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
-                    }
-                }
-
-                item(key = "net_worth") {
-                    NetWorthCard(
-                        netWorth = state.netWorthInBase,
-                        currency = state.baseCurrency,
-                        approximate = state.hasUnconvertedAmounts,
-                        cryptoExcluded = state.cryptoExcludedFromTotal,
-                        creditCardExcluded = state.creditCardExcludedFromTotal,
-                        refreshing = state.refreshing,
-                        hidden = hidden,
-                        onToggleHide = viewModel::toggleHideBalances,
-                        onRefresh = viewModel::refreshRemote,
-                    )
-                }
-
-                financialHealth.metrics?.let { metrics ->
-                    item(key = "financial_health") {
-                        FinancialHealthCard(metrics, financialHealth.cashFlow, state.baseCurrency, hidden)
-                    }
-                }
-
-                item(key = "account_carousel") {
-                    AccountCarousel(
-                        accounts = state.accounts,
-                        selectedAccountId = state.selectedAccountId,
-                        hidden = hidden,
-                        allAccountsTotal = state.fiatTotalInBase,
-                        baseCurrency = state.baseCurrency,
-                        onSelectAccount = viewModel::selectAccount,
-                        onManageAccounts = { showManageAccounts = true },
-                    )
-                }
-
-                state.selectedAccountId?.let { accountId ->
-                    val accountName = state.accounts.firstOrNull { it.account.id == accountId }?.account?.name
-                    item(key = "account_filter_chip") {
-                        AccountFilterChip(
-                            label = accountName ?: "Account",
-                            onClear = { viewModel.selectAccount(null) },
-                        )
-                    }
-                }
-
-                if (state.cryptoBalances.isNotEmpty() || state.cryptoWallets.isNotEmpty()) {
-                    item { SectionTitle("Crypto (Binance)") }
-                    item(key = "crypto_group") {
-                        CryptoCard(state)
-                    }
-                }
-
-                item { SectionTitle("Recent activity") }
-                if (state.recent.isEmpty()) {
-                    item {
-                        Text(
-                            "No transactions captured yet. Enable notification access and SMS " +
-                                "permission in Settings, then wait for a bank message.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    items(state.recent, key = { "recent_${it.id}" }) { tx ->
-                        // User-defined label wins, then the built-in bank map — so
-                        // "com.adib.mobile" shows as "ADIB", not the raw package.
-                        val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
-                        RecentTransactionRow(tx, bankName, hidden)
-                        HorizontalDivider()
-                    }
+    Column(Modifier.fillMaxSize()) {
+        DashboardHeader()
+        // This single LazyColumn hosts several separate items() blocks (accounts,
+        // crypto, recent transactions). Compose requires keys to be unique
+        // across the WHOLE list, not just within one items() call — Account
+        // and Transaction are different Room tables with independent
+        // auto-increment ids, so an unprefixed `it.id` collides the moment an
+        // account and a transaction share the same numeric id. Every key below
+        // must stay prefixed per section.
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            weeklyDigest?.let { digest ->
+                item(key = "weekly_digest") {
+                    WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
                 }
             }
-            SnackbarHost(snackbar)
+
+            item(key = "net_worth") {
+                NetWorthCard(
+                    netWorth = state.netWorthInBase,
+                    currency = state.baseCurrency,
+                    approximate = state.hasUnconvertedAmounts,
+                    cryptoExcluded = state.cryptoExcludedFromTotal,
+                    creditCardExcluded = state.creditCardExcludedFromTotal,
+                    refreshing = state.refreshing,
+                    hidden = hidden,
+                    onToggleHide = viewModel::toggleHideBalances,
+                    onRefresh = viewModel::refreshRemote,
+                )
+            }
+
+            financialHealth.metrics?.let { metrics ->
+                item(key = "financial_health") {
+                    FinancialHealthCard(metrics, financialHealth.cashFlow, state.baseCurrency, hidden)
+                }
+            }
+
+            item(key = "account_carousel") {
+                AccountCarousel(
+                    accounts = state.accounts,
+                    selectedAccountId = state.selectedAccountId,
+                    hidden = hidden,
+                    allAccountsTotal = state.fiatTotalInBase,
+                    baseCurrency = state.baseCurrency,
+                    onSelectAccount = viewModel::selectAccount,
+                    onManageAccounts = { showManageAccounts = true },
+                )
+            }
+
+            state.selectedAccountId?.let { accountId ->
+                val accountName = state.accounts.firstOrNull { it.account.id == accountId }?.account?.name
+                item(key = "account_filter_chip") {
+                    AccountFilterChip(
+                        label = accountName ?: "Account",
+                        onClear = { viewModel.selectAccount(null) },
+                    )
+                }
+            }
+
+            if (state.cryptoBalances.isNotEmpty() || state.cryptoWallets.isNotEmpty()) {
+                item { SectionTitle("Crypto (Binance)") }
+                item(key = "crypto_group") {
+                    CryptoCard(state)
+                }
+            }
+
+            item { SectionTitle("Recent activity") }
+            if (state.recent.isEmpty()) {
+                item {
+                    Text(
+                        "No transactions captured yet. Enable notification access and SMS " +
+                            "permission in Settings, then wait for a bank message.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                items(state.recent, key = { "recent_${it.id}" }) { tx ->
+                    // User-defined label wins, then the built-in bank map — so
+                    // "com.adib.mobile" shows as "ADIB", not the raw package.
+                    val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
+                    RecentTransactionRow(tx, bankName, hidden)
+                    HorizontalDivider()
+                }
+            }
         }
+        SnackbarHost(snackbar)
     }
 
     if (showManageAccounts) {
@@ -210,13 +196,9 @@ fun DashboardScreen(
     }
 }
 
-/** Dashboard header: screen title plus the ambient-background style picker (Phase 1). */
+/** Dashboard header: screen title. Ambient background style now lives in Settings > Appearance. */
 @Composable
-private fun DashboardHeader(
-    currentPreset: BackgroundPreset,
-    onPresetSelected: (BackgroundPreset) -> Unit,
-) {
-    var menuOpen by remember { mutableStateOf(false) }
+private fun DashboardHeader() {
     Row(
         Modifier
             .fillMaxWidth()
@@ -224,27 +206,6 @@ private fun DashboardHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Home", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-        Box {
-            IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Filled.Palette, contentDescription = "Background style")
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                BackgroundPreset.entries.forEach { preset ->
-                    DropdownMenuItem(
-                        text = { Text(preset.displayName) },
-                        onClick = {
-                            onPresetSelected(preset)
-                            menuOpen = false
-                        },
-                        trailingIcon = if (preset == currentPreset) {
-                            { Icon(Icons.Filled.Check, contentDescription = "Selected") }
-                        } else {
-                            null
-                        },
-                    )
-                }
-            }
-        }
     }
 }
 

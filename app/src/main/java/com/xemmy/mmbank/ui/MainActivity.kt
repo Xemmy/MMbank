@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.auth.LockScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
@@ -59,6 +61,7 @@ import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
 import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsScreen
 import com.xemmy.mmbank.ui.screens.settings.AiSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.AppearanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
@@ -71,6 +74,7 @@ import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
+import com.xemmy.mmbank.ui.theme.ambientBackground
 import kotlinx.coroutines.delay
 
 // FragmentActivity (not ComponentActivity) because BiometricPrompt requires
@@ -92,8 +96,9 @@ class MainActivity : FragmentActivity() {
             val designMode by container.designMode.collectAsStateWithLifecycle()
             MMbankTheme(designMode = designMode) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
+                val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
                 Box {
-                    MMbankApp(openUncategorizedQueue = openUncategorizedQueue)
+                    MMbankApp(openUncategorizedQueue = openUncategorizedQueue, backgroundStyle = backgroundStyle)
                     // Opaque gate over (not instead of) the app so navigation
                     // and screen state survive a lock/unlock round-trip.
                     if (locked) {
@@ -151,7 +156,7 @@ private val topLevelDestinations = listOf(
 )
 
 @Composable
-fun MMbankApp(openUncategorizedQueue: Boolean = false) {
+fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: BackgroundStyle = BackgroundStyle.MINIMAL_SLATE) {
     val context = LocalContext.current
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -178,6 +183,8 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false) {
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize().ambientBackground(backgroundStyle),
+        containerColor = Color.Transparent,
         bottomBar = {
             NavigationBar {
                 topLevelDestinations.forEach { dest ->
@@ -303,6 +310,7 @@ private fun AppNavHost(
         composable("settings_security") { SecuritySettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_ai") { AiSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_design") { DesignSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_appearance") { AppearanceSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_demo") { DemoSettingsScreen(onBack = { navController.popBackStack() }) }
     }
 }

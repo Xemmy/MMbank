@@ -86,11 +86,13 @@ import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
+import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.displayName
 import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -130,6 +132,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     // detail dialog all need to see a toggle here live, not just this screen.
     val designMode: StateFlow<DesignMode> = container.designMode
     fun setDesignMode(mode: DesignMode) = container.setDesignMode(mode)
+
+    // Ambient background style: a reactive flow (not a mutableStateOf snapshot)
+    // since the root app scaffold applies it live the instant it's changed here.
+    val backgroundStyle: StateFlow<BackgroundStyle> = container.backgroundPreset
+    fun setBackgroundStyle(style: BackgroundStyle) = container.setBackgroundPreset(style)
 
     // Activity tab filter bar layout: only that one screen reads it, so a
     // plain re-read (not a reactive AppContainer flow like designMode above).
@@ -653,6 +660,7 @@ fun SettingsScreen(
     var captureOk by remember { mutableStateOf(true) }
     var crashRecorded by remember { mutableStateOf(false) }
     val designMode by viewModel.designMode.collectAsStateWithLifecycle()
+    val backgroundStyle by viewModel.backgroundStyle.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
@@ -721,6 +729,13 @@ fun SettingsScreen(
                     title = "Design",
                     subtitle = if (designMode == DesignMode.PREMIUM) "Premium · AGSL indicator + springier motion" else "Classic",
                     onClick = { onOpen("settings_design") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Palette,
+                    title = "Appearance & Backgrounds",
+                    subtitle = backgroundStyle.displayName,
+                    onClick = { onOpen("settings_appearance") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
@@ -836,7 +851,7 @@ private fun MenuRow(
 
 /** Shared subpage chrome: back arrow + title, then scrollable content. */
 @Composable
-private fun SettingsSubpage(
+fun SettingsSubpage(
     title: String,
     onBack: () -> Unit,
     content: @Composable () -> Unit,

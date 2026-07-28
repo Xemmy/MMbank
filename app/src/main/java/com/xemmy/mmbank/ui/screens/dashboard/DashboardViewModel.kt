@@ -10,7 +10,6 @@ import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
-import com.xemmy.mmbank.domain.model.BackgroundPreset
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -173,11 +172,6 @@ data class DashboardUiState(
 )
 
 class DashboardViewModel(private val container: AppContainer) : ViewModel() {
-
-    /** Ambient background style for the header's style picker (see [com.xemmy.mmbank.ui.theme.ambientBackground]). */
-    val backgroundPreset: StateFlow<BackgroundPreset> = container.backgroundPreset
-
-    fun setBackgroundPreset(preset: BackgroundPreset) = container.setBackgroundPreset(preset)
 
     private companion object {
         /** Below this, a holding rounds to "$0.00" at 2-decimal money formatting. */
