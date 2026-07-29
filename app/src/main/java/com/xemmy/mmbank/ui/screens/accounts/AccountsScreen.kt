@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -79,7 +78,6 @@ import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.MetaLabel
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
-import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.theme.rowEdgeGlow
@@ -230,8 +228,8 @@ fun AccountsScreen(
                 .obsidianCanvas()
                 .padding(padding),
             // Bottom clearance so the "+" FAB never floats over the last card's
-            // adjust/delete actions (56dp FAB + 16dp margin + 16dp).
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
+            // adjust/delete actions (56dp FAB + 16dp margin + 16dp + extra buffer).
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             lastError?.let { error ->
@@ -315,36 +313,19 @@ private fun AccountCard(
             .border(1.dp, ObsidianTokens.hairline, shape)
             .rowEdgeGlow(originTone),
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RowAvatar(name = a.bankName ?: a.name, tone = originTone)
+        Column(Modifier.padding(12.dp)) {
+            // Row 1: avatar, full (never-truncated) title, actions.
+            Row(verticalAlignment = Alignment.Top) {
+                RowAvatar(name = a.bankName ?: a.name, tone = originTone, size = 40.dp)
                 Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f, fill = false)) {
-                    Text(
-                        a.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = ObsidianTokens.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    MetaLabel(
-                        buildString {
-                            a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
-                            append(a.type.name.replace('_', ' '))
-                            append(" · ")
-                            append(a.currencyCode)
-                            a.accountNumber?.takeIf { it.isNotBlank() }?.let {
-                                append(" · ••")
-                                append(it.takeLast(4))
-                            }
-                        },
-                    )
-                }
-                Spacer(Modifier.weight(1f).widthIn(min = 12.dp).padding(horizontal = 6.dp).dottedLeader())
-                AmountText(
-                    display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
-                    color = if (!hidden && row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
-                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
+                Text(
+                    a.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = ObsidianTokens.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip,
+                    softWrap = true,
+                    modifier = Modifier.weight(1f).padding(top = 2.dp),
                 )
                 IconButton(onClick = onAdjust) {
                     Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = ObsidianTokens.textMeta)
@@ -352,6 +333,34 @@ private fun AccountCard(
                 IconButton(onClick = { confirmingDelete = true }) {
                     Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = ObsidianTokens.textMeta)
                 }
+            }
+
+            // Row 2: institution/type/number footer, balance on the right.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MetaLabel(
+                    buildString {
+                        a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
+                        append(a.type.name.replace('_', ' '))
+                        append(" · ")
+                        append(a.currencyCode)
+                        a.accountNumber?.takeIf { it.isNotBlank() }?.let {
+                            append(" · ••")
+                            append(it.takeLast(4))
+                        }
+                    },
+                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
+                )
+                AmountText(
+                    display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
+                    color = if (!hidden && row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
+                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
+                )
             }
 
             if (a.outstandingBalance != null || a.nextInstallmentAmount != null) {
