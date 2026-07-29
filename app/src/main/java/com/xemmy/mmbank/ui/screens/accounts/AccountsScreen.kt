@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -231,7 +232,7 @@ fun AccountsScreen(
             // Bottom clearance so the "+" FAB never floats over the last card's
             // adjust/delete actions (56dp FAB + 16dp margin + 16dp).
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             lastError?.let { error ->
                 item {
@@ -319,7 +320,13 @@ private fun AccountCard(
                 RowAvatar(name = a.bankName ?: a.name, tone = originTone)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f, fill = false)) {
-                    Text(a.name, style = MaterialTheme.typography.bodyMedium, color = ObsidianTokens.textPrimary)
+                    Text(
+                        a.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ObsidianTokens.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     MetaLabel(
                         buildString {
                             a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
