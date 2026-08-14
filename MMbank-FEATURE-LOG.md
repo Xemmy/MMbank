@@ -747,7 +747,7 @@ file's standing rule exists for. Fixed and pushed as `b287662`.
 
 ## Phase 7 — Monarch budgeting: category hierarchy, goal forecasting, 1Y chart filter
 
-**Status:** landed, CI pending
+**Status:** landed, CI green
 **Version:** `versionCode = 43`, `versionName = "0.30.0"`
 **Migration:** v19 -> v20, `categories.parentCategoryId` column (see below)
 
@@ -860,4 +860,27 @@ immediate tab-bar change.
 
 ### CI verification
 
-Pending — push and check `test-build.yml` on this commit.
+**Verified green on `677dd4d`.** Run `31816348033`:
+
+- `Lint & Unit Tests` (job `94818852717`) — conclusion `success`. Read the
+  "Run unit tests" step log directly rather than trusting the checkmark
+  alone (this job has `continue-on-error: true`, per this file's standing
+  rule):
+  ```
+  > Task :app:testDebugUnitTest
+  BUILD SUCCESSFUL in 3m 27s
+  25 actionable tasks: 25 executed
+  ```
+  No `N tests completed, N failed` line — Gradle only prints that summary
+  on failure, so its absence is the pass signal, including the new
+  `CategoryBudgetCalculatorTest` `rollUpSpend` cases, `GoalForecasterTest`,
+  the two new `EntityMappersTest` `Category` round-trip cases, and
+  `DashboardViewModelTest`'s `Last12Months` cases.
+- `Build APK (with retries)` (job `94819845915`) — conclusion `success`.
+  Debug APK built on **attempt 1**, no retries needed — the real signal
+  that the v19 -> v20 Room migration (`categories.parentCategoryId`)
+  compiles and the schema validates cleanly, since a broken migration
+  fails this build the same way a broken migration would fail on-device.
+  `Verify build success` and `Check APK exists` both green; the
+  non-gating Release APK build also succeeded.
+- `Final Status` (job `94821469866`) — conclusion `success`.
