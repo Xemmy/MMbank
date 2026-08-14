@@ -526,6 +526,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 @Composable
 fun TransactionsScreen(
     onOpenUncategorizedQueue: () -> Unit = {},
+    onOpenMerchant: (String) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -820,6 +821,10 @@ fun TransactionsScreen(
                 selectedTransaction = null
             },
             onDismiss = { selectedTransaction = null },
+            onMerchantClick = { merchant ->
+                selectedTransaction = null
+                onOpenMerchant(merchant)
+            },
         )
     }
 }

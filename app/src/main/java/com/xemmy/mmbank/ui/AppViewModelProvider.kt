@@ -13,6 +13,7 @@ import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.goals.GoalsViewModel
+import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailViewModel
 import com.xemmy.mmbank.ui.screens.report.MonthlyReportViewModel
 import com.xemmy.mmbank.ui.screens.review.ReviewViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
@@ -41,6 +42,7 @@ object AppViewModelProvider {
         initializer { ReviewViewModel(mmBankApp().container) }
         initializer { CategoryBudgetsViewModel(mmBankApp().container) }
         initializer { MonthlyReportViewModel(mmBankApp().container) }
+        initializer { MerchantDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.subscriptions
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -115,6 +116,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
 @Composable
 fun SubscriptionsScreen(
     onBack: () -> Unit,
+    onOpenMerchant: (String) -> Unit = {},
     viewModel: SubscriptionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -160,7 +162,11 @@ fun SubscriptionsScreen(
                 modifier = Modifier.padding(top = 8.dp),
             ) {
                 items(state.subscriptions, key = { it.id }) { subscription ->
-                    SubscriptionRow(subscription, onDismiss = { viewModel.dismiss(subscription.id) })
+                    SubscriptionRow(
+                        subscription,
+                        onDismiss = { viewModel.dismiss(subscription.id) },
+                        onClick = { onOpenMerchant(subscription.merchant) },
+                    )
                 }
             }
         }
@@ -168,11 +174,12 @@ fun SubscriptionsScreen(
 }
 
 @Composable
-private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit) {
+private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

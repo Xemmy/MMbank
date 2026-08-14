@@ -368,3 +368,96 @@ Two things make this noisier than it looks: the repo fires **two runs per
 push** (a `push` trigger and a `pull_request` trigger, via the open PR #9), so
 each supersede emits two failure notifications. Nothing was wrong and nothing
 was changed — worth recognizing rather than "fixing" next time.
+
+---
+
+## Phase 4 — Merchant Detail screen
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 40`, `versionName = "0.27.0"`
+**Migration:** none
+
+### Why
+
+`FinancialCopilotQueryHandler` builds per-merchant totals and `CategoryRepository.learnMapping`
+already backfills every still-uncategorized transaction by merchant, but no
+screen ever let you open a single merchant and see its history. This phase
+adds that drill-down, reusing engines the app already has rather than adding
+new ones.
+
+### What changed
+
+**Domain**
+- `domain/intelligence/MerchantProfiler.kt` (new) — pure, JVM-testable.
+  `profile(transactions, merchant)` scans real (non-demo, non-excluded) DEBIT
+  charges matching the merchant (case-insensitive, trimmed — the same key
+  `SubscriptionRadarEngine` groups on), scoped to the merchant's most common
+  currency so a merchant charged in two currencies isn't averaged across both.
+  Returns total, count, average, min/max, first/last seen, and a
+  month-bucketed series (sorted, correct across a year boundary) for a trend
+  view. Returns null for a merchant with no matching history.
+
+**UI**
+- `ui/screens/merchant/MerchantDetailScreen.kt` (new) — screen + ViewModel.
+  Stat cards (total/count/average/range/first-last-seen), a subscription-radar
+  flag when `SubscriptionRepository.observeActive()` currently lists the
+  merchant, a simple bar-per-month spend trend (matching the existing
+  Box/Column `ChartBar` pattern already used on Insights' cash-flow card,
+  rather than introducing a new Canvas chart type for one screen), and a
+  one-tap re-categorize via `CategoryPickerBottomSheet` that calls the
+  existing `CategoryRepository.learnMapping`.
+- `ui/AppViewModelProvider.kt` — registered `MerchantDetailViewModel` with
+  `createSavedStateHandle()`, mirroring `RuleEditorViewModel`'s nav-arg
+  pattern (a missing initializer here is exactly what crashed `ReviewViewModel`).
+- `ui/MainActivity.kt` — new `merchant_detail/{merchant}` route, `NavType.StringType`.
+- Entry points: the merchant name in `TransactionDetailSheet` is now
+  clickable (`onMerchantClick`), and a subscription row in `SubscriptionsScreen`
+  is now a full clickable row rather than only its dismiss button.
+  `TransactionsScreen` and `SubscriptionsScreen` both grew an
+  `onOpenMerchant: (String) -> Unit` parameter to carry the navigation intent
+  up to `MainActivity`, which URL-encodes the merchant name into the route
+  path segment. Navigation Compose decodes it once on the way back into the
+  `SavedStateHandle`, so the ViewModel reads it as-is rather than decoding
+  again (a double-decode would have mangled a merchant name containing a
+  literal `%`).
+
+  Not added as an Insights doorway row: unlike Analytics/Subscriptions/Goals,
+  this is a per-merchant drill-down rather than a standalone feature list
+  item, so it's only reachable from an actual merchant.
+
+### Tests
+
+`app/src/test/.../domain/intelligence/MerchantProfilerTest.kt` — 12 tests:
+aggregation (total/count/average/min/max); no match and empty input both
+return null; case-insensitive/trimmed merchant matching; CREDIT rows,
+`excludeFromStats` rows, `isDemo` rows and other merchants all excluded;
+dominant-currency selection leaves the minority currency out; a single
+transaction reports itself as its own min/max/average; first/last-seen
+tracks the true earliest/latest timestamp regardless of input order; monthly
+series buckets and sorts correctly across a year boundary (Dec 2025 before
+Jan 2026).
+
+### Deferred
+
+- The monthly trend is a simple bar-per-month view, not a full sparkline
+  chart component — there was no existing Canvas line-chart in the codebase
+  to build on (checked: `CanvasCharts.kt` has only the pacing arc gauge), and
+  one screen didn't justify introducing a new chart primitive.
+
+### CI verification
+
+Pending — will be recorded once the push is read from the Actions log rather
+than the checkmark, per this repo's standing rule that `continue-on-error`
+masks real test failures.
+
+Between the fix and this verification, GitHub reported two `Final Status`
+**failures** on `959f74f`. Both were false alarms: pushing the docs-only commit
+`3bbe971` fifteen seconds later cancelled the in-flight runs, and
+`Final Status` fails on `cancelled` because its check is
+`build-apk result == success`. The tell was that `Lint & Unit Tests` died
+during *JDK setup*, before running a single test.
+
+Two things make this noisier than it looks: the repo fires **two runs per
+push** (a `push` trigger and a `pull_request` trigger, via the open PR #9), so
+each supersede emits two failure notifications. Nothing was wrong and nothing
+was changed — worth recognizing rather than "fixing" next time.

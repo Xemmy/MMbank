@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
@@ -58,6 +59,7 @@ import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetsScreen
 import com.xemmy.mmbank.ui.screens.report.MonthlyReportScreen
 import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
 import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
+import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailScreen
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsScreen
 import com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
@@ -272,7 +274,10 @@ private fun AppNavHost(
             DashboardScreen(onOpenReview = { navController.navigate("review_transactions") })
         }
         composable("transactions") {
-            TransactionsScreen(onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") })
+            TransactionsScreen(
+                onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") },
+                onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
+            )
         }
         composable("uncategorized_queue") {
             UncategorizedQueueScreen(onBack = { navController.popBackStack() })
@@ -294,10 +299,21 @@ private fun AppNavHost(
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
         composable("accounts") { AccountsScreen() }
         composable("cashback") { CashbackScreen() }
-        composable("subscriptions") { SubscriptionsScreen(onBack = { navController.popBackStack() }) }
+        composable("subscriptions") {
+            SubscriptionsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
+            )
+        }
         composable("goals") { GoalsScreen(onBack = { navController.popBackStack() }) }
         composable("category_budgets") { CategoryBudgetsScreen(onBack = { navController.popBackStack() }) }
         composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
+        composable(
+            route = "merchant_detail/{merchant}",
+            arguments = listOf(navArgument("merchant") { type = NavType.StringType }),
+        ) {
+            MerchantDetailScreen(onBack = { navController.popBackStack() })
+        }
         composable("copilot") { CopilotChatScreen(onBack = { navController.popBackStack() }) }
         composable("rules") {
             RulesScreen(

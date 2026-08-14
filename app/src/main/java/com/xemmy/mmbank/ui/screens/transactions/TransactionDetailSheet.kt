@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -70,6 +71,7 @@ fun TransactionDetailSheet(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
+    onMerchantClick: (String) -> Unit = {},
     designMode: DesignMode = LocalDesignMode.current,
 ) {
     AlertDialog(
@@ -83,13 +85,16 @@ fun TransactionDetailSheet(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val merchant = transaction.merchant?.takeIf { it.isNotBlank() }
+                var titleModifier = Modifier.weight(1f, fill = false)
+                if (merchant != null) titleModifier = titleModifier.clickable { onMerchantClick(merchant) }
                 Text(
-                    transaction.merchant ?: transaction.sender ?: transaction.source.name,
+                    merchant ?: transaction.sender ?: transaction.source.name,
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                     color = ObsidianTokens.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = titleModifier,
                 )
                 Spacer(Modifier.width(12.dp))
                 AmountText(
