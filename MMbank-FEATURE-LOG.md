@@ -884,3 +884,172 @@ immediate tab-bar change.
   `Verify build success` and `Check APK exists` both green; the
   non-gating Release APK build also succeeded.
 - `Final Status` (job `94821469866`) — conclusion `success`.
+
+## Phase 8 — Splitwise group-expense foundation
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 44`, `versionName = "0.31.0"`
+**Migration:** v20 -> v21, five new tables (see below)
+
+### Why
+
+The second half of the original broad spec (Splitwise-style shared-expense
+groups) had zero existing code anywhere in the tree — verified by survey
+before starting, unlike the Monarch track which extended real existing
+budgeting code. Built as its own phase rather than combined with Monarch,
+reached as a sub-screen off Insights per the user's own scoping choice (no
+bottom-nav restructure yet). Deliberately excludes the spec's "auto-settlement
+ingestion" (cross-referencing incoming Zelle/Venmo/Wise P2P transfers against
+outstanding IOUs): this ledger's entire ingestion layer is built around UAE
+bank SMS/notification formats (ADIB, DEWA, Etisalat, AED), and Zelle/Venmo are
+US-only apps with no presence in this codebase's parsing rules or SMS corpus
+— building auto-match logic against transfer patterns that don't exist here
+would be speculative, not a real feature. Manual "Settle up" (recording a
+payment once it happens, however it happened) covers the actual need without
+that dependency.
+
+### What changed
+
+**Domain**
+- `domain/model/Models.kt` — `Friend` (id, name, createdAt, archived);
+  `SplitType` enum (EQUAL/EXACT/PERCENTAGE/ADJUSTMENT/SETTLEMENT); `SplitGroup`
+  (id, name, icon, `memberFriendIds: List<Long>`, createdAt, archived);
+  `GroupExpense` (id, groupId, description, amount, currencyCode,
+  `paidByFriendId: Long?`, splitType, createdAt); `ExpenseSplit` (id,
+  expenseId, `friendId: Long?`, owedAmount). Null `paidByFriendId`/`friendId`
+  means "me" throughout — the app's own user is never a `Friend` row, just an
+  implicit participant identified by null everywhere a participant id appears.
+- `domain/split/SplitAllocator.kt` (new) — pure, generic over the participant
+  identifier (`<T>`, not hard-coded to `Long?`) so it's exercised with plain
+  string ids under test. Four split types: `splitEqually` (rounds down to the
+  cent, hands leftover cents to the first participants in order so the total
+  is always exact, never a cent short or over); `splitByExactAmounts`
+  (accepted only if the amounts already sum to the total); `splitByPercentages`
+  (accepted only if percentages sum to 100 within a hundredth of a percent;
+  every share but the last is rounded independently, the last absorbs
+  whatever's left so rounding never drifts the total); `splitByAdjustments`
+  (an equal split shifted by a per-participant +/-, accepted only if the
+  adjustments net to zero). Each failure mode returns null rather than
+  throwing — the caller is a live form, where "not valid yet" is routine.
+- `domain/split/DebtSimplifier.kt` (new) — pure. `simplify(netBalances)`
+  greedily pays the largest creditor from the largest debtor, repeatedly,
+  until every balance is within a cent of zero — the standard practical
+  approximation for debt simplification (true minimum-transaction-count is
+  NP-hard) and what Splitwise itself uses. Each iteration is proven to fully
+  zero out at least one side exactly (BigDecimal, no drift), so the loop
+  always terminates within a bounded number of iterations.
+- `domain/split/GroupBalances.kt` (new) — pure. `compute(expenses,
+  splitsByExpenseId)` nets a group's expenses to one balance per participant:
+  the payer is credited the full amount, every split is debited its own
+  share — a payer who's also a participant nets to (amount paid - their own
+  share), the everyday "I paid, I get back what everyone else owes" math.
+  `SplitType.SETTLEMENT` needs no special case: it's just an expense whose
+  one split is the full amount owed to the person being paid, so recording a
+  settlement nets out through the exact same math as any other expense.
+
+**Data**
+- `data/local/entity/Entities.kt` — `FriendEntity`, `SplitGroupEntity`,
+  `SplitGroupMemberEntity` (junction table, "me" is implicit and never a row),
+  `GroupExpenseEntity`, `ExpenseSplitEntity`, all with `toDomain()`/`toEntity()`
+  mappers (round-tripped in `EntityMappersTest`). `SplitGroupEntity.toDomain()`
+  is the one exception to this codebase's no-arg mapper convention — it takes
+  `memberFriendIds: List<Long>` as a parameter, since membership lives in the
+  separate junction table and isn't a column on the group row itself.
+- `data/local/Converters.kt` — `SplitType` <-> TEXT `@TypeConverter` pair,
+  mirroring `BillRecurrence`'s.
+- `data/local/dao/Daos.kt` — `FriendDao` (insert/update/observeActive/archive);
+  `SplitGroupDao` (insert/update/observeActive/archive, plus
+  clearMembers+insertMembers+observeAllMemberships for the junction table —
+  a group's whole member list is replaced wholesale on every save rather than
+  diffed, simpler for a handful of friends); `GroupExpenseDao`
+  (insert/getById/observeAll/delete for expenses, insertSplits/
+  getSplitsForExpense/observeAllSplits for their splits). `observeAll()`
+  returns every group's expenses at once, not scoped per group — balances
+  need the whole ledger, not one group's slice of it.
+- `data/local/AppDatabase.kt` — schema v20 -> v21; `MIGRATION_20_21` creates
+  `friends`, `split_groups`, `split_group_members` (composite PK, cascading FKs
+  to both parents), `group_expenses` (cascading FK to its group), and
+  `expense_splits` (cascading FK to its expense) — deleting a group or an
+  expense cleans up everything under it automatically.
+- `domain/repository/Repositories.kt` / `data/repository/SimpleRepositories.kt`
+  — `FriendRepository`/`FriendRepositoryImpl`; `SplitGroupRepository`/
+  `SplitGroupRepositoryImpl` (its `observeActive()` combines the group flow
+  with the membership-junction flow to resolve each group's member id list;
+  `save()` replaces a group's member rows wholesale; `addExpense()` inserts
+  the expense then its splits in one call).
+- `di/AppContainer.kt` — `friendRepository`/`splitGroupRepository` lazy vals.
+
+**UI**
+- `ui/screens/splits/SplitsScreen.kt` (new) — `SplitsViewModel` combines
+  groups, friends, and every expense/split across all groups (4-flow
+  `combine`, under Kotlin's 5-flow direct-overload limit) to compute "me"'s
+  balance per group and the overall net. `SplitsScreen`: net owed/owing
+  header, a card per group (icon, name, member count, that group's balance),
+  tap to open `GroupDetailScreen`. `AddGroupDialog`: name/icon, a checklist
+  of existing friends, plus an inline "add a new friend" field so a group can
+  be created without a separate Friends-management screen first.
+- `ui/screens/splits/GroupDetailScreen.kt` (new) — `GroupDetailViewModel`
+  takes the group id via `SavedStateHandle` (mirrors `MerchantDetailViewModel`'s
+  nav-arg pattern), computes this group's balances via `GroupBalances` and
+  settle-up suggestions via `DebtSimplifier`. `GroupDetailScreen`: per-member
+  balance list, a "Settle up" section listing each suggested payment with a
+  one-tap "Record" action (calls `recordSettlement`, which builds the
+  `SplitType.SETTLEMENT` expense described above), the expense list with
+  delete, and an "Add expense" FAB. `AddExpenseDialog`: description, amount,
+  paid-by picker, split-type picker, and a split-type-dependent input area —
+  a checklist for EQUAL (who's actually splitting this one), a per-participant
+  text field for EXACT/PERCENTAGE/ADJUSTMENT (entering nothing/zero for
+  someone leaves them out of the split); the Add button stays disabled until
+  `SplitAllocator` actually accepts the current input.
+- `ui/AppViewModelProvider.kt` / `ui/MainActivity.kt` — `SplitsViewModel`/
+  `GroupDetailViewModel` registered; `"splits"` and `"splits_group/{groupId}"`
+  routes added.
+- `ui/screens/insights/InsightsScreen.kt` — "Splits & groups" doorway row
+  added next to Savings goals, matching every other secondary screen's
+  reach-through-Insights pattern.
+
+### Tests
+
+- `SplitAllocatorTest` — 13 cases across all four split types: even and
+  remainder-cent equal splits (and that the remainder is never dropped, only
+  redistributed), a single-participant split, empty-participant rejection,
+  exact amounts accepted/rejected by sum, percentages accepted/rejected by
+  100% sum (including a near-100 tolerance case), the last percentage share
+  absorbing rounding drift, adjustments net-to-zero accepted/rejected, and a
+  participant missing from the adjustments map getting no adjustment.
+- `DebtSimplifierTest` — 6 cases: already-settled balances need nothing;
+  a simple two-person debt settles in one payment; three people settle in
+  two payments (not the naive three); a chain of debts (a owes b, b owes c)
+  collapses to one payment instead of two; a sub-cent balance is treated as
+  already settled; a four-person case where every settlement's total exactly
+  accounts for each debtor's debt.
+- `GroupBalancesTest` — 6 cases: a payer who's also a participant nets to
+  (paid - own share); a payer who took no share of their own expense is
+  fully owed it back; multiple expenses accumulate into running balances;
+  a `SETTLEMENT`-type expense nets exactly like any other expense (no special
+  case needed); no expenses means no balances; an expense with no splits
+  recorded yet still credits the payer alone.
+- `EntityMappersTest` — 8 new round-trip cases across the five new
+  domain/entity pairs, including the `SplitGroupEntity.toDomain(memberFriendIds)`
+  extra-parameter case with both a populated and an empty member list, and
+  both a `Friend`-payer and a null ("me") payer for `GroupExpense`/`ExpenseSplit`.
+
+### Deferred
+
+- P2P auto-settlement ingestion (Zelle/Venmo/Wise detection cross-referenced
+  against outstanding IOUs) — see Why above; the ingestion layer has no
+  P2P-transfer detection to hook into yet, in this or any prior phase.
+- No dedicated Friends-management screen (rename/archive a friend outside of
+  the inline "add a new friend" field in `AddGroupDialog`) — `archive()`
+  exists on `FriendRepository` already, just not wired to any UI yet.
+- No E2EE peer-to-peer/lightweight-cloud sync payload for groups — this
+  phase is entirely local-first, matching every other feature in the app;
+  the spec's sync schema was never scoped into this phase's ask.
+- No bottom-nav restructure to the spec's 5-tab layout — per the user's own
+  earlier scoping choice, still reached as a sub-screen off Insights.
+- Settling up only offers the algorithm's own suggested payments; there's no
+  free-form "record an arbitrary payment between two people" action yet.
+
+### CI verification
+
+Pending — push and check `test-build.yml` on this commit.

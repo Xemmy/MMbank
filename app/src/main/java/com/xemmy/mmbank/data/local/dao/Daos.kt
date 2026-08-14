@@ -10,9 +10,14 @@ import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
+import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
+import com.xemmy.mmbank.data.local.entity.FriendEntity
+import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
+import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
+import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
 import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
@@ -474,4 +479,73 @@ interface SavingsGoalDao {
 
     @Query("DELETE FROM savings_goals WHERE id = :id")
     suspend fun delete(id: Long)
+}
+
+@Dao
+interface FriendDao {
+
+    @Insert
+    suspend fun insert(entity: FriendEntity): Long
+
+    @Update
+    suspend fun update(entity: FriendEntity)
+
+    @Query("SELECT * FROM friends WHERE archived = 0 ORDER BY name")
+    fun observeActive(): Flow<List<FriendEntity>>
+
+    @Query("UPDATE friends SET archived = 1 WHERE id = :id")
+    suspend fun archive(id: Long)
+}
+
+@Dao
+interface SplitGroupDao {
+
+    @Insert
+    suspend fun insert(entity: SplitGroupEntity): Long
+
+    @Update
+    suspend fun update(entity: SplitGroupEntity)
+
+    @Query("SELECT * FROM split_groups WHERE archived = 0 ORDER BY createdAt DESC")
+    fun observeActive(): Flow<List<SplitGroupEntity>>
+
+    @Query("UPDATE split_groups SET archived = 1 WHERE id = :id")
+    suspend fun archive(id: Long)
+
+    /** Replaces a group's whole member list -- simpler than diffing adds/removes for a handful of friends. */
+    @Query("DELETE FROM split_group_members WHERE groupId = :groupId")
+    suspend fun clearMembers(groupId: Long)
+
+    @Insert
+    suspend fun insertMembers(members: List<SplitGroupMemberEntity>)
+
+    @Query("SELECT * FROM split_group_members")
+    fun observeAllMemberships(): Flow<List<SplitGroupMemberEntity>>
+}
+
+@Dao
+interface GroupExpenseDao {
+
+    @Insert
+    suspend fun insert(entity: GroupExpenseEntity): Long
+
+    @Query("SELECT * FROM group_expenses WHERE id = :id")
+    suspend fun getById(id: Long): GroupExpenseEntity?
+
+    /** Every group's expenses at once -- the Splits & Groups header balance needs all of them together. */
+    @Query("SELECT * FROM group_expenses")
+    fun observeAll(): Flow<List<GroupExpenseEntity>>
+
+    // ON DELETE CASCADE on expense_splits.expenseId removes its splits too.
+    @Query("DELETE FROM group_expenses WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Insert
+    suspend fun insertSplits(splits: List<ExpenseSplitEntity>)
+
+    @Query("SELECT * FROM expense_splits WHERE expenseId = :expenseId")
+    suspend fun getSplitsForExpense(expenseId: Long): List<ExpenseSplitEntity>
+
+    @Query("SELECT * FROM expense_splits")
+    fun observeAllSplits(): Flow<List<ExpenseSplitEntity>>
 }

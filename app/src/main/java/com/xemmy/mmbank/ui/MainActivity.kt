@@ -77,6 +77,8 @@ import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
+import com.xemmy.mmbank.ui.screens.splits.GroupDetailScreen
+import com.xemmy.mmbank.ui.screens.splits.SplitsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
@@ -296,6 +298,7 @@ private fun AppNavHost(
                 onOpenReport = { navController.navigate("monthly_report") },
                 onOpenCopilot = { navController.navigate("copilot") },
                 onOpenBills = { navController.navigate("bills") },
+                onOpenSplits = { navController.navigate("splits") },
             )
         }
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
@@ -309,6 +312,18 @@ private fun AppNavHost(
         }
         composable("goals") { GoalsScreen(onBack = { navController.popBackStack() }) }
         composable("bills") { BillsScreen(onBack = { navController.popBackStack() }) }
+        composable("splits") {
+            SplitsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenGroup = { groupId -> navController.navigate("splits_group/$groupId") },
+            )
+        }
+        composable(
+            route = "splits_group/{groupId}",
+            arguments = listOf(navArgument("groupId") { type = NavType.LongType }),
+        ) {
+            GroupDetailScreen(onBack = { navController.popBackStack() })
+        }
         composable("category_budgets") { CategoryBudgetsScreen(onBack = { navController.popBackStack() }) }
         composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
         composable(

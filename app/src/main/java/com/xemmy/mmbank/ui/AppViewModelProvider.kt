@@ -20,6 +20,8 @@ import com.xemmy.mmbank.ui.screens.review.ReviewViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
 import com.xemmy.mmbank.ui.screens.settings.SettingsViewModel
+import com.xemmy.mmbank.ui.screens.splits.GroupDetailViewModel
+import com.xemmy.mmbank.ui.screens.splits.SplitsViewModel
 import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueViewModel
@@ -45,6 +47,8 @@ object AppViewModelProvider {
         initializer { MonthlyReportViewModel(mmBankApp().container) }
         initializer { MerchantDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { BillsViewModel(mmBankApp().container) }
+        initializer { SplitsViewModel(mmBankApp().container) }
+        initializer { GroupDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

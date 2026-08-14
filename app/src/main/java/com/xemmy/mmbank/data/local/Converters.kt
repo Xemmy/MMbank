@@ -4,6 +4,7 @@ import androidx.room.TypeConverter
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -73,4 +74,11 @@ class Converters {
     @TypeConverter
     fun stringToBillRecurrence(value: String?): BillRecurrence? =
         value?.let { BillRecurrence.valueOf(it) }
+
+    @TypeConverter
+    fun splitTypeToString(value: SplitType?): String? = value?.name
+
+    @TypeConverter
+    fun stringToSplitType(value: String?): SplitType? =
+        value?.let { SplitType.valueOf(it) }
 }

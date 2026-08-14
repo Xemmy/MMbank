@@ -401,3 +401,61 @@ data class Bill(
     val nextDueDateMillis: Long,
     val createdAt: Long,
 )
+
+/**
+ * A person shared expenses are split with -- a lightweight name, not a
+ * bank-linked contact. See [SplitGroup] / [GroupExpense].
+ */
+data class Friend(
+    val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val archived: Boolean = false,
+)
+
+/** How a [GroupExpense]'s amount is divided among its participants; see [com.xemmy.mmbank.domain.split.SplitAllocator]. */
+enum class SplitType { EQUAL, EXACT, PERCENTAGE, ADJUSTMENT, SETTLEMENT }
+
+/**
+ * A shared-expense group (e.g. "Roommates", "Trip to Muscat"). Membership is
+ * a set of [Friend] ids; the app's own user is always an implicit member,
+ * represented as a null id everywhere a participant is identified (see
+ * [GroupExpense.paidByFriendId], [ExpenseSplit.friendId]) rather than a row
+ * of its own -- there's no "me" contact to create or delete.
+ */
+data class SplitGroup(
+    val id: Long = 0,
+    val name: String,
+    val icon: String = "👥",
+    val memberFriendIds: List<Long> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val archived: Boolean = false,
+)
+
+/**
+ * One shared expense within a [SplitGroup]: paid by one participant (null =
+ * "me"), divided among its [ExpenseSplit] rows. [SplitType.SETTLEMENT] marks
+ * a manual "settle up" payment recorded the same way as any other expense --
+ * paid in full by the person settling, with the entire amount as a single
+ * split owed to the person they're paying -- so it nets out through the same
+ * balance math ([com.xemmy.mmbank.domain.split.GroupBalances]) without a
+ * separate code path.
+ */
+data class GroupExpense(
+    val id: Long = 0,
+    val groupId: Long,
+    val description: String,
+    val amount: BigDecimal,
+    val currencyCode: String,
+    val paidByFriendId: Long? = null,
+    val splitType: SplitType,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+/** One participant's (null = "me") share of a [GroupExpense]. */
+data class ExpenseSplit(
+    val id: Long = 0,
+    val expenseId: Long,
+    val friendId: Long? = null,
+    val owedAmount: BigDecimal,
+)

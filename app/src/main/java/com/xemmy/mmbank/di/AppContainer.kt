@@ -27,11 +27,13 @@ import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.BillRepositoryImpl
 import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
+import com.xemmy.mmbank.data.repository.FriendRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
 import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
 import com.xemmy.mmbank.data.repository.SavingsGoalRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
+import com.xemmy.mmbank.data.repository.SplitGroupRepositoryImpl
 import com.xemmy.mmbank.data.repository.SubscriptionRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
@@ -47,11 +49,13 @@ import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.CategoryRepository
+import com.xemmy.mmbank.domain.repository.FriendRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SavingsGoalRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
+import com.xemmy.mmbank.domain.repository.SplitGroupRepository
 import com.xemmy.mmbank.domain.repository.SubscriptionRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.ai.AiDailyBudget
@@ -320,6 +324,12 @@ class AppContainer(context: Context) {
     }
     val billRepository: BillRepository by lazy {
         BillRepositoryImpl(database.billDao())
+    }
+    val friendRepository: FriendRepository by lazy {
+        FriendRepositoryImpl(database.friendDao())
+    }
+    val splitGroupRepository: SplitGroupRepository by lazy {
+        SplitGroupRepositoryImpl(database.splitGroupDao(), database.groupExpenseDao())
     }
     /** Logic-only Spot/Funding/Earn per-asset fetcher (zero balances filtered). */
     val binanceWalletAssets: BinanceWalletAssetsService by lazy {

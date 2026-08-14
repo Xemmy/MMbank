@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Repeat
@@ -103,6 +104,7 @@ fun InsightsScreen(
     onOpenReport: () -> Unit = {},
     onOpenCopilot: () -> Unit = {},
     onOpenBills: () -> Unit = {},
+    onOpenSplits: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -221,6 +223,14 @@ fun InsightsScreen(
                 title = "Savings goals",
                 subtitle = "Progress bars, debt payoff and surplus allocation",
                 onClick = onOpenGoals,
+            )
+        }
+        item(key = "splits_row") {
+            NavigationRow(
+                icon = Icons.Filled.Groups,
+                title = "Splits & groups",
+                subtitle = "Shared expenses, balances and settle-up suggestions",
+                onClick = onOpenSplits,
             )
         }
         item(key = "budgets_row") {

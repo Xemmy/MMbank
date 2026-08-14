@@ -12,10 +12,15 @@ import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
+import com.xemmy.mmbank.domain.model.ExpenseSplit
+import com.xemmy.mmbank.domain.model.Friend
+import com.xemmy.mmbank.domain.model.GroupExpense
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.SplitGroup
+import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
@@ -230,6 +235,87 @@ data class SavingsGoalEntity(
     val archived: Boolean = false,
 )
 
+@Entity(tableName = "friends")
+data class FriendEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long,
+    val archived: Boolean = false,
+)
+
+@Entity(tableName = "split_groups")
+data class SplitGroupEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val icon: String = "👥",
+    val createdAt: Long,
+    val archived: Boolean = false,
+)
+
+/** Junction row: which friends belong to which group. "Me" is implicit, never a row here. */
+@Entity(
+    tableName = "split_group_members",
+    primaryKeys = ["groupId", "friendId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = SplitGroupEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["groupId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = FriendEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["friendId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["friendId"])],
+)
+data class SplitGroupMemberEntity(val groupId: Long, val friendId: Long)
+
+@Entity(
+    tableName = "group_expenses",
+    foreignKeys = [
+        ForeignKey(
+            entity = SplitGroupEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["groupId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["groupId"])],
+)
+data class GroupExpenseEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val groupId: Long,
+    val description: String,
+    val amount: BigDecimal,
+    val currencyCode: String,
+    val paidByFriendId: Long? = null,
+    val splitType: SplitType,
+    val createdAt: Long,
+)
+
+@Entity(
+    tableName = "expense_splits",
+    foreignKeys = [
+        ForeignKey(
+            entity = GroupExpenseEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["expenseId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["expenseId"])],
+)
+data class ExpenseSplitEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val expenseId: Long,
+    val friendId: Long? = null,
+    val owedAmount: BigDecimal,
+)
+
 // --- Entity <-> domain mappers ---
 
 fun AccountEntity.toDomain() = Account(
@@ -334,3 +420,20 @@ fun SavingsGoalEntity.toDomain() = SavingsGoal(
 fun SavingsGoal.toEntity() = SavingsGoalEntity(
     id, title, targetAmount, currentAmount, targetDateMillis, icon, createdAt, archived,
 )
+
+fun FriendEntity.toDomain() = Friend(id, name, createdAt, archived)
+
+fun Friend.toEntity() = FriendEntity(id, name, createdAt, archived)
+
+/** [memberFriendIds] comes from a separate join-table query -- [SplitGroupEntity] itself carries no member list. */
+fun SplitGroupEntity.toDomain(memberFriendIds: List<Long>) = SplitGroup(id, name, icon, memberFriendIds, createdAt, archived)
+
+fun SplitGroup.toEntity() = SplitGroupEntity(id, name, icon, createdAt, archived)
+
+fun GroupExpenseEntity.toDomain() = GroupExpense(id, groupId, description, amount, currencyCode, paidByFriendId, splitType, createdAt)
+
+fun GroupExpense.toEntity() = GroupExpenseEntity(id, groupId, description, amount, currencyCode, paidByFriendId, splitType, createdAt)
+
+fun ExpenseSplitEntity.toDomain() = ExpenseSplit(id, expenseId, friendId, owedAmount)
+
+fun ExpenseSplit.toEntity() = ExpenseSplitEntity(id, expenseId, friendId, owedAmount)

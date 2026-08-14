@@ -12,10 +12,13 @@ import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
 import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.CategoryDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
+import com.xemmy.mmbank.data.local.dao.FriendDao
+import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
 import com.xemmy.mmbank.data.local.dao.MerchantCategoryDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
+import com.xemmy.mmbank.data.local.dao.SplitGroupDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
@@ -24,10 +27,15 @@ import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
+import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
+import com.xemmy.mmbank.data.local.entity.FriendEntity
+import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
+import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
+import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
 import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
@@ -46,8 +54,13 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         SubscriptionEntity::class,
         SavingsGoalEntity::class,
         BillEntity::class,
+        FriendEntity::class,
+        SplitGroupEntity::class,
+        SplitGroupMemberEntity::class,
+        GroupExpenseEntity::class,
+        ExpenseSplitEntity::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -65,6 +78,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun savingsGoalDao(): SavingsGoalDao
     abstract fun billDao(): BillDao
+    abstract fun friendDao(): FriendDao
+    abstract fun splitGroupDao(): SplitGroupDao
+    abstract fun groupExpenseDao(): GroupExpenseDao
 
     companion object {
         /**
@@ -383,6 +399,81 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v20 -> v21: Splitwise-style shared-expense groups. `friends` (people
+         * split with -- names only, not bank-linked), `split_groups`,
+         * `split_group_members` (junction; "me" is implicit, never a row),
+         * `group_expenses`, and `expense_splits` (one row per participant's
+         * share of an expense). See [com.xemmy.mmbank.domain.model.SplitGroup].
+         */
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `friends` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `archived` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `split_groups` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `icon` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `archived` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `split_group_members` (
+                        `groupId` INTEGER NOT NULL,
+                        `friendId` INTEGER NOT NULL,
+                        PRIMARY KEY(`groupId`, `friendId`),
+                        FOREIGN KEY(`groupId`) REFERENCES `split_groups`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`friendId`) REFERENCES `friends`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_split_group_members_friendId ON split_group_members(friendId)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_expenses` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `groupId` INTEGER NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `amount` TEXT NOT NULL,
+                        `currencyCode` TEXT NOT NULL,
+                        `paidByFriendId` INTEGER,
+                        `splitType` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`groupId`) REFERENCES `split_groups`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_group_expenses_groupId ON group_expenses(groupId)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `expense_splits` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `expenseId` INTEGER NOT NULL,
+                        `friendId` INTEGER,
+                        `owedAmount` TEXT NOT NULL,
+                        FOREIGN KEY(`expenseId`) REFERENCES `group_expenses`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_expense_splits_expenseId ON expense_splits(expenseId)")
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -412,7 +503,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-                    MIGRATION_18_19, MIGRATION_19_20,
+                    MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

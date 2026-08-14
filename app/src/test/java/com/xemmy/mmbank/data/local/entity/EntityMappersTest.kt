@@ -5,10 +5,15 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.model.ExpenseSplit
+import com.xemmy.mmbank.domain.model.Friend
+import com.xemmy.mmbank.domain.model.GroupExpense
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.SplitGroup
+import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
@@ -543,5 +548,86 @@ class EntityMappersTest {
         assertEquals(original, roundTripped)
         assertNull(roundTripped.targetDateMillis)
         assertTrue(roundTripped.archived)
+    }
+
+    @Test
+    fun `friend round-trip preserves name and archived state`() {
+        val original = Friend(id = 3, name = "Alex", createdAt = 1_700_000_000_000, archived = true)
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertTrue(roundTripped.archived)
+    }
+
+    @Test
+    fun `split group round-trip preserves its member id list, supplied separately from the entity`() {
+        val original = SplitGroup(
+            id = 7,
+            name = "Trip to Muscat",
+            icon = "🏝️",
+            memberFriendIds = listOf(3L, 5L, 9L),
+            createdAt = 1_700_000_000_000,
+            archived = false,
+        )
+        // SplitGroupEntity carries no member list of its own -- it comes from a
+        // separate join-table query, so toDomain() takes it as a parameter.
+        val roundTripped = original.toEntity().toDomain(original.memberFriendIds)
+        assertEquals(original, roundTripped)
+    }
+
+    @Test
+    fun `split group round-trip with no members yields an empty list, not null`() {
+        val original = SplitGroup(id = 1, name = "Roommates", memberFriendIds = emptyList(), createdAt = 1_700_000_000_000)
+        val roundTripped = original.toEntity().toDomain(emptyList())
+        assertEquals(original, roundTripped)
+        assertTrue(roundTripped.memberFriendIds.isEmpty())
+    }
+
+    @Test
+    fun `group expense round-trip preserves a friend payer and split type`() {
+        val original = GroupExpense(
+            id = 4,
+            groupId = 7,
+            description = "Dinner",
+            amount = BigDecimal("90.00"),
+            currencyCode = "AED",
+            paidByFriendId = 3L,
+            splitType = SplitType.EQUAL,
+            createdAt = 1_700_000_000_000,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(3L, roundTripped.paidByFriendId)
+    }
+
+    @Test
+    fun `group expense round-trip preserves a null payer, meaning me`() {
+        val original = GroupExpense(
+            id = 5,
+            groupId = 7,
+            description = "Groceries",
+            amount = BigDecimal("40.00"),
+            currencyCode = "AED",
+            paidByFriendId = null,
+            splitType = SplitType.SETTLEMENT,
+            createdAt = 1_700_000_000_000,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.paidByFriendId)
+    }
+
+    @Test
+    fun `expense split round-trip preserves a friend's owed amount`() {
+        val original = ExpenseSplit(id = 1, expenseId = 4, friendId = 3L, owedAmount = BigDecimal("30.00"))
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+    }
+
+    @Test
+    fun `expense split round-trip preserves a null friendId, meaning me`() {
+        val original = ExpenseSplit(id = 2, expenseId = 4, friendId = null, owedAmount = BigDecimal("30.00"))
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.friendId)
     }
 }

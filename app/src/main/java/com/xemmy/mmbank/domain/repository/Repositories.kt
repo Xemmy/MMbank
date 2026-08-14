@@ -6,6 +6,9 @@ import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
+import com.xemmy.mmbank.domain.model.ExpenseSplit
+import com.xemmy.mmbank.domain.model.Friend
+import com.xemmy.mmbank.domain.model.GroupExpense
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsedTransaction
@@ -13,6 +16,7 @@ import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SenderLabel
 import com.xemmy.mmbank.domain.model.SpendingCategory
+import com.xemmy.mmbank.domain.model.SplitGroup
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.Transaction
 import java.math.BigDecimal
@@ -190,4 +194,31 @@ interface SavingsGoalRepository {
     suspend fun allocate(goalId: Long, amount: BigDecimal)
     suspend fun archive(goalId: Long)
     suspend fun delete(goalId: Long)
+}
+
+/** People shared expenses are split with -- see [Friend]. */
+interface FriendRepository {
+    /** Non-archived friends, alphabetical. */
+    fun observeActive(): Flow<List<Friend>>
+    /** Inserts a new friend (id = 0) or updates an existing one; returns its id. */
+    suspend fun save(friend: Friend): Long
+    suspend fun archive(friendId: Long)
+}
+
+/**
+ * Shared-expense groups, their expenses and per-participant splits -- see
+ * [SplitGroup] / [GroupExpense] / [com.xemmy.mmbank.domain.split.GroupBalances].
+ */
+interface SplitGroupRepository {
+    /** Non-archived groups, newest first, each with its member id list already resolved. */
+    fun observeActive(): Flow<List<SplitGroup>>
+    /** Inserts a new group (id = 0) or updates an existing one, replacing its member list wholesale; returns its id. */
+    suspend fun save(group: SplitGroup): Long
+    suspend fun archive(groupId: Long)
+    /** Every group's expenses at once -- balances are computed across the whole ledger, not fetched per group. */
+    fun observeAllExpenses(): Flow<List<GroupExpense>>
+    fun observeAllSplits(): Flow<List<ExpenseSplit>>
+    /** Records a new expense with its already-computed splits (see [com.xemmy.mmbank.domain.split.SplitAllocator]); returns the expense id. */
+    suspend fun addExpense(expense: GroupExpense, splits: List<ExpenseSplit>): Long
+    suspend fun deleteExpense(expenseId: Long)
 }
