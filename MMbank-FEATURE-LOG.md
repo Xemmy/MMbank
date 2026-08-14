@@ -887,7 +887,7 @@ immediate tab-bar change.
 
 ## Phase 8 — Splitwise group-expense foundation
 
-**Status:** landed, CI pending
+**Status:** landed, CI green after a fix
 **Version:** `versionCode = 44`, `versionName = "0.31.0"`
 **Migration:** v20 -> v21, five new tables (see below)
 
@@ -1052,4 +1052,54 @@ that dependency.
 
 ### CI verification
 
-Pending — push and check `test-build.yml` on this commit.
+**First push (`28227cb`) had a real compile failure.** Run `31819990643`,
+job `94830659215` (`Lint & Unit Tests`) reported conclusion `success` --
+`continue-on-error: true` masking the real result, per this file's standing
+rule -- but the log itself showed:
+
+```
+e: .../app/src/test/java/com/xemmy/mmbank/domain/split/SplitAllocatorTest.kt:59:35
+   Cannot infer type for this parameter. Please specify it explicitly.
+e: .../SplitAllocatorTest.kt:59:35 Not enough information to infer type argument for 'T'.
+e: .../SplitAllocatorTest.kt:59:76 Cannot infer type for this parameter. Please specify it explicitly.
+e: .../SplitAllocatorTest.kt:59:76 Not enough information to infer type argument for 'K'.
+> Task :app:compileDebugUnitTestKotlin FAILED
+BUILD FAILED in 2m 47s
+```
+
+Line 59 called `SplitAllocator.splitByExactAmounts(BigDecimal("50.00"),
+emptyMap())` -- `splitByExactAmounts<T>` needs `T` inferred from its `Map<T,
+BigDecimal>` argument, and a bare `emptyMap()` supplies no type information
+of its own (`emptyMap<K, V>()` needs its own `K`/`V` inferred too), so
+neither side had anything to anchor to. Every other `emptyList()`/`emptyMap()`
+call in the new test files either called a non-generic function (target-typed
+from a concrete parameter type, which infers fine) or already carried an
+explicit type argument (`emptyList<String>()`) -- this was the one bare case.
+Fixed by writing `emptyMap<String, BigDecimal>()` explicitly, matching the
+String-id convention the rest of `SplitAllocatorTest` already uses. `Build
+APK` (job `94831439595`) had already succeeded on attempt 1 in this same run
+-- the debug-source compile these tests didn't block was already known-good
+-- so this was purely a unit-test compile issue. Fixed and pushed as `452f677`.
+
+**Verified green on `452f677`.** Run `31820989966`:
+
+- `Lint & Unit Tests` (job `94833831346`) — conclusion `success`. Read the
+  "Run unit tests" step log directly:
+  ```
+  > Task :app:testDebugUnitTest
+  BUILD SUCCESSFUL in 49s
+  25 actionable tasks: 10 executed, 15 from cache
+  ```
+  No `N tests completed, N failed` line — per this file's established
+  convention, Gradle only prints that summary when something fails, so its
+  absence is the pass signal, including the fixed `SplitAllocatorTest`, the
+  new `DebtSimplifierTest` and `GroupBalancesTest`, and the 8 new
+  `EntityMappersTest` round-trip cases for the five new domain/entity pairs.
+- `Build APK (with retries)` (job `94834086203`) — conclusion `success`.
+  Debug APK built on **attempt 1** in both this run and the prior one, no
+  retries needed either time — the real evidence the v20 -> v21 migration
+  (five new tables, cascading foreign keys across `split_group_members`,
+  `group_expenses`, `expense_splits`) compiles and validates cleanly.
+  `Verify build success` and `Check APK exists` both green; the non-gating
+  Release APK build also succeeded.
+- `Final Status` (job `94835698309`) — conclusion `success`.
