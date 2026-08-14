@@ -230,7 +230,7 @@ same run.
 
 ## Phase 3 — Monthly report
 
-**Status:** code complete, CI pending
+**Status:** landed, CI green after a fix (commits `7aaad9f` + `959f74f`)
 **Version:** `versionCode = 39`, `versionName = "0.26.0"`
 **Migration:** none
 
@@ -335,3 +335,36 @@ reintroduce it. Formatter test count 12 → 15.
 `assembleDebug` passed in the first run regardless (attempt 1, no retries) —
 the bug was behavioral, not a compile error, which is precisely why the
 compile-only signal was not enough.
+
+**Verified green after the fix.** Run `31776011546`, job `94691510712`:
+
+```
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:testDebugUnitTest
+BUILD SUCCESSFUL in 1m 18s
+25 actionable tasks: 13 executed, 12 from cache
+```
+
+`testDebugUnitTest` carries no `FROM-CACHE` / `UP-TO-DATE` marker, so the suite
+genuinely re-ran rather than being served from the build cache. Note that a
+passing run prints **no** `N tests completed` line at all — Gradle only emits
+that summary when something fails, so the disappearance of
+`666 tests completed, 1 failed` is the pass signal here, not an absent count.
+
+`assembleDebug` also passed in the same run (job `94691781070`): attempt 1, no
+retries, with `Verify build success`, `Check APK exists` and `Upload Debug APK`
+all green.
+
+### A second CI trap, worth writing down
+
+Between the fix and this verification, GitHub reported two `Final Status`
+**failures** on `959f74f`. Both were false alarms: pushing the docs-only commit
+`3bbe971` fifteen seconds later cancelled the in-flight runs, and
+`Final Status` fails on `cancelled` because its check is
+`build-apk result == success`. The tell was that `Lint & Unit Tests` died
+during *JDK setup*, before running a single test.
+
+Two things make this noisier than it looks: the repo fires **two runs per
+push** (a `push` trigger and a `pull_request` trigger, via the open PR #9), so
+each supersede emits two failure notifications. Nothing was wrong and nothing
+was changed — worth recognizing rather than "fixing" next time.
