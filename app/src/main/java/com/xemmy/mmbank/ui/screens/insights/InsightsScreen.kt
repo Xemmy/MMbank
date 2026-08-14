@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.PieChart
@@ -98,6 +99,7 @@ fun InsightsScreen(
     onOpenAnalytics: () -> Unit = {},
     onOpenGoals: () -> Unit = {},
     onOpenBudgets: () -> Unit = {},
+    onOpenReport: () -> Unit = {},
     onOpenCopilot: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
@@ -217,6 +219,14 @@ fun InsightsScreen(
                 title = "Category budgets",
                 subtitle = "Monthly caps per category, with alerts at 80% and 100%",
                 onClick = onOpenBudgets,
+            )
+        }
+        item(key = "report_row") {
+            NavigationRow(
+                icon = Icons.Outlined.Description,
+                title = "Monthly report",
+                subtitle = "A month's statement, shareable as a file",
+                onClick = onOpenReport,
             )
         }
         item(key = "copilot_row") {

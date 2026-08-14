@@ -119,7 +119,7 @@ verified and uploaded.
 
 ## Phase 2 — Subscription radar: automatic, with price-change detection and reminders
 
-**Status:** code complete, CI pending
+**Status:** landed, CI green (commit `041e7af`)
 **Version:** `versionCode = 38`, `versionName = "0.25.0"`
 **Migration:** `MIGRATION_17_18`, DB `version = 18`
 
@@ -205,6 +205,106 @@ a reactive `AppContainer` flow — only Settings and the worker read it.
 - Reminder window is fixed at 3 days; not user-configurable.
 - A price change is detected only at the *last* amount change. A subscription
   that changed price twice reports the most recent change only.
+
+### CI verification
+
+Run `31768160891`, job `94668248682` (`Lint & Unit Tests`) — read from the job
+log, not the `continue-on-error`-masked checkmark:
+
+```
+> Task :app:kspDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:testDebugUnitTest
+BUILD SUCCESSFUL in 3m 14s
+25 actionable tasks: 25 executed
+```
+
+No `FAILED` task, no `e: file://` errors. Worth noting for a migration commit:
+Room's KSP processor validates `@Entity` classes at compile time, so
+`kspDebugKotlin` completing clean is real evidence that `SubscriptionEntity`'s
+new `previousAmount` column is consistent — a schema/entity mismatch would have
+failed the build here rather than at runtime. `assembleDebug` passed in the
+same run.
+
+---
+
+## Phase 3 — Monthly report
+
+**Status:** code complete, CI pending
+**Version:** `versionCode = 39`, `versionName = "0.26.0"`
+**Migration:** none
+
+### Why
+
+Data could leave the app only as raw CSV or an encrypted `.mmb` blob — nothing
+a human reads. Meanwhile `NetWorthAggregator` sat fully written and unit-tested
+with **zero production callers**: it computes an assets-vs-liabilities split
+with per-account contributions, while the Dashboard rolled its own flat total
+inline. This phase gives the app a readable statement and finally uses that
+engine.
+
+### What changed
+
+**Domain (both pure, both JVM-testable)**
+- `domain/report/MonthlyReportBuilder.kt` (new) — assembles a `MonthlyReport`
+  from data the caller already loaded: income/spend/net with month-over-month
+  deltas, **the net-worth breakdown via the now-wired `NetWorthAggregator`**,
+  top categories with share-of-spend, top merchants, active subscriptions with
+  a monthly-equivalent total, goals, and health metrics.
+  - Scoped to one currency: rows in others are left out rather than summed in,
+    since the report has no exchange rates. Same stance as Phase 1's caps.
+  - Uncategorized spend is shown rather than dropped, so the category rows add
+    up to the headline figure — pinned by a test.
+  - Weekly subscriptions are normalized to monthly using the detector's own
+    `SubscriptionCadence.nominalDays` (30/7), not a hand-picked 4.
+- `domain/report/MonthlyReportHtmlFormatter.kt` (new) — `MonthlyReport -> String`.
+
+**Why HTML and not PDF.** No new dependency; it opens in any browser and prints
+to PDF from there; and decisively, it keeps this a pure function CI can
+actually test. A PDF renderer needs `android.graphics`, which this project's
+JVM-only unit tests cannot exercise — the format choice is what makes the
+output testable at all.
+
+**UI**
+- `ui/screens/report/MonthlyReportScreen.kt` (new) — month picker (never
+  advances past the current month), the rendered report, and export via SAF
+  `CreateDocument("text/html")`, reusing the launcher shape already used for
+  the CSV export in Settings → Backup.
+- Registered in `AppViewModelProvider`; `monthly_report` route; Insights
+  doorway row.
+
+The ViewModel bundles its five ledger flows into a `ReportInputs` record and
+combines that with the selected month — the same workaround `DashboardViewModel`
+uses, because Kotlin's `combine` tops out at five typed arguments and the report
+needs six inputs. Export status is a separate `StateFlow` rather than part of
+`uiState`, so a transient message can't re-run report assembly.
+
+### Tests
+
+- `MonthlyReportBuilderTest` — 14: headline figures; excluded rows and foreign
+  currency left out; deltas present and absent; an empty month produces a
+  report rather than crashing; category ranking, share, and the
+  uncategorized-rows-add-up invariant; merchant ranking with counts; net worth
+  wired through the aggregator; weekly→monthly normalization; dismissed and
+  foreign-currency subscriptions excluded; archived goals excluded.
+- `MonthlyReportHtmlFormatterTest` — 12, including **escaping**: a merchant
+  named `<script>alert('x')</script>` must not survive as markup. Merchant and
+  category names come from captured bank messages, so this is untrusted input
+  reaching a document. Also: empty sections omitted, delta direction (a spend
+  rise is bad, an income rise is good), price-change flag, goal percentages.
+
+### Docs
+
+`MMbank-HANDOVER.md` refreshed — it claimed `version = 9` while the schema is
+at 18. Added a staleness banner, corrected §3 to describe the real chain
+(`MIGRATION_1_2` … `MIGRATION_17_18`), and widened the accepted-gap note: the
+migration gap now spans all 17 steps, KSP validates entities but never executes
+the `ALTER TABLE`s, and `app/schemas/` still isn't committed.
+
+### Deferred
+
+- Report currency is the default currency; no multi-currency consolidation.
+- Export writes a file; there's no direct share-sheet intent.
 
 ### CI verification
 
