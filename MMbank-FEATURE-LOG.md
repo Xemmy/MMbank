@@ -373,7 +373,7 @@ was changed — worth recognizing rather than "fixing" next time.
 
 ## Phase 4 — Merchant Detail screen
 
-**Status:** landed, CI pending
+**Status:** landed, CI green
 **Version:** `versionCode = 40`, `versionName = "0.27.0"`
 **Migration:** none
 
@@ -446,21 +446,29 @@ Jan 2026).
 
 ### CI verification
 
-Pending — will be recorded once the push is read from the Actions log rather
-than the checkmark, per this repo's standing rule that `continue-on-error`
-masks real test failures.
+**Verified green on `6a33a0f`.** Run `31786280991`:
 
-Between the fix and this verification, GitHub reported two `Final Status`
-**failures** on `959f74f`. Both were false alarms: pushing the docs-only commit
-`3bbe971` fifteen seconds later cancelled the in-flight runs, and
-`Final Status` fails on `cancelled` because its check is
-`build-apk result == success`. The tell was that `Lint & Unit Tests` died
-during *JDK setup*, before running a single test.
+- `Lint & Unit Tests` (job `94722792198`) — conclusion `success`. Read the
+  "Run unit tests" step log directly rather than trusting the checkmark
+  (this step has `continue-on-error: true`):
+  ```
+  > Task :app:testDebugUnitTest
+  BUILD SUCCESSFUL in 2m 55s
+  25 actionable tasks: 25 executed
+  ```
+  No `N tests completed, N failed` line — per this file's established
+  convention, Gradle only prints that summary when something fails, so its
+  absence is the pass signal, including the 12 new `MerchantProfilerTest`
+  cases.
+- `Build APK (with retries)` (job `94723499852`) — conclusion `success`.
+  Debug APK built on **attempt 1**, no retries needed; `Verify build
+  success`, `Check APK exists`, and `Upload Debug APK` all green. The
+  non-gating Release APK build also succeeded.
+- `Final Status` (job `94724618231`) — conclusion `success`.
 
-Two things make this noisier than it looks: the repo fires **two runs per
-push** (a `push` trigger and a `pull_request` trigger, via the open PR #9), so
-each supersede emits two failure notifications. Nothing was wrong and nothing
-was changed — worth recognizing rather than "fixing" next time.
+(Earlier this section incorrectly carried Phase 3's `959f74f`/PR #9
+false-alarm note, pasted under the wrong heading — corrected above with
+Phase 4's own run.)
 
 ---
 
