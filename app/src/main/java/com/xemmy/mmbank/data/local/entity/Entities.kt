@@ -8,6 +8,8 @@ import androidx.room.PrimaryKey
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.Bill
+import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
@@ -202,6 +204,18 @@ data class SubscriptionEntity(
     val previousAmount: BigDecimal? = null,
 )
 
+@Entity(tableName = "bills")
+data class BillEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val amount: BigDecimal,
+    val currencyCode: String,
+    /** Null means one-off. */
+    val recurrence: BillRecurrence? = null,
+    val nextDueDateMillis: Long,
+    val createdAt: Long,
+)
+
 @Entity(tableName = "savings_goals")
 data class SavingsGoalEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -306,6 +320,10 @@ fun Subscription.toEntity() = SubscriptionEntity(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
     previousAmount,
 )
+
+fun BillEntity.toDomain() = Bill(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt)
+
+fun Bill.toEntity() = BillEntity(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt)
 
 fun SavingsGoalEntity.toDomain() = SavingsGoal(
     id, title, targetAmount, currentAmount, targetDateMillis, icon, createdAt, archived,

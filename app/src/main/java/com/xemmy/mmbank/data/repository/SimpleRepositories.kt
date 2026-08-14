@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.data.repository
 
 import com.xemmy.mmbank.data.local.dao.AccountDao
+import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
@@ -13,12 +14,15 @@ import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.data.remote.forex.ForexApi
+import com.xemmy.mmbank.domain.intelligence.BillAdvancer
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.repository.AccountRepository
+import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SavingsGoalRepository
@@ -143,6 +147,37 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
     }
 
     override suspend fun dismiss(id: Long) = dao.dismiss(id)
+}
+
+class BillRepositoryImpl(private val dao: BillDao) : BillRepository {
+
+    override fun observeAll(): Flow<List<Bill>> =
+        dao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun save(bill: Bill): Long =
+        if (bill.id == 0L) {
+            dao.insert(bill.toEntity())
+        } else {
+            dao.update(bill.toEntity())
+            bill.id
+        }
+
+    /**
+     * [BillAdvancer] decides the outcome: a recurring bill's row is updated
+     * with the advanced due date, a one-off bill's row is deleted instead
+     * (see [BillRepository.markPaid]).
+     */
+    override suspend fun markPaid(billId: Long) {
+        val current = dao.getById(billId)?.toDomain() ?: return
+        val advanced = BillAdvancer.advance(current)
+        if (advanced != null) {
+            dao.updateNextDueDate(billId, advanced.nextDueDateMillis)
+        } else {
+            dao.delete(billId)
+        }
+    }
+
+    override suspend fun delete(billId: Long) = dao.delete(billId)
 }
 
 class SavingsGoalRepositoryImpl(private val dao: SavingsGoalDao) : SavingsGoalRepository {

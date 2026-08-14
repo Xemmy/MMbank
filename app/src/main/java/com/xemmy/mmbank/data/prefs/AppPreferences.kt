@@ -306,6 +306,25 @@ class AppPreferences(context: Context) {
         get() = prefs.getInt(KEY_TRANSACTION_RETENTION_MONTHS, 0)
         set(value) = prefs.edit().putInt(KEY_TRANSACTION_RETENTION_MONTHS, value.coerceAtLeast(0)).apply()
 
+    /**
+     * Opt-in daily reminder shortly before a manually tracked [com.xemmy.mmbank.domain.model.Bill]
+     * is due. Same off-by-default posture as [subscriptionRemindersEnabled],
+     * and independent of it -- a user may want one reminder stream but not
+     * the other.
+     */
+    var billRemindersEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BILL_REMINDERS, false)
+        set(value) = prefs.edit().putBoolean(KEY_BILL_REMINDERS, value).apply()
+
+    /**
+     * Due dates already announced, as `"{billId}:{nextDueDateMillis}"` keys
+     * (see [com.xemmy.mmbank.domain.intelligence.BillReminders.reminderKey]).
+     * Pruned to live bills on each run.
+     */
+    var billRemindersSent: Set<String>
+        get() = prefs.getStringSet(KEY_BILL_REMINDERS_SENT, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_BILL_REMINDERS_SENT, value).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -344,5 +363,7 @@ class AppPreferences(context: Context) {
         const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
+        const val KEY_BILL_REMINDERS = "bill_reminders_enabled"
+        const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }
 }

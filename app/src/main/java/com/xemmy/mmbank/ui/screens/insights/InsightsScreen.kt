@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Savings
@@ -101,6 +102,7 @@ fun InsightsScreen(
     onOpenBudgets: () -> Unit = {},
     onOpenReport: () -> Unit = {},
     onOpenCopilot: () -> Unit = {},
+    onOpenBills: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -203,6 +205,14 @@ fun InsightsScreen(
                 title = "Subscriptions radar",
                 subtitle = "Detected recurring charges and renewal dates",
                 onClick = onOpenSubscriptions,
+            )
+        }
+        item(key = "bills_row") {
+            NavigationRow(
+                icon = Icons.Filled.Receipt,
+                title = "Upcoming bills",
+                subtitle = "Manually tracked bills, due dates and reminders",
+                onClick = onOpenBills,
             )
         }
         item(key = "goals_row") {

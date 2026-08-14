@@ -2,6 +2,8 @@ package com.xemmy.mmbank.data.local.entity
 
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.Bill
+import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -451,6 +453,38 @@ class EntityMappersTest {
         val roundTripped = original.toEntity().toDomain()
         assertEquals(original, roundTripped)
         assertTrue(roundTripped.dismissed)
+    }
+
+    @Test
+    fun `bill round-trip preserves a recurring cadence`() {
+        val original = Bill(
+            id = 10,
+            name = "Rent",
+            amount = BigDecimal("2500.00"),
+            currencyCode = "AED",
+            recurrence = BillRecurrence.MONTHLY,
+            nextDueDateMillis = 1_700_000_000_000,
+            createdAt = 1_690_000_000_000,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(BillRecurrence.MONTHLY, roundTripped.recurrence)
+    }
+
+    @Test
+    fun `bill round-trip preserves a null recurrence for a one-off bill`() {
+        val original = Bill(
+            id = 11,
+            name = "Tuition installment",
+            amount = BigDecimal("1200.00"),
+            currencyCode = "USD",
+            recurrence = null,
+            nextDueDateMillis = 1_700_000_000_000,
+            createdAt = 1_690_000_000_000,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.recurrence)
     }
 
     @Test

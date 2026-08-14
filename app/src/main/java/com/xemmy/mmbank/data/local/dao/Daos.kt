@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
+import com.xemmy.mmbank.data.local.entity.BillEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
@@ -426,6 +427,28 @@ interface SubscriptionDao {
 
     @Query("SELECT * FROM subscriptions")
     suspend fun getAll(): List<SubscriptionEntity>
+}
+
+@Dao
+interface BillDao {
+
+    @Insert
+    suspend fun insert(entity: BillEntity): Long
+
+    @Update
+    suspend fun update(entity: BillEntity)
+
+    @Query("SELECT * FROM bills ORDER BY nextDueDateMillis ASC")
+    fun observeAll(): Flow<List<BillEntity>>
+
+    @Query("SELECT * FROM bills WHERE id = :id")
+    suspend fun getById(id: Long): BillEntity?
+
+    @Query("UPDATE bills SET nextDueDateMillis = :nextDueDateMillis WHERE id = :id")
+    suspend fun updateNextDueDate(id: Long, nextDueDateMillis: Long)
+
+    @Query("DELETE FROM bills WHERE id = :id")
+    suspend fun delete(id: Long)
 }
 
 @Dao

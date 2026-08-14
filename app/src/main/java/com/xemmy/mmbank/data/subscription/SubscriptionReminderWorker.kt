@@ -11,12 +11,13 @@ import kotlinx.coroutines.flow.first
 /**
  * Opt-in daily check for subscriptions renewing in the next few days.
  *
- * One of two periodic work items MMbank ever schedules -- alongside
- * [com.xemmy.mmbank.data.retention.TransactionRetentionWorker] -- and it
- * exists behind a Settings toggle that defaults to off. The README sells "no
- * background polling" as a battery property, so this deliberately keeps that
- * promise intact: the tick does a single local DB read and touches no
- * network, and nothing is scheduled at all until the user asks for reminders.
+ * One of MMbank's periodic work items -- alongside
+ * [com.xemmy.mmbank.data.retention.TransactionRetentionWorker] and
+ * [com.xemmy.mmbank.data.bills.BillReminderWorker] -- and it exists behind a
+ * Settings toggle that defaults to off. The README sells "no background
+ * polling" as a battery property, so this deliberately keeps that promise
+ * intact: the tick does a single local DB read and touches no network, and
+ * nothing is scheduled at all until the user asks for reminders.
  *
  * Fails silently (`Result.success` with no side effect) on every non-fatal
  * condition, like [com.xemmy.mmbank.data.ai.AiParsingWorker] -- a missed

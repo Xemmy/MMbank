@@ -9,6 +9,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
+import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.CategoryDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.MerchantCategoryDao
@@ -20,6 +21,7 @@ import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
+import com.xemmy.mmbank.data.local.entity.BillEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
@@ -43,8 +45,9 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         MerchantCategoryMappingEntity::class,
         SubscriptionEntity::class,
         SavingsGoalEntity::class,
+        BillEntity::class,
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -61,6 +64,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantCategoryDao(): MerchantCategoryDao
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun savingsGoalDao(): SavingsGoalDao
+    abstract fun billDao(): BillDao
 
     companion object {
         /**
@@ -344,6 +348,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Manually tracked bills (rent, EMI, variable-amount utilities, or a
+         * one-off payment) -- see [com.xemmy.mmbank.domain.model.Bill]. Unlike
+         * `subscriptions`, never auto-detected, so there's no unique index on
+         * name.
+         */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `bills` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `amount` TEXT NOT NULL,
+                        `currencyCode` TEXT NOT NULL,
+                        `recurrence` TEXT,
+                        `nextDueDateMillis` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -373,6 +401,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
+                    MIGRATION_18_19,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

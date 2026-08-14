@@ -380,3 +380,24 @@ data class Subscription(
      */
     val previousAmount: BigDecimal? = null,
 )
+
+/** Recurrence rhythm for a manually tracked [Bill]; kept nullable on the bill itself for one-off entries. */
+enum class BillRecurrence(val nominalDays: Long) { WEEKLY(7L), MONTHLY(30L), YEARLY(365L) }
+
+/**
+ * A manually tracked bill (rent, EMI, a variable-amount utility, a one-off
+ * payment). Unlike [Subscription], never auto-detected from transaction
+ * history: these often don't repeat with the stable merchant name and <5%
+ * amount variance [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]
+ * requires, or have no transaction history at all yet.
+ */
+data class Bill(
+    val id: Long = 0,
+    val name: String,
+    val amount: BigDecimal,
+    val currencyCode: String,
+    /** Null means one-off -- marking it paid removes it rather than advancing the due date. */
+    val recurrence: BillRecurrence? = null,
+    val nextDueDateMillis: Long,
+    val createdAt: Long,
+)

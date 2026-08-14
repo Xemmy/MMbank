@@ -22,6 +22,8 @@ class MMBankApp : Application() {
         container.ensureSubscriptionReminderWork()
         // Same idempotent re-arm for the opt-in transaction-retention prune.
         container.ensureTransactionRetentionWork()
+        // Same idempotent re-arm for the opt-in bill due-date reminder.
+        container.ensureBillReminderWork()
         // Whole-app foreground/background transitions drive the opt-in app
         // lock (ProcessLifecycleOwner, unlike Activity onStop, doesn't fire
         // on rotation or intra-app navigation).

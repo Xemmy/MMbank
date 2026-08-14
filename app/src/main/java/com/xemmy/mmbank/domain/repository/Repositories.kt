@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.repository
 
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
@@ -153,6 +154,25 @@ interface SubscriptionRepository {
     /** Replaces the stored detection set with a fresh scan's results (one row per merchant). */
     suspend fun replaceAll(detected: List<Subscription>)
     suspend fun dismiss(id: Long)
+}
+
+/**
+ * Manually tracked bills -- see [Bill]. Unlike [SubscriptionRepository],
+ * every row here exists because the user added it, so there's full CRUD
+ * instead of a detection-scan replace.
+ */
+interface BillRepository {
+    /** All bills, soonest due first. */
+    fun observeAll(): Flow<List<Bill>>
+    /** Inserts a new bill (id = 0) or updates an existing one; returns its id. */
+    suspend fun save(bill: Bill): Long
+    /**
+     * Marks a bill paid: a recurring bill's due date advances one cycle
+     * (see [com.xemmy.mmbank.domain.intelligence.BillAdvancer]); a one-off
+     * bill is deleted instead of persisting a paid one-off forever.
+     */
+    suspend fun markPaid(billId: Long)
+    suspend fun delete(billId: Long)
 }
 
 /**

@@ -592,3 +592,118 @@ plans nothing.
   success`, `Check APK exists`, and `Upload Debug APK` all green. The
   non-gating Release APK build also succeeded.
 - `Final Status` (job `94760775195`) — conclusion `success`.
+
+---
+
+## Phase 6 — Upcoming Bills & Reminders
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 42`, `versionName = "0.29.0"`
+**Migration:** v18 -> v19, new `bills` table (see below)
+
+### Why
+
+`SubscriptionRadarEngine` already auto-detects recurring merchant charges
+(weekly/monthly cadence, amount within 5%), so a real gap existed only for
+what it structurally *can't* catch: rent, an EMI, a variable-amount utility
+bill, or anything with no transaction history yet (asked directly rather
+than assumed, since "loosen the detector" and "manual tracker" are
+different features with different failure modes). The user picked the
+manual tracker.
+
+### What changed
+
+**Domain**
+- `domain/model/Models.kt` — `Bill` (name, amount, currencyCode, nullable
+  `recurrence`, `nextDueDateMillis`, `createdAt`) and `BillRecurrence`
+  (WEEKLY/MONTHLY/YEARLY). Null `recurrence` means one-off.
+- `domain/intelligence/BillReminders.kt` (new) — pure, structurally
+  identical to `SubscriptionReminders`: dedupe-by-`"{id}:{nextDueDateMillis}"`
+  key, same "already overdue still reminds" stance, `pending`/`daysUntil`/`prune`.
+- `domain/intelligence/BillAdvancer.kt` (new) — pure. `advance(bill)` decides
+  what "mark paid" does: a recurring bill's due date moves forward exactly
+  one cycle *from its current due date*, not from today (mirrors how
+  `Subscription.nextDueDateMillis` projects from the last occurrence, not
+  "now" — a bill paid late lands overdue-again rather than silently caught
+  up, the same stance `BillReminders` takes). A one-off bill (`recurrence`
+  null) returns null; the repository deletes it instead of persisting a
+  paid one-off forever. There's no transaction signal to trust here the way
+  `SubscriptionRadarEngine` has one, so nothing advances a bill except the
+  user saying so.
+
+**Data**
+- `data/local/entity/Entities.kt` — `BillEntity` + `toDomain()`/`toEntity()`
+  mappers (round-tripped in `EntityMappersTest`, per this repo's convention
+  that every field added to model+entity gets a mapper test).
+- `data/local/dao/Daos.kt` — `BillDao`: full CRUD (`insert`/`update`/
+  `observeAll`/`getById`/`updateNextDueDate`/`delete`) rather than
+  `SubscriptionDao`'s upsert-by-merchant shape, since every row here exists
+  because the user added it, not because a scan detected it.
+- `data/local/AppDatabase.kt` — schema v18 -> v19, `MIGRATION_18_19` creates
+  `bills` (no unique index — unlike `subscriptions`, nothing here is
+  deduped by name).
+- `data/local/Converters.kt` — nullable `BillRecurrence` <-> TEXT converter.
+- `domain/repository/Repositories.kt` / `data/repository/SimpleRepositories.kt`
+  — `BillRepository` / `BillRepositoryImpl`. `markPaid(id)` defers entirely
+  to `BillAdvancer`: advance-and-update, or delete on a one-off.
+
+**Prefs / DI**
+- `data/prefs/AppPreferences.kt` — `billRemindersEnabled` (default off,
+  independent of `subscriptionRemindersEnabled` — a user may want one
+  stream but not the other) and `billRemindersSent`.
+- `data/bills/BillReminderWorker.kt` (new package) — daily `CoroutineWorker`,
+  structurally identical to `SubscriptionReminderWorker`. MMbank's **third**
+  periodic work item; every doc comment that enumerated the first two
+  (`AppContainer`, `AppPreferences`, `SettingsScreen`, the other two workers)
+  was updated to include this one rather than leaving a stale count.
+- `util/BillNotificationHelper.kt` (new) — mirrors
+  `SubscriptionNotificationHelper`; notification ID base `9300`, clear of
+  the budget (9001/9100+) and subscription (9200+) families.
+- `di/AppContainer.kt` — `billRepository`, `setBillRemindersEnabled` /
+  `ensureBillReminderWork` / `cancelBillReminderWork`, an exact mirror of
+  the subscription-reminder trio. Wired into `MMBankApp.onCreate`.
+
+**Cash flow**
+- `ui/screens/dashboard/DashboardViewModel.kt` — `computeFinancialHealth`'s
+  mandatory-bills reservation ahead of payday now sums active subscriptions
+  **and** manually tracked bills due in that window, each converted to the
+  base currency independently before summing (same per-currency-then-sum
+  order `CategoryBudgetCalculator` and the Phase 5 retention planner use).
+
+**UI**
+- `ui/screens/bills/BillsScreen.kt` (new) — list + add dialog (name, amount,
+  "due in N days", a recurrence dropdown defaulting to Monthly, or
+  one-off), a mark-paid and a delete action per row. Full CRUD in the
+  dialog rather than a date picker, matching `GoalsScreen`'s existing
+  minimal-input dialog style.
+- `ui/screens/insights/InsightsScreen.kt` — new "Upcoming bills" doorway row.
+- `ui/screens/settings/SettingsScreen.kt` — a "Bill due-date reminders"
+  toggle next to the existing subscription-reminders one in Preferences.
+- `ui/MainActivity.kt` / `ui/AppViewModelProvider.kt` — `bills` route,
+  `BillsViewModel` registered.
+
+### Tests
+
+`BillRemindersTest` (7), `BillAdvancerTest` (4) — mirroring
+`SubscriptionRemindersTest`'s cases (window in/out, overdue still reminds,
+dedupe re-arms on the next cycle, soonest-first ordering, `daysUntil`
+floors negative) plus `BillAdvancer`'s per-cadence advance and the one-off
+null case. Two new `EntityMappersTest` cases: a recurring bill round-trip
+and a one-off (null `recurrence`) round-trip.
+
+### Deferred
+
+- No due-date picker in the add dialog — "due in N days" avoids
+  `DatePickerDialog` complexity for a first cut; `GoalsScreen`'s own
+  `AddGoalDialog` skips a date picker for the same reason.
+- No per-bill reminder lead-time or snooze; the shared 3-day window and
+  the global on/off toggle are the only controls, matching
+  `SubscriptionReminders.DEFAULT_WINDOW_DAYS`.
+- `markPaid` has no undo. A recurring bill's due date can't be pushed back
+  without a "un-mark-paid" action, which doesn't exist yet.
+
+### CI verification
+
+Pending — will be recorded once the push is read from the Actions log
+rather than the checkmark, per this repo's standing rule that
+`continue-on-error` masks real test failures.

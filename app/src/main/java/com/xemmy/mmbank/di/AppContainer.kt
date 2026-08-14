@@ -14,6 +14,7 @@ import com.xemmy.mmbank.data.ai.AiParsingWorker
 import com.xemmy.mmbank.data.ai.LocalAiConfig
 import com.xemmy.mmbank.data.ai.LocalAiManager
 import com.xemmy.mmbank.data.backup.BackupManager
+import com.xemmy.mmbank.data.bills.BillReminderWorker
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.DatabaseEncryptionMigrator
 import com.xemmy.mmbank.data.local.SecureDatabaseFactory
@@ -24,6 +25,7 @@ import com.xemmy.mmbank.data.remote.binance.BinanceSigningInterceptor
 import com.xemmy.mmbank.data.remote.binance.BinanceWalletAssetsService
 import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
+import com.xemmy.mmbank.data.repository.BillRepositoryImpl
 import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
@@ -43,6 +45,7 @@ import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
 import com.xemmy.mmbank.domain.repository.AccountRepository
+import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
@@ -314,6 +317,9 @@ class AppContainer(context: Context) {
     }
     val savingsGoalRepository: SavingsGoalRepository by lazy {
         SavingsGoalRepositoryImpl(database.savingsGoalDao())
+    }
+    val billRepository: BillRepository by lazy {
+        BillRepositoryImpl(database.billDao())
     }
     /** Logic-only Spot/Funding/Earn per-asset fetcher (zero balances filtered). */
     val binanceWalletAssets: BinanceWalletAssetsService by lazy {
@@ -639,6 +645,39 @@ class AppContainer(context: Context) {
         runCatching {
             WorkManager.getInstance(appContext).cancelUniqueWork(SubscriptionReminderWorker.WORK_NAME)
         }.onFailure { recordError("AppContainer.cancelSubscriptionReminderWork", it) }
+    }
+
+    /**
+     * Turns the opt-in bill due-date reminder on or off, scheduling or
+     * cancelling one of the app's periodic work items (see
+     * [BillReminderWorker]). Independent of [setSubscriptionRemindersEnabled] --
+     * a user may want one reminder stream but not the other.
+     */
+    fun setBillRemindersEnabled(enabled: Boolean) {
+        preferences.billRemindersEnabled = enabled
+        if (enabled) ensureBillReminderWork() else cancelBillReminderWork()
+    }
+
+    /**
+     * Re-arms the daily bill reminder if it's enabled. Idempotent (unique
+     * work with KEEP), so calling it on every app start just confirms the
+     * existing schedule rather than resetting its period.
+     */
+    fun ensureBillReminderWork() {
+        if (!preferences.billRemindersEnabled) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                BillReminderWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<BillReminderWorker>(1, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureBillReminderWork", it) }
+    }
+
+    private fun cancelBillReminderWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(BillReminderWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelBillReminderWork", it) }
     }
 
     /**

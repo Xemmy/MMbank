@@ -330,11 +330,13 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.transactionRepository.observeTransactions(),
         container.subscriptionRepository.observeActive(),
         container.ratesRepository.observeRates(),
-    ) { ledger, transactions, subscriptions, rates ->
+        container.billRepository.observeAll(),
+    ) { ledger, transactions, subscriptions, rates, bills ->
         computeFinancialHealth(
             accounts = ledger.accounts,
             transactions = transactions,
             subscriptions = subscriptions,
+            bills = bills,
             rates = rates,
             baseCurrency = container.preferences.defaultCurrency,
             fixedMonthlyExpenses = container.preferences.fixedMonthlyExpenses,
@@ -862,9 +864,10 @@ private val LIQUID_ACCOUNT_TYPES = setOf(AccountType.CHECKING, AccountType.SAVIN
  * runway and net cash flow (see [FinancialHealthEngine]), plus a "safe to
  * spend until payday" forecast (see [CashFlowForecaster]) once a payday can
  * be determined (auto-detected recurring income, or [manualPaydayOfMonth]).
- * Mandatory bills reserved ahead of payday are the active, non-dismissed
- * subscriptions due in that window -- the app's only existing notion of a
- * recurring committed charge (see [com.xemmy.mmbank.domain.model.Subscription]).
+ * Mandatory bills reserved ahead of payday combine the active, non-dismissed
+ * subscriptions and the manually tracked [com.xemmy.mmbank.domain.model.Bill]s
+ * due in that window -- MMbank's two notions of a recurring committed charge,
+ * one auto-detected and one hand-entered.
  *
  * Pure and top-level so it's JVM-testable; [zone] and [today] are injectable
  * for determinism and default to the device values.
@@ -873,6 +876,7 @@ internal fun computeFinancialHealth(
     accounts: List<AccountRow>,
     transactions: List<Transaction>,
     subscriptions: List<com.xemmy.mmbank.domain.model.Subscription>,
+    bills: List<com.xemmy.mmbank.domain.model.Bill>,
     rates: List<ExchangeRate>,
     baseCurrency: String,
     fixedMonthlyExpenses: Double,
@@ -912,15 +916,23 @@ internal fun computeFinancialHealth(
     val pattern = CashFlowForecaster.detectIncomePattern(transactions, baseCurrency)
     val nextPayday = CashFlowForecaster.projectNextPayday(pattern, manualPaydayOfMonth, today, zone)
     val cashFlow = nextPayday?.let { payday ->
-        val billsDue = subscriptions
+        fun isDueBeforePayday(dueDateMillis: Long): Boolean {
+            val dueDate = Instant.ofEpochMilli(dueDateMillis).atZone(zone).toLocalDate()
+            return !dueDate.isBefore(today) && !dueDate.isAfter(payday)
+        }
+
+        val subscriptionsDue = subscriptions
             .filter { !it.dismissed }
-            .filter { sub ->
-                val dueDate = Instant.ofEpochMilli(sub.nextDueDateMillis).atZone(zone).toLocalDate()
-                !dueDate.isBefore(today) && !dueDate.isAfter(payday)
-            }
+            .filter { isDueBeforePayday(it.nextDueDateMillis) }
             .sumOf { sub ->
                 CurrencyMath.toBase(sub.averageAmount.toDouble(), sub.currencyCode, baseCurrency, ratesFromBase) ?: 0.0
             }
+        val billsDueManual = bills
+            .filter { isDueBeforePayday(it.nextDueDateMillis) }
+            .sumOf { bill ->
+                CurrencyMath.toBase(bill.amount.toDouble(), bill.currencyCode, baseCurrency, ratesFromBase) ?: 0.0
+            }
+        val billsDue = subscriptionsDue + billsDueManual
         CashFlowForecaster.computeSafeToSpend(
             currentLiquidBalance = java.math.BigDecimal.valueOf(liquidBalance),
             mandatoryBillsDueBeforePayday = java.math.BigDecimal.valueOf(billsDue),

@@ -10,11 +10,12 @@ import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
  * Opt-in weekly prune of old, unremarkable transaction history, per
  * [com.xemmy.mmbank.data.prefs.AppPreferences.transactionRetentionMonths].
  *
- * One of two periodic work items MMbank ever schedules -- alongside
- * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker] -- and, like
- * that one, only exists while its Settings toggle is on (default off): a
- * single local DB read/plan/delete, no network, nothing scheduled for anyone
- * who hasn't asked for it.
+ * One of MMbank's periodic work items -- alongside
+ * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker] and
+ * [com.xemmy.mmbank.data.bills.BillReminderWorker] -- and, like those, only
+ * exists while its Settings toggle is on (default off): a single local DB
+ * read/plan/delete, no network, nothing scheduled for anyone who hasn't
+ * asked for it.
  *
  * Deletion decisions are entirely [TransactionRetentionPlanner]'s (which in
  * turn defers "is this row worth keeping regardless of age" to

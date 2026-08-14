@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.local
 
 import androidx.room.TypeConverter
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.TransactionCategory
@@ -65,4 +66,11 @@ class Converters {
     @TypeConverter
     fun stringToCadence(value: String?): SubscriptionCadence? =
         value?.let { SubscriptionCadence.valueOf(it) }
+
+    @TypeConverter
+    fun billRecurrenceToString(value: BillRecurrence?): String? = value?.name
+
+    @TypeConverter
+    fun stringToBillRecurrence(value: String?): BillRecurrence? =
+        value?.let { BillRecurrence.valueOf(it) }
 }

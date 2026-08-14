@@ -112,6 +112,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     )
     var subscriptionRemindersEnabled by mutableStateOf(container.preferences.subscriptionRemindersEnabled)
         private set
+    var billRemindersEnabled by mutableStateOf(container.preferences.billRemindersEnabled)
+        private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
@@ -328,6 +330,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             "Renewal reminders on — checked once a day."
         } else {
             "Renewal reminders off."
+        }
+    }
+
+    /**
+     * Schedules or cancels one of the app's periodic work items, independent
+     * of [updateSubscriptionReminders] -- see
+     * [com.xemmy.mmbank.data.bills.BillReminderWorker].
+     */
+    fun updateBillReminders(enabled: Boolean) {
+        container.setBillRemindersEnabled(enabled)
+        billRemindersEnabled = enabled
+        statusMessage = if (enabled) {
+            "Bill reminders on — checked once a day."
+        } else {
+            "Bill reminders off."
         }
     }
 
@@ -1083,6 +1100,26 @@ fun PreferencesSettingsScreen(
             Switch(
                 checked = viewModel.subscriptionRemindersEnabled,
                 onCheckedChange = viewModel::updateSubscriptionReminders,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Bill due-date reminders", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Notifies you a few days before a manually tracked bill is due. Checks once a " +
+                        "day on-device with no network use, and stays off unless you want it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.billRemindersEnabled,
+                onCheckedChange = viewModel::updateBillReminders,
             )
         }
 
