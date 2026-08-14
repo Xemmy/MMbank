@@ -308,4 +308,30 @@ the `ALTER TABLE`s, and `app/schemas/` still isn't committed.
 
 ### CI verification
 
-_Pending._
+**First run failed, and the failure was a real bug.** Run `31768756725`, job
+`94670053305`:
+
+```
+MonthlyReportHtmlFormatterTest > ampersands in names are escaped FAILED
+    java.lang.AssertionError at MonthlyReportHtmlFormatterTest.kt:77
+666 tests completed, 1 failed
+BUILD FAILED in 2m 35s
+> Task :app:testDebugUnitTest FAILED
+```
+
+Note the trap this is the textbook case of: the **job's conclusion was
+`success`** and the workflow was green, because the step is
+`continue-on-error: true`. Only the log says otherwise. Nothing here would have
+been noticed by trusting the check mark.
+
+The cause: `appendCategories` builds its own `<span>` markup, so it renders
+through `appendRow`'s `rawLabel` path, which skips escaping — and the category
+name was interpolated raw. Merchants, subscriptions and goals escaped
+correctly, so the `<script>` test passed while the category path stayed open.
+Fixed in `959f74f` by escaping the name, plus markup tests on all three
+remaining `rawLabel` paths so the next row to grow a `<span>` can't quietly
+reintroduce it. Formatter test count 12 → 15.
+
+`assembleDebug` passed in the first run regardless (attempt 1, no retries) —
+the bug was behavioral, not a compile error, which is precisely why the
+compile-only signal was not enough.
