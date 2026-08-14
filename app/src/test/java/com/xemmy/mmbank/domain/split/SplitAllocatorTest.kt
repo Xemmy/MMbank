@@ -56,7 +56,7 @@ class SplitAllocatorTest {
 
     @Test
     fun `empty exact amounts are rejected`() {
-        assertNull(SplitAllocator.splitByExactAmounts(BigDecimal("50.00"), emptyMap()))
+        assertNull(SplitAllocator.splitByExactAmounts(BigDecimal("50.00"), emptyMap<String, BigDecimal>()))
     }
 
     // -- splitByPercentages --------------------------------------------------
