@@ -85,7 +85,13 @@ object MonthlyReportHtmlFormatter {
         append("<h2>Where it went</h2>\n<table>\n")
         report.topCategories.forEach { line ->
             val share = (line.shareOfSpend * 100).roundToWhole()
-            appendRow("${line.name} <span class=\"muted\">$share%</span>", money(line.amount, report.currency), rawLabel = true)
+            // escape() is mandatory on every rawLabel path: a custom category
+            // name is user-supplied text going into markup.
+            appendRow(
+                "${escape(line.name)} <span class=\"muted\">$share%</span>",
+                money(line.amount, report.currency),
+                rawLabel = true,
+            )
         }
         append("</table>\n")
     }

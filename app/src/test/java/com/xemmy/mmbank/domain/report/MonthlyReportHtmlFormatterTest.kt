@@ -70,6 +70,56 @@ class MonthlyReportHtmlFormatterTest {
     }
 
     @Test
+    fun `a category name containing markup cannot break out either`() {
+        // Regression: the category row builds its own <span> markup, so it
+        // renders with rawLabel=true -- which originally meant the name itself
+        // went in unescaped, while merchants were escaped correctly.
+        val html = MonthlyReportHtmlFormatter.format(
+            report(categories = listOf(ReportCategoryLine("<script>alert('x')</script>", BigDecimal("10.00"), 0.5)))
+        )
+        assertFalse("raw script tag must not survive in a category row", html.contains("<script>"))
+        assertTrue(html.contains("&lt;script&gt;"))
+    }
+
+    @Test
+    fun `a goal title containing markup cannot break out`() {
+        val html = MonthlyReportHtmlFormatter.format(
+            report(
+                goals = listOf(
+                    SavingsGoal(
+                        id = 1,
+                        title = "<script>alert('x')</script>",
+                        targetAmount = BigDecimal("100"),
+                        currentAmount = BigDecimal("50"),
+                    )
+                )
+            )
+        )
+        assertFalse(html.contains("<script>"))
+    }
+
+    @Test
+    fun `a subscription merchant containing markup cannot break out`() {
+        val html = MonthlyReportHtmlFormatter.format(
+            report(
+                subscriptions = listOf(
+                    Subscription(
+                        id = 1,
+                        merchant = "<script>alert('x')</script>",
+                        averageAmount = BigDecimal("10.00"),
+                        currencyCode = "AED",
+                        cadence = SubscriptionCadence.MONTHLY,
+                        nextDueDateMillis = 0,
+                        lastSeenMillis = 0,
+                        occurrenceCount = 3,
+                    )
+                )
+            )
+        )
+        assertFalse(html.contains("<script>"))
+    }
+
+    @Test
     fun `ampersands in names are escaped`() {
         val html = MonthlyReportHtmlFormatter.format(
             report(categories = listOf(ReportCategoryLine("Bed & Bath", BigDecimal("10.00"), 0.5)))
