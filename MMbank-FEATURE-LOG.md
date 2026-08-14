@@ -466,7 +466,7 @@ was changed — worth recognizing rather than "fixing" next time.
 
 ## Phase 5 — Transaction retention prune (completing phase-ai-c)
 
-**Status:** landed, CI pending
+**Status:** landed, CI green
 **Version:** `versionCode = 41`, `versionName = "0.28.0"`
 **Migration:** none — deletes existing rows, adds no columns
 
@@ -564,6 +564,23 @@ plans nothing.
 
 ### CI verification
 
-Pending — will be recorded once the push is read from the Actions log
-rather than the checkmark, per this repo's standing rule that
-`continue-on-error` masks real test failures.
+**Verified green on `fb82f91`.** Run `31797861274`:
+
+- `Lint & Unit Tests` (job `94758822561`) — conclusion `success`. Read the
+  "Run unit tests" step log directly rather than trusting the checkmark
+  (this step has `continue-on-error: true`):
+  ```
+  > Task :app:testDebugUnitTest
+  BUILD SUCCESSFUL in 3m 14s
+  25 actionable tasks: 25 executed
+  ```
+  No `N tests completed, N failed` line — per this file's established
+  convention (see Phase 3), Gradle only prints that summary when something
+  fails, so its absence is the pass signal, including the 10 new
+  `TransactionRetentionPlannerTest` cases and the two updated repository
+  test doubles.
+- `Build APK (with retries)` (job `94759566788`) — conclusion `success`.
+  Debug APK built on **attempt 1**, no retries needed; `Verify build
+  success`, `Check APK exists`, and `Upload Debug APK` all green. The
+  non-gating Release APK build also succeeded.
+- `Final Status` (job `94760775195`) — conclusion `success`.
