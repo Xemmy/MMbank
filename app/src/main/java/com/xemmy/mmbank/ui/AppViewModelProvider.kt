@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.ui.screens.accounts.AccountsViewModel
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsViewModel
+import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetsViewModel
 import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
@@ -37,6 +38,7 @@ object AppViewModelProvider {
         initializer { GoalsViewModel(mmBankApp().container) }
         initializer { CopilotChatViewModel(mmBankApp().container) }
         initializer { ReviewViewModel(mmBankApp().container) }
+        initializer { CategoryBudgetsViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

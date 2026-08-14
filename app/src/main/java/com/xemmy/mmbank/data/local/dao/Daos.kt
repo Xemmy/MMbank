@@ -184,6 +184,27 @@ interface TransactionDao {
     suspend fun sumDebitsInRange(currencyCode: String, startMillis: Long, endMillis: Long): Double
 
     /**
+     * Same total as [sumDebitsInRange] but scoped to one dynamic category --
+     * feeds [com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator]'s
+     * post-insert cap check. A targeted aggregate rather than loading the
+     * month's rows, since this runs on the capture path for every debit.
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(CAST(amount AS REAL)), 0.0) FROM transactions
+        WHERE isDemo = 0 AND excludeFromStats = 0 AND direction = 'DEBIT' AND currencyCode = :currencyCode
+          AND categoryId = :categoryId
+          AND timestamp >= :startMillis AND timestamp < :endMillis
+        """
+    )
+    suspend fun sumDebitsInRangeForCategory(
+        currencyCode: String,
+        categoryId: Long,
+        startMillis: Long,
+        endMillis: Long,
+    ): Double
+
+    /**
      * Still-unlinked, opposite-direction, same amount+currency real rows
      * within a broad time bound, for [com.xemmy.mmbank.domain.usecase.TransferMatcher]
      * to narrow down to a final counterpart. `linkedTransactionId IS NULL`

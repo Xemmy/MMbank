@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DatePickerDialog
@@ -57,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.DonutChart
+import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetSummaryCard
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardDateRange
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
@@ -95,6 +97,7 @@ fun InsightsScreen(
     onOpenSubscriptions: () -> Unit = {},
     onOpenAnalytics: () -> Unit = {},
     onOpenGoals: () -> Unit = {},
+    onOpenBudgets: () -> Unit = {},
     onOpenCopilot: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
@@ -163,6 +166,9 @@ fun InsightsScreen(
 
         item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
 
+        // Renders nothing until at least one category carries a monthly cap.
+        item(key = "category_budgets_card") { CategoryBudgetSummaryCard(onOpenBudgets = onOpenBudgets) }
+
         if (hasData) {
             item(key = "cashflow_card") { CashFlowCard(state) }
             if (state.stats.categorySlices.isNotEmpty()) {
@@ -203,6 +209,14 @@ fun InsightsScreen(
                 title = "Savings goals",
                 subtitle = "Progress bars, debt payoff and surplus allocation",
                 onClick = onOpenGoals,
+            )
+        }
+        item(key = "budgets_row") {
+            NavigationRow(
+                icon = Icons.Outlined.PieChart,
+                title = "Category budgets",
+                subtitle = "Monthly caps per category, with alerts at 80% and 100%",
+                onClick = onOpenBudgets,
             )
         }
         item(key = "copilot_row") {

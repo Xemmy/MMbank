@@ -253,6 +253,20 @@ class AppPreferences(context: Context) {
         get() = prefs.getInt(KEY_PAYCHECK_DAY_OF_MONTH, 0)
         set(value) = prefs.edit().putInt(KEY_PAYCHECK_DAY_OF_MONTH, value.coerceIn(0, 31)).apply()
 
+    /**
+     * Category-cap alerts already announced, as
+     * `"{categoryId}:{yyyy-MM}:{NEAR|OVER}"` keys (see
+     * [com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator.alertKey]) --
+     * so each threshold notifies once per category per month instead of on
+     * every transaction that keeps it over the line.
+     *
+     * Keys carry their own month, so a new month alerts again with no reset
+     * job. Old months are pruned on write to stop the set growing forever.
+     */
+    var categoryBudgetAlerts: Set<String>
+        get() = prefs.getStringSet(KEY_CATEGORY_BUDGET_ALERTS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_CATEGORY_BUDGET_ALERTS, value).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -287,5 +301,6 @@ class AppPreferences(context: Context) {
         const val KEY_DESIGN_MODE = "design_mode"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
         const val KEY_BACKGROUND_PRESET = "background_preset"
+        const val KEY_CATEGORY_BUDGET_ALERTS = "category_budget_alerts"
     }
 }

@@ -31,6 +31,7 @@ import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.SubscriptionRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
@@ -57,6 +58,7 @@ import com.xemmy.mmbank.domain.parser.CompiledRuleCache
 import com.xemmy.mmbank.domain.usecase.BulkUpdateTransactionsUseCase
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import com.xemmy.mmbank.util.BudgetNotificationHelper
+import com.xemmy.mmbank.util.CategoryBudgetNotificationHelper
 import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -282,7 +284,10 @@ class AppContainer(context: Context) {
             demoMode = demoModeEnabled,
             defaultPersonProvider = { preferences.defaultPerson },
             categoryRepository = categoryRepository,
-            onTransactionRecorded = ::checkDailyBudgetPacing,
+            onTransactionRecorded = { transaction ->
+                checkDailyBudgetPacing(transaction)
+                checkCategoryBudget(transaction)
+            },
         )
     }
     val accountRepository: AccountRepository by lazy {
@@ -519,6 +524,52 @@ class AppContainer(context: Context) {
                     BudgetNotificationHelper.postOverspendAlert(appContext, transaction, result)
                 }
             }.onFailure { recordError("AppContainer.checkDailyBudgetPacing", it) }
+        }
+    }
+
+    /**
+     * Per-category cap check (see [CategoryBudgetCalculator]): after a real,
+     * categorized debit is recorded, compares that category's month-to-date
+     * spend against its [com.xemmy.mmbank.domain.model.Category.monthlyCap] and
+     * notifies the first time it reaches 80% and again the first time it passes
+     * 100%. A no-op for uncategorized rows or categories with no cap.
+     *
+     * Independent of [checkDailyBudgetPacing]: that one paces total
+     * discretionary spend per day, this one guards one category's monthly
+     * envelope. Both hang off the same post-insert hook and both are
+     * fire-and-forget -- neither may affect the ingest result.
+     */
+    private fun checkCategoryBudget(transaction: Transaction) {
+        if (transaction.direction != TransactionDirection.DEBIT || transaction.excludeFromStats) return
+        val categoryId = transaction.categoryId ?: return
+
+        applicationScope.launch {
+            runCatching {
+                val category = categoryRepository.getById(categoryId) ?: return@runCatching
+                if (category.monthlyCap == null) return@runCatching
+
+                val zone = ZoneId.systemDefault()
+                val day = Instant.ofEpochMilli(transaction.timestampMillis).atZone(zone).toLocalDate()
+                val monthStart = day.withDayOfMonth(1)
+                val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+                val endMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+                val spent = database.transactionDao()
+                    .sumDebitsInRangeForCategory(transaction.currencyCode, categoryId, startMillis, endMillis)
+                    .toBigDecimal()
+
+                val status = CategoryBudgetCalculator.statusFor(category, spent) ?: return@runCatching
+                // Locale.US explicitly: the default locale would render these
+                // digits Arabic-Indic on an Arabic device, so the same month
+                // would key differently depending on system language.
+                val monthKey = String.format(Locale.US, "%04d-%02d", monthStart.year, monthStart.monthValue)
+                val alerted = preferences.categoryBudgetAlerts
+                val key = CategoryBudgetCalculator.pendingAlert(status, monthKey, alerted) ?: return@runCatching
+
+                // Keep only this month's keys, so the set can't grow without bound.
+                preferences.categoryBudgetAlerts = alerted.filterTo(mutableSetOf()) { it.contains(":$monthKey:") } + key
+                CategoryBudgetNotificationHelper.postCapAlert(appContext, status, transaction.currencyCode)
+            }.onFailure { recordError("AppContainer.checkCategoryBudget", it) }
         }
     }
 
