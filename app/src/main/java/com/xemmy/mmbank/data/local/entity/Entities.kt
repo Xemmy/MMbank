@@ -124,6 +124,8 @@ data class CategoryEntity(
     val colorHex: String,
     val isCustom: Boolean = false,
     val monthlyCap: BigDecimal? = null,
+    /** Parent category id, for a two-level hierarchy; null = top-level. */
+    val parentCategoryId: Long? = null,
 )
 
 @Entity(
@@ -284,8 +286,8 @@ fun Transaction.toEntity() = TransactionEntity(
     aiConfidence = aiConfidence,
 )
 
-fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap)
-fun Category.toEntity() = CategoryEntity(id, name, icon, colorHex, isCustom, monthlyCap)
+fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)
+fun Category.toEntity() = CategoryEntity(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)
 
 fun MerchantCategoryMappingEntity.toDomain() = MerchantCategoryMapping(
     id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,

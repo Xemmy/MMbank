@@ -17,6 +17,13 @@ data class Category(
     val isCustom: Boolean = false,
     /** Optional monthly spend cap in the transaction's currency; null = no cap. */
     val monthlyCap: BigDecimal? = null,
+    /**
+     * Parent category, for a two-level hierarchy (e.g. "Dining" under "Food").
+     * A parent's [com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator] status
+     * rolls up its children's spend on top of its own, so its cap reads as a
+     * combined budget. Null = a top-level category.
+     */
+    val parentCategoryId: Long? = null,
 )
 
 /**

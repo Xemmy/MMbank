@@ -47,10 +47,12 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.intelligence.GoalForecaster
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.screens.dashboard.computeDashboardStats
 import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.asMoney
 import java.math.BigDecimal
@@ -70,6 +72,8 @@ data class GoalsUiState(
     val currency: String = "USD",
     /** This month's net surplus (income - expenses) so far, floored at zero -- feeds "Auto-Allocate Surplus". */
     val monthSurplus: Double = 0.0,
+    /** Months-to-target projection per goal id, paced by the ledger's recent average monthly net savings. */
+    val forecastByGoalId: Map<Long, GoalForecaster.Forecast> = emptyMap(),
 )
 
 class GoalsViewModel(private val container: AppContainer) : ViewModel() {
@@ -97,7 +101,18 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
         val income = monthTx.filter { it.direction == TransactionDirection.CREDIT }.sumOf { inBase(it) ?: 0.0 }
         val expenses = monthTx.filter { it.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
 
-        GoalsUiState(goals = goals, currency = base, monthSurplus = (income - expenses).coerceAtLeast(0.0))
+        val avgMonthlyNet = computeDashboardStats(transactions, rates, base).avgMonthlyNet
+        val nowMillis = System.currentTimeMillis()
+        val forecastByGoalId = goals.associate { goal ->
+            goal.id to GoalForecaster.forecast(goal, BigDecimal.valueOf(avgMonthlyNet), nowMillis)
+        }
+
+        GoalsUiState(
+            goals = goals,
+            currency = base,
+            monthSurplus = (income - expenses).coerceAtLeast(0.0),
+            forecastByGoalId = forecastByGoalId,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GoalsUiState())
 
     fun addGoal(title: String, targetAmount: BigDecimal, icon: String, targetDateMillis: Long?) {
@@ -204,7 +219,12 @@ fun GoalsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(state.goals, key = { it.id }) { goal ->
-                        GoalRow(goal, state.currency, onArchive = { viewModel.archive(goal.id) })
+                        GoalRow(
+                            goal,
+                            state.currency,
+                            forecast = state.forecastByGoalId[goal.id],
+                            onArchive = { viewModel.archive(goal.id) },
+                        )
                     }
                 }
             }
@@ -237,7 +257,7 @@ fun GoalsScreen(
 }
 
 @Composable
-private fun GoalRow(goal: SavingsGoal, currency: String, onArchive: () -> Unit) {
+private fun GoalRow(goal: SavingsGoal, currency: String, forecast: GoalForecaster.Forecast?, onArchive: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -276,7 +296,21 @@ private fun GoalRow(goal: SavingsGoal, currency: String, onArchive: () -> Unit) 
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
+            forecastText(forecast)?.let { text ->
+                Spacer(Modifier.height(4.dp))
+                Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+    }
+}
+
+/** Human summary of a [GoalForecaster.Forecast], or null when there's nothing worth showing yet. */
+private fun forecastText(forecast: GoalForecaster.Forecast?): String? {
+    val months = forecast?.monthsToTarget ?: return null
+    return when {
+        months <= 0 -> "Target reached"
+        months == 1 -> "~1 month to go at your current savings pace"
+        else -> "~$months months to go at your current savings pace"
     }
 }
 

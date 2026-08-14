@@ -47,7 +47,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         SavingsGoalEntity::class,
         BillEntity::class,
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -372,6 +372,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v19 -> v20: two-level category hierarchy (e.g. "Dining" under
+         * "Food"), so a parent's [com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator]
+         * status can roll up its children's spend -- see [com.xemmy.mmbank.domain.model.Category.parentCategoryId].
+         */
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE categories ADD COLUMN parentCategoryId INTEGER")
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -401,7 +412,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-                    MIGRATION_18_19,
+                    MIGRATION_18_19, MIGRATION_19_20,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

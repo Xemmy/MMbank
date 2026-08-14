@@ -367,6 +367,28 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `category round-trip preserves a parentCategoryId`() {
+        val original = Category(
+            id = 5,
+            name = "Dining",
+            icon = "🍽️",
+            colorHex = "#FF7043",
+            parentCategoryId = 4,
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(4L, roundTripped.parentCategoryId)
+    }
+
+    @Test
+    fun `category round-trip preserves a null parentCategoryId for a top-level category`() {
+        val original = Category(id = 4, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertNull(roundTripped.parentCategoryId)
+    }
+
+    @Test
     fun `merchant category mapping round-trip preserves a confirmed exact-match mapping`() {
         val original = MerchantCategoryMapping(
             id = 1,

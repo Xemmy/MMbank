@@ -99,6 +99,38 @@ object CategoryBudgetCalculator {
             .sortedByDescending { it.fraction }
 
     /**
+     * [directSpendByCategoryId] with every parent's total widened to include
+     * its children's spend, so a parent category's cap reads as a combined
+     * budget for itself and everything filed under it (a child keeps its own
+     * unrolled total for its own status).
+     *
+     * Guards against a cycle (a category set as its own ancestor) by never
+     * revisiting a category already on the current path -- that category's
+     * contribution through the cycle is simply zero rather than an infinite
+     * recursion.
+     */
+    fun rollUpSpend(
+        categories: List<Category>,
+        directSpendByCategoryId: Map<Long, BigDecimal>,
+    ): Map<Long, BigDecimal> {
+        val childrenOf = categories.filter { it.parentCategoryId != null }.groupBy { it.parentCategoryId }
+        val memo = mutableMapOf<Long, BigDecimal>()
+
+        fun total(category: Category, path: Set<Long>): BigDecimal {
+            memo[category.id]?.let { return it }
+            if (category.id in path) return BigDecimal.ZERO
+            val own = directSpendByCategoryId[category.id] ?: BigDecimal.ZERO
+            val childrenTotal = childrenOf[category.id].orEmpty()
+                .fold(BigDecimal.ZERO) { acc, child -> acc + total(child, path + category.id) }
+            val result = own + childrenTotal
+            memo[category.id] = result
+            return result
+        }
+
+        return categories.associate { it.id to total(it, emptySet()) }
+    }
+
+    /**
      * Identity of one alert, so each threshold notifies once per category per
      * month instead of on every transaction that keeps it over the line.
      * Scoped by month so a new month starts clean without any reset job.

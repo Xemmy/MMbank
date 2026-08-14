@@ -744,3 +744,120 @@ file's standing rule exists for. Fixed and pushed as `b287662`.
   success`, `Check APK exists`, and `Upload Debug APK` all green. The
   non-gating Release APK build also succeeded.
 - `Final Status` (job `94813121143`) — conclusion `success`.
+
+## Phase 7 — Monarch budgeting: category hierarchy, goal forecasting, 1Y chart filter
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 43`, `versionName = "0.30.0"`
+**Migration:** v19 -> v20, `categories.parentCategoryId` column (see below)
+
+### Why
+
+A broad spec asked for a Monarch-style budgeting/forecasting layer plus a
+from-scratch Splitwise-style group-expense system in one pass, on top of a
+bottom-nav restructure. Surveyed the existing code first rather than
+guessing: category budgets were already flat single-cap-per-category
+(`CategoryBudgetCalculator`), `SavingsGoal` had no months-to-target
+projection, the Insights chart already had a working date-filter row
+(This month/3mo/6mo/YTD/All) just missing a trailing-12-months option, and
+the group/split/IOU/debt/P2P-detection track had zero existing code
+anywhere in the tree. Given the size, asked the user to pick a first slice
+rather than attempting both tracks (and the nav restructure) at once; they
+picked the Monarch track, with new screens reached as sub-screens (mirroring
+how Goals and Bills are already reached from Insights) rather than an
+immediate tab-bar change.
+
+### What changed
+
+**Domain**
+- `domain/model/Category.kt` — `Category` gained `parentCategoryId: Long? =
+  null`, for a two-level hierarchy (e.g. "Dining" filed under "Food"). Null
+  stays a top-level category, so every existing category is unaffected.
+- `domain/budget/CategoryBudgetCalculator.kt` — `rollUpSpend(categories,
+  directSpendByCategoryId)`: widens each parent's total to include its
+  children's spend (a child keeps its own unrolled total for its own
+  status), so a parent's `monthlyCap` reads as a combined budget for itself
+  and everything filed under it. Memoized DFS with a per-path cycle guard —
+  a category on its own current recursion path contributes zero rather than
+  recursing forever, since the pure function must stay safe even though the
+  Edit-category UI already blocks creating a direct 2-cycle through its
+  `candidateParents` filter.
+- `domain/intelligence/GoalForecaster.kt` (new) — pure. `forecast(goal,
+  averageMonthlyNetSavings, nowMillis)` rounds the remaining amount up to
+  whole months at the given pace; an already-reached goal reports zero
+  months due now, a non-positive average (spending at or above earnings, on
+  average) reports an unknown projection (null/null) rather than an
+  infinite or negative one. Deliberately takes the average as a parameter
+  instead of recomputing it from transactions — `computeDashboardStats`
+  already derives "average net flow of the last up-to-3 completed months
+  with activity" (`DashboardStats.avgMonthlyNet`) for the Dashboard, and
+  since that function is `internal` (module-visible, not file-scoped),
+  `GoalsViewModel` reuses it directly rather than duplicating the
+  history-averaging logic a second time.
+- `ui/screens/dashboard/DashboardViewModel.kt` — `DashboardDateRange` gained
+  `Last12Months`; `resolveDashboardWindow`/`dashboardPeriodLabel` handle it
+  (this month and the eleven before it, "Last 12 months").
+
+**Data**
+- `data/local/entity/Entities.kt` — `CategoryEntity` gained
+  `parentCategoryId: Long? = null`; `toDomain()`/`toEntity()` updated
+  (round-tripped in `EntityMappersTest`, both a non-null and a null case).
+- `data/local/AppDatabase.kt` — schema v19 -> v20, `MIGRATION_19_20` adds
+  `categories.parentCategoryId INTEGER` via `ALTER TABLE`.
+
+**UI**
+- `ui/screens/budgets/CategoryBudgetsScreen.kt` — `CategoryBudgetsViewModel`
+  now rolls up spend before computing statuses (`rollUpSpend` between
+  `monthToDateByCategory` and `statuses`); `CategoryBudgetsUiState` carries
+  the full category list so rows can resolve a parent's name and the edit
+  dialog can offer a parent picker. `EditCategoryDialog` gained a
+  dropdown (mirroring `BillsScreen`'s recurrence-picker pattern: a
+  clickable `Card` + `DropdownMenu`) restricted to `candidateParents` —
+  every category except itself and any category that already has it as a
+  parent, which is what keeps a direct 2-cycle from being created through
+  this screen. A row with a parent shows "Under {parent}" beneath its name.
+- `ui/screens/goals/GoalsScreen.kt` — `GoalsUiState` gained
+  `forecastByGoalId`; `GoalsViewModel`'s combine block computes
+  `computeDashboardStats(...).avgMonthlyNet` and forecasts every visible
+  goal from it. `GoalRow` shows "~N months to go at your current savings
+  pace" (or "Target reached", or nothing when the pace can't project).
+- `ui/screens/insights/InsightsScreen.kt` — `DateRangeFilterRow` gained a
+  "1Y" chip for `Last12Months`, alongside the existing This month/3mo/6mo/
+  YTD/All chips (additive — none of the existing presets changed or moved).
+
+### Tests
+
+- `CategoryBudgetCalculatorTest` — 4 new `rollUpSpend` cases: a parent's
+  total includes a child's direct spend; a child's own total is unaffected
+  by siblings or its parent; a childless top-level category just reports
+  its own spend; a parent cycle terminates (asserts termination and
+  non-negative results, not specific numbers -- a genuine cycle's exact
+  split depends on iteration/memoization order, which is not a contract
+  worth pinning down for a state the UI itself prevents).
+- `GoalForecasterTest` — 7 cases: already-reached and past-target goals are
+  both due now at zero months; an exact multiple of the average needs no
+  rounding; a remainder rounds up (not truncates); zero and negative
+  averages both refuse to project; a sub-one-month remaining gap still
+  reports at least one month, never zero.
+- `DashboardViewModelTest` (`DashboardDateRangeTest`) — `Last12Months`
+  spans this month and the eleven before it; its label is "Last 12 months".
+- `EntityMappersTest` — two new `Category` round-trip cases: a non-null
+  `parentCategoryId`, and a null one for a top-level category.
+
+### Deferred
+
+- Category hierarchy is two levels only (no grandparents) — matches the
+  spec's "parent/child" phrasing without building arbitrary-depth nesting
+  nothing in the UI would exercise yet.
+- No bulk "move all transactions from a deleted parent's children" tool;
+  deleting a category (parent or child) already just un-categorizes its own
+  transactions, unchanged from existing behavior.
+- Splitwise-style group expense splitting (Group/Friend/TransactionSplit,
+  split-allocation engine, debt simplification, P2P auto-settlement
+  matching) and the bottom-nav restructure to Home/Plan & Budget/Splits &
+  Groups/Activity/Settings are both still fully unbuilt — deliberately
+  scoped out of this phase, not forgotten.
+
+### CI verification
+
+Pending — push and check `test-build.yml` on this commit.

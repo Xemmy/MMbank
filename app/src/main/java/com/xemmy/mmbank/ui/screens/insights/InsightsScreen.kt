@@ -300,6 +300,7 @@ private fun DateRangeFilterRow(selected: DashboardDateRange, onSelect: (Dashboar
         "3mo" to DashboardDateRange.Last3Months,
         "6mo" to DashboardDateRange.Last6Months,
         "YTD" to DashboardDateRange.YearToDate,
+        "1Y" to DashboardDateRange.Last12Months,
         "All" to DashboardDateRange.AllTime,
     )
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

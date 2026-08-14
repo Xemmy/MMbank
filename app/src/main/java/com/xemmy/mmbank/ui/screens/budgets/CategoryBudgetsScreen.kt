@@ -1,6 +1,8 @@
 package com.xemmy.mmbank.ui.screens.budgets
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,9 +17,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,6 +74,8 @@ data class CategoryBudgetsUiState(
     /** Categories with no cap set — listed below so a cap can be added to them. */
     val uncapped: List<Category> = emptyList(),
     val currency: String = "USD",
+    /** Every category, for the parent picker and for resolving a status row's parent name. */
+    val categories: List<Category> = emptyList(),
 )
 
 class CategoryBudgetsViewModel(private val container: AppContainer) : ViewModel() {
@@ -82,21 +90,34 @@ class CategoryBudgetsViewModel(private val container: AppContainer) : ViewModel(
         val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
         val endMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
-        val spend = CategoryBudgetCalculator.monthToDateByCategory(
+        val directSpend = CategoryBudgetCalculator.monthToDateByCategory(
             transactions = transactions,
             currencyCode = currency,
             startMillis = startMillis,
             endMillisExclusive = endMillis,
         )
+        val rolledUpSpend = CategoryBudgetCalculator.rollUpSpend(categories, directSpend)
         CategoryBudgetsUiState(
-            statuses = CategoryBudgetCalculator.statuses(categories, spend),
+            statuses = CategoryBudgetCalculator.statuses(categories, rolledUpSpend),
             uncapped = categories.filter { (it.monthlyCap?.signum() ?: 0) <= 0 },
             currency = currency,
+            categories = categories,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoryBudgetsUiState())
 
-    /** Saves an edited category — name, icon, color and monthly cap. A null [monthlyCap] clears the budget. */
-    fun save(category: Category, name: String, icon: String, colorHex: String, monthlyCap: BigDecimal?) {
+    /**
+     * Saves an edited category — name, icon, color, monthly cap and parent.
+     * A null [monthlyCap] clears the budget; a null [parentCategoryId] makes
+     * it top-level.
+     */
+    fun save(
+        category: Category,
+        name: String,
+        icon: String,
+        colorHex: String,
+        monthlyCap: BigDecimal?,
+        parentCategoryId: Long?,
+    ) {
         val clean = name.trim()
         if (clean.isEmpty()) return
         viewModelScope.launch {
@@ -107,6 +128,7 @@ class CategoryBudgetsViewModel(private val container: AppContainer) : ViewModel(
                         icon = icon.trim().ifBlank { category.icon },
                         colorHex = colorHex.trim().ifBlank { category.colorHex },
                         monthlyCap = monthlyCap?.takeIf { it.signum() > 0 },
+                        parentCategoryId = parentCategoryId,
                     )
                 )
             }.onFailure { container.recordError("CategoryBudgetsViewModel.save", it) }
@@ -174,6 +196,7 @@ fun CategoryBudgetsScreen(
                 BudgetRow(
                     status = status,
                     currency = state.currency,
+                    parentName = state.categories.find { it.id == status.category.parentCategoryId }?.name,
                     onEdit = { editing = status.category },
                     onDelete = { confirmingDelete = status.category },
                 )
@@ -185,6 +208,7 @@ fun CategoryBudgetsScreen(
             items(state.uncapped, key = { "uncapped_${it.id}" }) { category ->
                 UncappedRow(
                     category = category,
+                    parentName = state.categories.find { it.id == category.parentCategoryId }?.name,
                     onEdit = { editing = category },
                     onDelete = { confirmingDelete = category },
                 )
@@ -196,9 +220,10 @@ fun CategoryBudgetsScreen(
         EditCategoryDialog(
             category = category,
             currency = state.currency,
+            candidateParents = state.categories.filter { it.id != category.id && it.parentCategoryId != category.id },
             onDismiss = { editing = null },
-            onSave = { name, icon, colorHex, cap ->
-                viewModel.save(category, name, icon, colorHex, cap)
+            onSave = { name, icon, colorHex, cap, parentId ->
+                viewModel.save(category, name, icon, colorHex, cap, parentId)
                 editing = null
             },
         )
@@ -302,6 +327,7 @@ private fun barColor(state: BudgetState): Color = when (state) {
 private fun BudgetRow(
     status: CategoryBudgetCalculator.CategoryBudgetStatus,
     currency: String,
+    parentName: String?,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -310,15 +336,23 @@ private fun BudgetRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(status.category.icon, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(10.dp))
-                Text(
-                    status.category.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ObsidianTokens.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        status.category.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ObsidianTokens.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (parentName != null) {
+                        Text(
+                            "Under $parentName",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ObsidianTokens.textMeta,
+                        )
+                    }
+                }
                 RowActions(onEdit = onEdit, onDelete = onDelete)
             }
             Spacer(Modifier.height(8.dp))
@@ -352,7 +386,7 @@ private fun BudgetRow(
 }
 
 @Composable
-private fun UncappedRow(category: Category, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun UncappedRow(category: Category, parentName: String?, onEdit: () -> Unit, onDelete: () -> Unit) {
     ObsidianCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -360,14 +394,22 @@ private fun UncappedRow(category: Category, onEdit: () -> Unit, onDelete: () -> 
         ) {
             Text(category.icon, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(10.dp))
-            Text(
-                category.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = ObsidianTokens.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    category.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ObsidianTokens.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (parentName != null) {
+                    Text(
+                        "Under $parentName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ObsidianTokens.textMeta,
+                    )
+                }
+            }
             RowActions(onEdit = onEdit, onDelete = onDelete)
         }
     }
@@ -397,13 +439,17 @@ private fun RowActions(onEdit: () -> Unit, onDelete: () -> Unit) {
 private fun EditCategoryDialog(
     category: Category,
     currency: String,
+    /** Categories this one can be filed under -- excludes itself and any category that has it as a parent. */
+    candidateParents: List<Category>,
     onDismiss: () -> Unit,
-    onSave: (name: String, icon: String, colorHex: String, cap: BigDecimal?) -> Unit,
+    onSave: (name: String, icon: String, colorHex: String, cap: BigDecimal?, parentCategoryId: Long?) -> Unit,
 ) {
     var name by remember { mutableStateOf(category.name) }
     var icon by remember { mutableStateOf(category.icon) }
     var colorHex by remember { mutableStateOf(category.colorHex) }
     var cap by remember { mutableStateOf(category.monthlyCap?.toPlainString().orEmpty()) }
+    var parent by remember { mutableStateOf(candidateParents.find { it.id == category.parentCategoryId }) }
+    var parentMenuOpen by remember { mutableStateOf(false) }
 
     val capValue = cap.trim().takeIf { it.isNotBlank() }?.toBigDecimalOrNull()
     val capValid = cap.isBlank() || capValue != null
@@ -445,12 +491,40 @@ private fun EditCategoryDialog(
                     isError = !capValid,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Box {
+                    Card(
+                        Modifier.fillMaxWidth().clickable { parentMenuOpen = true },
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                parent?.let { "Parent: ${it.icon} ${it.name}" } ?: "No parent (top-level)",
+                                modifier = Modifier.weight(1f),
+                            )
+                            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose parent category")
+                        }
+                    }
+                    DropdownMenu(expanded = parentMenuOpen, onDismissRequest = { parentMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("No parent (top-level)") },
+                            onClick = { parent = null; parentMenuOpen = false },
+                        )
+                        candidateParents.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text("${option.icon} ${option.name}") },
+                                onClick = { parent = option; parentMenuOpen = false },
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank() && capValid,
-                onClick = { onSave(name, icon, colorHex, capValue) },
+                onClick = { onSave(name, icon, colorHex, capValue, parent?.id) },
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

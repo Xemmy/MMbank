@@ -552,6 +552,12 @@ class DashboardDateRangeTest {
     }
 
     @Test
+    fun `Last12Months spans this month and the eleven before it`() {
+        val window = resolveDashboardWindow(DashboardDateRange.Last12Months, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2025, 7, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
     fun `YearToDate starts on January 1st of thisMonth's year`() {
         val window = resolveDashboardWindow(DashboardDateRange.YearToDate, thisMonth)
         assertEquals(DateWindow(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)), window)
@@ -574,6 +580,7 @@ class DashboardDateRangeTest {
         assertEquals("This month", dashboardPeriodLabel(DashboardDateRange.ThisMonth))
         assertEquals("Last 3 months", dashboardPeriodLabel(DashboardDateRange.Last3Months))
         assertEquals("Last 6 months", dashboardPeriodLabel(DashboardDateRange.Last6Months))
+        assertEquals("Last 12 months", dashboardPeriodLabel(DashboardDateRange.Last12Months))
         assertEquals("Year to date", dashboardPeriodLabel(DashboardDateRange.YearToDate))
         assertEquals("All time", dashboardPeriodLabel(DashboardDateRange.AllTime))
         assertEquals(

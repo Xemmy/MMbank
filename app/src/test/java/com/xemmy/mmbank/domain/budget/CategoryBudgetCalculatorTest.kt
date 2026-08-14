@@ -207,4 +207,62 @@ class CategoryBudgetCalculatorTest {
             CategoryBudgetCalculator.pendingAlert(status, "2026-08", setOf(julyKey)),
         )
     }
+
+    // -- rollUpSpend -------------------------------------------------------------
+
+    private fun category(id: Long, parentCategoryId: Long?, cap: String? = "100.00") = Category(
+        id = id,
+        name = "Cat $id",
+        icon = "🛒",
+        colorHex = "#4CAF50",
+        monthlyCap = cap?.let(::BigDecimal),
+        parentCategoryId = parentCategoryId,
+    )
+
+    @Test
+    fun `a parent's total includes its children's direct spend`() {
+        val result = CategoryBudgetCalculator.rollUpSpend(
+            categories = listOf(category(1L, parentCategoryId = null), category(2L, parentCategoryId = 1L)),
+            directSpendByCategoryId = mapOf(1L to BigDecimal("20.00"), 2L to BigDecimal("30.00")),
+        )
+        assertEquals(0, result.getValue(1L).compareTo(BigDecimal("50.00")))
+    }
+
+    @Test
+    fun `a child's own total is unaffected by its siblings or parent`() {
+        val result = CategoryBudgetCalculator.rollUpSpend(
+            categories = listOf(
+                category(1L, parentCategoryId = null),
+                category(2L, parentCategoryId = 1L),
+                category(3L, parentCategoryId = 1L),
+            ),
+            directSpendByCategoryId = mapOf(2L to BigDecimal("30.00"), 3L to BigDecimal("40.00")),
+        )
+        assertEquals(0, result.getValue(2L).compareTo(BigDecimal("30.00")))
+        assertEquals(0, result.getValue(3L).compareTo(BigDecimal("40.00")))
+        assertEquals(0, result.getValue(1L).compareTo(BigDecimal("70.00")))
+    }
+
+    @Test
+    fun `a top-level category with no children just reports its own spend`() {
+        val result = CategoryBudgetCalculator.rollUpSpend(
+            categories = listOf(category(1L, parentCategoryId = null)),
+            directSpendByCategoryId = mapOf(1L to BigDecimal("20.00")),
+        )
+        assertEquals(0, result.getValue(1L).compareTo(BigDecimal("20.00")))
+    }
+
+    @Test
+    fun `a parent cycle terminates instead of recursing forever`() {
+        // The Edit-category UI already blocks creating a direct 2-cycle, but the
+        // pure function itself must never hang or overflow the stack if one
+        // somehow exists -- the cycle guard stops each path at its own start.
+        val result = CategoryBudgetCalculator.rollUpSpend(
+            categories = listOf(category(1L, parentCategoryId = 2L), category(2L, parentCategoryId = 1L)),
+            directSpendByCategoryId = mapOf(1L to BigDecimal("10.00"), 2L to BigDecimal("15.00")),
+        )
+        assertEquals(setOf(1L, 2L), result.keys)
+        assertTrue(result.getValue(1L).signum() >= 0)
+        assertTrue(result.getValue(2L).signum() >= 0)
+    }
 }

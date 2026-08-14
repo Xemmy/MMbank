@@ -61,6 +61,7 @@ sealed interface DashboardDateRange {
     data object ThisMonth : DashboardDateRange
     data object Last3Months : DashboardDateRange
     data object Last6Months : DashboardDateRange
+    data object Last12Months : DashboardDateRange
     data object YearToDate : DashboardDateRange
     data object AllTime : DashboardDateRange
 
@@ -638,6 +639,7 @@ internal fun resolveDashboardWindow(range: DashboardDateRange, thisMonth: YearMo
     DashboardDateRange.ThisMonth -> DateWindow(thisMonth.atDay(1), thisMonth.atEndOfMonth())
     DashboardDateRange.Last3Months -> DateWindow(thisMonth.minusMonths(2).atDay(1), thisMonth.atEndOfMonth())
     DashboardDateRange.Last6Months -> DateWindow(thisMonth.minusMonths(5).atDay(1), thisMonth.atEndOfMonth())
+    DashboardDateRange.Last12Months -> DateWindow(thisMonth.minusMonths(11).atDay(1), thisMonth.atEndOfMonth())
     DashboardDateRange.YearToDate -> DateWindow(LocalDate.of(thisMonth.year, 1, 1), thisMonth.atEndOfMonth())
     DashboardDateRange.AllTime -> null
     is DashboardDateRange.Custom ->
@@ -651,6 +653,7 @@ internal fun dashboardPeriodLabel(range: DashboardDateRange): String = when (ran
     DashboardDateRange.ThisMonth -> "This month"
     DashboardDateRange.Last3Months -> "Last 3 months"
     DashboardDateRange.Last6Months -> "Last 6 months"
+    DashboardDateRange.Last12Months -> "Last 12 months"
     DashboardDateRange.YearToDate -> "Year to date"
     DashboardDateRange.AllTime -> "All time"
     is DashboardDateRange.Custom ->
