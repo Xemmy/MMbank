@@ -111,6 +111,7 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
  * can't detect on its own, each with a due date and an opt-in reminder
  * (Settings -> Preferences).
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun BillsScreen(
     onBack: () -> Unit,
