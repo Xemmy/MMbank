@@ -74,7 +74,16 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         SubscriptionsUiState(subscriptions, isScanning, scannedOnce)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SubscriptionsUiState())
 
-    /** Re-runs [SubscriptionRadarEngine] over the whole real ledger and persists what it finds. */
+    /**
+     * Re-runs [SubscriptionRadarEngine] over the whole real ledger and persists
+     * what it finds.
+     *
+     * Detection also runs by itself now, scoped to one merchant, whenever a
+     * debit from that merchant is captured (see
+     * [com.xemmy.mmbank.di.AppContainer]'s post-insert hook). This full sweep
+     * stays useful for picking up history that predates that hook, and for
+     * re-checking every merchant at once on demand.
+     */
     fun scan() {
         if (scanning.value) return
         viewModelScope.launch {
@@ -100,8 +109,8 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
 /**
  * Subscription Radar & Renewal Calendar: every recurring charge
  * [SubscriptionRadarEngine] has detected in the ledger, soonest renewal
- * first, with a manual "Scan" action (Subscription detection doesn't run
- * live in the background — see the ViewModel doc).
+ * first, with a price-change badge where a subscription's cost moved, plus a
+ * manual "Scan" to re-check every merchant at once.
  */
 @Composable
 fun SubscriptionsScreen(
@@ -182,11 +191,27 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                subscription.averageAmount.asMoney(subscription.currencyCode),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    subscription.averageAmount.asMoney(subscription.currencyCode),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                // A price change used to make a subscription vanish from the
+                // radar entirely; now it's the headline.
+                subscription.previousAmount?.let { previous ->
+                    val rose = subscription.averageAmount > previous
+                    Text(
+                        (if (rose) "↑ was " else "↓ was ") + previous.asMoney(subscription.currencyCode),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (rose) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = "Dismiss ${subscription.merchant}")
             }

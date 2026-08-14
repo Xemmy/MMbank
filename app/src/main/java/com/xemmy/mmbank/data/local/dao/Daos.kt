@@ -205,6 +205,22 @@ interface TransactionDao {
     ): Double
 
     /**
+     * One merchant's real, analytics-eligible debit history, oldest first --
+     * the input [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]
+     * needs to re-detect that merchant after a new charge lands, without
+     * loading the whole ledger on the capture path.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE isDemo = 0 AND excludeFromStats = 0 AND direction = 'DEBIT'
+          AND merchant IS NOT NULL AND LOWER(TRIM(merchant)) = LOWER(TRIM(:merchant))
+        ORDER BY timestamp ASC
+        """
+    )
+    suspend fun findRealDebitsByMerchant(merchant: String): List<TransactionEntity>
+
+    /**
      * Still-unlinked, opposite-direction, same amount+currency real rows
      * within a broad time bound, for [com.xemmy.mmbank.domain.usecase.TransferMatcher]
      * to narrow down to a final counterpart. `linkedTransactionId IS NULL`

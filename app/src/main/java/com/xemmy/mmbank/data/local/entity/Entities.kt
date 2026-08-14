@@ -198,6 +198,8 @@ data class SubscriptionEntity(
     val lastSeenMillis: Long,
     val occurrenceCount: Int,
     val dismissed: Boolean = false,
+    /** Prior price when the charge amount changed partway through; null when steady. */
+    val previousAmount: BigDecimal? = null,
 )
 
 @Entity(tableName = "savings_goals")
@@ -297,10 +299,12 @@ fun ExchangeRateEntity.toDomain() = ExchangeRate(baseCode, quoteCode, rate, fetc
 
 fun SubscriptionEntity.toDomain() = Subscription(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
+    previousAmount,
 )
 
 fun Subscription.toEntity() = SubscriptionEntity(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
+    previousAmount,
 )
 
 fun SavingsGoalEntity.toDomain() = SavingsGoal(

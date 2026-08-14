@@ -413,6 +413,26 @@ class EntityMappersTest {
         assertEquals(original, roundTripped)
         assertEquals(SubscriptionCadence.MONTHLY, roundTripped.cadence)
         assertFalse(roundTripped.dismissed)
+        assertNull("a steady price must round-trip as null, not zero", roundTripped.previousAmount)
+    }
+
+    @Test
+    fun `subscription round-trip preserves previousAmount when the price changed`() {
+        val original = Subscription(
+            id = 7,
+            merchant = "Netflix",
+            averageAmount = BigDecimal("56.00"),
+            currencyCode = "AED",
+            cadence = SubscriptionCadence.MONTHLY,
+            nextDueDateMillis = 1_700_000_000_000,
+            lastSeenMillis = 1_697_408_000_000,
+            occurrenceCount = 4,
+            dismissed = false,
+            previousAmount = BigDecimal("39.99"),
+        )
+        val roundTripped = original.toEntity().toDomain()
+        assertEquals(original, roundTripped)
+        assertEquals(0, roundTripped.previousAmount!!.compareTo(BigDecimal("39.99")))
     }
 
     @Test

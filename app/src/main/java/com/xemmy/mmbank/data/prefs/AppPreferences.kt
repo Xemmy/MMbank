@@ -267,6 +267,33 @@ class AppPreferences(context: Context) {
         get() = prefs.getStringSet(KEY_CATEGORY_BUDGET_ALERTS, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_CATEGORY_BUDGET_ALERTS, value).apply()
 
+    /**
+     * Opt-in daily reminder shortly before a detected subscription renews.
+     *
+     * **Off by default, deliberately.** Turning it on schedules the app's only
+     * periodic work (see
+     * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker]); the
+     * README sells "no background polling" as a battery property, so nothing is
+     * scheduled until the user asks for it.
+     *
+     * A plain boolean rather than a reactive [com.xemmy.mmbank.di.AppContainer]
+     * flow: only the Settings screen and the worker read it, so no other
+     * ViewModel needs to reflect the change live.
+     */
+    var subscriptionRemindersEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SUBSCRIPTION_REMINDERS, false)
+        set(value) = prefs.edit().putBoolean(KEY_SUBSCRIPTION_REMINDERS, value).apply()
+
+    /**
+     * Renewals already announced, as `"{subscriptionId}:{nextDueDateMillis}"`
+     * keys (see [com.xemmy.mmbank.domain.intelligence.SubscriptionReminders.reminderKey]),
+     * so a daily tick doesn't re-announce the same renewal every day. Pruned to
+     * live subscriptions on each run.
+     */
+    var subscriptionRemindersSent: Set<String>
+        get() = prefs.getStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, value).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -302,5 +329,7 @@ class AppPreferences(context: Context) {
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
         const val KEY_BACKGROUND_PRESET = "background_preset"
         const val KEY_CATEGORY_BUDGET_ALERTS = "category_budget_alerts"
+        const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
+        const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
     }
 }

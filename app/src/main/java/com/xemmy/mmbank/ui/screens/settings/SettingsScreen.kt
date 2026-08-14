@@ -110,6 +110,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var monthlySpendBudgetInput by mutableStateOf(
         container.preferences.monthlySpendBudget.takeIf { it > 0.0 }?.toString().orEmpty()
     )
+    var subscriptionRemindersEnabled by mutableStateOf(container.preferences.subscriptionRemindersEnabled)
+        private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
@@ -310,6 +312,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         container.preferences.monthlySpendBudget = amount
         statusMessage = "Monthly budget set to ${amount.asMoney(defaultCurrency)}"
+    }
+
+    /**
+     * Schedules or cancels the app's only periodic work. Off by default -- see
+     * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker] for why
+     * this is opt-in rather than always on.
+     */
+    fun updateSubscriptionReminders(enabled: Boolean) {
+        container.setSubscriptionRemindersEnabled(enabled)
+        subscriptionRemindersEnabled = enabled
+        statusMessage = if (enabled) {
+            "Renewal reminders on — checked once a day."
+        } else {
+            "Renewal reminders off."
+        }
     }
 
     fun updateHideZeroBalances(hide: Boolean) {
@@ -1033,6 +1050,27 @@ fun PreferencesSettingsScreen(
             Switch(
                 checked = viewModel.hideZeroBalances,
                 onCheckedChange = viewModel::updateHideZeroBalances,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Subscription renewal reminders", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Notifies you a few days before a detected subscription renews. Checks once a " +
+                        "day on-device with no network use — this is the app's only background " +
+                        "schedule, so it stays off unless you want it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.subscriptionRemindersEnabled,
+                onCheckedChange = viewModel::updateSubscriptionReminders,
             )
         }
 

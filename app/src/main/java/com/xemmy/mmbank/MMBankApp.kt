@@ -17,6 +17,9 @@ class MMBankApp : Application() {
         installCrashRecorder()
         container = AppContainer(this)
         container.seedDefaultRulesOnce()
+        // Re-arms the opt-in subscription reminder if it's on. Idempotent
+        // (unique work, KEEP), and a no-op entirely while the toggle is off.
+        container.ensureSubscriptionReminderWork()
         // Whole-app foreground/background transitions drive the opt-in app
         // lock (ProcessLifecycleOwner, unlike Activity onStop, doesn't fire
         // on rotation or intra-app navigation).

@@ -371,4 +371,12 @@ data class Subscription(
     val occurrenceCount: Int,
     /** User dismissed this as a false positive; kept around so it isn't re-detected as new. */
     val dismissed: Boolean = false,
+    /**
+     * What this subscription used to cost, when the charge amount changed
+     * partway through the series; null when the price has been steady.
+     *
+     * [averageAmount] is then the *current* price, taken from the charges since
+     * the change, so "↑ was 45" can be shown against today's figure.
+     */
+    val previousAmount: BigDecimal? = null,
 )

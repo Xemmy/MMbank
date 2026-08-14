@@ -48,29 +48,87 @@ object SubscriptionRadarEngine {
         if (occurrences.size < MIN_OCCURRENCES) return null
         val sorted = occurrences.sortedBy { it.timestampMillis }
 
-        val total = sorted.fold(BigDecimal.ZERO) { acc, tx -> acc + tx.amount }
-        val average = total.divide(BigDecimal(sorted.size), 4, RoundingMode.HALF_UP)
-        if (average.signum() <= 0) return null
-
-        val avgDouble = average.toDouble()
-        val withinVariance = sorted.all { tx ->
-            abs(tx.amount.toDouble() - avgDouble) / avgDouble <= AMOUNT_VARIANCE_THRESHOLD
-        }
-        if (!withinVariance) return null
-
+        // The rhythm has to hold either way -- a steady price on an irregular
+        // schedule is not a subscription, and neither is a price change on one.
         val gapsDays = sorted.zipWithNext { a, b -> (b.timestampMillis - a.timestampMillis) / DAY_MILLIS }
         val cadence = classifyCadence(gapsDays) ?: return null
 
+        val average = averageOf(sorted) ?: return null
+        return if (sorted.all { withinVariance(it.amount, average) }) {
+            build(sorted, cadence, price = average, previousPrice = null)
+        } else {
+            detectWithPriceChange(sorted, cadence)
+        }
+    }
+
+    /**
+     * Rescues the case a flat variance check silently drops: a subscription
+     * whose price changed partway through. Without this, a Netflix that went
+     * from 39.99 to 56.00 fails the variance test and *disappears* from the
+     * radar entirely -- exactly when the user most wants to be told.
+     *
+     * Splits at the last amount change: charges matching the newest amount are
+     * the current price, everything before it must be internally consistent to
+     * qualify. One charge at the new price is enough, since a rise is usually
+     * noticed at the first renewal that carries it.
+     */
+    private fun detectWithPriceChange(sorted: List<Transaction>, cadence: SubscriptionCadence): Subscription? {
+        val newest = sorted.last().amount
+
+        var splitIndex = sorted.size
+        for (i in sorted.indices.reversed()) {
+            if (!withinVariance(sorted[i].amount, newest)) break
+            splitIndex = i
+        }
+
+        val older = sorted.subList(0, splitIndex)
+        val recent = sorted.subList(splitIndex, sorted.size)
+        if (older.isEmpty() || recent.isEmpty()) return null
+
+        // The older run has to be a steady price too. Three different amounts
+        // in a row is erratic spending at one merchant, not a price rise.
+        val previousPrice = averageOf(older) ?: return null
+        if (older.any { !withinVariance(it.amount, previousPrice) }) return null
+
+        val currentPrice = averageOf(recent) ?: return null
+        // Guard the boundary: if the two runs are within variance of each other
+        // the flat path should have matched, so this is not a real change.
+        if (withinVariance(currentPrice, previousPrice)) return null
+
+        return build(sorted, cadence, price = currentPrice, previousPrice = previousPrice)
+    }
+
+    private fun build(
+        sorted: List<Transaction>,
+        cadence: SubscriptionCadence,
+        price: BigDecimal,
+        previousPrice: BigDecimal?,
+    ): Subscription {
         val last = sorted.last()
         return Subscription(
             merchant = last.merchant!!.trim(),
-            averageAmount = average.setScale(2, RoundingMode.HALF_UP),
+            averageAmount = price.setScale(2, RoundingMode.HALF_UP),
             currencyCode = last.currencyCode.uppercase(),
             cadence = cadence,
             nextDueDateMillis = last.timestampMillis + cadence.nominalDays * DAY_MILLIS,
             lastSeenMillis = last.timestampMillis,
             occurrenceCount = sorted.size,
+            previousAmount = previousPrice?.setScale(2, RoundingMode.HALF_UP),
         )
+    }
+
+    /** Mean charge, or null when it is zero/negative and so can't anchor a variance ratio. */
+    private fun averageOf(transactions: List<Transaction>): BigDecimal? {
+        if (transactions.isEmpty()) return null
+        val total = transactions.fold(BigDecimal.ZERO) { acc, tx -> acc + tx.amount }
+        return total.divide(BigDecimal(transactions.size), 4, RoundingMode.HALF_UP)
+            .takeIf { it.signum() > 0 }
+    }
+
+    private fun withinVariance(amount: BigDecimal, reference: BigDecimal): Boolean {
+        val ref = reference.toDouble()
+        if (ref <= 0.0) return false
+        return abs(amount.toDouble() - ref) / ref <= AMOUNT_VARIANCE_THRESHOLD
     }
 
     /** Every consecutive gap must land within tolerance of the same cadence for it to count. */

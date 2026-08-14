@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -152,5 +153,97 @@ class SubscriptionRadarTest {
             tx("", "10.00", daysAgo = 0),
         )
         assertTrue(SubscriptionRadarEngine.detect(transactions).isEmpty())
+    }
+
+    // -- Price changes ---------------------------------------------------------
+    // A flat variance check drops these entirely: the subscription vanishes from
+    // the radar at exactly the moment its price moved.
+
+    @Test
+    fun `a price rise is still detected, and reports the old price`() {
+        val transactions = listOf(
+            tx("Netflix", "39.99", daysAgo = 90),
+            tx("Netflix", "39.99", daysAgo = 60),
+            tx("Netflix", "39.99", daysAgo = 30),
+            tx("Netflix", "56.00", daysAgo = 0),
+        )
+        val result = SubscriptionRadarEngine.detect(transactions)
+
+        assertEquals(1, result.size)
+        val subscription = result.single()
+        assertEquals(0, subscription.averageAmount.compareTo(BigDecimal("56.00")))
+        assertEquals(0, subscription.previousAmount!!.compareTo(BigDecimal("39.99")))
+        assertEquals(4, subscription.occurrenceCount)
+    }
+
+    @Test
+    fun `a price drop is reported the same way`() {
+        val transactions = listOf(
+            tx("Spotify", "25.00", daysAgo = 90),
+            tx("Spotify", "25.00", daysAgo = 60),
+            tx("Spotify", "15.00", daysAgo = 30),
+            tx("Spotify", "15.00", daysAgo = 0),
+        )
+        val subscription = SubscriptionRadarEngine.detect(transactions).single()
+
+        assertEquals(0, subscription.averageAmount.compareTo(BigDecimal("15.00")))
+        assertEquals(0, subscription.previousAmount!!.compareTo(BigDecimal("25.00")))
+    }
+
+    @Test
+    fun `cadence and next due date survive a price change`() {
+        val transactions = listOf(
+            tx("Gym Class", "20.00", daysAgo = 21),
+            tx("Gym Class", "20.00", daysAgo = 14),
+            tx("Gym Class", "20.00", daysAgo = 7),
+            tx("Gym Class", "30.00", daysAgo = 0),
+        )
+        val subscription = SubscriptionRadarEngine.detect(transactions).single()
+
+        assertEquals(SubscriptionCadence.WEEKLY, subscription.cadence)
+        assertEquals(baseTime + 7 * dayMillis, subscription.nextDueDateMillis)
+    }
+
+    @Test
+    fun `a steady price reports no previous amount`() {
+        val transactions = listOf(
+            tx("Netflix", "39.99", daysAgo = 60),
+            tx("Netflix", "39.99", daysAgo = 30),
+            tx("Netflix", "39.99", daysAgo = 0),
+        )
+        assertNull(SubscriptionRadarEngine.detect(transactions).single().previousAmount)
+    }
+
+    @Test
+    fun `a price change on an irregular schedule is still rejected`() {
+        val transactions = listOf(
+            tx("One-off Shop", "39.99", daysAgo = 55),
+            tx("One-off Shop", "39.99", daysAgo = 40),
+            tx("One-off Shop", "56.00", daysAgo = 5),
+        )
+        assertTrue(SubscriptionRadarEngine.detect(transactions).isEmpty())
+    }
+
+    @Test
+    fun `three different amounts in a row is erratic spending, not a price rise`() {
+        val transactions = listOf(
+            tx("Random Store", "10.00", daysAgo = 60),
+            tx("Random Store", "20.00", daysAgo = 30),
+            tx("Random Store", "30.00", daysAgo = 0),
+        )
+        assertTrue(SubscriptionRadarEngine.detect(transactions).isEmpty())
+    }
+
+    @Test
+    fun `a rise after only one charge at the old price still counts`() {
+        val transactions = listOf(
+            tx("Netflix", "39.99", daysAgo = 60),
+            tx("Netflix", "56.00", daysAgo = 30),
+            tx("Netflix", "56.00", daysAgo = 0),
+        )
+        val subscription = SubscriptionRadarEngine.detect(transactions).single()
+
+        assertEquals(0, subscription.averageAmount.compareTo(BigDecimal("56.00")))
+        assertEquals(0, subscription.previousAmount!!.compareTo(BigDecimal("39.99")))
     }
 }

@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.room.withTransaction
 import androidx.work.Constraints
 import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.xemmy.mmbank.data.ai.AiParsingWorker
 import com.xemmy.mmbank.data.ai.LocalAiConfig
@@ -31,8 +33,11 @@ import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
 import com.xemmy.mmbank.data.repository.SubscriptionRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
+import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
@@ -287,6 +292,7 @@ class AppContainer(context: Context) {
             onTransactionRecorded = { transaction ->
                 checkDailyBudgetPacing(transaction)
                 checkCategoryBudget(transaction)
+                refreshSubscriptionForMerchant(transaction)
             },
         )
     }
@@ -571,6 +577,66 @@ class AppContainer(context: Context) {
                 CategoryBudgetNotificationHelper.postCapAlert(appContext, status, transaction.currencyCode)
             }.onFailure { recordError("AppContainer.checkCategoryBudget", it) }
         }
+    }
+
+    /**
+     * Keeps the subscription radar current without being asked. After a real
+     * debit lands, re-runs [SubscriptionRadarEngine] over just that merchant's
+     * history and upserts the result, so a newly-started subscription, a moved
+     * renewal date or a price change shows up on its own instead of waiting for
+     * the user to remember to tap "Scan" on the Subscriptions screen.
+     *
+     * Scoped to one merchant via an indexed query rather than loading the
+     * ledger, since this runs on the capture path. `replaceAll` upserts by
+     * merchant and preserves a dismissed flag, so re-detecting something the
+     * user already dismissed can't silently un-dismiss it.
+     */
+    private fun refreshSubscriptionForMerchant(transaction: Transaction) {
+        if (transaction.direction != TransactionDirection.DEBIT || transaction.excludeFromStats) return
+        val merchant = transaction.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return
+
+        applicationScope.launch {
+            runCatching {
+                val history = database.transactionDao()
+                    .findRealDebitsByMerchant(merchant)
+                    .map { it.toDomain() }
+                val detected = SubscriptionRadarEngine.detect(history)
+                if (detected.isNotEmpty()) subscriptionRepository.replaceAll(detected)
+            }.onFailure { recordError("AppContainer.refreshSubscriptionForMerchant", it) }
+        }
+    }
+
+    /**
+     * Turns the opt-in renewal reminder on or off, scheduling or cancelling the
+     * app's only periodic work (see [SubscriptionReminderWorker]). Nothing is
+     * scheduled while the toggle is off, so the app's no-background-polling
+     * behavior is unchanged for anyone who doesn't want reminders.
+     */
+    fun setSubscriptionRemindersEnabled(enabled: Boolean) {
+        preferences.subscriptionRemindersEnabled = enabled
+        if (enabled) ensureSubscriptionReminderWork() else cancelSubscriptionReminderWork()
+    }
+
+    /**
+     * Re-arms the daily reminder if it's enabled. Idempotent (unique work with
+     * KEEP), so calling it on every app start just confirms the existing
+     * schedule rather than resetting its period.
+     */
+    fun ensureSubscriptionReminderWork() {
+        if (!preferences.subscriptionRemindersEnabled) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                SubscriptionReminderWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<SubscriptionReminderWorker>(1, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureSubscriptionReminderWork", it) }
+    }
+
+    private fun cancelSubscriptionReminderWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(SubscriptionReminderWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelSubscriptionReminderWork", it) }
     }
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */
