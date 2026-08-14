@@ -529,6 +529,9 @@ interface GroupExpenseDao {
     @Insert
     suspend fun insert(entity: GroupExpenseEntity): Long
 
+    @Update
+    suspend fun update(entity: GroupExpenseEntity)
+
     @Query("SELECT * FROM group_expenses WHERE id = :id")
     suspend fun getById(id: Long): GroupExpenseEntity?
 
@@ -542,6 +545,10 @@ interface GroupExpenseDao {
 
     @Insert
     suspend fun insertSplits(splits: List<ExpenseSplitEntity>)
+
+    /** Clears an expense's splits before re-inserting the edited set wholesale -- simpler than diffing. */
+    @Query("DELETE FROM expense_splits WHERE expenseId = :expenseId")
+    suspend fun deleteSplitsForExpense(expenseId: Long)
 
     @Query("SELECT * FROM expense_splits WHERE expenseId = :expenseId")
     suspend fun getSplitsForExpense(expenseId: Long): List<ExpenseSplitEntity>

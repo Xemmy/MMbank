@@ -218,7 +218,11 @@ interface SplitGroupRepository {
     /** Every group's expenses at once -- balances are computed across the whole ledger, not fetched per group. */
     fun observeAllExpenses(): Flow<List<GroupExpense>>
     fun observeAllSplits(): Flow<List<ExpenseSplit>>
-    /** Records a new expense with its already-computed splits (see [com.xemmy.mmbank.domain.split.SplitAllocator]); returns the expense id. */
-    suspend fun addExpense(expense: GroupExpense, splits: List<ExpenseSplit>): Long
+    /**
+     * Inserts a new expense (`expense.id == 0`) or updates an existing one,
+     * with its already-computed splits (see [com.xemmy.mmbank.domain.split.SplitAllocator]),
+     * replacing the old split rows wholesale on an update; returns the expense id.
+     */
+    suspend fun saveExpense(expense: GroupExpense, splits: List<ExpenseSplit>): Long
     suspend fun deleteExpense(expenseId: Long)
 }

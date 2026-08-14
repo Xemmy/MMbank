@@ -264,8 +264,14 @@ class SplitGroupRepositoryImpl(
     override fun observeAllSplits(): Flow<List<ExpenseSplit>> =
         expenseDao.observeAllSplits().map { list -> list.map { it.toDomain() } }
 
-    override suspend fun addExpense(expense: GroupExpense, splits: List<ExpenseSplit>): Long {
-        val expenseId = expenseDao.insert(expense.toEntity())
+    override suspend fun saveExpense(expense: GroupExpense, splits: List<ExpenseSplit>): Long {
+        val expenseId = if (expense.id == 0L) {
+            expenseDao.insert(expense.toEntity())
+        } else {
+            expenseDao.update(expense.toEntity())
+            expenseDao.deleteSplitsForExpense(expense.id)
+            expense.id
+        }
         expenseDao.insertSplits(splits.map { it.copy(expenseId = expenseId).toEntity() })
         return expenseId
     }

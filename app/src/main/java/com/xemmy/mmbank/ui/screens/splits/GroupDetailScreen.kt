@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -70,6 +71,8 @@ data class GroupDetailUiState(
     val group: SplitGroup? = null,
     val memberFriends: List<Friend> = emptyList(),
     val expenses: List<GroupExpense> = emptyList(),
+    /** An expense's current splits, for pre-filling the edit dialog. */
+    val splitsByExpenseId: Map<Long, List<ExpenseSplit>> = emptyMap(),
     /** Net balance per participant within this group only (null = "me"). */
     val balances: Map<Long?, BigDecimal> = emptyMap(),
     val currency: String = "USD",
@@ -98,13 +101,16 @@ class GroupDetailViewModel(
             group = group,
             memberFriends = memberFriends,
             expenses = expenses,
+            splitsByExpenseId = splitsByExpenseId,
             balances = balances,
             currency = container.preferences.defaultCurrency,
             settlements = DebtSimplifier.simplify(balances),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), GroupDetailUiState())
 
-    fun addExpense(
+    /** Inserts a new expense ([expenseId] = 0) or updates an existing one, replacing its splits wholesale. */
+    fun saveExpense(
+        expenseId: Long,
         description: String,
         amount: BigDecimal,
         paidByFriendId: Long?,
@@ -116,6 +122,7 @@ class GroupDetailViewModel(
         viewModelScope.launch {
             runCatching {
                 val expense = GroupExpense(
+                    id = expenseId,
                     groupId = groupId,
                     description = clean,
                     amount = amount,
@@ -123,9 +130,9 @@ class GroupDetailViewModel(
                     paidByFriendId = paidByFriendId,
                     splitType = splitType,
                 )
-                val splitRows = splits.map { (id, owed) -> ExpenseSplit(expenseId = 0, friendId = id, owedAmount = owed) }
-                container.splitGroupRepository.addExpense(expense, splitRows)
-            }.onFailure { container.recordError("GroupDetailViewModel.addExpense", it) }
+                val splitRows = splits.map { (id, owed) -> ExpenseSplit(expenseId = expenseId, friendId = id, owedAmount = owed) }
+                container.splitGroupRepository.saveExpense(expense, splitRows)
+            }.onFailure { container.recordError("GroupDetailViewModel.saveExpense", it) }
         }
     }
 
@@ -149,7 +156,7 @@ class GroupDetailViewModel(
                     splitType = SplitType.SETTLEMENT,
                 )
                 val split = ExpenseSplit(expenseId = 0, friendId = settlement.to, owedAmount = settlement.amount)
-                container.splitGroupRepository.addExpense(expense, listOf(split))
+                container.splitGroupRepository.saveExpense(expense, listOf(split))
             }.onFailure { container.recordError("GroupDetailViewModel.recordSettlement", it) }
         }
     }
@@ -164,6 +171,7 @@ fun GroupDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var addExpenseOpen by remember { mutableStateOf(false) }
+    var editingExpense by remember { mutableStateOf<GroupExpense?>(null) }
 
     Scaffold(
         topBar = {
@@ -220,6 +228,7 @@ fun GroupDetailScreen(
                     expense = expense,
                     friends = state.memberFriends,
                     currency = state.currency,
+                    onEdit = { editingExpense = expense },
                     onDelete = { viewModel.deleteExpense(expense.id) },
                 )
             }
@@ -227,13 +236,29 @@ fun GroupDetailScreen(
     }
 
     if (addExpenseOpen) {
-        AddExpenseDialog(
+        ExpenseDialog(
             memberFriends = state.memberFriends,
             currency = state.currency,
+            existing = null,
+            existingSplits = emptyList(),
             onDismiss = { addExpenseOpen = false },
-            onAdd = { description, amount, paidBy, splitType, splits ->
-                viewModel.addExpense(description, amount, paidBy, splitType, splits)
+            onSave = { id, description, amount, paidBy, splitType, splits ->
+                viewModel.saveExpense(id, description, amount, paidBy, splitType, splits)
                 addExpenseOpen = false
+            },
+        )
+    }
+
+    editingExpense?.let { expense ->
+        ExpenseDialog(
+            memberFriends = state.memberFriends,
+            currency = state.currency,
+            existing = expense,
+            existingSplits = state.splitsByExpenseId[expense.id].orEmpty(),
+            onDismiss = { editingExpense = null },
+            onSave = { id, description, amount, paidBy, splitType, splits ->
+                viewModel.saveExpense(id, description, amount, paidBy, splitType, splits)
+                editingExpense = null
             },
         )
     }
@@ -288,7 +313,13 @@ private fun SettlementRow(
 }
 
 @Composable
-private fun ExpenseRow(expense: GroupExpense, friends: List<Friend>, currency: String, onDelete: () -> Unit) {
+private fun ExpenseRow(
+    expense: GroupExpense,
+    friends: List<Friend>,
+    currency: String,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(16.dp).fillMaxWidth(),
@@ -302,6 +333,14 @@ private fun ExpenseRow(expense: GroupExpense, friends: List<Friend>, currency: S
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // A settlement's one split is implicit in how it was recorded (see
+            // recordSettlement) rather than something the split-type picker
+            // below can reconstruct, so it's delete-only, like before.
+            if (expense.splitType != SplitType.SETTLEMENT) {
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Filled.Edit, contentDescription = "Edit ${expense.description}")
+                }
+            }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete ${expense.description}")
             }
@@ -310,11 +349,16 @@ private fun ExpenseRow(expense: GroupExpense, friends: List<Friend>, currency: S
 }
 
 @Composable
-private fun AddExpenseDialog(
+private fun ExpenseDialog(
     memberFriends: List<Friend>,
     currency: String,
+    /** Null for a brand-new expense; the expense being edited otherwise. */
+    existing: GroupExpense?,
+    /** [existing]'s current splits, for pre-filling the form -- ignored when [existing] is null. */
+    existingSplits: List<ExpenseSplit>,
     onDismiss: () -> Unit,
-    onAdd: (
+    onSave: (
+        id: Long,
         description: String,
         amount: BigDecimal,
         paidByFriendId: Long?,
@@ -322,19 +366,55 @@ private fun AddExpenseDialog(
         splits: Map<Long?, BigDecimal>,
     ) -> Unit,
 ) {
-    var description by remember { mutableStateOf("") }
-    var amountText by remember { mutableStateOf("") }
-    var paidBy by remember { mutableStateOf<Long?>(null) }
+    var description by remember { mutableStateOf(existing?.description ?: "") }
+    var amountText by remember { mutableStateOf(existing?.amount?.toPlainString() ?: "") }
+    var paidBy by remember { mutableStateOf(existing?.paidByFriendId) }
     var paidByMenuOpen by remember { mutableStateOf(false) }
-    var splitType by remember { mutableStateOf(SplitType.EQUAL) }
+    // A settlement isn't offered as a pick below (see the dropdown's fixed
+    // list), so editing one starts from EQUAL like a brand-new expense would.
+    var splitType by remember {
+        mutableStateOf(existing?.splitType?.takeIf { it != SplitType.SETTLEMENT } ?: SplitType.EQUAL)
+    }
     var splitTypeMenuOpen by remember { mutableStateOf(false) }
 
-    val participants = remember(memberFriends) { listOf<Long?>(null) + memberFriends.map { it.id } }
+    // Union in any participant from the existing splits even if they're no
+    // longer a group member, so editing an old expense never silently drops
+    // a former member's share.
+    val participants = remember(memberFriends, existingSplits) {
+        (listOf<Long?>(null) + memberFriends.map { it.id } + existingSplits.map { it.friendId }).distinct()
+    }
+    val existingSplitByParticipant = remember(existingSplits) { existingSplits.associateBy { it.friendId } }
+
     // Which participants are included in an EQUAL split; per-participant text
     // for EXACT (amount)/PERCENTAGE (percent)/ADJUSTMENT (+/- amount) --
     // entering nothing (or 0) for a participant just leaves them out.
-    var includedInEqual by remember(participants) { mutableStateOf(participants.toSet()) }
-    var fieldValues by remember(participants, splitType) { mutableStateOf(participants.associateWith { "" }) }
+    var includedInEqual by remember(participants) {
+        mutableStateOf(if (existing != null) existingSplitByParticipant.keys else participants.toSet())
+    }
+    // Only pre-fills from the split type the expense actually used -- picking
+    // a different type while editing starts that type's fields blank, same
+    // as a brand-new expense, rather than guessing at a cross-type mapping.
+    var fieldValues by remember(participants, splitType) {
+        mutableStateOf(
+            if (existing != null && splitType == existing.splitType) {
+                val derived = when (splitType) {
+                    SplitType.PERCENTAGE -> SplitAllocator.derivePercentages(
+                        existing.amount,
+                        existingSplitByParticipant.mapValues { it.value.owedAmount },
+                    ).mapValues { it.value.toString() }
+                    SplitType.ADJUSTMENT -> SplitAllocator.deriveAdjustments(
+                        existing.amount,
+                        participants,
+                        existingSplitByParticipant.mapValues { it.value.owedAmount },
+                    ).mapValues { it.value.toPlainString() }
+                    else -> existingSplitByParticipant.mapValues { it.value.owedAmount.toPlainString() }
+                }
+                participants.associateWith { derived[it] ?: "" }
+            } else {
+                participants.associateWith { "" }
+            }
+        )
+    }
 
     val amount = amountText.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
 
@@ -368,7 +448,7 @@ private fun AddExpenseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New expense") },
+        title = { Text(if (existing != null) "Edit expense" else "New expense") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -446,8 +526,8 @@ private fun AddExpenseDialog(
         confirmButton = {
             TextButton(
                 enabled = description.isNotBlank() && amount != null && splits != null,
-                onClick = { onAdd(description, amount!!, paidBy, splitType, splits!!) },
-            ) { Text("Add") }
+                onClick = { onSave(existing?.id ?: 0L, description, amount!!, paidBy, splitType, splits!!) },
+            ) { Text(if (existing != null) "Save" else "Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

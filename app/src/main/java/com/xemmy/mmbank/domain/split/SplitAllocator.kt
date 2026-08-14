@@ -96,4 +96,28 @@ object SplitAllocator {
         val equalShares = splitEqually(totalAmount, participantIds)
         return participantIds.associateWith { id -> equalShares.getValue(id) + (adjustments[id] ?: BigDecimal.ZERO) }
     }
+
+    /**
+     * Inverse of [splitByPercentages]: recovers the percentage each
+     * participant's already-computed [amounts] represents, for pre-filling
+     * an edit form from a previously saved split. Zero when [totalAmount]
+     * isn't positive rather than dividing by it.
+     */
+    fun <T> derivePercentages(totalAmount: BigDecimal, amounts: Map<T, BigDecimal>): Map<T, Double> {
+        if (totalAmount.signum() <= 0) return amounts.mapValues { 0.0 }
+        return amounts.mapValues { (_, amount) ->
+            amount.divide(totalAmount, 6, RoundingMode.HALF_UP).multiply(BigDecimal(100)).toDouble()
+        }
+    }
+
+    /**
+     * Inverse of [splitByAdjustments]: recovers the per-participant
+     * adjustment that would turn an equal split of [totalAmount] into
+     * [amounts], for pre-filling an edit form from a previously saved split.
+     * A participant missing from [amounts] gets no adjustment (zero).
+     */
+    fun <T> deriveAdjustments(totalAmount: BigDecimal, participantIds: List<T>, amounts: Map<T, BigDecimal>): Map<T, BigDecimal> {
+        val equalShares = splitEqually(totalAmount, participantIds)
+        return participantIds.associateWith { id -> (amounts[id] ?: BigDecimal.ZERO) - equalShares.getValue(id) }
+    }
 }

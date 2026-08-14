@@ -1103,3 +1103,87 @@ APK` (job `94831439595`) had already succeeded on attempt 1 in this same run
   `Verify build success` and `Check APK exists` both green; the non-gating
   Release APK build also succeeded.
 - `Final Status` (job `94835698309`) — conclusion `success`.
+
+## Phase 9 — Edit group expenses instead of delete-only
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 45`, `versionName = "0.32.0"`
+**Migration:** none (no schema change)
+
+### Why
+
+Phase 8 shipped group expenses with delete-only correction: fixing a typo'd
+amount or a wrong split meant deleting the row and re-entering it from
+scratch, losing the original as a reference mid-edit. Asked for directly:
+add a real edit path, and make sure the amounts (and therefore every
+balance and settle-up suggestion derived from them) actually update.
+
+### What changed
+
+**Domain**
+- `domain/split/SplitAllocator.kt` — two new pure inverse functions so the
+  edit dialog can pre-fill from a previously saved split instead of starting
+  blank: `derivePercentages(totalAmount, amounts)` recovers each
+  participant's percentage from their already-computed share (exact inverse
+  of `splitByPercentages`, zero for every participant rather than dividing
+  by a non-positive total); `deriveAdjustments(totalAmount, participantIds,
+  amounts)` recovers each participant's +/- offset from an equal split
+  (exact inverse of `splitByAdjustments`).
+
+**Data**
+- `data/local/dao/Daos.kt` — `GroupExpenseDao` gained `update(entity)` and
+  `deleteSplitsForExpense(expenseId)` (clears the old split rows before an
+  edit's new ones are inserted -- simpler than diffing which participant
+  rows changed, same wholesale-replace idiom `SplitGroupDao` already uses
+  for group membership).
+- `domain/repository/Repositories.kt` / `data/repository/SimpleRepositories.kt`
+  — `SplitGroupRepository.addExpense` renamed to `saveExpense`, now
+  branching on `expense.id == 0`: insert for a new expense, or update the
+  expense row + wholesale-replace its splits for an existing one. Same
+  insert-or-update-by-id idiom every other `save()` in this app already
+  follows (`BillRepository`, `SavingsGoalRepository`, `CategoryRepository`).
+
+**UI**
+- `ui/screens/splits/GroupDetailScreen.kt` — `GroupDetailUiState` gained
+  `splitsByExpenseId` (an expense's current splits, for the edit dialog to
+  read). `GroupDetailViewModel.addExpense` renamed to `saveExpense(expenseId,
+  ...)`, used by both the add and edit flows (and by `recordSettlement`,
+  unchanged in behavior). `ExpenseRow` gained an edit action next to delete
+  -- hidden for `SplitType.SETTLEMENT` rows, since a settlement's one split
+  is implicit in how `recordSettlement` builds it rather than something the
+  split-type picker can reconstruct into a sensible starting form; deleting
+  is still how a settlement gets corrected. `AddExpenseDialog` renamed to
+  `ExpenseDialog` and generalized with an `existing: GroupExpense?` /
+  `existingSplits: List<ExpenseSplit>` pair: null means the add flow
+  (unchanged blank form); non-null pre-fills description/amount/paid-by and,
+  when the selected split type still matches the expense's original one,
+  the per-participant fields too (via the new `derivePercentages`/
+  `deriveAdjustments`, or the stored amount directly for EQUAL/EXACT).
+  Switching to a *different* split type while editing starts that type's
+  fields blank rather than guessing a cross-type mapping -- same as a new
+  expense. Participants pre-filling the form union in anyone from the
+  expense's existing splits even if they've since left the group, so
+  editing an old expense can never silently drop a former member's share.
+  Title/confirm-button text swap between "New expense"/"Add" and "Edit
+  expense"/"Save" based on whether `existing` is null.
+
+### Tests
+
+- `SplitAllocatorTest` — 5 new cases: `derivePercentages` recovers the
+  right percentage from an amount and is the exact inverse of
+  `splitByPercentages`'s forward computation (round-trip test), returns
+  zero for every participant instead of dividing by a non-positive total;
+  `deriveAdjustments` is the exact inverse of `splitByAdjustments`'s
+  forward computation, and reports zero adjustment for an unmodified equal
+  share.
+
+### Deferred
+
+- No undo on delete (unchanged from Phase 8) -- deleting an expense is
+  still permanent, only editing gained a correction path.
+- Editing a `SETTLEMENT`-type expense still isn't offered; delete-and-
+  re-record via "Settle up" remains the only way to correct one.
+
+### CI verification
+
+Pending — push and check `test-build.yml` on this commit.

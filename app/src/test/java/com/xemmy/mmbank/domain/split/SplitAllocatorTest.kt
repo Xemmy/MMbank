@@ -123,4 +123,51 @@ class SplitAllocatorTest {
         )
         assertNull(result)
     }
+
+    // -- derivePercentages ----------------------------------------------------
+
+    @Test
+    fun `derivePercentages recovers the percentage each amount represents`() {
+        val result = SplitAllocator.derivePercentages(
+            BigDecimal("100.00"),
+            mapOf("a" to BigDecimal("25.00"), "b" to BigDecimal("75.00")),
+        )
+        assertEquals(25.0, result.getValue("a"), 0.001)
+        assertEquals(75.0, result.getValue("b"), 0.001)
+    }
+
+    @Test
+    fun `derivePercentages is the exact inverse of splitByPercentages`() {
+        val original = mapOf("a" to 40.0, "b" to 60.0)
+        val amounts = SplitAllocator.splitByPercentages(BigDecimal("250.00"), original)!!
+        val recovered = SplitAllocator.derivePercentages(BigDecimal("250.00"), amounts)
+        assertEquals(40.0, recovered.getValue("a"), 0.01)
+        assertEquals(60.0, recovered.getValue("b"), 0.01)
+    }
+
+    @Test
+    fun `derivePercentages returns zero for every participant rather than dividing by a non-positive total`() {
+        val result = SplitAllocator.derivePercentages(BigDecimal.ZERO, mapOf("a" to BigDecimal("10.00")))
+        assertEquals(0.0, result.getValue("a"), 0.001)
+    }
+
+    // -- deriveAdjustments ------------------------------------------------------
+
+    @Test
+    fun `deriveAdjustments is the exact inverse of splitByAdjustments`() {
+        val participants = listOf("a", "b")
+        val original = mapOf("a" to BigDecimal("5.00"), "b" to BigDecimal("-5.00"))
+        val amounts = SplitAllocator.splitByAdjustments(BigDecimal("30.00"), participants, original)!!
+        val recovered = SplitAllocator.deriveAdjustments(BigDecimal("30.00"), participants, amounts)
+        assertEquals(0, recovered.getValue("a").compareTo(BigDecimal("5.00")))
+        assertEquals(0, recovered.getValue("b").compareTo(BigDecimal("-5.00")))
+    }
+
+    @Test
+    fun `deriveAdjustments reports zero for an equal share with no adjustment`() {
+        val participants = listOf("a", "b", "c")
+        val equalShares = SplitAllocator.splitEqually(BigDecimal("30.00"), participants)
+        val result = SplitAllocator.deriveAdjustments(BigDecimal("30.00"), participants, equalShares)
+        participants.forEach { assertEquals(0, result.getValue(it).compareTo(BigDecimal.ZERO)) }
+    }
 }
