@@ -461,3 +461,109 @@ Two things make this noisier than it looks: the repo fires **two runs per
 push** (a `push` trigger and a `pull_request` trigger, via the open PR #9), so
 each supersede emits two failure notifications. Nothing was wrong and nothing
 was changed — worth recognizing rather than "fixing" next time.
+
+---
+
+## Phase 5 — Transaction retention prune (completing phase-ai-c)
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 41`, `versionName = "0.28.0"`
+**Migration:** none — deletes existing rows, adds no columns
+
+### Why
+
+`phase-ai-c` (commit `b66cf01`) shipped `AiRetentionScorer` — pure scoring
+for "is this transaction significant enough to protect from pruning" — but
+explicitly left it unwired: *"not wired into a scheduled pruning job because
+MMbank has no such job today... this ships the evaluation logic ready for
+that future feature."* No such job existed anywhere; `BackupManager` only
+exported/imported. This phase builds the job, opt-in and off by default,
+per an explicit user decision (asked directly rather than assumed, since
+auto-deleting rows in a finance app is destructive and hard to reverse).
+
+### What changed
+
+**Domain**
+- `domain/ai/TransactionRetentionPlanner.kt` (new) — pure, JVM-testable.
+  `plan(transactions, retentionMonths, nowMillis)` returns the transaction
+  IDs older than the cutoff that `AiRetentionScorer.isSignificant` does NOT
+  protect. The anomaly average that scorer needs is computed here, per
+  currency (a cap denominated in one currency can't be compared against
+  another — same rule `CategoryBudgetCalculator` follows), from every real
+  debit in the input, not just the rows old enough to be candidates, so the
+  bar a transaction must clear doesn't drift downward as earlier runs prune
+  history out from under it. `retentionMonths <= 0` short-circuits to an
+  empty plan without scanning, so a disabled setting can never delete
+  anything. `cutoffMillis` is computed in UTC so the result doesn't depend
+  on the device's timezone.
+
+**Data**
+- `domain/repository/Repositories.kt` / `TransactionRepositoryImpl.kt` —
+  added `getAllReal()`, a one-shot snapshot of the real (non-demo)
+  partition via the existing `dao.getAll()` (already used by
+  `BackupManager`, already excludes demo rows). Deliberately not
+  `observeTransactions()`: that flow follows the live Demo-mode toggle, and
+  a background job must never evaluate — or delete — demo rows depending on
+  what the UI happens to be showing. Deletion itself reuses the existing
+  `deleteMany(ids)` (already backing multi-select delete in Activity).
+  Two test doubles (`IngestCapturedMessageUseCaseTest`,
+  `BulkUpdateTransactionsUseCaseTest`) got the new override.
+
+**Prefs / DI**
+- `data/prefs/AppPreferences.kt` — `transactionRetentionMonths: Int`
+  (default `0` = off), following the existing `appLockTimeoutMinutes`
+  int-pref shape.
+- `data/retention/TransactionRetentionWorker.kt` (new) — a weekly
+  `CoroutineWorker`, structurally identical to `SubscriptionReminderWorker`:
+  reads the setting, no-ops at `<= 0`, otherwise loads the real snapshot,
+  runs the planner, and deletes the planned IDs under `runCatching` so a
+  failure can never produce a partial or repeated deletion. This is
+  MMbank's **second** periodic work item; every doc comment that used to
+  call `SubscriptionReminderWorker` "the app's only periodic work"
+  (`AppContainer`, `AppPreferences`, `SettingsScreen`, the worker itself)
+  was updated to say "one of" instead, rather than leaving a claim that's
+  now false sitting in the code.
+- `di/AppContainer.kt` — `setTransactionRetentionMonths` /
+  `ensureTransactionRetentionWork` / `cancelTransactionRetentionWork`, an
+  exact mirror of the existing subscription-reminder scheduling trio
+  (unique periodic work, `ExistingPeriodicWorkPolicy.KEEP`, so re-arming on
+  every app start doesn't reset the 7-day period). Wired into
+  `MMBankApp.onCreate` next to `ensureSubscriptionReminderWork()`.
+
+**UI**
+- `ui/screens/settings/SettingsScreen.kt` — a "Transaction history" section
+  in the existing Backup & restore subpage (both are about how much history
+  the ledger carries), a `FilterChip` row over
+  `TRANSACTION_RETENTION_OPTIONS_MONTHS` (`0/6/12/24/36` → "Forever/6 mo/1
+  yr/2 yr/3 yr"), mirroring the Security subpage's app-lock-timeout chip
+  row exactly.
+
+### Tests
+
+`TransactionRetentionPlannerTest` — 10 cases: retention off prunes nothing;
+rows inside the window are always kept; an ordinary old row is pruned; an
+old anomalously-large debit is protected; an old INCOME row is protected
+regardless of amount; an old `excludeFromStats` correction is NOT protected
+(matches `AiRetentionScorerTest`'s existing case) and gets pruned; a large
+old AED history can't shield a small USD anomaly from getting wrongly
+spared (proves per-currency isolation, not just per-currency labeling —
+constructed so a currency-blind average would give the opposite answer); a
+CREDIT row is never averaged in and can itself be pruned; `cutoffMillis`
+moves back exactly the configured months in UTC; an empty transaction list
+plans nothing.
+
+### Deferred
+
+- No in-app preview of what a prune run *would* delete before it runs —
+  the user chose the always-on weekly job over a manual "preview and
+  confirm" flow when asked directly which shape this phase should take.
+- No CSV/backup-export prompt before the first prune. `BackupSettingsScreen`
+  is one scroll away in the same subpage, and the section's copy says
+  "back up first if you want to keep everything," but there's no forced
+  gate.
+
+### CI verification
+
+Pending — will be recorded once the push is read from the Actions log
+rather than the checkmark, per this repo's standing rule that
+`continue-on-error` masks real test failures.

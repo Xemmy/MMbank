@@ -191,6 +191,8 @@ class TransactionRepositoryImpl(
 
     override suspend fun deleteMany(ids: List<Long>): Int = dao.deleteMany(ids)
 
+    override suspend fun getAllReal(): List<Transaction> = dao.getAll().map(TransactionEntity::toDomain)
+
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeUncategorized(): Flow<List<Transaction>> =
         demoMode.flatMapLatest { demo -> dao.observeUncategorized(demo) }

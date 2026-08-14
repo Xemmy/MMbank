@@ -34,6 +34,7 @@ import com.xemmy.mmbank.data.repository.SubscriptionRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.retention.TransactionRetentionWorker
 import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
@@ -607,10 +608,11 @@ class AppContainer(context: Context) {
     }
 
     /**
-     * Turns the opt-in renewal reminder on or off, scheduling or cancelling the
-     * app's only periodic work (see [SubscriptionReminderWorker]). Nothing is
-     * scheduled while the toggle is off, so the app's no-background-polling
-     * behavior is unchanged for anyone who doesn't want reminders.
+     * Turns the opt-in renewal reminder on or off, scheduling or cancelling one
+     * of the app's periodic work items (see [SubscriptionReminderWorker]).
+     * Nothing is scheduled while the toggle is off, so the app's
+     * no-background-polling behavior is unchanged for anyone who doesn't want
+     * reminders.
      */
     fun setSubscriptionRemindersEnabled(enabled: Boolean) {
         preferences.subscriptionRemindersEnabled = enabled
@@ -637,6 +639,39 @@ class AppContainer(context: Context) {
         runCatching {
             WorkManager.getInstance(appContext).cancelUniqueWork(SubscriptionReminderWorker.WORK_NAME)
         }.onFailure { recordError("AppContainer.cancelSubscriptionReminderWork", it) }
+    }
+
+    /**
+     * Turns the opt-in transaction-retention prune on or off, scheduling or
+     * cancelling [TransactionRetentionWorker]. `months <= 0` disables it (and
+     * cancels any scheduled run); nothing is ever scheduled at a value of 0,
+     * matching [setSubscriptionRemindersEnabled]'s off-by-default posture.
+     */
+    fun setTransactionRetentionMonths(months: Int) {
+        preferences.transactionRetentionMonths = months
+        if (months > 0) ensureTransactionRetentionWork() else cancelTransactionRetentionWork()
+    }
+
+    /**
+     * Re-arms the weekly prune if a retention window is set. Idempotent
+     * (unique work with KEEP), so calling it on every app start just confirms
+     * the existing schedule rather than resetting its period.
+     */
+    fun ensureTransactionRetentionWork() {
+        if (preferences.transactionRetentionMonths <= 0) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                TransactionRetentionWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<TransactionRetentionWorker>(7, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureTransactionRetentionWork", it) }
+    }
+
+    private fun cancelTransactionRetentionWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(TransactionRetentionWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelTransactionRetentionWork", it) }
     }
 
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */

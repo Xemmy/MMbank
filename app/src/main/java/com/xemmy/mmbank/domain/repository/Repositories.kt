@@ -48,6 +48,13 @@ interface TransactionRepository {
     suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int
     /** Multi-select delete. Returns the number of rows removed. */
     suspend fun deleteMany(ids: List<Long>): Int
+    /**
+     * A one-shot snapshot of every real (non-demo) transaction, for the
+     * background retention job to plan against -- unlike [observeTransactions],
+     * this never switches to the demo partition, so demo rows can never be
+     * evaluated (or deleted) by a job that runs independent of Demo mode.
+     */
+    suspend fun getAllReal(): List<Transaction>
     /** Real, non-demo rows still missing a dynamic category (plain Uncategorized or a pending AI suggestion). */
     fun observeUncategorized(): Flow<List<Transaction>>
     /** Assigns (or clears, with null) a dynamic [Category] on a transaction; clears any pending suggestion. */

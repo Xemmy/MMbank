@@ -128,6 +128,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
+    var transactionRetentionMonths by mutableStateOf(container.preferences.transactionRetentionMonths)
+        private set
 
     // Classic vs Premium: a reactive flow (not a mutableStateOf snapshot) since
     // the root theme wrapper, the AI-parsing indicator and the transaction
@@ -315,9 +317,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /**
-     * Schedules or cancels the app's only periodic work. Off by default -- see
-     * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker] for why
-     * this is opt-in rather than always on.
+     * Schedules or cancels one of the app's periodic work items. Off by
+     * default -- see [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker]
+     * for why this is opt-in rather than always on.
      */
     fun updateSubscriptionReminders(enabled: Boolean) {
         container.setSubscriptionRemindersEnabled(enabled)
@@ -363,6 +365,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateAppLockTimeout(minutes: Int) {
         container.setAppLockTimeoutMinutes(minutes)
         appLockTimeoutMinutes = minutes
+    }
+
+    /** `0` means "keep everything forever" -- turns the retention prune off and cancels its schedule. */
+    fun updateTransactionRetentionMonths(months: Int) {
+        container.setTransactionRetentionMonths(months)
+        transactionRetentionMonths = months
+        statusMessage = if (months <= 0) {
+            "Transaction history kept forever."
+        } else {
+            "Old, unremarkable transactions older than ${transactionRetentionLabel(months)} will be pruned weekly."
+        }
     }
 
     /**
@@ -1062,8 +1075,7 @@ fun PreferencesSettingsScreen(
                 Text("Subscription renewal reminders", style = MaterialTheme.typography.bodyLarge)
                 Text(
                     "Notifies you a few days before a detected subscription renews. Checks once a " +
-                        "day on-device with no network use — this is the app's only background " +
-                        "schedule, so it stays off unless you want it.",
+                        "day on-device with no network use, and stays off unless you want it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1643,6 +1655,16 @@ val APP_LOCK_TIMEOUT_OPTIONS_MIN = listOf(1, 2, 5, 15, 60, 360, 720)
 fun appLockTimeoutLabel(minutes: Int): String =
     if (minutes >= 60 && minutes % 60 == 0) "${minutes / 60} hr" else "$minutes min"
 
+/** Retention window choices, in months. `0` means "keep everything forever". */
+val TRANSACTION_RETENTION_OPTIONS_MONTHS = listOf(0, 6, 12, 24, 36)
+
+/** "Forever" / "6 mo" / "1 yr" / "3 yr" — whole-year multiples render in years, else months. */
+fun transactionRetentionLabel(months: Int): String = when {
+    months <= 0 -> "Forever"
+    months % 12 == 0 -> "${months / 12} yr"
+    else -> "$months mo"
+}
+
 /** Editable saved-people list: add, rename (updates every transaction), remove. */
 @Composable
 private fun PeopleSection(viewModel: SettingsViewModel) {
@@ -1865,6 +1887,8 @@ fun BackupSettingsScreen(
 ) {
     SettingsSubpage(title = "Backup & restore", onBack = onBack) {
         BackupSection(viewModel)
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        RetentionSection(viewModel)
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
@@ -1974,6 +1998,34 @@ private fun BackupSection(viewModel: SettingsViewModel) {
         },
         enabled = !viewModel.busy,
     ) { Text("Export CSV") }
+}
+
+/**
+ * Opt-in weekly prune of old, unremarkable transaction history (see
+ * [com.xemmy.mmbank.data.retention.TransactionRetentionWorker]). Placed next
+ * to backups since both are about how much history the ledger carries.
+ * Off by default -- picking "Forever" cancels the schedule entirely.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RetentionSection(viewModel: SettingsViewModel) {
+    Text("Transaction history", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(
+        "Prunes old debits automatically, weekly, on-device. Income, unusually large " +
+            "amounts, and anything inside the window below are always kept, regardless " +
+            "of age. Back up first if you want to keep everything.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TRANSACTION_RETENTION_OPTIONS_MONTHS.forEach { months ->
+            FilterChip(
+                selected = viewModel.transactionRetentionMonths == months,
+                onClick = { viewModel.updateTransactionRetentionMonths(months) },
+                label = { Text(transactionRetentionLabel(months)) },
+            )
+        }
+    }
 }
 
 /**

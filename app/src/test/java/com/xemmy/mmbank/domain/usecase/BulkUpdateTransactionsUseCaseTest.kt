@@ -52,6 +52,7 @@ class BulkUpdateTransactionsUseCaseTest {
         override suspend fun setSpendingCategory(transactionId: Long, category: SpendingCategory) = Unit
         override suspend fun renamePerson(from: String, to: String?) = Unit
         override suspend fun delete(transactionId: Long) = Unit
+        override suspend fun getAllReal(): List<Transaction> = emptyList()
         override fun observeUncategorized(): Flow<List<Transaction>> = flowOf(emptyList())
         override suspend fun setCategory(transactionId: Long, categoryId: Long?) = Unit
         override suspend fun dismissCategorySuggestion(transactionId: Long) = Unit

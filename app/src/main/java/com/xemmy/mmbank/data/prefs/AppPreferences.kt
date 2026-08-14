@@ -270,8 +270,8 @@ class AppPreferences(context: Context) {
     /**
      * Opt-in daily reminder shortly before a detected subscription renews.
      *
-     * **Off by default, deliberately.** Turning it on schedules the app's only
-     * periodic work (see
+     * **Off by default, deliberately.** Turning it on schedules one of the
+     * app's periodic work items (see
      * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker]); the
      * README sells "no background polling" as a battery property, so nothing is
      * scheduled until the user asks for it.
@@ -293,6 +293,18 @@ class AppPreferences(context: Context) {
     var subscriptionRemindersSent: Set<String>
         get() = prefs.getStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, value).apply()
+
+    /**
+     * Months of transaction history to keep before the opt-in retention job
+     * (see [com.xemmy.mmbank.data.retention.TransactionRetentionWorker]) prunes
+     * older, non-significant rows -- built on [com.xemmy.mmbank.domain.ai.AiRetentionScorer],
+     * which phase-ai-c shipped without a job to consult it. `0` (the default)
+     * means retention is off: nothing is ever deleted and nothing is scheduled,
+     * same off-by-default posture as [subscriptionRemindersEnabled].
+     */
+    var transactionRetentionMonths: Int
+        get() = prefs.getInt(KEY_TRANSACTION_RETENTION_MONTHS, 0)
+        set(value) = prefs.edit().putInt(KEY_TRANSACTION_RETENTION_MONTHS, value.coerceAtLeast(0)).apply()
 
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
@@ -331,5 +343,6 @@ class AppPreferences(context: Context) {
         const val KEY_CATEGORY_BUDGET_ALERTS = "category_budget_alerts"
         const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
+        const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
     }
 }

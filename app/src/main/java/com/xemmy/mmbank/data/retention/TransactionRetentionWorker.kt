@@ -1,0 +1,58 @@
+package com.xemmy.mmbank.data.retention
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
+
+/**
+ * Opt-in weekly prune of old, unremarkable transaction history, per
+ * [com.xemmy.mmbank.data.prefs.AppPreferences.transactionRetentionMonths].
+ *
+ * One of two periodic work items MMbank ever schedules -- alongside
+ * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker] -- and, like
+ * that one, only exists while its Settings toggle is on (default off): a
+ * single local DB read/plan/delete, no network, nothing scheduled for anyone
+ * who hasn't asked for it.
+ *
+ * Deletion decisions are entirely [TransactionRetentionPlanner]'s (which in
+ * turn defers "is this row worth keeping regardless of age" to
+ * [com.xemmy.mmbank.domain.ai.AiRetentionScorer]) -- this class only supplies
+ * the real transaction snapshot and the wall clock, then executes the plan.
+ *
+ * Fails silently (`Result.success` with no side effect) on every non-fatal
+ * condition, like [com.xemmy.mmbank.data.ai.AiParsingWorker] and
+ * [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker] -- a missed
+ * prune must never become a retry storm, and a failure here must never risk
+ * a partial or repeated deletion.
+ */
+class TransactionRetentionWorker(
+    context: Context,
+    params: WorkerParameters,
+) : CoroutineWorker(context, params) {
+
+    override suspend fun doWork(): Result {
+        val container = (applicationContext as? MMBankApp)?.container ?: return Result.success()
+        val retentionMonths = container.preferences.transactionRetentionMonths
+        if (retentionMonths <= 0) return Result.success()
+
+        runCatching {
+            val transactions = container.transactionRepository.getAllReal()
+            val plan = TransactionRetentionPlanner.plan(
+                transactions = transactions,
+                retentionMonths = retentionMonths,
+                nowMillis = System.currentTimeMillis(),
+            )
+            if (plan.transactionIdsToDelete.isNotEmpty()) {
+                container.transactionRepository.deleteMany(plan.transactionIdsToDelete)
+            }
+        }.onFailure { container.recordError("TransactionRetentionWorker", it) }
+
+        return Result.success()
+    }
+
+    companion object {
+        const val WORK_NAME = "transaction_retention_prune"
+    }
+}

@@ -62,6 +62,7 @@ class IngestCapturedMessageUseCaseTest {
         ): Int = 0
         override suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int = 0
         override suspend fun deleteMany(ids: List<Long>): Int = 0
+        override suspend fun getAllReal(): List<Transaction> = emptyList()
         override fun observeUncategorized(): Flow<List<Transaction>> = flowOf(emptyList())
         override suspend fun setCategory(transactionId: Long, categoryId: Long?) = Unit
         override suspend fun dismissCategorySuggestion(transactionId: Long) = Unit
