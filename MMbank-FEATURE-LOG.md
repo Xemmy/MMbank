@@ -597,7 +597,7 @@ plans nothing.
 
 ## Phase 6 — Upcoming Bills & Reminders
 
-**Status:** landed, CI pending
+**Status:** landed, CI green
 **Version:** `versionCode = 42`, `versionName = "0.29.0"`
 **Migration:** v18 -> v19, new `bills` table (see below)
 
@@ -704,6 +704,43 @@ and a one-off (null `recurrence`) round-trip.
 
 ### CI verification
 
-Pending — will be recorded once the push is read from the Actions log
-rather than the checkmark, per this repo's standing rule that
-`continue-on-error` masks real test failures.
+**First push (`35fec85`) had a real compile failure.** Run `31813493070`,
+job `94809473700` (`Lint & Unit Tests`) reported conclusion `success` --
+`continue-on-error: true` again masking the real result -- but the log
+itself showed:
+
+```
+e: .../ui/screens/bills/BillsScreen.kt:124:13 This material API is
+   experimental and is likely to change or to be removed in the future.
+> Task :app:compileDebugKotlin FAILED
+BUILD FAILED in 2m 14s
+```
+
+Kotlin treats an unguarded `@RequiresOptIn`-marked API as a hard compile
+error, not a warning, despite the message text reading like one.
+`BillsScreen` used `TopAppBar` without the `@OptIn(ExperimentalMaterial3Api::class)`
+`GoalsScreen` already carries for the same API. `Build APK` (job
+`94810186472`) failed outright on the same cause, so this one wasn't a
+case where only the log-read caught it -- but the unit-test job's green
+checkmark alone still would have hidden it, which is the exact trap this
+file's standing rule exists for. Fixed and pushed as `b287662`.
+
+**Verified green on `b287662`.** Run `31813931797`:
+
+- `Lint & Unit Tests` (job `94811042108`) — conclusion `success`. Read the
+  "Run unit tests" step log directly:
+  ```
+  > Task :app:testDebugUnitTest
+  BUILD SUCCESSFUL in 1m 40s
+  25 actionable tasks: 13 executed, 12 from cache
+  ```
+  No `N tests completed, N failed` line — per this file's established
+  convention, Gradle only prints that summary when something fails, so its
+  absence is the pass signal, including the new `BillRemindersTest`,
+  `BillAdvancerTest`, and the two new `EntityMappersTest` bill round-trip
+  cases.
+- `Build APK (with retries)` (job `94811618418`) — conclusion `success`.
+  Debug APK built on **attempt 1**, no retries needed; `Verify build
+  success`, `Check APK exists`, and `Upload Debug APK` all green. The
+  non-gating Release APK build also succeeded.
+- `Final Status` (job `94813121143`) — conclusion `success`.
