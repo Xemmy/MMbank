@@ -1106,7 +1106,7 @@ APK` (job `94831439595`) had already succeeded on attempt 1 in this same run
 
 ## Phase 9 — Edit group expenses instead of delete-only
 
-**Status:** landed, CI pending
+**Status:** landed, CI green
 **Version:** `versionCode = 45`, `versionName = "0.32.0"`
 **Migration:** none (no schema change)
 
@@ -1186,4 +1186,22 @@ balance and settle-up suggestion derived from them) actually update.
 
 ### CI verification
 
-Pending — push and check `test-build.yml` on this commit.
+**Verified green on `15fb61e`.** Run `31844691767`:
+
+- `Lint & Unit Tests` (job `94908616164`) — conclusion `success`. Read the
+  "Run unit tests" step log directly rather than trusting the checkmark
+  alone (this job has `continue-on-error: true`, per this file's standing
+  rule):
+  ```
+  > Task :app:testDebugUnitTest
+  BUILD SUCCESSFUL in 2m 49s
+  25 actionable tasks: 25 executed
+  ```
+  No `N tests completed, N failed` line — Gradle only prints that summary
+  on failure, so its absence is the pass signal, including the 5 new
+  `SplitAllocatorTest` cases for `derivePercentages`/`deriveAdjustments`.
+- `Build APK (with retries)` (job `94909233647`) — conclusion `success`.
+  Debug APK built on **attempt 1**, no retries needed. `Verify build
+  success` and `Check APK exists` both green; the non-gating Release APK
+  build also succeeded.
+- `Final Status` (job `94910536587`) — conclusion `success`.
