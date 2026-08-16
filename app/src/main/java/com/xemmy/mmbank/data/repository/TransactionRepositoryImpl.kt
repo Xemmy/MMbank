@@ -7,11 +7,13 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.parser.AiConfidenceScorer
+import com.xemmy.mmbank.domain.parser.CaptureCategoryResolver
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
@@ -91,13 +93,23 @@ class TransactionRepositoryImpl(
             // Dynamic category: a confirmed merchant mapping wins outright; failing
             // that, an unconfirmed AI guess for the same merchant rides along as a
             // pending suggestion rather than being silently applied (see
-            // AppContainer.onAiCategorySuggested).
-            val categoryId = parsed.merchant?.let { categoryRepository?.findCategoryForMerchant(it) }
-            val pendingSuggestion = if (categoryId == null) {
+            // AppContainer.onAiCategorySuggested). Only when neither applies does
+            // MerchantCategorizer's keyword guess get bridged onto a same-named
+            // dynamic category (see CategoryMigrationMapping) as a last resort --
+            // CaptureCategoryResolver picks between the three.
+            val confirmedCategoryId = parsed.merchant?.let { categoryRepository?.findCategoryForMerchant(it) }
+            val pendingSuggestion = if (confirmedCategoryId == null) {
                 parsed.merchant?.let { categoryRepository?.findPendingSuggestion(it) }
             } else null
             val spendingCategory = parsed.spendingCategoryOverride
                 ?: MerchantCategorizer.categorize(parsed.merchant, message.body)
+            val bridgedCategoryId = if (confirmedCategoryId == null && pendingSuggestion == null &&
+                spendingCategory != SpendingCategory.UNCATEGORIZED
+            ) {
+                CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME[spendingCategory]
+                    ?.let { categoryRepository?.findCategoryIdByName(it) }
+            } else null
+            val categoryId = CaptureCategoryResolver.resolve(confirmedCategoryId, pendingSuggestion != null, bridgedCategoryId)
 
             val entity = TransactionEntity(
                 amount = parsed.amount,
@@ -123,7 +135,11 @@ class TransactionRepositoryImpl(
                 suggestedCategoryColorHex = pendingSuggestion?.suggestedColorHex,
                 extractedMerchant = parsed.merchant,
                 aiConfidence = AiConfidenceScorer.score(
-                    hasConfirmedCategory = categoryId != null,
+                    // Deliberately the confirmed-only signal, not the final
+                    // (possibly bridge-assigned) categoryId -- a bridge match
+                    // is a KEYWORD_MATCH-strength guess, not a CONFIRMED_MAPPING
+                    // one; spendingCategory already carries that signal below.
+                    hasConfirmedCategory = confirmedCategoryId != null,
                     hasPendingSuggestion = pendingSuggestion != null,
                     spendingCategory = spendingCategory,
                 ),

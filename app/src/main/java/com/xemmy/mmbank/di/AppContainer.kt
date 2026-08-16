@@ -62,6 +62,7 @@ import com.xemmy.mmbank.domain.ai.AiDailyBudget
 import com.xemmy.mmbank.domain.ai.AiParseResult
 import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -170,7 +171,12 @@ class AppContainer(context: Context) {
             val idByKey = batch.accounts.associate { seed ->
                 seed.key to database.accountDao().insert(seed.entity)
             }
-            database.transactionDao().insertAll(batch.transactions(idByKey))
+            // Same enum-to-name bridge capture time uses, so demo transactions
+            // land on real dynamic categories instead of showing up Uncategorized.
+            val categoryIdByEnum = CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME.mapNotNull { (enumValue, name) ->
+                database.categoryDao().getByName(name)?.id?.let { enumValue to it }
+            }.toMap()
+            database.transactionDao().insertAll(batch.transactions(idByKey, categoryIdByEnum))
             database.parsingRuleDao().insertAll(batch.rules)
         }
         // Stash the real saved-people list and show demo people instead. Real

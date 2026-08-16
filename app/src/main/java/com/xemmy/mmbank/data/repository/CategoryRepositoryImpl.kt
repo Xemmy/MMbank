@@ -43,6 +43,8 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
     override suspend fun findPendingSuggestion(merchant: String): MerchantCategoryMapping? =
         if (merchant.isBlank()) null else mappingDao.findPending(merchant)?.toDomain()
 
+    override suspend fun findCategoryIdByName(name: String): Long? = categoryDao.getByName(name)?.id
+
     override suspend fun learnMapping(merchant: String, categoryId: Long, isExactMatch: Boolean): Int {
         mappingDao.upsert(
             MerchantCategoryMappingEntity(

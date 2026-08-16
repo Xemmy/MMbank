@@ -139,6 +139,13 @@ interface CategoryRepository {
     /** An unconfirmed AI guess staged for [merchant], if any. */
     suspend fun findPendingSuggestion(merchant: String): MerchantCategoryMapping?
     /**
+     * Case-insensitive exact-name lookup -- bridges [com.xemmy.mmbank.domain.model.CategoryMigrationMapping]'s
+     * enum-to-name targets onto a real category id, at capture time
+     * (see [com.xemmy.mmbank.domain.parser.CaptureCategoryResolver]) and in
+     * the v21->v22 migration's backfill.
+     */
+    suspend fun findCategoryIdByName(name: String): Long?
+    /**
      * Confirms merchant -> category and backfills every still-uncategorized
      * real transaction from that merchant onto it. Returns rows backfilled.
      */

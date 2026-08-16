@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 1 of 9 landed, CI pending
-**Version:** `versionCode = 47`, `versionName = "0.34.0"` (Step 1)
+**Status:** in progress — Step 2 of 9 landed, CI pending
+**Version:** `versionCode = 48`, `versionName = "0.34.1"` (Step 2; Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1260,6 +1260,37 @@ commit, per this project's established practice -- full technical design at
   filtered by `isDemo`: demo rows also have `categoryId IS NULL` today and
   feed the same unified screen this phase builds.
 
+**Step 2 — Capture-time bridge**
+- `domain/repository/Repositories.kt` / `data/repository/CategoryRepositoryImpl.kt`
+  — `CategoryRepository.findCategoryIdByName(name)` -> `categoryDao.getByName(name)?.id`
+  (case-insensitive; the DAO query already existed, unused outside the
+  repository's own internals until now).
+- `domain/parser/CaptureCategoryResolver.kt` (new) -- pure. `resolve(confirmedCategoryId,
+  hasPendingSuggestion, bridgedCategoryId)`: a confirmed merchant-mapping hit
+  always wins outright; a pending AI suggestion blocks any auto-assignment
+  (must still surface for human review in the Uncategorized queue rather
+  than being silently applied); only when neither applies does the bridge
+  guess get used.
+- `data/repository/TransactionRepositoryImpl.kt` (`recordParsed`) -- when
+  there's no confirmed mapping and no pending suggestion, bridges
+  `MerchantCategorizer`'s keyword guess (already computed for `spendingCategory`)
+  onto a same-named dynamic category via `CategoryMigrationMapping` +
+  `findCategoryIdByName`, then `CaptureCategoryResolver.resolve(...)` picks
+  the final `categoryId`. **Regression guard**: `AiConfidenceScorer.score(hasConfirmedCategory
+  = ...)` deliberately keeps reading the confirmed-only signal
+  (`confirmedCategoryId != null`), not the final (possibly bridge-assigned)
+  `categoryId` -- a bridge match is a `KEYWORD_MATCH`-strength guess, not a
+  `CONFIRMED_MAPPING` one, and `spendingCategory` already carries that
+  signal into the scorer separately. Flagged as the sharpest regression risk
+  in the whole phase during planning; verified by direct read before and
+  after this edit that the two booleans stayed distinct.
+- `domain/demo/DemoDataGenerator.kt` / `di/AppContainer.kt` (`enableDemoMode`)
+  -- demo transactions now also get a `categoryId`, resolved via the same
+  `CategoryMigrationMapping` bridge (looked up once per enum value against
+  the just-seeded categories, inside the same `withTransaction` block), so
+  Demo mode showcases the unified Categories screen (Step 4) correctly
+  instead of showing everything Uncategorized.
+
 ### Tests
 
 - `CategoryMigrationMappingTest` -- 4 cases: every `SpendingCategory` value has
@@ -1268,18 +1299,24 @@ commit, per this project's established practice -- full technical design at
   seeded (`DEFAULT_CATEGORIES` ∪ `DEFAULT_CATEGORIES_V22`, catches a typo
   before it ships as dead SQL); `OTHER`/`UNCATEGORIZED` both fold to
   "Uncategorized"; no other value collides onto it.
+- `CaptureCategoryResolverTest` -- 5 cases covering every combination:
+  confirmed wins over a bridge match; a pending suggestion blocks the bridge
+  even with a bridge match available; the bridge applies when neither
+  confirmed nor pending exists; nothing resolves with no signal at all; a
+  pending suggestion with no bridge match still resolves to null (not an
+  error).
 
-### Deferred (within this step; later steps in this phase cover the rest)
+### Deferred (within these steps; later steps in this phase cover the rest)
 
 - No automated migration-test harness exists anywhere in this project (no
   `MigrationTestHelper` precedent) -- this migration is verified by CI
   compile/build success plus a manual spot-check query documented in the plan
   file, not by an automated post-migration row-state assertion. Consistent
   with every prior migration in this codebase, not a new gap.
-- Steps 2-9 (capture-time bridge, shared editor component, unified screen,
-  bulk setter, TransactionsScreen migration, Dashboard/Analytics charts,
-  backup/restore format, remaining read-site cleanup) land as their own
-  commits; this entry grows to cover each as it ships.
+- Steps 3-9 (shared editor component, unified screen, bulk setter,
+  TransactionsScreen migration, Dashboard/Analytics charts, backup/restore
+  format, remaining read-site cleanup) land as their own commits; this entry
+  grows to cover each as it ships.
 
 ### CI verification
 
