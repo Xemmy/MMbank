@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 data class UncategorizedQueueUiState(
     val transactions: List<Transaction> = emptyList(),
     val categories: List<Category> = emptyList(),
+    val defaultCurrency: String = "USD",
 )
 
 class UncategorizedQueueViewModel(private val container: AppContainer) : ViewModel() {
@@ -59,7 +60,9 @@ class UncategorizedQueueViewModel(private val container: AppContainer) : ViewMod
     val uiState: StateFlow<UncategorizedQueueUiState> = combine(
         container.transactionRepository.observeUncategorized(),
         container.categoryRepository.observeAll(),
-    ) { transactions, categories -> UncategorizedQueueUiState(transactions, categories) }
+    ) { transactions, categories ->
+        UncategorizedQueueUiState(transactions, categories, container.preferences.defaultCurrency)
+    }
         .catch { e ->
             container.recordError("UncategorizedQueueViewModel", e)
             emit(UncategorizedQueueUiState())
@@ -100,11 +103,25 @@ class UncategorizedQueueViewModel(private val container: AppContainer) : ViewMod
         }
     }
 
-    fun createAndAssignCategory(transaction: Transaction, name: String, colorHex: String, icon: String, monthlyCap: BigDecimal?) {
+    fun createAndAssignCategory(
+        transaction: Transaction,
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: BigDecimal?,
+        parentCategoryId: Long?,
+    ) {
         viewModelScope.launch {
             runCatching {
                 val categoryId = container.categoryRepository.save(
-                    Category(name = name, icon = icon, colorHex = colorHex, isCustom = true, monthlyCap = monthlyCap)
+                    Category(
+                        name = name,
+                        icon = icon,
+                        colorHex = colorHex,
+                        isCustom = true,
+                        monthlyCap = monthlyCap,
+                        parentCategoryId = parentCategoryId,
+                    )
                 )
                 container.transactionRepository.setCategory(transaction.id, categoryId)
             }.onFailure { container.recordError("UncategorizedQueueViewModel.createAndAssignCategory", it) }
@@ -162,12 +179,13 @@ fun UncategorizedQueueScreen(
     pickerFor?.let { transaction ->
         CategoryPickerBottomSheet(
             categories = state.categories,
+            currency = state.defaultCurrency,
             onSelect = { category ->
                 viewModel.assignCategory(transaction, category)
                 pickerFor = null
             },
-            onCreateNew = { name, colorHex, icon, cap ->
-                viewModel.createAndAssignCategory(transaction, name, colorHex, icon, cap)
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.createAndAssignCategory(transaction, name, colorHex, icon, cap, parentId)
                 pickerFor = null
             },
             onDismiss = { pickerFor = null },

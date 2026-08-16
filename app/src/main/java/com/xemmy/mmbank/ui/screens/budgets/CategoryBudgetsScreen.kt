@@ -1,6 +1,5 @@
 package com.xemmy.mmbank.ui.screens.budgets
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,19 +16,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +48,7 @@ import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator.BudgetState
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.CategoryEditorDialog
 import com.xemmy.mmbank.ui.theme.MetaLabel
 import com.xemmy.mmbank.ui.theme.ObsidianCard
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
@@ -217,10 +212,10 @@ fun CategoryBudgetsScreen(
     }
 
     editing?.let { category ->
-        EditCategoryDialog(
-            category = category,
+        CategoryEditorDialog(
+            initial = category,
             currency = state.currency,
-            candidateParents = state.categories.filter { it.id != category.id && it.parentCategoryId != category.id },
+            allCategories = state.categories,
             onDismiss = { editing = null },
             onSave = { name, icon, colorHex, cap, parentId ->
                 viewModel.save(category, name, icon, colorHex, cap, parentId)
@@ -435,98 +430,3 @@ private fun RowActions(onEdit: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-@Composable
-private fun EditCategoryDialog(
-    category: Category,
-    currency: String,
-    /** Categories this one can be filed under -- excludes itself and any category that has it as a parent. */
-    candidateParents: List<Category>,
-    onDismiss: () -> Unit,
-    onSave: (name: String, icon: String, colorHex: String, cap: BigDecimal?, parentCategoryId: Long?) -> Unit,
-) {
-    var name by remember { mutableStateOf(category.name) }
-    var icon by remember { mutableStateOf(category.icon) }
-    var colorHex by remember { mutableStateOf(category.colorHex) }
-    var cap by remember { mutableStateOf(category.monthlyCap?.toPlainString().orEmpty()) }
-    var parent by remember { mutableStateOf(candidateParents.find { it.id == category.parentCategoryId }) }
-    var parentMenuOpen by remember { mutableStateOf(false) }
-
-    val capValue = cap.trim().takeIf { it.isNotBlank() }?.toBigDecimalOrNull()
-    val capValid = cap.isBlank() || capValue != null
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit category", style = MaterialTheme.typography.titleLarge) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = icon,
-                        onValueChange = { icon = it },
-                        label = { Text("Icon") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.4f),
-                    )
-                    OutlinedTextField(
-                        value = colorHex,
-                        onValueChange = { colorHex = it },
-                        label = { Text("Color") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.6f),
-                    )
-                }
-                OutlinedTextField(
-                    value = cap,
-                    onValueChange = { cap = it },
-                    label = { Text("Monthly cap ($currency)") },
-                    supportingText = { Text("Leave blank for no budget. Alerts at 80% and again if you pass it.") },
-                    singleLine = true,
-                    isError = !capValid,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Box {
-                    Card(
-                        Modifier.fillMaxWidth().clickable { parentMenuOpen = true },
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                parent?.let { "Parent: ${it.icon} ${it.name}" } ?: "No parent (top-level)",
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Choose parent category")
-                        }
-                    }
-                    DropdownMenu(expanded = parentMenuOpen, onDismissRequest = { parentMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("No parent (top-level)") },
-                            onClick = { parent = null; parentMenuOpen = false },
-                        )
-                        candidateParents.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text("${option.icon} ${option.name}") },
-                                onClick = { parent = option; parentMenuOpen = false },
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = name.isNotBlank() && capValid,
-                onClick = { onSave(name, icon, colorHex, capValue, parent?.id) },
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}

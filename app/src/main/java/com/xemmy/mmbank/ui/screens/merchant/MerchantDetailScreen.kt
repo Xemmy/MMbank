@@ -65,6 +65,7 @@ data class MerchantDetailUiState(
     val categories: List<Category> = emptyList(),
     /** True when [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine] currently flags this merchant as recurring. */
     val isSubscription: Boolean = false,
+    val defaultCurrency: String = "USD",
 )
 
 class MerchantDetailViewModel(
@@ -99,6 +100,7 @@ class MerchantDetailViewModel(
             currentCategory = categories.firstOrNull { it.id == currentCategoryId },
             categories = categories,
             isSubscription = subscriptions.any { it.merchant.trim().equals(key, ignoreCase = true) },
+            defaultCurrency = container.preferences.defaultCurrency,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MerchantDetailUiState(merchant = merchantName))
 
@@ -110,11 +112,18 @@ class MerchantDetailViewModel(
         }
     }
 
-    fun createAndAssignCategory(name: String, colorHex: String, icon: String, monthlyCap: BigDecimal?) {
+    fun createAndAssignCategory(name: String, colorHex: String, icon: String, monthlyCap: BigDecimal?, parentCategoryId: Long?) {
         viewModelScope.launch {
             runCatching {
                 val categoryId = container.categoryRepository.save(
-                    Category(name = name, icon = icon, colorHex = colorHex, isCustom = true, monthlyCap = monthlyCap)
+                    Category(
+                        name = name,
+                        icon = icon,
+                        colorHex = colorHex,
+                        isCustom = true,
+                        monthlyCap = monthlyCap,
+                        parentCategoryId = parentCategoryId,
+                    )
                 )
                 container.categoryRepository.learnMapping(merchantName, categoryId)
             }.onFailure { container.recordError("MerchantDetailViewModel.createAndAssignCategory", it) }
@@ -264,12 +273,13 @@ fun MerchantDetailScreen(
     if (pickerOpen) {
         CategoryPickerBottomSheet(
             categories = state.categories,
+            currency = state.defaultCurrency,
             onSelect = { category ->
                 viewModel.recategorize(category)
                 pickerOpen = false
             },
-            onCreateNew = { name, colorHex, icon, cap ->
-                viewModel.createAndAssignCategory(name, colorHex, icon, cap)
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.createAndAssignCategory(name, colorHex, icon, cap, parentId)
                 pickerOpen = false
             },
             onDismiss = { pickerOpen = false },

@@ -104,12 +104,13 @@ fun ReviewTransactionsScreen(
     pickerFor?.let { transaction ->
         CategoryPickerBottomSheet(
             categories = state.categories,
+            currency = state.defaultCurrency,
             onSelect = { category ->
                 viewModel.assignCategory(transaction, category)
                 pickerFor = null
             },
-            onCreateNew = { name, colorHex, icon, cap ->
-                viewModel.createAndAssignCategory(transaction, name, colorHex, icon, cap)
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.createAndAssignCategory(transaction, name, colorHex, icon, cap, parentId)
                 pickerFor = null
             },
             onDismiss = { pickerFor = null },

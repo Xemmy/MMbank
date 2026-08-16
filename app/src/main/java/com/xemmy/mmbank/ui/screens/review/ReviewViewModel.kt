@@ -34,6 +34,7 @@ data class ReviewUiState(
     val accounts: List<Account> = emptyList(),
     /** Count behind [BatchApprovalBanner]'s "Approve X" button. */
     val batchApprovableCount: Int = 0,
+    val defaultCurrency: String = "USD",
 )
 
 /** Threshold (Green in the confidence chip, "Auto-Categorized" in the batch banner). */
@@ -95,6 +96,7 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
             categories = categories,
             accounts = accounts,
             batchApprovableCount = highConfidenceApprovable(transactions).size,
+            defaultCurrency = container.preferences.defaultCurrency,
         )
     }
         .catch { e ->
@@ -123,11 +125,25 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** "Create New Category" from the searchable category sheet. */
-    fun createAndAssignCategory(transaction: Transaction, name: String, colorHex: String, icon: String, monthlyCap: BigDecimal?) {
+    fun createAndAssignCategory(
+        transaction: Transaction,
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: BigDecimal?,
+        parentCategoryId: Long?,
+    ) {
         viewModelScope.launch {
             runCatching {
                 val categoryId = container.categoryRepository.save(
-                    Category(name = name, icon = icon, colorHex = colorHex, isCustom = true, monthlyCap = monthlyCap)
+                    Category(
+                        name = name,
+                        icon = icon,
+                        colorHex = colorHex,
+                        isCustom = true,
+                        monthlyCap = monthlyCap,
+                        parentCategoryId = parentCategoryId,
+                    )
                 )
                 container.transactionRepository.setCategory(transaction.id, categoryId)
             }.onFailure { container.recordError("ReviewViewModel.createAndAssignCategory", it) }

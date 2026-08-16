@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 2 of 9 landed, CI pending
-**Version:** `versionCode = 48`, `versionName = "0.34.1"` (Step 2; Step 1 was 47/0.34.0)
+**Status:** in progress — Step 3 of 9 landed, CI pending
+**Version:** `versionCode = 49`, `versionName = "0.34.2"` (Step 3; Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1313,11 +1313,65 @@ commit, per this project's established practice -- full technical design at
   compile/build success plus a manual spot-check query documented in the plan
   file, not by an automated post-migration row-state assertion. Consistent
   with every prior migration in this codebase, not a new gap.
-- Steps 3-9 (shared editor component, unified screen, bulk setter,
-  TransactionsScreen migration, Dashboard/Analytics charts, backup/restore
-  format, remaining read-site cleanup) land as their own commits; this entry
-  grows to cover each as it ships.
+- Steps 4-9 (unified screen, bulk setter, TransactionsScreen migration,
+  Dashboard/Analytics charts, backup/restore format, remaining read-site
+  cleanup) land as their own commits; this entry grows to cover each as it
+  ships.
 
-### CI verification
+### CI verification (Steps 1-2)
+
+Landed, CI green.
+
+## Step 3 — Shared category editor component
+
+### What changed
+
+- `ui/components/CategoryPresets.kt` (new) -- `PRESET_COLORS` and
+  `categoryColor()` hoisted out of `CategoryPickerBottomSheet.kt` unchanged;
+  new `PRESET_ICONS` (the `SpendingCategory` emoji set, deduped) for the new
+  icon grid.
+- `ui/components/CategoryEditorFields.kt` (new) -- `CategoryEditorFormState`
+  (name, icon, colorHex, monthlyCapText, parent) plus `CategoryEditorFields`,
+  a hoisted-state composable rendering: name field; a scrollable preset icon
+  grid *plus* a free-text override field (no system emoji-keyboard component
+  exists in this app, so free text is how anything outside the curated grid
+  gets picked); color swatches; monthly cap field; parent dropdown. Two pure
+  extension functions, `isValid()` and `capValue()`, shared by every caller
+  instead of each re-deriving cap-parsing/validity itself.
+- `ui/components/CategoryEditorDialog.kt` (new) -- full create/edit
+  `AlertDialog` wrapper around `CategoryEditorFields`. `initial: Category?`
+  -- null means create, non-null means edit (fields seeded from it).
+  Computes `candidateParents` with the same self/direct-parent exclusion
+  guard the old dialog used (two-level hierarchy, so excluding direct
+  children is sufficient to prevent a cycle). **Replaces**
+  `CategoryBudgetsScreen.kt`'s private `EditCategoryDialog`, which is now
+  deleted along with the imports it alone needed (`Card`, `DropdownMenu`,
+  `DropdownMenuItem`, `OutlinedTextField`, `ArrowDropDown`, `clickable`).
+- `ui/components/CategoryPickerBottomSheet.kt` -- its `creating` branch now
+  embeds `CategoryEditorFields` instead of a bespoke name/color/cap-only
+  form (icon was previously hardcoded to `"🏷️"`, no parent picker existed
+  at all). Signature gains `currency: String` and `onCreateNew` gains a
+  trailing `parentCategoryId: Long?`.
+- Ripple to all 3 quick-create call sites -- each `UiState` gains
+  `defaultCurrency: String = "USD"` (read from `container.preferences.defaultCurrency`,
+  mirroring `CategoryBudgetsViewModel`'s existing pattern), each
+  `createAndAssignCategory(...)` gains a trailing `parentCategoryId: Long?`
+  forwarded straight into the saved `Category`:
+  - `UncategorizedQueueScreen.kt` / `UncategorizedQueueViewModel`
+  - `ReviewTransactionsScreen.kt` / `ReviewViewModel`
+  - `MerchantDetailScreen.kt` / `MerchantDetailViewModel`
+
+### Tests
+
+- `CategoryEditorFormStateTest` -- 7 cases for the two pure extension
+  functions: blank name invalid regardless of cap; blank cap valid; numeric
+  cap valid; unparseable cap invalid; `capValue()` trims and parses, is null
+  when blank, is null when unparseable.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Steps 4-9 unchanged from the prior status above.
+
+### CI verification (Step 3)
 
 Pending — push and check `test-build.yml` on this commit.
