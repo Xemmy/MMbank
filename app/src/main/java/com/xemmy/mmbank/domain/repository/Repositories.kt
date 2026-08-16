@@ -53,6 +53,10 @@ interface TransactionRepository {
     suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int
     /** Multi-select delete. Returns the number of rows removed. */
     suspend fun deleteMany(ids: List<Long>): Int
+    /** Multi-select edit: assigns (or clears, when null) the account on every id in [ids] at once. Returns affected count. */
+    suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
+    /** Multi-select edit: assigns (or clears, when null) the person on every id in [ids] at once. Returns affected count. */
+    suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int
     /**
      * A one-shot snapshot of every real (non-demo) transaction, for the
      * background retention job to plan against -- unlike [observeTransactions],

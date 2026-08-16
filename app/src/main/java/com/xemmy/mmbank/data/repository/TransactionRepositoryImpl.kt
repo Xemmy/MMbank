@@ -191,6 +191,12 @@ class TransactionRepositoryImpl(
 
     override suspend fun deleteMany(ids: List<Long>): Int = dao.deleteMany(ids)
 
+    override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int =
+        dao.bulkAssignAccount(ids, accountId)
+
+    override suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int =
+        dao.bulkSetPerson(ids, person?.trim()?.takeIf { it.isNotBlank() })
+
     override suspend fun getAllReal(): List<Transaction> = dao.getAll().map(TransactionEntity::toDomain)
 
     @OptIn(ExperimentalCoroutinesApi::class)

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
@@ -133,6 +134,7 @@ import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.parser.GenericExtractors
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
+import com.xemmy.mmbank.domain.usecase.FieldUpdate
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.AiParsingIndicator
 import com.xemmy.mmbank.ui.theme.AppFonts
@@ -416,6 +418,16 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         bulkMode.value = BulkModeState()
     }
 
+    fun bulkAssignAccount(accountId: Long?) = safeWrite("bulkAssignAccount") {
+        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(accountId = FieldUpdate.Set(accountId)))
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkSetPerson(person: String?) = safeWrite("bulkSetPerson") {
+        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(person = FieldUpdate.Set(person)))
+        bulkMode.value = BulkModeState()
+    }
+
     fun bulkDelete() = safeWrite("bulkDelete") {
         container.bulkUpdateTransactions.delete(bulkMode.value.selectedIds.toList())
         bulkMode.value = BulkModeState()
@@ -608,8 +620,12 @@ fun TransactionsScreen(
             if (state.isInBulkMode) {
                 BulkModeBar(
                     selectedCount = state.selectedTransactionIds.size,
+                    accounts = state.accounts,
+                    knownPersons = state.knownPersons,
                     onSelectAll = { viewModel.selectAll(state.transactions.map { it.id }) },
                     onCategorize = { category -> viewModel.bulkSetCategory(category) },
+                    onAssignAccount = { accountId -> viewModel.bulkAssignAccount(accountId) },
+                    onAssignPerson = { person -> viewModel.bulkSetPerson(person) },
                     onExclude = { viewModel.bulkSetExcludeFromStats(true) },
                     onDelete = { viewModel.bulkDelete() },
                     onClose = { viewModel.exitBulkMode() },
@@ -957,20 +973,29 @@ private fun QuickCategorizeDialog(
 
 /**
  * Contextual bar shown in place of the filter header while the Transactions
- * screen is in bulk-edit mode: selection count, Select All, and the three
- * bulk actions (Categorize / Exclude / Delete), plus a close button to drop
- * back to the normal filter header.
+ * screen is in bulk-edit mode: selection count, Select All, and the bulk
+ * actions (Categorize / Account / Person, plus Exclude / Delete tucked into
+ * a "More" overflow), plus a close button to drop back to the normal filter
+ * header.
  */
 @Composable
 private fun BulkModeBar(
     selectedCount: Int,
+    accounts: List<Account>,
+    knownPersons: List<String>,
     onSelectAll: () -> Unit,
     onCategorize: (SpendingCategory) -> Unit,
+    onAssignAccount: (Long?) -> Unit,
+    onAssignPerson: (String?) -> Unit,
     onExclude: () -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
 ) {
     var categoryMenuOpen by remember { mutableStateOf(false) }
+    var accountMenuOpen by remember { mutableStateOf(false) }
+    var personMenuOpen by remember { mutableStateOf(false) }
+    var newPersonOpen by remember { mutableStateOf(false) }
+    var moreMenuOpen by remember { mutableStateOf(false) }
     var deleteConfirmOpen by remember { mutableStateOf(false) }
     val hasSelection = selectedCount > 0
     Surface(color = ObsidianTokens.canvas, modifier = Modifier.fillMaxWidth()) {
@@ -985,6 +1010,8 @@ private fun BulkModeBar(
                 "$selectedCount selected",
                 style = MaterialTheme.typography.labelLarge,
                 color = ObsidianTokens.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onSelectAll) {
@@ -1003,13 +1030,66 @@ private fun BulkModeBar(
                     }
                 }
             }
-            IconButton(onClick = onExclude, enabled = hasSelection) {
-                Icon(Icons.Filled.VisibilityOff, contentDescription = "Exclude selected from analytics")
+            Box {
+                IconButton(onClick = { accountMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.AccountBalanceWallet, contentDescription = "Assign account to selected")
+                }
+                DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Unassigned") },
+                        onClick = { accountMenuOpen = false; onAssignAccount(null) },
+                    )
+                    accounts.forEach { account ->
+                        DropdownMenuItem(
+                            text = { Text(account.name) },
+                            onClick = { accountMenuOpen = false; onAssignAccount(account.id) },
+                        )
+                    }
+                }
             }
-            IconButton(onClick = { deleteConfirmOpen = true }, enabled = hasSelection) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+            Box {
+                IconButton(onClick = { personMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.Person, contentDescription = "Assign person to selected")
+                }
+                DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Nobody") },
+                        onClick = { personMenuOpen = false; onAssignPerson(null) },
+                    )
+                    knownPersons.forEach { person ->
+                        DropdownMenuItem(
+                            text = { Text(person) },
+                            onClick = { personMenuOpen = false; onAssignPerson(person) },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("New person…") },
+                        onClick = { personMenuOpen = false; newPersonOpen = true },
+                    )
+                }
+            }
+            Box {
+                IconButton(onClick = { moreMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More bulk actions")
+                }
+                DropdownMenu(expanded = moreMenuOpen, onDismissRequest = { moreMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Exclude from analytics") },
+                        onClick = { moreMenuOpen = false; onExclude() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = { moreMenuOpen = false; deleteConfirmOpen = true },
+                    )
+                }
             }
         }
+    }
+    if (newPersonOpen) {
+        NewPersonDialog(
+            onDismiss = { newPersonOpen = false },
+            onSave = { person -> newPersonOpen = false; onAssignPerson(person) },
+        )
     }
     if (deleteConfirmOpen) {
         AlertDialog(

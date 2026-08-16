@@ -130,6 +130,14 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id IN (:ids)")
     suspend fun deleteMany(ids: List<Long>): Int
 
+    /** Multi-select edit: assigns (or clears, when null) the account on every row in [ids] at once. Returns affected count. */
+    @Query("UPDATE transactions SET accountId = :accountId WHERE id IN (:ids)")
+    suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
+
+    /** Multi-select edit: assigns (or clears, when null) the person on every row in [ids] at once. Returns affected count. */
+    @Query("UPDATE transactions SET person = :person WHERE id IN (:ids)")
+    suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int
+
     // --- Dynamic category assignment (see CategoryRepository / CategoryMatcher) ---
 
     /** Assigns a dynamic category and clears any pending AI suggestion on the row (manual pick or accept). */

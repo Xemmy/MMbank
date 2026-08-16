@@ -21,6 +21,12 @@ class BulkUpdateTransactionsUseCaseTest {
         var lastExcludeIds: List<Long>? = null
         var lastExcluded: Boolean? = null
         var lastDeletedIds: List<Long>? = null
+        var lastAccountIds: List<Long>? = null
+        var lastAccountId: Long? = null
+        var accountAssignCalled = false
+        var lastPersonIds: List<Long>? = null
+        var lastPerson: String? = null
+        var personSetCalled = false
 
         override suspend fun bulkSetCategory(ids: List<Long>, category: SpendingCategory): Int {
             lastCategoryIds = ids
@@ -36,6 +42,20 @@ class BulkUpdateTransactionsUseCaseTest {
 
         override suspend fun deleteMany(ids: List<Long>): Int {
             lastDeletedIds = ids
+            return ids.size
+        }
+
+        override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int {
+            lastAccountIds = ids
+            lastAccountId = accountId
+            accountAssignCalled = true
+            return ids.size
+        }
+
+        override suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int {
+            lastPersonIds = ids
+            lastPerson = person
+            personSetCalled = true
             return ids.size
         }
 
@@ -91,6 +111,63 @@ class BulkUpdateTransactionsUseCaseTest {
         val affected = useCase(emptyList(), BulkTransactionPatch(spendingCategory = SpendingCategory.GROCERIES))
         assertEquals(0, affected)
         assertNull(repo.lastCategoryIds)
+        assertEquals(false, repo.accountAssignCalled)
+        assertEquals(false, repo.personSetCalled)
+    }
+
+    @Test
+    fun `patch with accountId Set calls bulkAssignAccount with that account id`() = runBlocking {
+        useCase(listOf(1L, 2L), BulkTransactionPatch(accountId = FieldUpdate.Set(9L)))
+        assertEquals(listOf(1L, 2L), repo.lastAccountIds)
+        assertEquals(9L, repo.lastAccountId)
+    }
+
+    @Test
+    fun `patch with accountId Set to null calls bulkAssignAccount with null to unassign`() = runBlocking {
+        useCase(listOf(3L), BulkTransactionPatch(accountId = FieldUpdate.Set(null)))
+        assertEquals(true, repo.accountAssignCalled)
+        assertNull(repo.lastAccountId)
+    }
+
+    @Test
+    fun `patch with accountId left as NoChange does not call bulkAssignAccount`() = runBlocking {
+        useCase(listOf(4L), BulkTransactionPatch(spendingCategory = SpendingCategory.DINING))
+        assertEquals(false, repo.accountAssignCalled)
+    }
+
+    @Test
+    fun `patch with person Set calls bulkSetPerson with that name`() = runBlocking {
+        useCase(listOf(5L, 6L), BulkTransactionPatch(person = FieldUpdate.Set("Alex")))
+        assertEquals(listOf(5L, 6L), repo.lastPersonIds)
+        assertEquals("Alex", repo.lastPerson)
+    }
+
+    @Test
+    fun `patch with person Set to null calls bulkSetPerson with null to clear`() = runBlocking {
+        useCase(listOf(7L), BulkTransactionPatch(person = FieldUpdate.Set(null)))
+        assertEquals(true, repo.personSetCalled)
+        assertNull(repo.lastPerson)
+    }
+
+    @Test
+    fun `patch with person left as NoChange does not call bulkSetPerson`() = runBlocking {
+        useCase(listOf(8L), BulkTransactionPatch(spendingCategory = SpendingCategory.DINING))
+        assertEquals(false, repo.personSetCalled)
+    }
+
+    @Test
+    fun `patch combining category, account, and person calls all three repository methods`() = runBlocking {
+        useCase(
+            listOf(10L),
+            BulkTransactionPatch(
+                spendingCategory = SpendingCategory.TRANSPORT,
+                accountId = FieldUpdate.Set(11L),
+                person = FieldUpdate.Set("Sam"),
+            ),
+        )
+        assertEquals(SpendingCategory.TRANSPORT, repo.lastCategory)
+        assertEquals(11L, repo.lastAccountId)
+        assertEquals("Sam", repo.lastPerson)
     }
 
     @Test
