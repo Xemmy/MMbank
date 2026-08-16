@@ -1205,3 +1205,82 @@ balance and settle-up suggestion derived from them) actually update.
   success` and `Check APK exists` both green; the non-gating Release APK
   build also succeeded.
 - `Final Status` (job `94910536587`) — conclusion `success`.
+
+## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
+
+**Status:** in progress — Step 1 of 9 landed, CI pending
+**Version:** `versionCode = 47`, `versionName = "0.34.0"` (Step 1)
+**Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
+
+### Why
+
+MMbank has two independent, disconnected category systems on every `Transaction`:
+`SpendingCategory` (a fixed 14-value enum driving the Dashboard chart, Analytics,
+and 100% of `TransactionsScreen`'s category UI) and the dynamic `Category` table
+(user-extensible, with a hierarchy from Phase 7, assigned via a picker from three
+different screens, full CRUD only on the budgets screen -- which has no create
+button at all). No single place to manage categories, no visual hierarchy despite
+`parentCategoryId` existing, and the two systems can silently disagree on the same
+transaction. Asked for directly ("categories in a single place"), scoped through
+two rounds of research (confirmed via direct AskUserQuestion, not assumed) into:
+unify both systems onto the dynamic `Category`; keep quick-create inline everywhere
+but make it one shared full-featured form; expand the existing budgets screen into
+the unified home with real hierarchy. Two additional real problems surfaced during
+research and were explicitly confirmed in scope: encrypted backup/restore already
+discards all dynamic-category data (worse once `Category` is the *only* system),
+and the Dashboard/Analytics charts should move onto the unified system too.
+
+Landing as 9 small, independently-buildable, CI-verified steps rather than one
+commit, per this project's established practice -- full technical design at
+`/root/.claude/plans/cheeky-wishing-wirth.md`.
+
+### What changed (updated per step; see below for the running list)
+
+**Step 1 — Migration v21 -> v22: seed defaults + backfill `categoryId`**
+- `data/local/AppDatabase.kt` — `DEFAULT_CATEGORIES_V22`: the 5
+  `SpendingCategory` values with no dynamic counterpart yet (Fuel⛽,
+  Entertainment🎬, Travel✈️, Transfers🔁, Fees🏦 -- icons reused from the
+  enum's own emoji for continuity, 5 new hex swatches). `OTHER` folds into
+  "Uncategorized" rather than getting its own category: `MerchantCategorizer`
+  never produces it (falls back to `UNCATEGORIZED`), and its only real
+  writers are `excludeFromStats` balance-adjustment rows and demo data -- a
+  dedicated bucket would be permanently near-empty.
+- `domain/model/CategoryMigrationMapping.kt` (new) -- pure `Map<SpendingCategory,
+  String>`, the single source of truth for the enum-to-dynamic-category-name
+  bridge, reused by this migration's backfill and (in Step 2) by capture-time
+  auto-assignment going forward.
+- `MIGRATION_21_22`: guards every seed INSERT against re-seeding (`categories.name`
+  has no unique index, unlike the fresh v13 table `DEFAULT_CATEGORIES` seeded),
+  then backfills `categoryId` via one guarded `UPDATE ... WHERE categoryId IS
+  NULL AND spendingCategory IN (...)` per mapping target (`OTHER`+`UNCATEGORIZED`
+  combined into one `IN(...)` clause since both target "Uncategorized" --
+  13 distinct enum values collapse to fewer statements). Never touches a row
+  where `categoryId` is already set -- same non-destructive posture as the
+  existing `backfillCategoryByMerchant` DAO query. Deliberately **not**
+  filtered by `isDemo`: demo rows also have `categoryId IS NULL` today and
+  feed the same unified screen this phase builds.
+
+### Tests
+
+- `CategoryMigrationMappingTest` -- 4 cases: every `SpendingCategory` value has
+  a mapping entry (exhaustiveness, catches a future enum addition silently
+  missing a migration target); every mapping targets a name that's actually
+  seeded (`DEFAULT_CATEGORIES` ∪ `DEFAULT_CATEGORIES_V22`, catches a typo
+  before it ships as dead SQL); `OTHER`/`UNCATEGORIZED` both fold to
+  "Uncategorized"; no other value collides onto it.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- No automated migration-test harness exists anywhere in this project (no
+  `MigrationTestHelper` precedent) -- this migration is verified by CI
+  compile/build success plus a manual spot-check query documented in the plan
+  file, not by an automated post-migration row-state assertion. Consistent
+  with every prior migration in this codebase, not a new gap.
+- Steps 2-9 (capture-time bridge, shared editor component, unified screen,
+  bulk setter, TransactionsScreen migration, Dashboard/Analytics charts,
+  backup/restore format, remaining read-site cleanup) land as their own
+  commits; this entry grows to cover each as it ships.
+
+### CI verification
+
+Pending — push and check `test-build.yml` on this commit.

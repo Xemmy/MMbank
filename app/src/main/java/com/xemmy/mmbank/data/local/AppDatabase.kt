@@ -33,6 +33,7 @@ import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
@@ -60,7 +61,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         GroupExpenseEntity::class,
         ExpenseSplitEntity::class,
     ],
-    version = 21,
+    version = 22,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -474,6 +475,55 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v21 -> v22: unifies the legacy [com.xemmy.mmbank.domain.model.SpendingCategory]
+         * enum onto the dynamic [com.xemmy.mmbank.domain.model.Category] table.
+         * Seeds [DEFAULT_CATEGORIES_V22] (the enum values [DEFAULT_CATEGORIES] had
+         * no counterpart for), then backfills every transaction's `categoryId`
+         * from its already-set `spendingCategory` wherever `categoryId` is still
+         * null -- see [com.xemmy.mmbank.domain.model.CategoryMigrationMapping] for
+         * the enum-to-name mapping this reuses (also used going forward at capture
+         * time by [com.xemmy.mmbank.domain.parser.CaptureCategoryResolver]'s caller).
+         *
+         * Every seed INSERT is guarded against re-seeding -- `categories.name` has
+         * no unique index, unlike the fresh v13 table [DEFAULT_CATEGORIES] seeded.
+         * Every backfill UPDATE only touches rows with `categoryId IS NULL`, so a
+         * transaction the user already hand-picked a category for is never
+         * overwritten -- the same non-destructive posture as the existing
+         * `backfillCategoryByMerchant` DAO query. Demo rows are included (not
+         * filtered by `isDemo`): they feed the same unified Categories screen.
+         */
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                DEFAULT_CATEGORIES_V22.forEach { (name, icon, colorHex) ->
+                    db.execSQL(
+                        "INSERT INTO categories (name, icon, colorHex, isCustom) " +
+                            "SELECT ?, ?, ?, 0 WHERE NOT EXISTS " +
+                            "(SELECT 1 FROM categories WHERE name = ? COLLATE NOCASE)",
+                        arrayOf<Any?>(name, icon, colorHex, name),
+                    )
+                }
+
+                // OTHER and UNCATEGORIZED both target "Uncategorized" -- grouping
+                // combines them into one IN(...) statement instead of two.
+                val byCategoryName = CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME
+                    .entries.groupBy({ it.value }, { it.key.name })
+                byCategoryName.forEach { (categoryName, enumNames) ->
+                    val inClause = enumNames.joinToString(",") { "'$it'" }
+                    db.execSQL(
+                        """
+                        UPDATE transactions SET categoryId = (
+                            SELECT id FROM categories WHERE name = ? COLLATE NOCASE LIMIT 1
+                        )
+                        WHERE categoryId IS NULL AND spendingCategory IN ($inClause)
+                          AND EXISTS (SELECT 1 FROM categories WHERE name = ? COLLATE NOCASE)
+                        """.trimIndent(),
+                        arrayOf<Any?>(categoryName, categoryName),
+                    )
+                }
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -485,6 +535,20 @@ abstract class AppDatabase : RoomDatabase() {
             Triple("Health", "🩺", "#26A69A"),
             Triple("Income", "💰", "#66BB6A"),
             Triple("Uncategorized", "🏷️", "#9E9E9E"),
+        )
+
+        /**
+         * The [SpendingCategory][com.xemmy.mmbank.domain.model.SpendingCategory]
+         * values [DEFAULT_CATEGORIES] had no dynamic counterpart for -- seeded by
+         * [MIGRATION_21_22]. Icons reused from the enum's own emoji for visual
+         * continuity; colors are new swatches distinct from [DEFAULT_CATEGORIES]'.
+         */
+        val DEFAULT_CATEGORIES_V22 = listOf(
+            Triple("Fuel", "⛽", "#8D6E63"),
+            Triple("Entertainment", "🎬", "#7E57C2"),
+            Triple("Travel", "✈️", "#5C6BC0"),
+            Triple("Transfers", "🔁", "#78909C"),
+            Triple("Fees", "🏦", "#EF5350"),
         )
 
         const val DB_NAME = "mmbank.db"
@@ -503,7 +567,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-                    MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
+                    MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
