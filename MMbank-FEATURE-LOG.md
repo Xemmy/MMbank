@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 3 of 9 landed, CI pending
-**Version:** `versionCode = 49`, `versionName = "0.34.2"` (Step 3; Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 4 of 9 landed, CI pending
+**Version:** `versionCode = 50`, `versionName = "0.35.0"` (Step 4; Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1370,8 +1370,65 @@ Landed, CI green.
 
 ### Deferred (within this step; later steps in this phase cover the rest)
 
-- Steps 4-9 unchanged from the prior status above.
+- Steps 5-9 unchanged from the prior status above.
 
 ### CI verification (Step 3)
+
+First push (`56e73e9`) failed `compileDebugKotlin`: the `CategoryPickerBottomSheet.kt`
+rewrite dropped `androidx.compose.ui.unit.dp`, which its own padding/size/width
+modifiers still need -- caught by reading the actual "Run unit tests" log, not
+the aggregate status. Fixed in `56d95de` (one-line import restore). Landed, CI green.
+
+## Step 4 — Unified Categories screen
+
+### What changed
+
+- `ui/screens/budgets/CategoryBudgetsScreen.kt` renamed to
+  `ui/screens/budgets/CategoriesScreen.kt`: `CategoryBudgetsUiState` ->
+  `CategoriesUiState` (drops the now-redundant `uncapped` list -- every
+  category renders via the hierarchy tree regardless of cap state),
+  `CategoryBudgetsViewModel` -> `CategoriesViewModel` (gains `create(...)`
+  for the new FAB), `CategoryBudgetsScreen` -> `CategoriesScreen`. Route
+  `"category_budgets"` -> `"categories"`; `AppViewModelProvider.kt` and
+  `MainActivity.kt` updated. `InsightsScreen.kt`'s doorway row retitled
+  "Categories" ("Manage categories and hierarchy, with monthly caps and
+  alerts at 80% and 100%"). `CategoryBudgetSummaryCard` is unchanged in
+  behavior, just now backed by `CategoriesViewModel`.
+- `domain/budget/CategoryHierarchy.kt` (new) -- pure `buildTree(categories):
+  List<CategoryTreeNode>`. Groups a flat list into top-level categories (each
+  with its sorted children); a category whose `parentCategoryId` doesn't
+  resolve to another category in the same list (parent deleted, or simply
+  unset) is treated as top-level rather than dropped.
+- `CategoriesScreen`'s list now renders hierarchy-first: each top-level
+  category's own row, immediately followed by its indented children --
+  replacing the old flat "This month" / "No cap set" two-section split (that
+  split predates the hierarchy feature and never reflected it). Each row
+  still shows budget progress only when it individually carries a cap
+  (`CategoryBudgetCalculator.rollUpSpend` already folds child spend into a
+  capped parent's total, unchanged). The old per-row "Under {parent}"
+  subtitle is gone -- indentation communicates it directly now.
+- FAB (+) opens the Step 3 `CategoryEditorDialog(initial = null, ...)` ->
+  `CategoriesViewModel.create(...)`, the first create entry point on this
+  screen (it previously had edit/delete/reparent but no way to add a new
+  category at all).
+- Empty-state guard changed from `statuses.isEmpty() && uncapped.isEmpty()`
+  to `categories.isEmpty()`, with copy updated to mention the FAB -- the old
+  guard/copy ("Categories appear here once transactions have been
+  categorized") was already stale since Phase 7: the starter categories are
+  seeded on first run, not created from transactions, so the list is
+  essentially never actually empty in practice.
+
+### Tests
+
+- `CategoryHierarchyTest` -- 5 cases: empty input; top-level categories
+  sorted by name; children grouped under their parent and sorted by name; a
+  category whose `parentCategoryId` doesn't resolve is treated as top-level;
+  a childless top-level category has an empty children list.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Steps 5-9 unchanged from the prior status above.
+
+### CI verification (Step 4)
 
 Pending — push and check `test-build.yml` on this commit.

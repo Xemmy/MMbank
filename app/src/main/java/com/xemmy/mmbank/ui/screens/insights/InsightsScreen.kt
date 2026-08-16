@@ -236,8 +236,8 @@ fun InsightsScreen(
         item(key = "budgets_row") {
             NavigationRow(
                 icon = Icons.Outlined.PieChart,
-                title = "Category budgets",
-                subtitle = "Monthly caps per category, with alerts at 80% and 100%",
+                title = "Categories",
+                subtitle = "Manage categories and hierarchy, with monthly caps and alerts at 80% and 100%",
                 onClick = onOpenBudgets,
             )
         }

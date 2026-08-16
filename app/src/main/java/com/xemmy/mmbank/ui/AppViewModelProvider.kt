@@ -9,7 +9,7 @@ import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.ui.screens.accounts.AccountsViewModel
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsViewModel
 import com.xemmy.mmbank.ui.screens.bills.BillsViewModel
-import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetsViewModel
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
@@ -43,7 +43,7 @@ object AppViewModelProvider {
         initializer { GoalsViewModel(mmBankApp().container) }
         initializer { CopilotChatViewModel(mmBankApp().container) }
         initializer { ReviewViewModel(mmBankApp().container) }
-        initializer { CategoryBudgetsViewModel(mmBankApp().container) }
+        initializer { CategoriesViewModel(mmBankApp().container) }
         initializer { MonthlyReportViewModel(mmBankApp().container) }
         initializer { MerchantDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { BillsViewModel(mmBankApp().container) }

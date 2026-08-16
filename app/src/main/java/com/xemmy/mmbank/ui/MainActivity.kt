@@ -55,7 +55,7 @@ import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
-import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetsScreen
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesScreen
 import com.xemmy.mmbank.ui.screens.report.MonthlyReportScreen
 import com.xemmy.mmbank.ui.screens.bills.BillsScreen
 import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
@@ -294,7 +294,7 @@ private fun AppNavHost(
                 onOpenSubscriptions = { navController.navigate("subscriptions") },
                 onOpenAnalytics = { navController.navigate("analytics") },
                 onOpenGoals = { navController.navigate("goals") },
-                onOpenBudgets = { navController.navigate("category_budgets") },
+                onOpenBudgets = { navController.navigate("categories") },
                 onOpenReport = { navController.navigate("monthly_report") },
                 onOpenCopilot = { navController.navigate("copilot") },
                 onOpenBills = { navController.navigate("bills") },
@@ -324,7 +324,7 @@ private fun AppNavHost(
         ) {
             GroupDetailScreen(onBack = { navController.popBackStack() })
         }
-        composable("category_budgets") { CategoryBudgetsScreen(onBack = { navController.popBackStack() }) }
+        composable("categories") { CategoriesScreen(onBack = { navController.popBackStack() }) }
         composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
         composable(
             route = "merchant_detail/{merchant}",
