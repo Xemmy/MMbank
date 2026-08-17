@@ -42,4 +42,22 @@ class CategoryMigrationMappingTest {
             .keys
         assertEquals(setOf(SpendingCategory.OTHER, SpendingCategory.UNCATEGORIZED), targetingUncategorized)
     }
+
+    @Test
+    fun `Uncategorized reverses onto UNCATEGORIZED, not OTHER`() {
+        assertEquals(SpendingCategory.UNCATEGORIZED, CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM["Uncategorized"])
+    }
+
+    @Test
+    fun `every non-OTHER SpendingCategory round-trips through its category name`() {
+        SpendingCategory.entries.filter { it != SpendingCategory.OTHER }.forEach { value ->
+            val name = CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME.getValue(value)
+            assertEquals(value, CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM[name])
+        }
+    }
+
+    @Test
+    fun `a name with no reverse entry returns null`() {
+        assertEquals(null, CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM["Some Custom Category"])
+    }
 }

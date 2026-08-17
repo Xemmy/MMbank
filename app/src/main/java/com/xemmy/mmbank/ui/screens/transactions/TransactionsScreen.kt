@@ -123,6 +123,7 @@ import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FilterBarLayout
@@ -138,6 +139,7 @@ import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.domain.usecase.FieldUpdate
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.AiParsingIndicator
+import com.xemmy.mmbank.ui.components.CategoryEditorDialog
 import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
 import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
@@ -489,9 +491,6 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             container.transactionRepository.update(transaction.copy(excludeFromStats = !transaction.excludeFromStats))
         }
 
-    fun setCategory(transactionId: Long, category: SpendingCategory) =
-        safeWrite("setCategory") { container.transactionRepository.setSpendingCategory(transactionId, category) }
-
     fun setCategoryId(transactionId: Long, categoryId: Long?) =
         safeWrite("setCategoryId") { container.transactionRepository.setCategory(transactionId, categoryId) }
 
@@ -519,6 +518,39 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
 
+    /** Persists a brand-new dynamic category and returns it (id included) -- for the editor's "+ New" chip. */
+    suspend fun createCategory(
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ): Category {
+        val category = Category(
+            name = name,
+            icon = icon,
+            colorHex = colorHex,
+            isCustom = true,
+            monthlyCap = monthlyCap,
+            parentCategoryId = parentCategoryId,
+        )
+        val id = container.categoryRepository.save(category)
+        return category.copy(id = id)
+    }
+
+    /**
+     * Keeps the legacy [SpendingCategory] field consistent for a manually
+     * entered/edited transaction: reverses [categoryId] onto its dynamic
+     * category's name, then that name back onto an enum value via
+     * [CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM]. A custom category
+     * (no seeded-name match) or no category at all falls back to
+     * UNCATEGORIZED, same as an ordinary uncategorized capture.
+     */
+    private fun resolveLegacySpendingCategory(categoryId: Long?): SpendingCategory {
+        val name = categoryId?.let { id -> uiState.value.categories.firstOrNull { it.id == id }?.name }
+        return name?.let { CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM[it] } ?: SpendingCategory.UNCATEGORIZED
+    }
+
     /** Adds a transaction the user typed in by hand (a missed/uncaptured one). */
     fun addManual(
         amount: java.math.BigDecimal,
@@ -527,7 +559,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         merchant: String?,
         accountId: Long?,
         person: String?,
-        spendingCategory: SpendingCategory,
+        categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
     ) = safeWrite("addManual") {
@@ -542,7 +574,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 timestampMillis = timestampMillis,
                 accountId = accountId,
                 person = person,
-                spendingCategory = spendingCategory,
+                categoryId = categoryId,
+                spendingCategory = resolveLegacySpendingCategory(categoryId),
                 matchedRuleName = MANUAL_ENTRY_LABEL,
                 excludeFromStats = excludeFromStats,
             )
@@ -558,7 +591,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         merchant: String?,
         accountId: Long?,
         person: String?,
-        spendingCategory: SpendingCategory,
+        categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
     ) = safeWrite("updateTransaction") {
@@ -571,7 +604,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 merchant = merchant?.trim()?.takeIf { it.isNotBlank() },
                 accountId = accountId,
                 person = person,
-                spendingCategory = spendingCategory,
+                categoryId = categoryId,
+                spendingCategory = resolveLegacySpendingCategory(categoryId),
                 timestampMillis = timestampMillis,
                 excludeFromStats = excludeFromStats,
             )
@@ -849,12 +883,14 @@ fun TransactionsScreen(
             existing = null,
             accounts = state.accounts,
             knownPersons = state.knownPersons,
+            categories = state.categories,
             defaultCurrency = state.defaultCurrency,
             aiEnabled = viewModel.aiParsingConfigured,
             onAiParse = viewModel::parseWithAi,
+            onCreateCategory = viewModel::createCategory,
             onDismiss = { addOpen = false },
-            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
-                viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
+            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats ->
+                viewModel.addManual(amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats)
                 addOpen = false
             },
         )
@@ -865,10 +901,12 @@ fun TransactionsScreen(
             existing = tx,
             accounts = state.accounts,
             knownPersons = state.knownPersons,
+            categories = state.categories,
             defaultCurrency = state.defaultCurrency,
+            onCreateCategory = viewModel::createCategory,
             onDismiss = { editing = null },
-            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
-                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
+            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats ->
+                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats)
                 editing = null
             },
         )
@@ -2151,9 +2189,17 @@ private fun TransactionEditorDialog(
     existing: Transaction?,
     accounts: List<Account>,
     knownPersons: List<String>,
+    categories: List<Category>,
     defaultCurrency: String,
     aiEnabled: Boolean = false,
     onAiParse: (suspend (String) -> AiEditorFill?)? = null,
+    onCreateCategory: suspend (
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ) -> Category,
     onDismiss: () -> Unit,
     onSave: (
         amount: java.math.BigDecimal,
@@ -2162,7 +2208,7 @@ private fun TransactionEditorDialog(
         merchant: String?,
         accountId: Long?,
         person: String?,
-        spendingCategory: SpendingCategory,
+        categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
     ) -> Unit,
@@ -2177,7 +2223,9 @@ private fun TransactionEditorDialog(
     var person by remember { mutableStateOf(existing?.person) }
     // null = follow the merchant-derived suggestion; a value = explicit choice.
     // Editing starts from the row's saved category so it never silently changes.
-    var categoryOverride by remember { mutableStateOf(existing?.spendingCategory) }
+    var categoryIdOverride by remember { mutableStateOf(existing?.categoryId) }
+    var creatingCategory by remember { mutableStateOf(false) }
+    val categoryScope = rememberCoroutineScope()
     var excludeFromStats by remember { mutableStateOf(existing?.excludeFromStats ?: false) }
     var dateIso by remember {
         mutableStateOf(
@@ -2194,10 +2242,15 @@ private fun TransactionEditorDialog(
     val valid = amountValue != null && amountValue.signum() > 0 &&
         currency.trim().length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && date != null
     val accountName = accounts.firstOrNull { it.id == accountId }?.name
-    val suggestedCategory = remember(merchant) {
-        MerchantCategorizer.categorize(merchant.takeIf { it.isNotBlank() })
+    // Same merchant-keyword guess the capture pipeline uses, bridged onto its
+    // same-named dynamic category (see CategoryMigrationMapping) so "Auto"
+    // previews a real, selectable category rather than a bare enum label.
+    val suggestedCategory = remember(merchant, categories) {
+        val enumGuess = MerchantCategorizer.categorize(merchant.takeIf { it.isNotBlank() })
+        val name = CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME[enumGuess]
+        categories.firstOrNull { it.name.equals(name, ignoreCase = true) }
     }
-    val effectiveCategory = categoryOverride ?: suggestedCategory
+    val effectiveCategoryId = categoryIdOverride ?: suggestedCategory?.id
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2365,8 +2418,9 @@ private fun TransactionEditorDialog(
                 }
 
                 // Category chip row — defaults to the merchant-derived guess
-                // ("Auto"), overridable. Mirrors the auto-categorization done on
-                // capture. Active chip reads teal (spec 5.3).
+                // ("Auto"), overridable, plus a trailing "+ New" chip opening
+                // the shared create form. Mirrors the auto-categorization done
+                // on capture. Active chip reads teal (spec 5.3).
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     MetaLabel("Category")
                     Row(
@@ -2374,17 +2428,26 @@ private fun TransactionEditorDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         ObsidianChip(
-                            selected = categoryOverride == null,
-                            onClick = { categoryOverride = null },
-                            label = { Text("Auto · ${suggestedCategory.emoji} ${suggestedCategory.label}") },
+                            selected = categoryIdOverride == null,
+                            onClick = { categoryIdOverride = null },
+                            label = {
+                                Text(
+                                    suggestedCategory?.let { "Auto · ${it.icon} ${it.name}" } ?: "Auto · Uncategorized",
+                                )
+                            },
                         )
-                        SpendingCategory.entries.forEach { category ->
+                        categories.forEach { category ->
                             ObsidianChip(
-                                selected = categoryOverride == category,
-                                onClick = { categoryOverride = category },
-                                label = { Text("${category.emoji} ${category.label}") },
+                                selected = categoryIdOverride == category.id,
+                                onClick = { categoryIdOverride = category.id },
+                                label = { Text("${category.icon} ${category.name}") },
                             )
                         }
+                        ObsidianChip(
+                            selected = false,
+                            onClick = { creatingCategory = true },
+                            label = { Text("+ New") },
+                        )
                     }
                 }
 
@@ -2435,7 +2498,7 @@ private fun TransactionEditorDialog(
                             merchant.trim().takeIf { it.isNotBlank() },
                             accountId,
                             person,
-                            effectiveCategory,
+                            effectiveCategoryId,
                             timestamp,
                             excludeFromStats,
                         )
@@ -2445,6 +2508,22 @@ private fun TransactionEditorDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+
+    if (creatingCategory) {
+        CategoryEditorDialog(
+            initial = null,
+            currency = currency.trim().ifBlank { defaultCurrency },
+            allCategories = categories,
+            onDismiss = { creatingCategory = false },
+            onSave = { name, icon, colorHex, cap, parentId ->
+                categoryScope.launch {
+                    val created = onCreateCategory(name, colorHex, icon, cap, parentId)
+                    categoryIdOverride = created.id
+                    creatingCategory = false
+                }
+            },
+        )
+    }
 }
 
 @Composable

@@ -30,4 +30,22 @@ object CategoryMigrationMapping {
         SpendingCategory.FEES to "Fees",
         SpendingCategory.OTHER to "Uncategorized",
     )
+
+    /**
+     * Reverse of [ENUM_TO_CATEGORY_NAME], for the manual transaction editor
+     * (see [com.xemmy.mmbank.ui.screens.transactions.TransactionEditorDialog]):
+     * when a user picks a dynamic [Category] whose name matches one of the
+     * seeded targets, the legacy [SpendingCategory] field -- still read by
+     * several frozen call sites -- stays consistent with it instead of
+     * silently going stale. [SpendingCategory.OTHER] is excluded so
+     * "Uncategorized" reverses deterministically onto [SpendingCategory.UNCATEGORIZED]
+     * (the more natural default) rather than whichever of the two happens to
+     * iterate last. A category name with no reverse entry (a custom,
+     * user-created category) has nothing to fall back to here -- callers
+     * default to [SpendingCategory.UNCATEGORIZED] themselves.
+     */
+    val CATEGORY_NAME_TO_ENUM: Map<String, SpendingCategory> =
+        ENUM_TO_CATEGORY_NAME.entries
+            .filterNot { it.key == SpendingCategory.OTHER }
+            .associate { (enum, name) -> name to enum }
 }

@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 6b of 9 landed, CI pending
-**Version:** `versionCode = 53`, `versionName = "0.36.1"` (Step 6b; Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 6c of 9 landed, CI pending
+**Version:** `versionCode = 54`, `versionName = "0.37.0"` (Step 6c; Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1534,7 +1534,10 @@ build success`, `Check APK exists`, `Upload Debug APK`, and the non-gating
 
 ### CI verification (Step 6a)
 
-Pending — push and check `test-build.yml` on this commit.
+Landed as `c3da453`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in 2m
+48s`, `25 actionable tasks: 25 executed`, no test-failure line. `Build APK
+(with retries)` succeeded on Attempt 1 (Attempts 2-4 `skipped`); `Verify
+build success`, `Check APK exists`, `Upload Debug APK` all succeeded.
 
 ## Step 6b — BulkModeBar migrated to dynamic categories
 
@@ -1571,5 +1574,74 @@ Pending — push and check `test-build.yml` on this commit.
   status above.
 
 ### CI verification (Step 6b)
+
+Pending — push and check `test-build.yml` on this commit.
+
+## Step 6c — TransactionEditorDialog migrated to dynamic categories
+
+### What changed
+
+- `TransactionEditorDialog` gains a `categories: List<Category>` param and an
+  `onCreateCategory: suspend (name, colorHex, icon, monthlyCap, parentCategoryId)
+  -> Category` callback. Its category chip row now renders `categories`
+  instead of `SpendingCategory.entries`, plus a trailing "+ New" chip that
+  opens the shared `CategoryEditorDialog` (Step 3) in create mode; saving it
+  calls `onCreateCategory` inside a `rememberCoroutineScope()` launch (the
+  same pattern this dialog's own "Parse with AI" button already uses for a
+  suspend round-trip) and selects the freshly created category once it
+  resolves. `onSave`'s enum `spendingCategory` param is now `categoryId: Long?`.
+- The "Auto" chip's suggestion no longer shows the bare `MerchantCategorizer`
+  enum guess -- it bridges that guess onto its same-named dynamic category
+  (via `CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME`, already built for
+  Step 1/2) so tapping "Auto" is a real, selectable category rather than a
+  label with no corresponding chip.
+- `TransactionsViewModel.addManual`/`updateTransaction` take `categoryId: Long?`
+  in place of `spendingCategory: SpendingCategory`, and now also set
+  `Transaction.categoryId` (previously never set for manual entries at all --
+  a manually added or edited transaction had no dynamic category no matter
+  what, since nothing in this dialog could assign one until this step).
+- **Deliberate deviation from the strict plan text** ("`SpendingCategory`
+  import becomes removable from `TransactionsScreen.kt` entirely"): manual
+  entries still populate the legacy `spendingCategory` field too, via a new
+  reverse mapping (`CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM`, plus a
+  private `TransactionsViewModel.resolveLegacySpendingCategory(categoryId)`)
+  rather than leaving it at its `UNCATEGORIZED` default. Reasoning: several
+  "frozen legacy" read sites (Step 9's list -- `BackupManager`'s CSV export
+  column in particular, which is user-visible) read `spendingCategory` for
+  every transaction, captured or manual alike. Leaving it permanently
+  `UNCATEGORIZED` for every hand-added/edited transaction from this point on
+  would be a real, if minor, silent regression for anyone exporting their
+  data -- exactly the kind of category-data loss this whole phase (see Step
+  8) exists to close, not reopen. The reverse map only resolves seeded/known
+  names; a custom category (no matching seeded name) falls back to
+  `UNCATEGORIZED`, same as before this step. `SpendingCategory` therefore
+  stays imported in this file for that one purpose.
+- `TransactionsViewModel.setCategory(transactionId, SpendingCategory)` deleted
+  -- like `bulkSetCategory` in 6b, its last caller was removed in 6a, leaving
+  it dead.
+- Net result for this phase: `TransactionsScreen.kt` no longer offers any
+  UI affordance that assigns the legacy enum directly (row chip, swipe,
+  bulk bar, and now the editor dialog all write `categoryId`); the enum is
+  written only indirectly, as a best-effort mirror of the dynamic pick.
+
+### Tests
+
+- `CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM` (new reverse map) +
+  4 new `CategoryMigrationMappingTest` cases: "Uncategorized" resolves to
+  `UNCATEGORIZED` specifically (not `OTHER`, despite both forward-mapping
+  onto it); every non-`OTHER` enum value round-trips through its category
+  name; an unmapped custom-category name returns `null`.
+- No new test for `onCreateCategory`'s suspend round-trip or
+  `resolveLegacySpendingCategory` specifically -- both are thin/pure
+  compositions of already-tested pieces (`CategoryRepository.save`,
+  `CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM`), matching this file's
+  established precedent of not unit-testing `TransactionsViewModel` directly.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Steps 7, 8, 9 unchanged from the prior status above. Step 6 (all three
+  sub-steps) is now complete.
+
+### CI verification (Step 6c)
 
 Pending — push and check `test-build.yml` on this commit.
