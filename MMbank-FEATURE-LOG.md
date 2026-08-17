@@ -1889,7 +1889,7 @@ code or test failure. Step 6 (6a + 6b + 6c) is now fully landed and verified.
 
 ## Phase 11 — Categories & People organized under Settings
 
-**Status:** landed, CI pending
+**Status:** landed, CI green
 **Version:** `versionCode = 58`, `versionName = "0.39.0"`
 
 ### What changed
@@ -1927,4 +1927,12 @@ code or test failure. Step 6 (6a + 6b + 6c) is now fully landed and verified.
 
 ### CI verification
 
-Pending — push and check `test-build.yml` on this commit.
+Landed as `fd03b02`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in
+3m 11s`, `25 actionable tasks: 25 executed`, no test-failure line -- confirms
+the new UI code (`TabRow`/`Tab`, `Icons.Filled.PieChart`, the
+`CategoriesTabContent` extraction, the route/import changes across
+`MainActivity.kt`/`SettingsScreen.kt`/`CategoriesScreen.kt`) compiles
+cleanly. `Build APK (with retries)` succeeded on Attempt 1 (Attempts 2-4
+`skipped`); `Verify build success`, `Check APK exists`, `Upload Debug APK`,
+and the non-gating `Build Release APK` all succeeded. `Final Status` --
+`success`.
