@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 7 of 9 landed, CI pending
-**Version:** `versionCode = 55`, `versionName = "0.38.0"` (Step 7; Step 6c was 54/0.37.0, Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 8 of 9 landed, CI pending
+**Version:** `versionCode = 56`, `versionName = "0.38.1"` (Step 8; Step 7 was 55/0.38.0, Step 6c was 54/0.37.0, Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1645,6 +1645,71 @@ top, so a green result there covers both.
 - Steps 7, 8, 9 unchanged from the prior status above. Step 6 (all three
   sub-steps) is now complete.
 
+## Step 8 — Backup/restore format fix
+
+### What changed
+
+- **The bug**: encrypted backup/restore already silently discarded all
+  dynamic-category data -- no `categoryId` on `BackupTransaction`, no
+  categories table, no merchant->category mappings anywhere in the payload.
+  A restore on a fresh device (or after a wipe) would come back with every
+  transaction's dynamic category gone, even though `spendingCategory` (the
+  legacy enum) survived intact -- a real, silent data-loss gap that got
+  strictly worse once `Category` became this app's primary categorization
+  system (Steps 1-7).
+- `BackupTransaction` gains `val categoryId: Long? = null` (default handles
+  decoding an old-format backup, where the field never existed).
+- New `BackupCategory` (id, name, icon, colorHex, isCustom, monthlyCap:
+  String?, parentCategoryId) and `BackupMerchantMapping` (id,
+  merchantPattern, categoryId, isExactMatch, pending, suggestedName/Icon/
+  ColorHex) DTOs, mirroring this file's existing "primitives only, amounts as
+  plain-decimal strings" convention.
+- `BackupPayload` gains `categories: List<BackupCategory> = emptyList()` and
+  `merchantCategoryMappings: List<BackupMerchantMapping> = emptyList()`;
+  `export()` now writes `formatVersion = 2` and populates both lists from
+  `database.categoryDao().getAll()` / `database.merchantCategoryDao().getAll()`
+  (both DAOs gained `getAll()`/`clearAll()`/`insertAll()`, the same
+  backup-support trio every other DAO in this file already has -- neither
+  entity carries an `isDemo` flag, unlike accounts/transactions, so no demo
+  partitioning needed).
+- **Import safety** (the one place this file deliberately does NOT mirror
+  its own "replace everything" pattern): `import()` only clears and replaces
+  categories/mappings when `payload.formatVersion >= 2`. A pre-Step-8 (v1)
+  backup never captured that data in the first place, so restoring one now
+  leaves whatever categories the user has built up since upgrading
+  untouched, instead of silently wiping them for zero benefit. Every other
+  table (accounts, transactions, rules, sender labels) keeps replacing
+  unconditionally, exactly as before.
+- Restored categories/mappings preserve their original ids (identical
+  pattern to accounts/transactions, already relied on by this file) so a
+  restored transaction's `categoryId` FK reference stays valid with no
+  remapping needed. Confirmed via direct schema read that neither
+  `categoryId` column (`transactions.categoryId`,
+  `merchant_category_mappings.categoryId`) carries an actual Room
+  `ForeignKey` constraint (only `transactions.accountId` does), so insert
+  ordering between categories and transactions during restore has no
+  referential-integrity requirement either way.
+
+### Tests
+
+- No new test file: `BackupManager` has never had one (`BackupCryptoTest.kt`
+  is this package's only test, covering the separate encryption layer) --
+  it's tightly coupled to Room's `AppDatabase`, which this project's plain-
+  JUnit suite has no harness for (no Robolectric), matching the same
+  established gap for every other entity mapper in this file
+  (`AccountEntity`/`TransactionEntity`/`ParsingRuleEntity` round-trips are
+  equally untested). The new `CategoryEntity`/`MerchantCategoryMappingEntity`
+  mappers are simple 1:1 field copies, same shape as the existing untested
+  ones.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Step 9 unchanged from the prior status above.
+
+### CI verification (Step 8)
+
+Pending — push and check `test-build.yml` on this commit.
+
 ## Step 7 — Dashboard + Analytics chart migration
 
 ### What changed
@@ -1720,7 +1785,12 @@ top, so a green result there covers both.
 
 ### CI verification (Step 7)
 
-Pending — push and check `test-build.yml` on this commit.
+Landed as `372cbe3`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in 2m
+52s`, `25 actionable tasks: 25 executed`, no test-failure line (covers the
+new `DashboardResolveCategoryTest`/`DashboardColorLongFromHexTest` plus every
+updated `DashboardViewModelTest`/`DashboardSmartInsightsTest` case). `Build
+APK (with retries)` succeeded on Attempt 1 (Attempts 2-4 `skipped`); `Verify
+build success`, `Check APK exists`, `Upload Debug APK` all succeeded.
 
 ### CI verification (Step 6c)
 

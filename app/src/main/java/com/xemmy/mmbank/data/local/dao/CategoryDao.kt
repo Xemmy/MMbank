@@ -32,6 +32,17 @@ interface CategoryDao {
 
     @Query("SELECT COUNT(*) FROM categories")
     suspend fun count(): Int
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM categories")
+    suspend fun getAll(): List<CategoryEntity>
+
+    @Query("DELETE FROM categories")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<CategoryEntity>)
 }
 
 /**
@@ -58,4 +69,15 @@ interface MerchantCategoryDao {
 
     @Query("DELETE FROM merchant_category_mappings WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM merchant_category_mappings")
+    suspend fun getAll(): List<MerchantCategoryMappingEntity>
+
+    @Query("DELETE FROM merchant_category_mappings")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<MerchantCategoryMappingEntity>)
 }

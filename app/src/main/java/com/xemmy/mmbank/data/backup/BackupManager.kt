@@ -3,6 +3,8 @@ package com.xemmy.mmbank.data.backup
 import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.AccountEntity
+import com.xemmy.mmbank.data.local.entity.CategoryEntity
+import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -60,6 +62,8 @@ data class BackupTransaction(
     val category: String = "NORMAL",
     val person: String? = null,
     val spendingCategory: String = "UNCATEGORIZED",
+    /** Dynamic category id; absent (null) on backups from before format v2. */
+    val categoryId: Long? = null,
 )
 
 @Serializable
@@ -81,7 +85,36 @@ data class BackupRule(
 data class BackupSenderLabel(val sender: String, val label: String)
 
 @Serializable
+data class BackupCategory(
+    val id: Long,
+    val name: String,
+    val icon: String,
+    val colorHex: String,
+    val isCustom: Boolean,
+    val monthlyCap: String?,
+    val parentCategoryId: Long?,
+)
+
+@Serializable
+data class BackupMerchantMapping(
+    val id: Long,
+    val merchantPattern: String,
+    val categoryId: Long?,
+    val isExactMatch: Boolean,
+    val pending: Boolean,
+    val suggestedName: String?,
+    val suggestedIcon: String?,
+    val suggestedColorHex: String?,
+)
+
+@Serializable
 data class BackupPayload(
+    /**
+     * 1 = original format (no category data at all). 2 = adds [categories]/
+     * [merchantCategoryMappings] and [BackupTransaction.categoryId]. Import
+     * gates on this: a v1 backup must never wipe categories the user built
+     * up since upgrading -- see [BackupManager.import].
+     */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
     val defaultCurrency: String,
@@ -92,6 +125,8 @@ data class BackupPayload(
     val transactions: List<BackupTransaction>,
     val rules: List<BackupRule>,
     val senderLabels: List<BackupSenderLabel>,
+    val categories: List<BackupCategory> = emptyList(),
+    val merchantCategoryMappings: List<BackupMerchantMapping> = emptyList(),
 )
 
 /**
@@ -112,6 +147,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
+            formatVersion = 2,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -120,6 +156,8 @@ class BackupManager(
             transactions = database.transactionDao().getAll().map { it.toBackup() },
             rules = database.parsingRuleDao().getAll().map { it.toBackup() },
             senderLabels = database.senderLabelDao().getAll().map { BackupSenderLabel(it.sender, it.label) },
+            categories = database.categoryDao().getAll().map { it.toBackup() },
+            merchantCategoryMappings = database.merchantCategoryDao().getAll().map { it.toBackup() },
         )
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
@@ -169,6 +207,12 @@ class BackupManager(
         val payload = json.decodeFromString<BackupPayload>(
             BackupCrypto.decrypt(blob, password).toString(Charsets.UTF_8)
         )
+        // A v1 backup (formatVersion < 2) never captured categories or
+        // merchant mappings in the first place -- restoring one must leave
+        // whatever the user has built up since upgrading untouched, not wipe
+        // it for zero benefit. Every other table always fully replaces, same
+        // as before.
+        val hasCategoryData = payload.formatVersion >= 2
         database.withTransaction {
             database.transactionDao().clearAll()
             database.accountDao().clearAll()
@@ -181,6 +225,16 @@ class BackupManager(
             database.senderLabelDao().insertAll(
                 payload.senderLabels.map { SenderLabelEntity(it.sender, it.label) }
             )
+
+            if (hasCategoryData) {
+                database.categoryDao().clearAll()
+                database.merchantCategoryDao().clearAll()
+                // Original ids are preserved (same pattern as accounts/transactions
+                // above) so the just-restored transactions' categoryId references
+                // stay valid with no remapping.
+                database.categoryDao().insertAll(payload.categories.map { it.toEntity() })
+                database.merchantCategoryDao().insertAll(payload.merchantCategoryMappings.map { it.toEntity() })
+            }
         }
         preferences.defaultCurrency = payload.defaultCurrency
         preferences.cashbackSpendRaw = payload.cashbackSpendRaw
@@ -207,7 +261,7 @@ class BackupManager(
     private fun TransactionEntity.toBackup() = BackupTransaction(
         id, accountId, amount.toPlainString(), currencyCode, direction.name, merchant,
         source.name, sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
-        category.name, person, spendingCategory.name,
+        category.name, person, spendingCategory.name, categoryId,
     )
 
     private fun BackupTransaction.toEntity() = TransactionEntity(
@@ -215,6 +269,7 @@ class BackupManager(
         TransactionSource.valueOf(source), sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
         TransactionCategory.valueOf(category), person,
         runCatching { SpendingCategory.valueOf(spendingCategory) }.getOrDefault(SpendingCategory.UNCATEGORIZED),
+        categoryId = categoryId,
     )
 
     private fun ParsingRuleEntity.toBackup() = BackupRule(
@@ -225,5 +280,21 @@ class BackupManager(
     private fun BackupRule.toEntity() = ParsingRuleEntity(
         id, name, pattern, senderPattern, TransactionDirection.valueOf(direction),
         defaultCurrency, priority, enabled, sampleText, createdAt, assignAccountId,
+    )
+
+    private fun CategoryEntity.toBackup() = BackupCategory(
+        id, name, icon, colorHex, isCustom, monthlyCap?.toPlainString(), parentCategoryId,
+    )
+
+    private fun BackupCategory.toEntity() = CategoryEntity(
+        id, name, icon, colorHex, isCustom, monthlyCap?.let(::BigDecimal), parentCategoryId,
+    )
+
+    private fun MerchantCategoryMappingEntity.toBackup() = BackupMerchantMapping(
+        id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
+    )
+
+    private fun BackupMerchantMapping.toEntity() = MerchantCategoryMappingEntity(
+        id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
     )
 }
