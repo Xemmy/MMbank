@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 5 of 9 landed, CI pending
-**Version:** `versionCode = 51`, `versionName = "0.35.1"` (Step 5; Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 6a of 9 landed, CI pending
+**Version:** `versionCode = 52`, `versionName = "0.36.0"` (Step 6a; Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1478,5 +1478,60 @@ succeeded. `Final Status` -- `success`.
 - Steps 6-9 unchanged from the prior status above.
 
 ### CI verification (Step 5)
+
+Landed as `9b3c45d`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in 3m
+4s`, `25 actionable tasks: 25 executed`, no test-failure line. `Build APK
+(with retries)` succeeded on Attempt 1 (Attempts 2-4 all `skipped`); `Verify
+build success`, `Check APK exists`, `Upload Debug APK`, and the non-gating
+`Build Release APK` all succeeded. `Final Status` -- `success`.
+
+## Step 6a — TransactionsScreen row/swipe migrated to dynamic categories
+
+### What changed
+
+- `TransactionsViewModel`'s first `combine` gains `categoryRepository.observeAll()`
+  as its 5th flow (the room confirmed available in this file's own combine
+  block); `TransactionsUiState.categories: List<Category>` (new). New
+  ViewModel methods `setCategoryId(transactionId, categoryId)` (thin
+  passthrough to the already-dynamic `TransactionRepository.setCategory`) and
+  `createAndAssignCategory(transactionId, name, colorHex, icon, monthlyCap,
+  parentCategoryId)` (saves a new `Category` then assigns it) -- both mirror
+  the identical pattern already landed in `UncategorizedQueueViewModel`. Also
+  added (for 6b, landing in the same review pass) `bulkSetCategoryId` and
+  `bulkCreateAndAssignCategory`, the bulk-selection equivalents.
+- Row category chip: now resolves `tx.categoryId` against `state.categories`
+  for its icon/name (falls back to a generic "🏷️" tag label when unset),
+  and opens the shared `CategoryPickerBottomSheet` instead of a fixed
+  `SpendingCategory`-entries `DropdownMenu`.
+- Swipe-to-categorize (end-to-start swipe on a row) and the row chip tap now
+  both set the same hoisted `categoryPickerFor: Transaction?` state and open
+  the one shared picker -- previously the swipe path opened a bespoke
+  `QuickCategorizeDialog` (now deleted) while the chip opened its own
+  separate `DropdownMenu`; the two pickers could show different information
+  for the same row depending which affordance was used.
+- `androidx.compose.material.icons.filled.Category` import aliased to
+  `CategoryIcon` (`Icons.Filled.CategoryIcon` at its 2 call sites) since the
+  file now also imports the domain `Category` model by its unaliased name --
+  the two would otherwise collide as a "conflicting import".
+- `BulkModeBar`'s enum dropdown and `TransactionEditorDialog`'s enum chip row
+  are deliberately untouched here -- Steps 6b/6c.
+
+### Tests
+
+- No new pure logic: the new ViewModel methods are thin passthroughs to
+  already-tested repository/use-case methods (`TransactionRepository.setCategory`,
+  `CategoryRepository.save`, `BulkUpdateTransactionsUseCase` via
+  `BulkTransactionPatch.categoryId`, covered by Step 5's tests). Matches this
+  file's existing precedent -- none of its other ViewModel wrapper methods
+  (`setCategory`, `assignAccount`, `setPerson`, …) carry a dedicated unit
+  test either, since `TransactionsViewModel` itself isn't JVM-unit-tested in
+  this project (Compose + coroutine-scoped, no test harness set up for it).
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Step 6b (`BulkModeBar`), 6c (`TransactionEditorDialog`), 7, 8, 9 unchanged
+  from the prior status above.
+
+### CI verification (Step 6a)
 
 Pending — push and check `test-build.yml` on this commit.

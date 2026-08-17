@@ -32,7 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Category as CategoryIcon
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
@@ -122,6 +122,7 @@ import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FilterBarLayout
@@ -137,6 +138,7 @@ import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.domain.usecase.FieldUpdate
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.AiParsingIndicator
+import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
 import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
@@ -187,6 +189,8 @@ data class TransactionsUiState(
     val selectedTransactionIds: Set<Long> = emptySet(),
     /** Single-row (Premium) vs Classic wrapped-chip filter bar; see Settings > Design. */
     val filterBarLayout: FilterBarLayout = FilterBarLayout.SINGLE_ROW,
+    /** Dynamic categories, for the row/bulk-bar category chip and picker. */
+    val categories: List<Category> = emptyList(),
 )
 
 /** Bulk-mode selection is UI-only state, layered onto the Room-backed pipeline below. */
@@ -269,7 +273,7 @@ private fun UncategorizedBanner(count: Int, onClick: () -> Unit) {
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Category, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Icon(Icons.Filled.CategoryIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
             Spacer(Modifier.width(10.dp))
             Text(
                 if (count == 1) "1 transaction needs a category" else "$count transactions need a category",
@@ -296,7 +300,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         container.accountRepository.observeActive(),
         container.senderLabelRepository.observeLabels(),
         filters,
-    ) { transactions, accounts, senderLabels, f ->
+        container.categoryRepository.observeAll(),
+    ) { transactions, accounts, senderLabels, f, categories ->
         // All predicate logic lives in the pure-Kotlin engine so it's JVM-testable.
         val visible = TransactionFilterEngine.filter(
             transactions = transactions,
@@ -322,6 +327,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
             filterBarLayout = container.preferences.filterBarLayout,
+            categories = categories,
         )
     }.combine(bulkMode) { base, bulk ->
         base.copy(isInBulkMode = bulk.isInBulkMode, selectedTransactionIds = bulk.selectedIds)
@@ -413,6 +419,38 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         bulkMode.value = BulkModeState()
     }
 
+    fun bulkSetCategoryId(categoryId: Long?) = safeWrite("bulkSetCategoryId") {
+        container.bulkUpdateTransactions(
+            bulkMode.value.selectedIds.toList(),
+            BulkTransactionPatch(categoryId = FieldUpdate.Set(categoryId)),
+        )
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkCreateAndAssignCategory(
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ) = safeWrite("bulkCreateAndAssignCategory") {
+        val categoryId = container.categoryRepository.save(
+            Category(
+                name = name,
+                icon = icon,
+                colorHex = colorHex,
+                isCustom = true,
+                monthlyCap = monthlyCap,
+                parentCategoryId = parentCategoryId,
+            )
+        )
+        container.bulkUpdateTransactions(
+            bulkMode.value.selectedIds.toList(),
+            BulkTransactionPatch(categoryId = FieldUpdate.Set(categoryId)),
+        )
+        bulkMode.value = BulkModeState()
+    }
+
     fun bulkSetExcludeFromStats(excluded: Boolean) = safeWrite("bulkSetExcludeFromStats") {
         container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(excludeFromStats = excluded))
         bulkMode.value = BulkModeState()
@@ -458,6 +496,30 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setCategory(transactionId: Long, category: SpendingCategory) =
         safeWrite("setCategory") { container.transactionRepository.setSpendingCategory(transactionId, category) }
+
+    fun setCategoryId(transactionId: Long, categoryId: Long?) =
+        safeWrite("setCategoryId") { container.transactionRepository.setCategory(transactionId, categoryId) }
+
+    fun createAndAssignCategory(
+        transactionId: Long,
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ) = safeWrite("createAndAssignCategory") {
+        val categoryId = container.categoryRepository.save(
+            Category(
+                name = name,
+                icon = icon,
+                colorHex = colorHex,
+                isCustom = true,
+                monthlyCap = monthlyCap,
+                parentCategoryId = parentCategoryId,
+            )
+        )
+        container.transactionRepository.setCategory(transactionId, categoryId)
+    }
 
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
@@ -547,9 +609,10 @@ fun TransactionsScreen(
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
-    // Swipe-to-categorize (see SwipeToActionBox): set by an end-to-start swipe
-    // on a row, cleared once a category is picked or the dialog is dismissed.
-    var quickCategorizeFor by remember { mutableStateOf<Transaction?>(null) }
+    // Dynamic-category picker target: set by either an end-to-start swipe (see
+    // SwipeToActionBox) or tapping a row's category chip, cleared once a
+    // category is picked/created or the picker is dismissed.
+    var categoryPickerFor by remember { mutableStateOf<Transaction?>(null) }
 
     // Brand accent for a specific-account filter, reusing the same GlowTone
     // mapping every row already uses for its own origin glow — one source of
@@ -743,19 +806,20 @@ fun TransactionsScreen(
                                 SwipeToActionBox(
                                     enabled = !state.isInBulkMode,
                                     onFlag = { viewModel.toggleExcludeFromStats(tx) },
-                                    onCategorize = { quickCategorizeFor = tx },
+                                    onCategorize = { categoryPickerFor = tx },
                                 ) {
                                     TransactionCard(
                                         tx = tx,
                                         accounts = state.accounts,
                                         knownPersons = state.knownPersons,
+                                        categories = state.categories,
                                         bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
                                         accountFilterTint = activeAccountGlow,
                                         isInBulkMode = state.isInBulkMode,
                                         isSelected = tx.id in state.selectedTransactionIds,
                                         onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
                                         onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
-                                        onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
+                                        onOpenCategoryPicker = { categoryPickerFor = tx },
                                         onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
                                         onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
                                         onEdit = { editing = tx },
@@ -812,14 +876,19 @@ fun TransactionsScreen(
         )
     }
 
-    quickCategorizeFor?.let { tx ->
-        QuickCategorizeDialog(
-            current = tx.spendingCategory,
+    categoryPickerFor?.let { tx ->
+        CategoryPickerBottomSheet(
+            categories = state.categories,
+            currency = state.defaultCurrency,
             onSelect = { category ->
-                viewModel.setCategory(tx.id, category)
-                quickCategorizeFor = null
+                viewModel.setCategoryId(tx.id, category.id)
+                categoryPickerFor = null
             },
-            onDismiss = { quickCategorizeFor = null },
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.createAndAssignCategory(tx.id, name, colorHex, icon, cap, parentId)
+                categoryPickerFor = null
+            },
+            onDismiss = { categoryPickerFor = null },
         )
     }
 
@@ -936,41 +1005,6 @@ private fun SwipeActionBackground(direction: SwipeToDismissBoxValue) {
     }
 }
 
-/** Quick spending-category picker for a swiped row -- the same fixed [SpendingCategory] set as [BulkModeBar]'s menu. */
-@Composable
-private fun QuickCategorizeDialog(
-    current: SpendingCategory,
-    onSelect: (SpendingCategory) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Choose a category") },
-        text = {
-            Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-                SpendingCategory.entries.forEach { category ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(category) }
-                            .padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(category.emoji)
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            category.label,
-                            fontWeight = if (category == current) FontWeight.Bold else FontWeight.Normal,
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
 /**
  * Contextual bar shown in place of the filter header while the Transactions
  * screen is in bulk-edit mode: selection count, Select All, and the bulk
@@ -1019,7 +1053,7 @@ private fun BulkModeBar(
             }
             Box {
                 IconButton(onClick = { categoryMenuOpen = true }, enabled = hasSelection) {
-                    Icon(Icons.Filled.Category, contentDescription = "Categorize selected")
+                    Icon(Icons.Filled.CategoryIcon, contentDescription = "Categorize selected")
                 }
                 DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
                     SpendingCategory.entries.forEach { category ->
@@ -1769,6 +1803,7 @@ private fun TransactionCard(
     tx: Transaction,
     accounts: List<Account>,
     knownPersons: List<String>,
+    categories: List<Category>,
     bankName: String?,
     /** Brand accent from the active account filter, or null for the default hairline. */
     accountFilterTint: Color? = null,
@@ -1778,7 +1813,7 @@ private fun TransactionCard(
     isSelected: Boolean = false,
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
-    onAssignCategory: (SpendingCategory) -> Unit,
+    onOpenCategoryPicker: () -> Unit,
     onRenameSender: (String) -> Unit,
     onResetSender: () -> Unit,
     onEdit: () -> Unit,
@@ -1792,7 +1827,6 @@ private fun TransactionCard(
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
-    var categoryMenuOpen by remember { mutableStateOf(false) }
     var newPersonOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     val accountName = accounts.firstOrNull { it.id == tx.accountId }?.name
@@ -1976,19 +2010,15 @@ private fun TransactionCard(
                             DropdownMenuItem(text = { Text("New person…") }, onClick = { personMenuOpen = false; newPersonOpen = true })
                         }
                     }
-                    Box {
-                        MetaChip(
-                            text = tx.spendingCategory.label,
-                            active = tx.spendingCategory != SpendingCategory.UNCATEGORIZED,
-                            emoji = tx.spendingCategory.emoji,
-                            onClick = { categoryMenuOpen = true },
-                        )
-                        DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                            SpendingCategory.entries.forEach { category ->
-                                DropdownMenuItem(text = { Text("${category.emoji}  ${category.label}") }, onClick = { categoryMenuOpen = false; onAssignCategory(category) })
-                            }
-                        }
+                    val assignedCategory = remember(tx.categoryId, categories) {
+                        categories.firstOrNull { it.id == tx.categoryId }
                     }
+                    MetaChip(
+                        text = assignedCategory?.name ?: "Category",
+                        active = assignedCategory != null,
+                        emoji = assignedCategory?.icon ?: "🏷️",
+                        onClick = onOpenCategoryPicker,
+                    )
                 }
                 IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
                     Icon(
