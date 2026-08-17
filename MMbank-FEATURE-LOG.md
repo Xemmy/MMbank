@@ -1208,7 +1208,7 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 9 of 9 landed, CI pending (final step of this phase)
+**Status:** complete — all 9 steps landed, CI green
 **Version:** `versionCode = 57`, `versionName = "0.38.2"` (Step 9; Step 8 was 56/0.38.1, Step 7 was 55/0.38.0, Step 6c was 54/0.37.0, Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
@@ -1708,7 +1708,15 @@ phase, per the original plan's "Deferred / explicitly out of scope" section.
 
 ### CI verification (Step 9)
 
-Pending — push and check `test-build.yml` on this commit.
+Landed as `3921373`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in 2m
+56s`, `25 actionable tasks: 25 executed`, no test-failure line. `Build APK
+(with retries)`'s first attempt hit a transient GitHub infrastructure 429
+rate-limit downloading the `actions/setup-java` action itself (before
+checkout even ran -- confirmed unrelated to this repo's code); a
+`rerun_failed_jobs` retrigger succeeded cleanly on Attempt 1 (`Verify build
+success`, `Check APK exists`, `Upload Debug APK`, `Build Release APK` all
+succeeded). `Final Status` -- `success`. **This completes all 9 steps of the
+category-unification plan.**
 
 ## Step 8 — Backup/restore format fix
 
