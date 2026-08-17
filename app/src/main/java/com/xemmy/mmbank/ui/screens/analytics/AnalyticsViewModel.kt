@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.screens.dashboard.CategorySlice
 import com.xemmy.mmbank.ui.screens.dashboard.CategorySpend
 import com.xemmy.mmbank.ui.screens.dashboard.categorySlicesFrom
+import com.xemmy.mmbank.ui.screens.dashboard.resolveCategory
 import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
@@ -56,14 +58,20 @@ class AnalyticsViewModel(private val container: AppContainer) : ViewModel() {
     private val dateRange = MutableStateFlow<AnalyticsDateRange>(AnalyticsDateRange.Monthly)
     private val selectedDate = MutableStateFlow<LocalDate?>(null)
 
+    private data class Selection(val range: AnalyticsDateRange, val selectedDate: LocalDate?)
+
+    // Folded into one flow so the final combine stays within five slots, same
+    // pattern DashboardViewModel uses for its own uiMeta/metaBundle folds.
+    private val selection = combine(dateRange, selectedDate) { range, selected -> Selection(range, selected) }
+
     val uiState: StateFlow<AnalyticsUiState> = combine(
         container.transactionRepository.observeTransactions(),
         container.ratesRepository.observeRates(),
-        dateRange,
-        selectedDate,
+        selection,
+        container.categoryRepository.observeAll(),
         container.hideBalances,
-    ) { transactions, rates, range, selected, hidden ->
-        computeAnalyticsState(container, transactions, rates, range, selected, hidden)
+    ) { transactions, rates, sel, categories, hidden ->
+        computeAnalyticsState(container, transactions, rates, sel.range, sel.selectedDate, categories, hidden)
     }.recoverAndRetry("AnalyticsViewModel", container) { AnalyticsUiState() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AnalyticsUiState())
 
@@ -94,6 +102,7 @@ private fun computeAnalyticsState(
     rates: List<ExchangeRate>,
     range: AnalyticsDateRange,
     selected: LocalDate?,
+    categories: List<Category>,
     hidden: Boolean,
     zone: ZoneId = ZoneId.systemDefault(),
     today: LocalDate = LocalDate.now(zone),
@@ -128,7 +137,7 @@ private fun computeAnalyticsState(
     }
 
     val categorySpends = debitsInWindow
-        .groupBy { it.spendingCategory }
+        .groupBy { resolveCategory(it.categoryId, categories) }
         .mapNotNull { (category, txs) ->
             val total = txs.sumOf { inBase(it) ?: 0.0 }
             if (total <= 0.0) null else CategorySpend(category, total)

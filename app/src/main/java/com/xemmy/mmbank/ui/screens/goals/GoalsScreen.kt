@@ -101,7 +101,11 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
         val income = monthTx.filter { it.direction == TransactionDirection.CREDIT }.sumOf { inBase(it) ?: 0.0 }
         val expenses = monthTx.filter { it.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
 
-        val avgMonthlyNet = computeDashboardStats(transactions, rates, base).avgMonthlyNet
+        // categories is unused by avgMonthlyNet (a pure income/spend-by-month
+        // figure) -- this call never needs real category data, so an empty
+        // list avoids wiring an unused categoryRepository flow into this
+        // ViewModel just to satisfy the parameter.
+        val avgMonthlyNet = computeDashboardStats(transactions, rates, base, categories = emptyList()).avgMonthlyNet
         val nowMillis = System.currentTimeMillis()
         val forecastByGoalId = goals.associate { goal ->
             goal.id to GoalForecaster.forecast(goal, BigDecimal.valueOf(avgMonthlyNet), nowMillis)

@@ -10,9 +10,9 @@ import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
-import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.WalletBalance
@@ -46,10 +46,10 @@ data class MonthlyFlow(val label: String, val income: Double, val spend: Double)
 /** Selected-period spend attributed to one person. */
 data class PersonSpend(val person: String, val amount: Double)
 
-/** Selected-period spend grouped by spending category. */
-data class CategorySpend(val category: SpendingCategory, val amount: Double)
+/** Selected-period spend grouped by dynamic category. */
+data class CategorySpend(val category: Category, val amount: Double)
 
-/** One donut-chart slice: a category (or the "Other" rollup) with its rank color. */
+/** One donut-chart slice: a category's own color, or the fixed grey for the "Other" rollup. */
 data class CategorySlice(val name: String, val amount: Double, val color: Long)
 
 /**
@@ -87,12 +87,12 @@ sealed interface SmartInsight {
     data class SavingsRate(val ratePercent: Double, override val tone: InsightTone) : SmartInsight
 
     /** The single biggest spending category this period, and its share of total spend. */
-    data class TopCategory(val category: SpendingCategory, val amount: Double, val sharePercent: Double) : SmartInsight {
+    data class TopCategory(val category: Category, val amount: Double, val sharePercent: Double) : SmartInsight {
         override val tone get() = InsightTone.NEUTRAL
     }
 
     /** A category whose spend jumped sharply vs. the preceding period. */
-    data class CategorySpike(val category: SpendingCategory, val amount: Double, val percentChange: Double) : SmartInsight {
+    data class CategorySpike(val category: Category, val amount: Double, val percentChange: Double) : SmartInsight {
         override val tone get() = InsightTone.NEGATIVE
     }
 
@@ -351,8 +351,16 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.ratesRepository.observeRates(),
         showAllLedgerTransactions,
         dateRange,
-    ) { transactions, rates, showAll, range ->
-        computeDashboardStats(transactions, rates, container.preferences.defaultCurrency, showAll, dateRange = range)
+        container.categoryRepository.observeAll(),
+    ) { transactions, rates, showAll, range, categories ->
+        computeDashboardStats(
+            transactions,
+            rates,
+            container.preferences.defaultCurrency,
+            categories,
+            showAll,
+            dateRange = range,
+        )
     }.recoverAndRetry("DashboardViewModel.stats", container) { DashboardStats() }
 
     private data class UiMeta(
@@ -497,23 +505,48 @@ internal fun filterAccountFeed(transactions: List<Transaction>, accountId: Long?
         .sortedByDescending { it.timestampMillis }
         .take(limit)
 
-/** Rank-ordered donut palette: top 4 categories, then grey for the "Other" rollup. */
-private val SLICE_PALETTE = listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL)
+/** Grey for the "Other" rollup slice -- not a real category, so it has no [Category.colorHex] of its own. */
 private const val OTHER_SLICE_COLOR = 0xFF6C757DL
+
+/**
+ * "#RRGGBB" -> a full-alpha ARGB [Long] as [DonutChart]/[CategorySlice] expect.
+ * Malformed input falls back to [OTHER_SLICE_COLOR] -- pure-JVM equivalent of
+ * [com.xemmy.mmbank.ui.components.categoryColor], which relies on an Android
+ * API this file's plain-JUnit tests can't reach.
+ */
+internal fun colorLongFromHex(hex: String): Long =
+    hex.removePrefix("#").toLongOrNull(16)?.let { 0xFF000000L or it } ?: OTHER_SLICE_COLOR
 
 /**
  * Caps [categorySpends] (already sorted descending) to the top 4 entries and
  * rolls everything past that into one "Other" slice, for the donut chart.
- * Colors are assigned by rank, not by category identity, so the same 5-color
- * palette works regardless of which categories happen to lead this month.
+ * Each real category's own [Category.colorHex] colors its slice; only the
+ * "Other" rollup gets the fixed [OTHER_SLICE_COLOR].
  */
 internal fun categorySlicesFrom(categorySpends: List<CategorySpend>): List<CategorySlice> {
     val top = categorySpends.take(4)
     val other = categorySpends.drop(4).sumOf { it.amount }
-    val slices = top.mapIndexed { index, spend ->
-        CategorySlice(spend.category.label, spend.amount, SLICE_PALETTE[index])
+    val slices = top.map { spend ->
+        CategorySlice(spend.category.name, spend.amount, colorLongFromHex(spend.category.colorHex))
     }
     return if (other > 0.0) slices + CategorySlice("Other", other, OTHER_SLICE_COLOR) else slices
+}
+
+/**
+ * Resolves a transaction's [Transaction.categoryId] against the known
+ * [categories] list. A null id, or one that doesn't resolve (category
+ * deleted since capture), falls back to the seeded "Uncategorized" category
+ * so every debit still lands in a real, colorable bucket rather than being
+ * silently dropped -- mirrors [com.xemmy.mmbank.domain.model.CategoryMigrationMapping]'s
+ * OTHER-folds-into-Uncategorized philosophy. The final fallback (a synthetic
+ * literal) only matters if [categories] itself is empty, e.g. before the
+ * v21->v22 seed has run; it keeps this function total rather than throwing.
+ */
+internal fun resolveCategory(categoryId: Long?, categories: List<Category>): Category {
+    val byId = categoryId?.let { id -> categories.firstOrNull { it.id == id } }
+    return byId
+        ?: categories.firstOrNull { it.name.equals("Uncategorized", ignoreCase = true) }
+        ?: Category(name = "Uncategorized", icon = "🏷️", colorHex = "#6C757D")
 }
 
 /** Everything the Dashboard needs to show/fold in fiat accounts — see [computeAccountsPresentation]. */
@@ -749,6 +782,7 @@ internal fun computeDashboardStats(
     transactions: List<Transaction>,
     rates: List<ExchangeRate>,
     baseCurrency: String,
+    categories: List<Category>,
     includeExcluded: Boolean = false,
     zone: ZoneId = ZoneId.systemDefault(),
     thisMonth: YearMonth = YearMonth.now(zone),
@@ -786,7 +820,7 @@ internal fun computeDashboardStats(
 
     fun categorySpendsOf(txs: List<Transaction>): List<CategorySpend> = txs
         .filter { it.direction == TransactionDirection.DEBIT }
-        .groupBy { it.spendingCategory }
+        .groupBy { resolveCategory(it.categoryId, categories) }
         .mapNotNull { (category, catTxs) ->
             val total = catTxs.sumOf { inBase(it) ?: 0.0 }
             if (total <= 0.0) null else CategorySpend(category, total)

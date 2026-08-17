@@ -438,10 +438,10 @@ private fun insightText(insight: SmartInsight, currency: String, hidden: Boolean
             "You spent ${(-insight.ratePercent).roundToInt()}% more than you earned this period"
         }
     is SmartInsight.TopCategory ->
-        "${insight.category.label} is your biggest expense at ${insight.sharePercent.roundToInt()}% " +
+        "${insight.category.name} is your biggest expense at ${insight.sharePercent.roundToInt()}% " +
             "(${insight.amount.asMoneyOrMask(currency, hidden)})"
     is SmartInsight.CategorySpike ->
-        "${insight.category.label} spending jumped ${insight.percentChange.roundToInt()}% to " +
+        "${insight.category.name} spending jumped ${insight.percentChange.roundToInt()}% to " +
             insight.amount.asMoneyOrMask(currency, hidden)
     is SmartInsight.NoIncomeSpend ->
         "No income recorded this period — ${insight.spend.asMoneyOrMask(currency, hidden)} went out"

@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 6c of 9 landed, CI pending
-**Version:** `versionCode = 54`, `versionName = "0.37.0"` (Step 6c; Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 7 of 9 landed, CI pending
+**Version:** `versionCode = 55`, `versionName = "0.38.0"` (Step 7; Step 6c was 54/0.37.0, Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1644,6 +1644,83 @@ top, so a green result there covers both.
 
 - Steps 7, 8, 9 unchanged from the prior status above. Step 6 (all three
   sub-steps) is now complete.
+
+## Step 7 — Dashboard + Analytics chart migration
+
+### What changed
+
+- `DashboardViewModel.statsFlow` gains `categoryRepository.observeAll()` as
+  its 5th flow (the confirmed free slot); `computeDashboardStats(...)` gains
+  a `categories: List<Category>` param. `CategorySpend`, `SmartInsight.TopCategory`,
+  and `SmartInsight.CategorySpike` all switch their `category` field from
+  `SpendingCategory` to the dynamic `Category`.
+- New pure `resolveCategory(categoryId, categories): Category` (in
+  `DashboardViewModel.kt`, reused by `AnalyticsViewModel.kt` too) --
+  resolves a transaction's `categoryId` against the known list; a null id or
+  one that no longer resolves (category deleted since capture) falls back to
+  the seeded "Uncategorized" category, with a synthetic literal as the final
+  fallback only if the category list itself is empty. Both
+  `computeDashboardStats`'s and `computeAnalyticsState`'s `categorySpendsOf`-
+  style grouping now group by `resolveCategory(it.categoryId, categories)`
+  instead of `it.spendingCategory`.
+- `categorySlicesFrom` -- the donut-chart slice builder -- no longer colors
+  the top 4 slices by rank (`SLICE_PALETTE[index]`, a fixed 4-color list);
+  each real category now colors its own slice via a new pure
+  `colorLongFromHex(hex): Long` (a plain-JVM "#RRGGBB" -> ARGB `Long`
+  converter, since the existing Android-only `categoryColor()` UI helper
+  can't run under this project's plain-JUnit tests). Only the "Other" rollup
+  keeps the fixed grey (`OTHER_SLICE_COLOR`) -- it isn't a real category.
+- `AnalyticsViewModel`'s `combine` was already at its 5-flow ceiling
+  (transactions, rates, dateRange, selectedDate, hideBalances); folded
+  `dateRange`+`selectedDate` into one `Selection` flow (same "fold to stay
+  within five slots" pattern `DashboardViewModel` already uses for its own
+  `uiMeta`/`metaBundle`) to make room for `categoryRepository.observeAll()`.
+  `computeAnalyticsState(...)` gains the same `categories: List<Category>`
+  param and `resolveCategory`-based grouping.
+- `InsightsScreen.kt`'s `insightText` -- `insight.category.label` ->
+  `insight.category.name` for `TopCategory`/`CategorySpike`.
+- `GoalsScreen.kt`'s `GoalsViewModel` calls `computeDashboardStats(...)` only
+  for its pure `.avgMonthlyNet` figure (income/spend-by-month, unrelated to
+  categories) -- passes `categories = emptyList()` rather than wiring an
+  unused `categoryRepository` flow into a ViewModel that has no other reason
+  to touch categories.
+- `DonutChart.kt`/`CategorySlice`/the `CategorySpendCard`/`CategoryDonutCard`
+  composables (Dashboard's Insights tab and the Analytics screen) needed no
+  changes -- both already consumed the decoupled `CategorySlice(name, amount,
+  color)` shape, never the enum directly.
+- Net effect: the category donut chart on both the Insights tab and the
+  Analytics screen, plus the "biggest expense"/"category spike" smart
+  insights, now reflect the same dynamic categories (including
+  user-created/custom ones and their real colors) as the rest of the app,
+  instead of being stuck on the frozen 14-value enum and a fixed rank
+  palette.
+
+### Tests
+
+- `DashboardResolveCategoryTest` (new) -- 4 cases: a matching id resolves
+  correctly; a null id falls back to seeded Uncategorized; a non-matching id
+  falls back to seeded Uncategorized; an empty category list still returns a
+  usable (synthetic) Uncategorized rather than throwing.
+- `DashboardColorLongFromHexTest` (new) -- 3 cases: a well-formed "#RRGGBB"
+  hex converts correctly; a hex with no leading "#" still converts; a
+  malformed hex falls back to the neutral grey.
+- `DashboardViewModelTest`, `DashboardSmartInsightsTest` -- every existing
+  case updated in place to build `Category` fixtures and `categoryId`-based
+  `Transaction`s instead of the `SpendingCategory` enum, including the
+  `categorySlicesFrom` color-assertion tests (now asserting each category's
+  own `colorHex`-derived color rather than the old rank palette).
+- No new test for `computeAnalyticsState`'s `categories` param specifically
+  -- this file has never had dedicated JVM tests for that function (matches
+  existing precedent; `SpendingHeatmapTest.kt` is Analytics's only test file
+  and covers unrelated pure logic).
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Steps 8, 9 unchanged from the prior status above.
+
+### CI verification (Step 7)
+
+Pending — push and check `test-build.yml` on this commit.
 
 ### CI verification (Step 6c)
 

@@ -4,8 +4,8 @@ import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
-import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -32,11 +32,22 @@ class DashboardViewModelTest {
     private val thisMonth = YearMonth.of(2026, 6)
     private val noRates = emptyList<ExchangeRate>()
 
+    private val groceries = Category(id = 1, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+    private val dining = Category(id = 2, name = "Dining", icon = "🍽️", colorHex = "#FF7043")
+    private val transport = Category(id = 3, name = "Transport", icon = "🚕", colorHex = "#29B6F6")
+    private val shopping = Category(id = 4, name = "Shopping", icon = "🛍️", colorHex = "#FFCA28")
+    private val fuel = Category(id = 5, name = "Fuel", icon = "⛽", colorHex = "#AB47BC")
+    private val entertainment = Category(id = 6, name = "Entertainment", icon = "🎬", colorHex = "#EC407A")
+    private val transfers = Category(id = 7, name = "Transfers", icon = "🔁", colorHex = "#26A69A")
+    private val uncategorized = Category(id = 8, name = "Uncategorized", icon = "🏷️", colorHex = "#78909C")
+    private val allCategories =
+        listOf(groceries, dining, transport, shopping, fuel, entertainment, transfers, uncategorized)
+
     private fun tx(
         amount: String,
         direction: TransactionDirection,
         excluded: Boolean = false,
-        category: SpendingCategory = SpendingCategory.UNCATEGORIZED,
+        categoryId: Long? = null,
         person: String? = null,
         month: YearMonth = thisMonth,
     ) = Transaction(
@@ -45,7 +56,7 @@ class DashboardViewModelTest {
         direction = direction,
         source = TransactionSource.MANUAL,
         timestampMillis = month.atDay(15).atStartOfDay(zone).toInstant().toEpochMilli(),
-        spendingCategory = category,
+        categoryId = categoryId,
         person = person,
         excludeFromStats = excluded,
     )
@@ -55,6 +66,7 @@ class DashboardViewModelTest {
             transactions = transactions,
             rates = noRates,
             baseCurrency = "AED",
+            categories = allCategories,
             includeExcluded = includeExcluded,
             zone = zone,
             thisMonth = thisMonth,
@@ -64,10 +76,10 @@ class DashboardViewModelTest {
     // credit and a flagged refund-adjustment debit that must not skew stats.
     private val mixed = listOf(
         tx("1000.00", TransactionDirection.CREDIT),
-        tx("200.00", TransactionDirection.DEBIT, category = SpendingCategory.GROCERIES),
-        tx("50.00", TransactionDirection.DEBIT, category = SpendingCategory.DINING),
+        tx("200.00", TransactionDirection.DEBIT, categoryId = groceries.id),
+        tx("50.00", TransactionDirection.DEBIT, categoryId = dining.id),
         tx("500.00", TransactionDirection.CREDIT, excluded = true),
-        tx("75.00", TransactionDirection.DEBIT, excluded = true, category = SpendingCategory.TRANSFERS),
+        tx("75.00", TransactionDirection.DEBIT, excluded = true, categoryId = transfers.id),
     )
 
     @Test
@@ -89,10 +101,10 @@ class DashboardViewModelTest {
     @Test
     fun `toggle off - a flagged transaction's category contributes nothing`() {
         val spends = stats(mixed, includeExcluded = false).categorySpends
-        assertNull(spends.firstOrNull { it.category == SpendingCategory.TRANSFERS })
+        assertNull(spends.firstOrNull { it.category == transfers })
         assertEquals(
             200.0,
-            spends.first { it.category == SpendingCategory.GROCERIES }.amount,
+            spends.first { it.category == groceries }.amount,
             1e-9,
         )
     }
@@ -102,7 +114,7 @@ class DashboardViewModelTest {
         val spends = stats(mixed, includeExcluded = true).categorySpends
         assertEquals(
             75.0,
-            spends.first { it.category == SpendingCategory.TRANSFERS }.amount,
+            spends.first { it.category == transfers }.amount,
             1e-9,
         )
     }
@@ -143,12 +155,12 @@ class DashboardViewModelTest {
     @Test
     fun `categorySlicesFrom caps at top 4 and rolls the rest into Other`() {
         val spends = listOf(
-            CategorySpend(SpendingCategory.GROCERIES, 600.0),
-            CategorySpend(SpendingCategory.DINING, 400.0),
-            CategorySpend(SpendingCategory.TRANSPORT, 300.0),
-            CategorySpend(SpendingCategory.SHOPPING, 200.0),
-            CategorySpend(SpendingCategory.FUEL, 80.0),
-            CategorySpend(SpendingCategory.ENTERTAINMENT, 20.0),
+            CategorySpend(groceries, 600.0),
+            CategorySpend(dining, 400.0),
+            CategorySpend(transport, 300.0),
+            CategorySpend(shopping, 200.0),
+            CategorySpend(fuel, 80.0),
+            CategorySpend(entertainment, 20.0),
         )
         val slices = categorySlicesFrom(spends)
 
@@ -156,7 +168,7 @@ class DashboardViewModelTest {
         assertEquals(listOf("Groceries", "Dining", "Transport", "Shopping", "Other"), slices.map { it.name })
         assertEquals(100.0, slices.last().amount, 1e-9)
         assertEquals(
-            listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL, 0xFF6C757DL),
+            listOf(0xFF4CAF50L, 0xFFFF7043L, 0xFF29B6F6L, 0xFFFFCA28L, 0xFF6C757DL),
             slices.map { it.color },
         )
     }
@@ -164,9 +176,9 @@ class DashboardViewModelTest {
     @Test
     fun `categorySlicesFrom leaves no Other slice when there are 4 or fewer categories`() {
         val spends = listOf(
-            CategorySpend(SpendingCategory.GROCERIES, 600.0),
-            CategorySpend(SpendingCategory.DINING, 400.0),
-            CategorySpend(SpendingCategory.TRANSPORT, 300.0),
+            CategorySpend(groceries, 600.0),
+            CategorySpend(dining, 400.0),
+            CategorySpend(transport, 300.0),
         )
         val slices = categorySlicesFrom(spends)
 
@@ -180,7 +192,7 @@ class DashboardViewModelTest {
         val result = stats(mixed, includeExcluded = false)
         assertEquals(2, result.categorySlices.size)
         assertEquals(
-            result.categorySpends.map { it.category.label to it.amount },
+            result.categorySpends.map { it.category.name to it.amount },
             result.categorySlices.map { it.name to it.amount },
         )
         assertTrue(result.categorySlices.none { it.name == "Other" })
@@ -197,8 +209,8 @@ class DashboardViewModelTest {
     @Test
     fun `Last3Months pulls in spend from two months back that ThisMonth would miss`() {
         val transactions = listOf(
-            tx("100.00", TransactionDirection.DEBIT, category = SpendingCategory.GROCERIES),
-            tx("60.00", TransactionDirection.DEBIT, category = SpendingCategory.DINING, month = thisMonth.minusMonths(2)),
+            tx("100.00", TransactionDirection.DEBIT, categoryId = groceries.id),
+            tx("60.00", TransactionDirection.DEBIT, categoryId = dining.id, month = thisMonth.minusMonths(2)),
             // Outside the 3-month window entirely.
             tx("500.00", TransactionDirection.DEBIT, month = thisMonth.minusMonths(3)),
         )
@@ -206,6 +218,7 @@ class DashboardViewModelTest {
             transactions = transactions,
             rates = noRates,
             baseCurrency = "AED",
+            categories = allCategories,
             zone = zone,
             thisMonth = thisMonth,
             dateRange = DashboardDateRange.Last3Months,
@@ -224,6 +237,7 @@ class DashboardViewModelTest {
             transactions = transactions,
             rates = noRates,
             baseCurrency = "AED",
+            categories = allCategories,
             zone = zone,
             thisMonth = thisMonth,
             dateRange = DashboardDateRange.AllTime,
@@ -250,7 +264,7 @@ class DashboardViewModelTest {
             source = TransactionSource.MANUAL,
             timestampMillis = thisMonth.atDay(10).atStartOfDay(zone).toInstant().toEpochMilli(),
             merchant = "Big Mart",
-            spendingCategory = SpendingCategory.SHOPPING,
+            categoryId = shopping.id,
         )
         val result = stats(mixed + big, includeExcluded = false)
         val biggest = result.insights.filterIsInstance<SmartInsight.BiggestExpense>().single()
@@ -598,6 +612,10 @@ class DashboardDateRangeTest {
  */
 class DashboardSmartInsightsTest {
 
+    private val groceries = Category(id = 1, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+    private val dining = Category(id = 2, name = "Dining", icon = "🍽️", colorHex = "#FF7043")
+    private val transport = Category(id = 3, name = "Transport", icon = "🚕", colorHex = "#29B6F6")
+
     private fun insights(
         periodIncome: Double = 0.0,
         periodSpend: Double = 0.0,
@@ -669,12 +687,12 @@ class DashboardSmartInsightsTest {
     fun `top category reports its share of total spend`() {
         val result = insights(
             categorySpends = listOf(
-                CategorySpend(SpendingCategory.GROCERIES, 300.0),
-                CategorySpend(SpendingCategory.DINING, 100.0),
+                CategorySpend(groceries, 300.0),
+                CategorySpend(dining, 100.0),
             ),
         )
         val top = result.filterIsInstance<SmartInsight.TopCategory>().single()
-        assertEquals(SpendingCategory.GROCERIES, top.category)
+        assertEquals(groceries, top.category)
         assertEquals(75.0, top.sharePercent, 1e-9)
     }
 
@@ -682,16 +700,16 @@ class DashboardSmartInsightsTest {
     fun `category spike fires for a category up at least 25 percent, picking the biggest mover`() {
         val result = insights(
             categorySpends = listOf(
-                CategorySpend(SpendingCategory.DINING, 130.0), // +30%
-                CategorySpend(SpendingCategory.TRANSPORT, 200.0), // +100%
+                CategorySpend(dining, 130.0), // +30%
+                CategorySpend(transport, 200.0), // +100%
             ),
             previousCategorySpends = listOf(
-                CategorySpend(SpendingCategory.DINING, 100.0),
-                CategorySpend(SpendingCategory.TRANSPORT, 100.0),
+                CategorySpend(dining, 100.0),
+                CategorySpend(transport, 100.0),
             ),
         )
         val spike = result.filterIsInstance<SmartInsight.CategorySpike>().single()
-        assertEquals(SpendingCategory.TRANSPORT, spike.category)
+        assertEquals(transport, spike.category)
         assertEquals(100.0, spike.percentChange, 1e-9)
         assertEquals(InsightTone.NEGATIVE, spike.tone)
     }
@@ -699,8 +717,8 @@ class DashboardSmartInsightsTest {
     @Test
     fun `category spike is silent below the 25 percent threshold`() {
         val result = insights(
-            categorySpends = listOf(CategorySpend(SpendingCategory.DINING, 110.0)), // +10%
-            previousCategorySpends = listOf(CategorySpend(SpendingCategory.DINING, 100.0)),
+            categorySpends = listOf(CategorySpend(dining, 110.0)), // +10%
+            previousCategorySpends = listOf(CategorySpend(dining, 100.0)),
         )
         assertTrue(result.none { it is SmartInsight.CategorySpike })
     }
@@ -711,5 +729,58 @@ class DashboardSmartInsightsTest {
         val biggest = result.filterIsInstance<SmartInsight.BiggestExpense>().single()
         assertEquals("Corner Store", biggest.merchant)
         assertEquals(42.0, biggest.amount, 1e-9)
+    }
+}
+
+/**
+ * [resolveCategory] is the single place a transaction's `categoryId` becomes
+ * a real [Category] for the Dashboard/Analytics charts -- both a normal hit
+ * and every fallback path matter here, since a wrong fallback would either
+ * crash (empty list) or silently mislabel real spend as something else.
+ */
+class DashboardResolveCategoryTest {
+
+    private val groceries = Category(id = 1, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+    private val uncategorized = Category(id = 2, name = "Uncategorized", icon = "🏷️", colorHex = "#78909C")
+    private val categories = listOf(groceries, uncategorized)
+
+    @Test
+    fun `a matching id resolves to its category`() {
+        assertEquals(groceries, resolveCategory(groceries.id, categories))
+    }
+
+    @Test
+    fun `a null id falls back to the seeded Uncategorized category`() {
+        assertEquals(uncategorized, resolveCategory(null, categories))
+    }
+
+    @Test
+    fun `an id with no match falls back to the seeded Uncategorized category`() {
+        assertEquals(uncategorized, resolveCategory(999L, categories))
+    }
+
+    @Test
+    fun `an empty category list falls back to a synthetic Uncategorized rather than throwing`() {
+        val result = resolveCategory(null, emptyList())
+        assertEquals("Uncategorized", result.name)
+    }
+}
+
+/** [colorLongFromHex] is the pure-JVM stand-in for the Android-only [com.xemmy.mmbank.ui.components.categoryColor]. */
+class DashboardColorLongFromHexTest {
+
+    @Test
+    fun `a well-formed hex converts to a full-alpha ARGB Long`() {
+        assertEquals(0xFF4CAF50L, colorLongFromHex("#4CAF50"))
+    }
+
+    @Test
+    fun `a hex with no leading hash still converts correctly`() {
+        assertEquals(0xFF4CAF50L, colorLongFromHex("4CAF50"))
+    }
+
+    @Test
+    fun `a malformed hex falls back to the neutral grey`() {
+        assertEquals(0xFF6C757DL, colorLongFromHex("not-a-color"))
     }
 }
