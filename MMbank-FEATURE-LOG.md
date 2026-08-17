@@ -1575,7 +1575,10 @@ build success`, `Check APK exists`, `Upload Debug APK` all succeeded.
 
 ### CI verification (Step 6b)
 
-Pending — push and check `test-build.yml` on this commit.
+`68f4a28` was pushed together with `65f0a8c` (Step 6c) in one push, so no
+separate CI run covers 6b alone -- verified transitively: 6c's combined run
+(below) compiles and tests everything 6b changed plus 6c's own changes on
+top, so a green result there covers both.
 
 ## Step 6c — TransactionEditorDialog migrated to dynamic categories
 
@@ -1644,4 +1647,16 @@ Pending — push and check `test-build.yml` on this commit.
 
 ### CI verification (Step 6c)
 
-Pending — push and check `test-build.yml` on this commit.
+Landed as `65f0a8c` (with `68f4a28` immediately underneath), CI green.
+`Lint & Unit Tests` -- `BUILD SUCCESSFUL in 2m 54s`, `25 actionable tasks: 25
+executed`, no test-failure line (covers the 4 new `CategoryMigrationMappingTest`
+cases). `Build APK (with retries)` succeeded on Attempt 1 (Attempts 2-4
+`skipped`); `Verify build success`, `Check APK exists`, `Upload Debug APK`
+all succeeded. Two earlier `check_run.completed` webhooks reported
+`Final Status: failure` for the now-superseded `c3da453` (Step 6a) -- both
+were confirmed benign: `Lint & Unit Tests` and `Build Debug APK - Attempt 1`
+had already succeeded for that commit before this push's
+`cancel-in-progress` concurrency group cancelled its still-running,
+non-gating `Build Release APK` step, which is what actually failed
+`Final Status`'s `needs.build-apk.result == 'success'` check -- not a real
+code or test failure. Step 6 (6a + 6b + 6c) is now fully landed and verified.
