@@ -55,7 +55,6 @@ import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
-import com.xemmy.mmbank.ui.screens.budgets.CategoriesScreen
 import com.xemmy.mmbank.ui.screens.report.MonthlyReportScreen
 import com.xemmy.mmbank.ui.screens.bills.BillsScreen
 import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
@@ -71,6 +70,7 @@ import com.xemmy.mmbank.ui.screens.settings.AppearanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.CategoriesAndPeopleScreen
 import com.xemmy.mmbank.ui.screens.settings.DemoSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DesignSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
@@ -324,7 +324,9 @@ private fun AppNavHost(
         ) {
             GroupDetailScreen(onBack = { navController.popBackStack() })
         }
-        composable("categories") { CategoriesScreen(onBack = { navController.popBackStack() }) }
+        composable("categories") {
+            CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)
+        }
         composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
         composable(
             route = "merchant_detail/{merchant}",
@@ -350,6 +352,9 @@ private fun AppNavHost(
         }
         composable("settings_capture") { CaptureSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_prefs") { PreferencesSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_categories_people") {
+            CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)
+        }
         composable("settings_binance") { BinanceSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_backup") { BackupSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }

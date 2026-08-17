@@ -1886,3 +1886,45 @@ had already succeeded for that commit before this push's
 non-gating `Build Release APK` step, which is what actually failed
 `Final Status`'s `needs.build-apk.result == 'success'` check -- not a real
 code or test failure. Step 6 (6a + 6b + 6c) is now fully landed and verified.
+
+## Phase 11 — Categories & People organized under Settings
+
+**Status:** landed, CI pending
+**Version:** `versionCode = 58`, `versionName = "0.39.0"`
+
+### What changed
+
+- New Settings entry "Categories & People" (`SettingsScreen.kt`'s General
+  group, between Preferences and Binance) opens a single tabbed screen
+  (`CategoriesAndPeopleScreen`) with two tabs -- Categories and People --
+  each with full add/edit/delete, so both are managed from one organized
+  place instead of being split across two unrelated parts of the app.
+- **Categories tab**: the existing category hierarchy list/editor, extracted
+  out of the old standalone `CategoriesScreen` (which had its own
+  Scaffold/TopAppBar/FAB) into a new embeddable `CategoriesTabContent`
+  composable (no Scaffold chrome of its own). The host screen's FAB (shown
+  only on this tab) opens the create dialog via a hoisted `creatingNew`
+  boolean; edit/delete stay local to the list, unchanged in behavior.
+  Nothing duplicated: the `"categories"` route (used by Insights >
+  Categories and the Category budgets card's "Manage" button) now renders
+  the same `CategoriesAndPeopleScreen` (defaulted to the Categories tab)
+  instead of the old standalone screen, so there's one implementation with
+  two entry points, not two.
+- **People tab**: the existing saved-people list (add / rename-everywhere /
+  remove, plus the "on transactions but not in your list" merge/clear
+  section) moved out of Settings > Preferences, where it was buried among
+  currency/budget/Forex settings, into its own tab. Its redundant internal
+  "People" heading was dropped since the tab label already says it.
+- `CategoryHierarchy.kt`'s KDoc reference to the removed `CategoriesScreen`
+  updated to point at `CategoriesTabContent`.
+
+### Tests
+
+- No new pure logic -- this is a UI reorganization of already-tested pieces
+  (`CategoriesViewModel`, `SettingsViewModel`'s people functions, both
+  unchanged). Matches this app's existing precedent of not unit-testing
+  Compose screens directly.
+
+### CI verification
+
+Pending — push and check `test-build.yml` on this commit.

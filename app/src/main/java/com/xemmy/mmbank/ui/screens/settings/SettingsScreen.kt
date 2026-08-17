@@ -38,21 +38,28 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +98,8 @@ import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.theme.displayName
 import com.xemmy.mmbank.ui.util.asMoney
@@ -751,6 +760,13 @@ fun SettingsScreen(
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
+                    icon = Icons.Filled.PieChart,
+                    title = "Categories & People",
+                    subtitle = "Manage categories and saved people — add, edit, delete",
+                    onClick = { onOpen("settings_categories_people") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
                     icon = Icons.Filled.CurrencyBitcoin,
                     title = "Binance",
                     subtitle = if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
@@ -917,6 +933,70 @@ fun SettingsSubpage(
             Text(title, style = MaterialTheme.typography.titleLarge)
         }
         content()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Categories & People — one organized home for both, tabbed so
+// neither crowds the other. Categories reuses CategoriesTabContent (also
+// reached via Insights > Categories / the Category budgets card's "Manage"
+// button, which route to the same "categories" destination); People is the
+// list previously buried inside Preferences, moved here as its own tab.
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoriesAndPeopleScreen(
+    onBack: () -> Unit,
+    initialTab: Int = 0,
+    categoriesViewModel: CategoriesViewModel = viewModel(factory = AppViewModelProvider.Factory),
+    settingsViewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    var tab by remember { mutableStateOf(initialTab) }
+    var creatingNewCategory by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Categories & People") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            // Only Categories has a create action; People adds inline via its own text field.
+            if (tab == 0) {
+                FloatingActionButton(onClick = { creatingNewCategory = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "New category")
+                }
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Categories") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("People") })
+            }
+            when (tab) {
+                0 -> CategoriesTabContent(
+                    creatingNew = creatingNewCategory,
+                    onCreatingNewChange = { creatingNewCategory = it },
+                    viewModel = categoriesViewModel,
+                )
+                else -> Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    PeopleSection(settingsViewModel)
+                }
+            }
+        }
     }
 }
 
@@ -1204,8 +1284,6 @@ fun PreferencesSettingsScreen(
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
             Text("Refresh Forex rates now")
         }
-
-        PeopleSection(viewModel)
 
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
@@ -1708,7 +1786,6 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
     var newPerson by remember { mutableStateOf("") }
     var renaming by remember { mutableStateOf<String?>(null) }
 
-    Text("People", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
     Text(
         "This list feeds the person menu on transactions and is included in backups. " +
             "Renaming updates every transaction that carries the old name.",

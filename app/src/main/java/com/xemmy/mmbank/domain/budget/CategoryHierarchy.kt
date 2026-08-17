@@ -10,7 +10,7 @@ data class CategoryTreeNode(
 
 /**
  * Groups a flat category list into a two-level tree for hierarchy-first
- * rendering (see [com.xemmy.mmbank.ui.screens.budgets.CategoriesScreen]).
+ * rendering (see [com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent]).
  * Pure and top-level for JVM testing.
  */
 object CategoryHierarchy {

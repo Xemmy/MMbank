@@ -14,21 +14,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -157,81 +151,68 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
 }
 
 /**
- * The single home for category management: every category in one hierarchy
- * (parent rows followed by their indented children), each showing its own
- * monthly-cap progress when it has one, with create/edit/delete all here.
+ * The category hierarchy list (parent rows followed by their indented
+ * children, each showing its own monthly-cap progress when it has one) plus
+ * its create/edit/delete dialogs — no Scaffold chrome of its own, so it can
+ * be embedded directly into a host screen's tab (see
+ * [com.xemmy.mmbank.ui.screens.settings.CategoriesAndPeopleScreen]).
+ * [creatingNew] is hoisted so a FAB living in that host's Scaffold can open
+ * the create dialog; edit/delete stay local since they're triggered from
+ * within this list.
  *
  * The cap has been storable since dynamic categories shipped but was never
- * readable anywhere — this screen is where it becomes visible, and where the
+ * readable anywhere — this is where it becomes visible, and where the
  * post-insert alert in [com.xemmy.mmbank.di.AppContainer] gets its thresholds.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CategoriesScreen(
-    onBack: () -> Unit,
+fun CategoriesTabContent(
+    creatingNew: Boolean,
+    onCreatingNewChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
     viewModel: CategoriesViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Category?>(null) }
-    var creatingNew by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf<Category?>(null) }
 
     val statusByCategoryId = remember(state.statuses) { state.statuses.associateBy { it.category.id } }
     val tree = remember(state.categories) { CategoryHierarchy.buildTree(state.categories) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Categories") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { creatingNew = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "New category")
+    LazyColumn(
+        modifier = modifier.fillMaxSize().obsidianCanvas(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (state.categories.isEmpty()) {
+            item {
+                Text(
+                    "No categories yet. Tap + to add one, or set a monthly cap on one " +
+                        "and you'll be alerted at 80% and again if you pass it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().obsidianCanvas().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (state.categories.isEmpty()) {
-                item {
-                    Text(
-                        "No categories yet. Tap + to add one, or set a monthly cap on one " +
-                            "and you'll be alerted at 80% and again if you pass it.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+        }
 
-            tree.forEach { node ->
-                item(key = "cat_${node.category.id}") {
-                    CategoryRow(
-                        category = node.category,
-                        status = statusByCategoryId[node.category.id],
-                        currency = state.currency,
-                        onEdit = { editing = node.category },
-                        onDelete = { confirmingDelete = node.category },
-                    )
-                }
-                items(node.children, key = { "cat_${it.id}" }) { child ->
-                    CategoryRow(
-                        category = child,
-                        status = statusByCategoryId[child.id],
-                        currency = state.currency,
-                        modifier = Modifier.padding(start = 20.dp),
-                        onEdit = { editing = child },
-                        onDelete = { confirmingDelete = child },
-                    )
-                }
+        tree.forEach { node ->
+            item(key = "cat_${node.category.id}") {
+                CategoryRow(
+                    category = node.category,
+                    status = statusByCategoryId[node.category.id],
+                    currency = state.currency,
+                    onEdit = { editing = node.category },
+                    onDelete = { confirmingDelete = node.category },
+                )
+            }
+            items(node.children, key = { "cat_${it.id}" }) { child ->
+                CategoryRow(
+                    category = child,
+                    status = statusByCategoryId[child.id],
+                    currency = state.currency,
+                    modifier = Modifier.padding(start = 20.dp),
+                    onEdit = { editing = child },
+                    onDelete = { confirmingDelete = child },
+                )
             }
         }
     }
@@ -241,10 +222,10 @@ fun CategoriesScreen(
             initial = null,
             currency = state.currency,
             allCategories = state.categories,
-            onDismiss = { creatingNew = false },
+            onDismiss = { onCreatingNewChange(false) },
             onSave = { name, icon, colorHex, cap, parentId ->
                 viewModel.create(name, icon, colorHex, cap, parentId)
-                creatingNew = false
+                onCreatingNewChange(false)
             },
         )
     }
