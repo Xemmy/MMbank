@@ -163,10 +163,12 @@ object TransactionFilterEngine {
 
     /**
      * "Inbox Zero" triage: rows still needing a human look — uncategorized
-     * captures plus system-generated balance corrections.
+     * captures plus system-generated balance corrections. Uses the dynamic
+     * [Transaction.categoryId] (post category-unification, the actual source
+     * of truth) rather than the frozen [SpendingCategory] enum.
      */
     fun needsTriage(tx: Transaction): Boolean =
-        tx.spendingCategory == SpendingCategory.UNCATEGORIZED ||
+        tx.categoryId == null ||
             tx.matchedRuleName == BALANCE_ADJUSTMENT_RULE_NAME
 
     private fun matches(

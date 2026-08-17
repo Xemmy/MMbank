@@ -184,13 +184,13 @@ interface TransactionDao {
     suspend fun backfillCategorySuggestionByMerchant(merchant: String, name: String, icon: String?, colorHex: String?): Int
 
     /**
-     * Real, non-excluded transactions still missing a dynamic category: either
-     * a static-enum Uncategorized row, or one carrying a pending AI suggestion.
-     * Backs the Uncategorized queue screen.
+     * Real, non-excluded transactions still missing a dynamic category:
+     * either a row with no `categoryId` at all, or one carrying a pending AI
+     * suggestion. Backs the Uncategorized queue screen.
      */
     @Query(
         "SELECT * FROM transactions WHERE isDemo = :demo AND " +
-            "(needsCategoryApproval = 1 OR (categoryId IS NULL AND spendingCategory = 'UNCATEGORIZED')) " +
+            "(needsCategoryApproval = 1 OR categoryId IS NULL) " +
             "ORDER BY timestamp DESC"
     )
     fun observeUncategorized(demo: Boolean): Flow<List<TransactionEntity>>

@@ -42,6 +42,7 @@ class TransactionFilterEngineTest {
         direction: TransactionDirection = TransactionDirection.DEBIT,
         accountId: Long? = null,
         category: SpendingCategory = SpendingCategory.GROCERIES,
+        categoryId: Long? = null,
         source: TransactionSource = TransactionSource.SMS,
         excluded: Boolean = false,
         merchant: String? = null,
@@ -59,6 +60,7 @@ class TransactionFilterEngineTest {
         timestampMillis = date.atTime(timeOfDayHour, 0).atZone(zone).toInstant().toEpochMilli(),
         matchedRuleName = matchedRuleName,
         spendingCategory = category,
+        categoryId = categoryId,
         person = person,
         excludeFromStats = excluded,
     )
@@ -269,12 +271,12 @@ class TransactionFilterEngineTest {
 
     @Test
     fun `triage keeps uncategorized rows and balance adjustments, drops the rest`() {
-        val uncategorized = tx(category = SpendingCategory.UNCATEGORIZED)
+        val uncategorized = tx(categoryId = null)
         val adjustment = tx(
-            category = SpendingCategory.OTHER,
+            categoryId = 1L,
             matchedRuleName = BALANCE_ADJUSTMENT_RULE_NAME,
         )
-        val done = tx(category = SpendingCategory.DINING)
+        val done = tx(categoryId = 1L)
         val visible = filter(listOf(uncategorized, adjustment, done), ActivityFilters(triageOnly = true))
         assertEquals(setOf(uncategorized.id, adjustment.id), visible.map { it.id }.toSet())
     }

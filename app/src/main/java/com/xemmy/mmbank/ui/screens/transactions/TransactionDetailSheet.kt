@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -68,6 +69,8 @@ fun TransactionDetailSheet(
     accountName: String?,
     /** Friendly bank name resolved from the sender (user label, then built-in map). */
     bankName: String?,
+    /** Dynamic categories, to resolve [Transaction.categoryId] for the Category row. */
+    categories: List<Category>,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
@@ -139,7 +142,11 @@ fun TransactionDetailSheet(
                     }
                     .verticalScroll(rememberScrollState()),
             ) {
-                DetailRow("Category", "${transaction.spendingCategory.emoji}  ${transaction.spendingCategory.label}")
+                val assignedCategory = categories.firstOrNull { it.id == transaction.categoryId }
+                DetailRow(
+                    "Category",
+                    assignedCategory?.let { "${it.icon}  ${it.name}" } ?: "🏷️  Uncategorized",
+                )
                 DetailRow("Account", accountName ?: "Unassigned")
                 DetailRow("Date & time", transaction.timestampMillis.asDateTime())
                 (bankName ?: transaction.sender)?.let { DetailRow("Sender", it) }

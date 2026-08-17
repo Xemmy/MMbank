@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 8 of 9 landed, CI pending
-**Version:** `versionCode = 56`, `versionName = "0.38.1"` (Step 8; Step 7 was 55/0.38.0, Step 6c was 54/0.37.0, Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 9 of 9 landed, CI pending (final step of this phase)
+**Version:** `versionCode = 57`, `versionName = "0.38.2"` (Step 9; Step 8 was 56/0.38.1, Step 7 was 55/0.38.0, Step 6c was 54/0.37.0, Step 6b was 53/0.36.1, Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1645,6 +1645,71 @@ top, so a green result there covers both.
 - Steps 7, 8, 9 unchanged from the prior status above. Step 6 (all three
   sub-steps) is now complete.
 
+## Step 9 — Remaining read-site cleanup (final step of this phase)
+
+### What changed
+
+- `TransactionFilterEngine.needsTriage` -- `tx.spendingCategory == SpendingCategory.UNCATEGORIZED`
+  -> `tx.categoryId == null` (still `|| matchedRuleName == BALANCE_ADJUSTMENT_RULE_NAME`,
+  unchanged). The dynamic `categoryId` is the actual post-unification source
+  of truth for "does this row still need a human look", strictly more
+  accurate than the frozen enum.
+- `TransactionDetailSheet` gains a `categories: List<Category>` param; its
+  read-only "Category" row now resolves `transaction.categoryId` against the
+  passed-in list (icon + name), falling back to a generic "🏷️ Uncategorized"
+  when unset -- instead of always showing the frozen
+  `spendingCategory.emoji`/`.label`. `TransactionsScreen.kt`'s one call site
+  updated with `categories = state.categories`.
+- `Daos.observeUncategorized` -- dropped the redundant
+  `spendingCategory = 'UNCATEGORIZED'` AND-clause from
+  `(categoryId IS NULL AND spendingCategory = 'UNCATEGORIZED')`, leaving
+  `categoryId IS NULL` alone (still OR'd with `needsCategoryApproval = 1`).
+  Strictly more correct post-unification: a row can have `categoryId IS
+  NULL` while its frozen `spendingCategory` reads as something other than
+  UNCATEGORIZED (e.g. the `MerchantCategorizer` keyword guess landed on a
+  real bucket, but no dynamic category was ever bridged/assigned) -- the old
+  AND-clause would have wrongly excluded such a row from the Uncategorized
+  queue.
+- **Deliberately left as frozen legacy** (per the original plan, unchanged
+  from prior status): `AiRetentionScorer` (INCOME check), `TransferMatcher`
+  (TRANSFERS check), `FinancialCopilotQueryHandler`, `BackupManager`'s CSV
+  export category column, `AiConfidenceScorer` -- all keep reading
+  `spendingCategory` exactly as before. It keeps being populated at capture
+  time (Step 2) and now also for manual entries (Step 6c), so none of these
+  regress; migrating them has no user-visible benefit tied to this phase.
+
+### Tests
+
+- `TransactionFilterEngineTest`'s `tx()` fixture helper gains a
+  `categoryId: Long? = null` param; the
+  `` `triage keeps uncategorized rows and balance adjustments, drops the rest` ``
+  case rewritten to set `categoryId` (not `category`) across its three
+  fixture rows, since triage no longer keys on the enum. The
+  balance-adjustment cross-file-consistency case needed no change -- it
+  passes purely on `matchedRuleName`, independent of this migration.
+- No test added for `observeUncategorized`'s SQL change or
+  `TransactionDetailSheet`'s row resolution -- Room queries and this
+  particular Compose screen have no JVM test harness in this project (same
+  established gap noted in Steps 1 and 8).
+
+### This phase is now complete
+
+All 9 steps of the category-unification plan (`Category` unification --
+single Categories screen, merge `SpendingCategory` into `Category`) have
+landed: migration + backfill (1), capture-time bridge (2), shared editor
+component (3), unified Categories screen (4), bulk dynamic-category setter
+(5), full `TransactionsScreen` migration across row/swipe, bulk bar, and the
+editor dialog (6a/6b/6c), Dashboard + Analytics chart migration (7),
+backup/restore format fix (8), and this final read-site cleanup (9).
+`SpendingCategory` remains in the codebase as a deliberately frozen legacy
+signal (documented above and in Step 6c) -- fully retiring it (stop writing
+it, drop the remaining legacy reads) is explicitly out of scope for this
+phase, per the original plan's "Deferred / explicitly out of scope" section.
+
+### CI verification (Step 9)
+
+Pending — push and check `test-build.yml` on this commit.
+
 ## Step 8 — Backup/restore format fix
 
 ### What changed
@@ -1708,7 +1773,13 @@ top, so a green result there covers both.
 
 ### CI verification (Step 8)
 
-Pending — push and check `test-build.yml` on this commit.
+Landed as `3a3a8ed`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in 2m
+48s`, `25 actionable tasks: 25 executed`, no test-failure line. `Build APK
+(with retries)` in progress at the time Step 9 was prepared; Step 7's
+superseded commit (`372cbe3`) showed the same benign concurrency-cancellation
+`Final Status: failure` pattern confirmed repeatedly this session (its own
+`Lint & Unit Tests` and `Build Debug APK - Attempt 1` had already succeeded
+before being superseded by this push).
 
 ## Step 7 — Dashboard + Analytics chart migration
 
