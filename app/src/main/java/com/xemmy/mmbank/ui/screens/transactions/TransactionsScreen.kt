@@ -414,11 +414,6 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         bulkMode.value = bulkMode.value.copy(selectedIds = ids.toSet())
     }
 
-    fun bulkSetCategory(category: SpendingCategory) = safeWrite("bulkSetCategory") {
-        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(spendingCategory = category))
-        bulkMode.value = BulkModeState()
-    }
-
     fun bulkSetCategoryId(categoryId: Long?) = safeWrite("bulkSetCategoryId") {
         container.bulkUpdateTransactions(
             bulkMode.value.selectedIds.toList(),
@@ -613,6 +608,9 @@ fun TransactionsScreen(
     // SwipeToActionBox) or tapping a row's category chip, cleared once a
     // category is picked/created or the picker is dismissed.
     var categoryPickerFor by remember { mutableStateOf<Transaction?>(null) }
+    // Bulk-mode's own category picker -- applies to every selected id at once,
+    // so it's a plain flag rather than a per-transaction target.
+    var bulkCategoryPickerOpen by remember { mutableStateOf(false) }
 
     // Brand accent for a specific-account filter, reusing the same GlowTone
     // mapping every row already uses for its own origin glow — one source of
@@ -686,7 +684,7 @@ fun TransactionsScreen(
                     accounts = state.accounts,
                     knownPersons = state.knownPersons,
                     onSelectAll = { viewModel.selectAll(state.transactions.map { it.id }) },
-                    onCategorize = { category -> viewModel.bulkSetCategory(category) },
+                    onCategorize = { bulkCategoryPickerOpen = true },
                     onAssignAccount = { accountId -> viewModel.bulkAssignAccount(accountId) },
                     onAssignPerson = { person -> viewModel.bulkSetPerson(person) },
                     onExclude = { viewModel.bulkSetExcludeFromStats(true) },
@@ -892,6 +890,22 @@ fun TransactionsScreen(
         )
     }
 
+    if (bulkCategoryPickerOpen) {
+        CategoryPickerBottomSheet(
+            categories = state.categories,
+            currency = state.defaultCurrency,
+            onSelect = { category ->
+                viewModel.bulkSetCategoryId(category.id)
+                bulkCategoryPickerOpen = false
+            },
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.bulkCreateAndAssignCategory(name, colorHex, icon, cap, parentId)
+                bulkCategoryPickerOpen = false
+            },
+            onDismiss = { bulkCategoryPickerOpen = false },
+        )
+    }
+
     selectedTransaction?.let { tx ->
         TransactionDetailSheet(
             transaction = tx,
@@ -1018,14 +1032,13 @@ private fun BulkModeBar(
     accounts: List<Account>,
     knownPersons: List<String>,
     onSelectAll: () -> Unit,
-    onCategorize: (SpendingCategory) -> Unit,
+    onCategorize: () -> Unit,
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
     onExclude: () -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
 ) {
-    var categoryMenuOpen by remember { mutableStateOf(false) }
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
     var newPersonOpen by remember { mutableStateOf(false) }
@@ -1051,18 +1064,8 @@ private fun BulkModeBar(
             IconButton(onClick = onSelectAll) {
                 Icon(Icons.Filled.DoneAll, contentDescription = "Select all")
             }
-            Box {
-                IconButton(onClick = { categoryMenuOpen = true }, enabled = hasSelection) {
-                    Icon(Icons.Filled.CategoryIcon, contentDescription = "Categorize selected")
-                }
-                DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                    SpendingCategory.entries.forEach { category ->
-                        DropdownMenuItem(
-                            text = { Text("${category.emoji} ${category.label}") },
-                            onClick = { categoryMenuOpen = false; onCategorize(category) },
-                        )
-                    }
-                }
+            IconButton(onClick = onCategorize, enabled = hasSelection) {
+                Icon(Icons.Filled.CategoryIcon, contentDescription = "Categorize selected")
             }
             Box {
                 IconButton(onClick = { accountMenuOpen = true }, enabled = hasSelection) {

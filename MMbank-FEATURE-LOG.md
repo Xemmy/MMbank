@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 6a of 9 landed, CI pending
-**Version:** `versionCode = 52`, `versionName = "0.36.0"` (Step 6a; Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 6b of 9 landed, CI pending
+**Version:** `versionCode = 53`, `versionName = "0.36.1"` (Step 6b; Step 6a was 52/0.36.0, Step 5 was 51/0.35.1, Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1533,5 +1533,43 @@ build success`, `Check APK exists`, `Upload Debug APK`, and the non-gating
   from the prior status above.
 
 ### CI verification (Step 6a)
+
+Pending — push and check `test-build.yml` on this commit.
+
+## Step 6b — BulkModeBar migrated to dynamic categories
+
+### What changed
+
+- `BulkModeBar`'s Categorize icon button no longer opens its own
+  `SpendingCategory.entries`-driven `DropdownMenu`; `onCategorize` changed
+  from `(SpendingCategory) -> Unit` to a plain `() -> Unit` trigger that
+  opens the same shared `CategoryPickerBottomSheet` pattern 6a introduced
+  for the row/swipe path, this time via a screen-level `bulkCategoryPickerOpen`
+  flag (a plain boolean, not a per-transaction target, since a bulk action
+  applies to every selected id at once) feeding `viewModel.bulkSetCategoryId`
+  / `viewModel.bulkCreateAndAssignCategory` (both added in 6a's commit,
+  wired up here).
+- `TransactionsViewModel.bulkSetCategory(category: SpendingCategory)` deleted
+  -- `BulkModeBar` was its only caller, so migrating that caller left it
+  dead code. The underlying `BulkTransactionPatch.spendingCategory` field
+  and `TransactionRepository.bulkSetCategory` stay as-is (still covered by
+  `BulkUpdateTransactionsUseCaseTest`, still a legitimate generic capability
+  of the patch type even though nothing currently drives it from the UI).
+- `TransactionEditorDialog`'s own enum chip row is deliberately untouched
+  here -- Step 6c.
+
+### Tests
+
+- No new pure logic (same reasoning as 6a): `bulkSetCategoryId` and
+  `bulkCreateAndAssignCategory` are the same thin ViewModel wrappers added
+  in 6a's commit, exercised transitively by `BulkUpdateTransactionsUseCaseTest`
+  (Step 5) and `CategoryRepository`'s own coverage.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Step 6c (`TransactionEditorDialog`), 7, 8, 9 unchanged from the prior
+  status above.
+
+### CI verification (Step 6b)
 
 Pending — push and check `test-build.yml` on this commit.
