@@ -148,6 +148,14 @@ interface TransactionDao {
     )
     suspend fun setCategory(transactionId: Long, categoryId: Long?)
 
+    /** Multi-select edit: assigns (or clears, when null) a dynamic category on every row in [ids] at once. Returns affected count. */
+    @Query(
+        "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
+            "WHERE id IN (:ids)"
+    )
+    suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int
+
     /** Dismisses a pending AI suggestion without assigning a category -- the row stays uncategorized. */
     @Query(
         "UPDATE transactions SET needsCategoryApproval = 0, suggestedCategoryName = NULL, " +

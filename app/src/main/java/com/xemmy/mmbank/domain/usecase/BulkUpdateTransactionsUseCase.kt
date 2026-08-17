@@ -26,6 +26,7 @@ data class BulkTransactionPatch(
     val excludeFromStats: Boolean? = null,
     val accountId: FieldUpdate<Long?> = FieldUpdate.NoChange,
     val person: FieldUpdate<String?> = FieldUpdate.NoChange,
+    val categoryId: FieldUpdate<Long?> = FieldUpdate.NoChange,
 )
 
 /**
@@ -43,6 +44,7 @@ class BulkUpdateTransactionsUseCase(
         patch.excludeFromStats?.let { affected = transactionRepository.bulkSetExcludeFromStats(ids, it) }
         (patch.accountId as? FieldUpdate.Set)?.let { affected = transactionRepository.bulkAssignAccount(ids, it.value) }
         (patch.person as? FieldUpdate.Set)?.let { affected = transactionRepository.bulkSetPerson(ids, it.value) }
+        (patch.categoryId as? FieldUpdate.Set)?.let { affected = transactionRepository.bulkSetCategoryId(ids, it.value) }
         return affected
     }
 

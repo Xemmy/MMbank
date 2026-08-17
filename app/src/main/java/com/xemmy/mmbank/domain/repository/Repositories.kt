@@ -68,6 +68,8 @@ interface TransactionRepository {
     fun observeUncategorized(): Flow<List<Transaction>>
     /** Assigns (or clears, with null) a dynamic [Category] on a transaction; clears any pending suggestion. */
     suspend fun setCategory(transactionId: Long, categoryId: Long?)
+    /** Multi-select edit: assigns (or clears, when null) a dynamic category on every id in [ids] at once. Returns affected count. */
+    suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int
     /** Dismisses a pending AI category suggestion without assigning a category. */
     suspend fun dismissCategorySuggestion(transactionId: Long)
 }

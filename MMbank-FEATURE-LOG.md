@@ -1208,8 +1208,8 @@ balance and settle-up suggestion derived from them) actually update.
 
 ## Phase 10 — Category unification (single Categories screen, merge SpendingCategory into Category)
 
-**Status:** in progress — Step 4 of 9 landed, CI pending
-**Version:** `versionCode = 50`, `versionName = "0.35.0"` (Step 4; Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
+**Status:** in progress — Step 5 of 9 landed, CI pending
+**Version:** `versionCode = 51`, `versionName = "0.35.1"` (Step 5; Step 4 was 50/0.35.0, Step 3 was 49/0.34.2, Step 2 was 48/0.34.1, Step 1 was 47/0.34.0)
 **Migration:** v21 -> v22 (Step 1; further steps in this phase add no schema changes unless noted)
 
 ### Why
@@ -1430,5 +1430,53 @@ the aggregate status. Fixed in `56d95de` (one-line import restore). Landed, CI g
 - Steps 5-9 unchanged from the prior status above.
 
 ### CI verification (Step 4)
+
+Landed as `d422007`, CI green. `Lint & Unit Tests` -- `BUILD SUCCESSFUL in 2m
+59s`, `25 actionable tasks: 25 executed`, no test-failure line. `Build APK
+(with retries)` succeeded on Attempt 1 (Attempts 2-4 all `skipped`,
+confirming Attempt 1 genuinely passed); `Verify build success`, `Check APK
+exists`, `Upload Debug APK`, and the non-gating `Build Release APK` all
+succeeded. `Final Status` -- `success`.
+
+## Step 5 — Bulk dynamic-category setter
+
+### What changed
+
+- `TransactionDao.bulkSetCategoryId(ids, categoryId: Long?): Int` (new) --
+  same UPDATE shape as the existing single-row `setCategory`
+  (`categoryId`, clears `needsCategoryApproval` and the three
+  `suggestedCategory*` columns), but `WHERE id IN (:ids)` for multi-select.
+  Mirrors the existing enum `bulkSetCategory` pairing pattern.
+- `TransactionRepository.bulkSetCategoryId` (new) + `TransactionRepositoryImpl`
+  passthrough to the DAO.
+- `BulkTransactionPatch.categoryId: FieldUpdate<Long?> = FieldUpdate.NoChange`
+  (new field, defaults to no-op) -- uses `FieldUpdate` rather than a plain
+  nullable, same reasoning as `accountId`/`person`: "leave alone" and
+  "clear to null" both need to be distinguishable for a category-clearing
+  bulk action.
+- `BulkUpdateTransactionsUseCase.invoke` gains one more `(patch.categoryId
+  as? FieldUpdate.Set)?.let { ... }` branch, same pattern as the existing
+  four fields.
+- Purely additive plumbing -- no UI wires into it yet. `TransactionsScreen`'s
+  bulk-select bar still only offers the legacy enum picker; Step 6b is what
+  points it at this new setter via the shared `CategoryPickerBottomSheet`.
+
+### Tests
+
+- `BulkUpdateTransactionsUseCaseTest` -- 3 new cases: `categoryId Set` calls
+  `bulkSetCategoryId` with that id; `categoryId Set(null)` calls it with
+  null to clear; `categoryId` left `NoChange` does not call it at all.
+  Mirrors the existing `accountId`/`person` three-case pattern exactly.
+- `RecordingBulkRepository` (the use-case test's `TransactionRepository`
+  fake) and `RecordingTransactionRepository` (the separate
+  `IngestCapturedMessageUseCaseTest` fake) both gained the new
+  `bulkSetCategoryId` override -- required for both to keep compiling
+  against the widened interface, per this project's existing pattern.
+
+### Deferred (within this step; later steps in this phase cover the rest)
+
+- Steps 6-9 unchanged from the prior status above.
+
+### CI verification (Step 5)
 
 Pending — push and check `test-build.yml` on this commit.

@@ -67,6 +67,7 @@ class IngestCapturedMessageUseCaseTest {
         override suspend fun getAllReal(): List<Transaction> = emptyList()
         override fun observeUncategorized(): Flow<List<Transaction>> = flowOf(emptyList())
         override suspend fun setCategory(transactionId: Long, categoryId: Long?) = Unit
+        override suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int = 0
         override suspend fun dismissCategorySuggestion(transactionId: Long) = Unit
     }
 

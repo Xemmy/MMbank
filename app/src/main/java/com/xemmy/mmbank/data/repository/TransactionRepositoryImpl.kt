@@ -223,6 +223,9 @@ class TransactionRepositoryImpl(
     override suspend fun setCategory(transactionId: Long, categoryId: Long?) =
         dao.setCategory(transactionId, categoryId)
 
+    override suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int =
+        dao.bulkSetCategoryId(ids, categoryId)
+
     override suspend fun dismissCategorySuggestion(transactionId: Long) =
         dao.dismissCategorySuggestion(transactionId)
 

@@ -27,6 +27,9 @@ class BulkUpdateTransactionsUseCaseTest {
         var lastPersonIds: List<Long>? = null
         var lastPerson: String? = null
         var personSetCalled = false
+        var lastCategoryIdSetIds: List<Long>? = null
+        var lastCategoryIdSet: Long? = null
+        var categoryIdSetCalled = false
 
         override suspend fun bulkSetCategory(ids: List<Long>, category: SpendingCategory): Int {
             lastCategoryIds = ids
@@ -56,6 +59,13 @@ class BulkUpdateTransactionsUseCaseTest {
             lastPersonIds = ids
             lastPerson = person
             personSetCalled = true
+            return ids.size
+        }
+
+        override suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int {
+            lastCategoryIdSetIds = ids
+            lastCategoryIdSet = categoryId
+            categoryIdSetCalled = true
             return ids.size
         }
 
@@ -168,6 +178,26 @@ class BulkUpdateTransactionsUseCaseTest {
         assertEquals(SpendingCategory.TRANSPORT, repo.lastCategory)
         assertEquals(11L, repo.lastAccountId)
         assertEquals("Sam", repo.lastPerson)
+    }
+
+    @Test
+    fun `patch with categoryId Set calls bulkSetCategoryId with that category id`() = runBlocking {
+        useCase(listOf(1L, 2L), BulkTransactionPatch(categoryId = FieldUpdate.Set(9L)))
+        assertEquals(listOf(1L, 2L), repo.lastCategoryIdSetIds)
+        assertEquals(9L, repo.lastCategoryIdSet)
+    }
+
+    @Test
+    fun `patch with categoryId Set to null calls bulkSetCategoryId with null to clear`() = runBlocking {
+        useCase(listOf(3L), BulkTransactionPatch(categoryId = FieldUpdate.Set(null)))
+        assertEquals(true, repo.categoryIdSetCalled)
+        assertNull(repo.lastCategoryIdSet)
+    }
+
+    @Test
+    fun `patch with categoryId left as NoChange does not call bulkSetCategoryId`() = runBlocking {
+        useCase(listOf(4L), BulkTransactionPatch(spendingCategory = SpendingCategory.DINING))
+        assertEquals(false, repo.categoryIdSetCalled)
     }
 
     @Test
