@@ -229,6 +229,9 @@ class TransactionRepositoryImpl(
     override suspend fun dismissCategorySuggestion(transactionId: Long) =
         dao.dismissCategorySuggestion(transactionId)
 
+    override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int =
+        dao.reassignCategory(oldCategoryId, newCategoryId)
+
     /**
      * Matches the account/card number pulled from a bank message (e.g. "*617",
      * "XXX810001") against the identifying number the user configured on each

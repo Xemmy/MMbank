@@ -164,6 +164,19 @@ interface TransactionDao {
     suspend fun dismissCategorySuggestion(transactionId: Long)
 
     /**
+     * Moves every transaction pointing at [oldCategoryId] onto [newCategoryId]
+     * (or clears it to uncategorized, when null) -- used when deleting a
+     * category that's still in use, so its transactions land somewhere
+     * explicit instead of being silently orphaned. Returns the count moved.
+     */
+    @Query(
+        "UPDATE transactions SET categoryId = :newCategoryId, needsCategoryApproval = 0, " +
+            "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
+            "WHERE categoryId = :oldCategoryId"
+    )
+    suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int
+
+    /**
      * Backfills a newly learned/confirmed merchant->category rule onto every
      * still-uncategorized real row from that merchant (mirrors
      * [assignAccountByRuleName]'s backfill pattern). Returns the count.

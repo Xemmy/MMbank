@@ -86,6 +86,7 @@ class BulkUpdateTransactionsUseCaseTest {
         override fun observeUncategorized(): Flow<List<Transaction>> = flowOf(emptyList())
         override suspend fun setCategory(transactionId: Long, categoryId: Long?) = Unit
         override suspend fun dismissCategorySuggestion(transactionId: Long) = Unit
+        override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int = 0
     }
 
     private val repo = RecordingBulkRepository()

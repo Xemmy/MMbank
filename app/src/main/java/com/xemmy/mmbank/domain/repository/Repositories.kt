@@ -72,6 +72,8 @@ interface TransactionRepository {
     suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int
     /** Dismisses a pending AI category suggestion without assigning a category. */
     suspend fun dismissCategorySuggestion(transactionId: Long)
+    /** Moves every transaction on [oldCategoryId] onto [newCategoryId] (or clears it, when null). Returns affected count. */
+    suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int
 }
 
 interface AccountRepository {

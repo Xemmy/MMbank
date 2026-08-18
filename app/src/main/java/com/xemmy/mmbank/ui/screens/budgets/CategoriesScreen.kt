@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.budgets
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -64,6 +67,8 @@ data class CategoriesUiState(
     val currency: String = "USD",
     /** Every category: drives the hierarchy tree, the parent picker, and the empty-state check. */
     val categories: List<Category> = emptyList(),
+    /** Transaction count per category id -- drives whether deleting one needs a reassign picker. */
+    val transactionCounts: Map<Long, Int> = emptyMap(),
 )
 
 class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
@@ -85,10 +90,14 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
             endMillisExclusive = endMillis,
         )
         val rolledUpSpend = CategoryBudgetCalculator.rollUpSpend(categories, directSpend)
+        val transactionCounts = transactions.mapNotNull { it.categoryId }
+            .groupingBy { it }
+            .eachCount()
         CategoriesUiState(
             statuses = CategoryBudgetCalculator.statuses(categories, rolledUpSpend),
             currency = currency,
             categories = categories,
+            transactionCounts = transactionCounts,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoriesUiState())
 
@@ -142,10 +151,13 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun delete(category: Category) {
+    /** Deletes [category], first moving its transactions onto [reassignTo] (or clearing them, when null). */
+    fun delete(category: Category, reassignTo: Long?) {
         viewModelScope.launch {
-            runCatching { container.categoryRepository.delete(category.id) }
-                .onFailure { container.recordError("CategoriesViewModel.delete", it) }
+            runCatching {
+                container.transactionRepository.reassignCategory(category.id, reassignTo)
+                container.categoryRepository.delete(category.id)
+            }.onFailure { container.recordError("CategoriesViewModel.delete", it) }
         }
     }
 }
@@ -244,23 +256,102 @@ fun CategoriesTabContent(
     }
 
     confirmingDelete?.let { category ->
-        AlertDialog(
-            onDismissRequest = { confirmingDelete = null },
-            title = { Text("Delete this category?") },
-            text = {
-                Text(
-                    "“${category.name}” will be removed. Transactions filed under it stay, " +
-                        "but become uncategorized again."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.delete(category)
+        val count = state.transactionCounts[category.id] ?: 0
+        if (count == 0) {
+            AlertDialog(
+                onDismissRequest = { confirmingDelete = null },
+                title = { Text("Delete this category?") },
+                text = { Text("“${category.name}” will be removed.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.delete(category, reassignTo = null)
+                        confirmingDelete = null
+                    }) { Text("Delete") }
+                },
+                dismissButton = { TextButton(onClick = { confirmingDelete = null }) { Text("Cancel") } },
+            )
+        } else {
+            CategoryReassignDialog(
+                category = category,
+                count = count,
+                otherCategories = state.categories.filter { it.id != category.id },
+                onDismiss = { confirmingDelete = null },
+                onConfirm = { reassignTo ->
+                    viewModel.delete(category, reassignTo)
                     confirmingDelete = null
-                }) { Text("Delete") }
-            },
-            dismissButton = { TextButton(onClick = { confirmingDelete = null }) { Text("Cancel") } },
-        )
+                },
+            )
+        }
+    }
+}
+
+/**
+ * Shown instead of the plain confirm dialog when the category being deleted
+ * still has transactions on it -- picks where those transactions land
+ * (another category, or back to uncategorized) instead of silently
+ * orphaning them.
+ */
+@Composable
+private fun CategoryReassignDialog(
+    category: Category,
+    count: Int,
+    otherCategories: List<Category>,
+    onDismiss: () -> Unit,
+    onConfirm: (Long?) -> Unit,
+) {
+    var selected by remember { mutableStateOf<Long?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete “${category.name}”?") },
+        text = {
+            Column {
+                Text(
+                    "$count transaction${if (count == 1) "" else "s"} " +
+                        "${if (count == 1) "is" else "are"} filed under this category. " +
+                        "Choose where to move ${if (count == 1) "it" else "them"}:",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        ReassignOptionRow(
+                            label = "Leave uncategorized",
+                            selected = selected == null,
+                            onClick = { selected = null },
+                        )
+                    }
+                    items(otherCategories, key = { it.id }) { other ->
+                        ReassignOptionRow(
+                            label = "${other.icon} ${other.name}",
+                            selected = selected == other.id,
+                            onClick = { selected = other.id },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) { Text("Delete") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ReassignOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

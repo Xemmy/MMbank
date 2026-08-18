@@ -1936,3 +1936,56 @@ cleanly. `Build APK (with retries)` succeeded on Attempt 1 (Attempts 2-4
 `skipped`); `Verify build success`, `Check APK exists`, `Upload Debug APK`,
 and the non-gating `Build Release APK` all succeeded. `Final Status` --
 `success`.
+
+## Phase 12 — Reassign transactions when deleting a category or person
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 59`, `versionName = "0.40.0"`
+
+### What changed
+
+- Deleting a Category or Person that still has transactions attached no
+  longer silently orphans them. Both delete flows now check the affected
+  transaction count first; a zero count keeps the old low-friction instant
+  delete / simple confirm, a non-zero count opens a picker dialog listing
+  every other category/person plus an explicit "leave uncategorized" /
+  "leave unassigned" option, and the chosen target is applied before the
+  delete goes through.
+- **Categories**: new `TransactionDao.reassignCategory(oldCategoryId,
+  newCategoryId)` (`UPDATE ... WHERE categoryId = :oldCategoryId`, also
+  clearing any pending AI suggestion fields), threaded through
+  `TransactionRepository`/`TransactionRepositoryImpl` and the two existing
+  test-fake repositories. `CategoriesUiState` gained `transactionCounts:
+  Map<Long, Int>` (computed in `CategoriesViewModel.uiState`'s existing
+  `combine`), and `CategoriesViewModel.delete` now takes a `reassignTo:
+  Long?` and calls `reassignCategory` before `categoryRepository.delete`.
+  `CategoriesTabContent`'s delete dialog branches on the category's count;
+  the new `CategoryReassignDialog` composable is the picker.
+- **People**: reused the existing `TransactionRepository.renamePerson(from,
+  to: String?)` rather than adding new repository plumbing.
+  `SettingsViewModel` gained `personCounts` (computed alongside
+  `transactionPersons` in the existing `observeTransactions()` collector)
+  and `transactionCountForPerson(name)`. The old `clearPersonFromTransactions`
+  was replaced outright by `deletePersonAndReassign(name, reassignTo:
+  String?)`, which renames-or-clears on transactions, removes the name from
+  the saved list, and updates `defaultPerson` if it pointed at the deleted
+  name -- a strict superset of the old function's behavior (calling it with
+  a null target reproduces the old clear-only case). `PeopleSection`'s main
+  list delete button now checks the count before deciding between instant
+  delete and the picker; the unlisted-persons list's delete/clear button
+  always opens the picker (those entries are derived from transactions, so
+  their count is never zero). New `PersonReassignDialog` composable mirrors
+  `CategoryReassignDialog`.
+
+### Tests
+
+- No new pure-JVM tests: this feature is UI wiring plus a straight SQL
+  UPDATE (`reassignCategory`) and reuse of the already-tested `renamePerson`
+  path, matching this app's existing precedent of not unit-testing Compose
+  screens directly. The two repository test fakes
+  (`RecordingBulkRepository`, `RecordingTransactionRepository`) each gained
+  a trivial `reassignCategory` stub so the widened interface still compiles.
+
+### CI verification
+
+Pending -- push not yet made / CI not yet checked as of this entry.

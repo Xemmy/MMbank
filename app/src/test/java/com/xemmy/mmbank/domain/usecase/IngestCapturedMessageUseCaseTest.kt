@@ -69,6 +69,7 @@ class IngestCapturedMessageUseCaseTest {
         override suspend fun setCategory(transactionId: Long, categoryId: Long?) = Unit
         override suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int = 0
         override suspend fun dismissCategorySuggestion(transactionId: Long) = Unit
+        override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int = 0
     }
 
     private val recorder = RecordingTransactionRepository()

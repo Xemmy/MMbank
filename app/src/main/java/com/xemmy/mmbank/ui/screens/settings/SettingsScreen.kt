@@ -18,9 +18,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -53,6 +57,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -77,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -204,18 +210,23 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     private var transactionPersons: List<String> = emptyList()
 
+    /** Transaction count per person, keyed by trimmed-lowercase name -- drives the reassign-on-delete prompt. */
+    private var personCounts: Map<String, Int> = emptyMap()
+
     init {
         viewModelScope.launch {
             container.transactionRepository.observeTransactions()
                 .catch { emit(emptyList()) }
                 .collect { txs ->
-                    transactionPersons = txs.mapNotNull { it.person?.trim() }
-                        .filter { it.isNotEmpty() }
-                        .distinctBy { it.lowercase() }
+                    val names = txs.mapNotNull { it.person?.trim() }.filter { it.isNotEmpty() }
+                    transactionPersons = names.distinctBy { it.lowercase() }
+                    personCounts = names.groupingBy { it.lowercase() }.eachCount()
                     recomputeUnlisted()
                 }
         }
     }
+
+    fun transactionCountForPerson(name: String): Int = personCounts[name.trim().lowercase()] ?: 0
 
     private fun recomputeUnlisted() {
         unlistedPersons = transactionPersons
@@ -272,17 +283,36 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Strips [name] off every transaction (they become unassigned). */
-    fun clearPersonFromTransactions(name: String) {
+    /**
+     * Removes [name] from the saved list and, if [reassignTo] is given,
+     * moves every transaction carrying [name] onto it; otherwise those
+     * transactions become unassigned. Also used for the plain "clear from
+     * transactions" case by passing a null [reassignTo].
+     */
+    fun deletePersonAndReassign(name: String, reassignTo: String?) {
         if (busy) return
+        val target = reassignTo?.trim()?.takeIf { it.isNotEmpty() }
         viewModelScope.launch {
             busy = true
-            runCatching { container.transactionRepository.renamePerson(name, null) }
-                .onSuccess { statusMessage = "Removed $name from all transactions" }
-                .onFailure {
-                    container.recordError("SettingsViewModel.clearPerson", it)
-                    statusMessage = "Failed: ${it.message}"
+            runCatching {
+                container.transactionRepository.renamePerson(name, target)
+                container.preferences.persons = container.preferences.persons - name
+                if (container.preferences.defaultPerson == name) {
+                    container.preferences.defaultPerson = target
+                    defaultPerson = target.orEmpty()
                 }
+                persons = container.preferences.persons
+                recomputeUnlisted()
+            }.onSuccess {
+                statusMessage = if (target != null) {
+                    "Moved $name's transactions to $target"
+                } else {
+                    "Removed $name from all transactions"
+                }
+            }.onFailure {
+                container.recordError("SettingsViewModel.deletePerson", it)
+                statusMessage = "Failed: ${it.message}"
+            }
             busy = false
         }
     }
@@ -1785,6 +1815,7 @@ fun transactionRetentionLabel(months: Int): String = when {
 private fun PeopleSection(viewModel: SettingsViewModel) {
     var newPerson by remember { mutableStateOf("") }
     var renaming by remember { mutableStateOf<String?>(null) }
+    var confirmingDelete by remember { mutableStateOf<String?>(null) }
 
     Text(
         "This list feeds the person menu on transactions and is included in backups. " +
@@ -1814,7 +1845,13 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.removePersonFromList(person) }) {
+                        IconButton(onClick = {
+                            if (viewModel.transactionCountForPerson(person) > 0) {
+                                confirmingDelete = person
+                            } else {
+                                viewModel.removePersonFromList(person)
+                            }
+                        }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Remove $person",
@@ -1889,7 +1926,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.clearPersonFromTransactions(person) }) {
+                        IconButton(onClick = { confirmingDelete = person }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Clear $person from all transactions",
@@ -1931,6 +1968,92 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
+    }
+
+    confirmingDelete?.let { person ->
+        val count = viewModel.transactionCountForPerson(person)
+        val otherPersons = viewModel.persons.filter { !it.equals(person, ignoreCase = true) }
+        PersonReassignDialog(
+            person = person,
+            count = count,
+            otherPersons = otherPersons,
+            onDismiss = { confirmingDelete = null },
+            onConfirm = { reassignTo ->
+                viewModel.deletePersonAndReassign(person, reassignTo)
+                confirmingDelete = null
+            },
+        )
+    }
+}
+
+/**
+ * Shown instead of an instant remove when the person being deleted still has
+ * transactions on them -- picks where those transactions land (another
+ * person, or unassigned) instead of silently orphaning them.
+ */
+@Composable
+private fun PersonReassignDialog(
+    person: String,
+    count: Int,
+    otherPersons: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (String?) -> Unit,
+) {
+    var selected by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove “$person”?") },
+        text = {
+            Column {
+                if (count > 0) {
+                    Text(
+                        "$count transaction${if (count == 1) "" else "s"} " +
+                            "${if (count == 1) "is" else "are"} assigned to this person. " +
+                            "Choose where to move ${if (count == 1) "it" else "them"}:",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        PersonReassignOptionRow(
+                            label = "Leave unassigned",
+                            selected = selected == null,
+                            onClick = { selected = null },
+                        )
+                    }
+                    items(otherPersons) { other ->
+                        PersonReassignOptionRow(
+                            label = other,
+                            selected = selected == other,
+                            onClick = { selected = other },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) { Text("Remove") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PersonReassignOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
