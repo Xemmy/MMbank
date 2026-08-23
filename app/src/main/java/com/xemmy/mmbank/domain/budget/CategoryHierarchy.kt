@@ -66,4 +66,16 @@ object CategoryHierarchy {
         }
         return found
     }
+
+    /**
+     * Valid reassign targets for [rootId]'s transactions: every other category
+     * except [rootId] itself and anything beneath it. A descendant is excluded
+     * because it's about to lose its own parent relationship in the same delete
+     * -- reassigning onto it would be moving transactions onto a category whose
+     * own identity is changing underneath them.
+     */
+    fun reassignTargets(categories: List<Category>, rootId: Long): List<Category> {
+        val excluded = descendantIds(categories, rootId) + rootId
+        return categories.filter { it.id !in excluded }
+    }
 }

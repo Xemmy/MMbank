@@ -2096,3 +2096,65 @@ v0.40.1 APK is installed, roughly in priority order:
    appears, copy states both numbers, children survive as top-level.
 5. Delete a category carrying a learned merchant rule, then ingest a message
    from that merchant -> it lands on the chosen replacement, not the dead id.
+
+## Phase 12.2 — Three correctness bugs in the reassign pickers
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 61`, `versionName = "0.40.2"`
+
+A follow-up review of Phase 12/12.1 (no data-loss this time, all correctness/
+UX bugs) turned up three real defects.
+
+### What changed
+
+1. **A parent category's own children were offered as reassign targets for
+   its own transactions.** The picker's target list excluded only the
+   category being deleted, not its descendants -- deleting "Food" let you
+   move Food's transactions onto "Groceries", a child that's losing its
+   parent relationship in the same delete. New pure
+   `CategoryHierarchy.reassignTargets` composes with the existing
+   `descendantIds` to exclude the root and everything beneath it;
+   `CategoriesScreen.kt`'s picker now calls it instead of a bare id filter.
+2. **Deleted parent's children kept a dangling `parentCategoryId`.** The
+   dialog promises "sub-categories move up to the top level," but nothing
+   in the DB ever cleared the child rows' `parentCategoryId` -- it only
+   *looked* true because `CategoryHierarchy.buildTree` defensively treats an
+   unresolvable parent as top-level. New `CategoryDao.clearParent` nulls it
+   out for every direct child before the delete;
+   `CategoryRepositoryImpl.delete` now calls it first.
+3. **Person reassign targets excluded unlisted names.** The picker only
+   offered names from the saved People list, never names that exist only on
+   transactions (`unlistedPersons`) -- even though `renamePerson`'s
+   `COLLATE NOCASE` UPDATE accepts any name, since a person is free text,
+   not an entity with an id. New `PersonCounts.reassignTargets` merges both
+   sources, dedupes case-insensitively, and excludes the person being
+   removed; `SettingsScreen.kt`'s picker now calls it.
+
+### Tests
+
+- `CategoryHierarchyTest` gains `reassignTargets` cases: excludes the root
+  and direct children, excludes grandchildren, keeps unrelated branches
+  (including children of another branch), a leaf excludes only itself, and
+  a `parentCategoryId` cycle doesn't hang.
+- `PersonCountsTest` gains `reassignTargets` cases: merges listed and
+  unlisted names, dedupes a name present in both regardless of casing,
+  excludes the deleted person regardless of casing, sorts the result, and
+  is empty when both inputs are empty.
+- `CategoryDao.clearParent` has no direct DAO-level test, matching the
+  existing precedent for `reassignCategory`/`repointCategory` -- no Room/
+  Robolectric instrumented-test infra exists in this repo.
+
+### Deferred (not part of this change)
+
+`CategoryReassignDialog`/`PersonReassignDialog` and their option-row
+composables are still near-duplicates; `CategoriesViewModel.delete()` still
+has no busy-guard against double-tap (unlike the People delete path); the
+three-call delete sequence (`reassignCategory` -> `repointMappings` ->
+`delete`) is still not wrapped in `database.withTransaction`. None of these
+are correctness bugs on their own, so they were left out of this pass.
+
+### CI verification
+
+Pending -- to be amended once the run for this commit is read directly
+(the `Lint & Unit Tests` step is `continue-on-error: true`, so its `success`
+conclusion alone proves nothing).

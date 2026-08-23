@@ -27,4 +27,20 @@ object PersonCounts {
 
     /** How many transactions carry [name], in any casing. Unknown names count zero. */
     fun countFor(counts: Map<String, Int>, name: String): Int = counts[key(name)] ?: 0
+
+    /**
+     * Valid reassign targets when removing [excluding]: every other name from
+     * either [listed] (the saved People list) or [unlisted] (names that only
+     * exist on transactions), deduplicated case-insensitively and sorted.
+     * `renamePerson`'s COLLATE NOCASE UPDATE accepts any name -- a person is
+     * free text, not an entity with an id -- so the picker shouldn't be
+     * narrower than what the underlying rename actually supports.
+     */
+    fun reassignTargets(listed: List<String>, unlisted: List<String>, excluding: String): List<String> {
+        val excludedKey = key(excluding)
+        return (listed + unlisted)
+            .distinctBy { key(it) }
+            .filter { key(it) != excludedKey }
+            .sortedBy { key(it) }
+    }
 }

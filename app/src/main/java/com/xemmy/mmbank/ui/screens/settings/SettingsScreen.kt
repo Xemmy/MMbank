@@ -1995,7 +1995,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
 
     confirmingDelete?.let { person ->
         val count = viewModel.transactionCountForPerson(person)
-        val otherPersons = viewModel.persons.filter { !it.equals(person, ignoreCase = true) }
+        val otherPersons = PersonCounts.reassignTargets(viewModel.persons, viewModel.unlistedPersons, person)
         PersonReassignDialog(
             person = person,
             count = count,

@@ -295,7 +295,7 @@ fun CategoriesTabContent(
                 category = category,
                 directCount = directCount,
                 descendantCount = descendantCount,
-                otherCategories = state.categories.filter { it.id != category.id },
+                otherCategories = CategoryHierarchy.reassignTargets(state.categories, category.id),
                 onDismiss = { confirmingDelete = null },
                 onConfirm = { reassignTo ->
                     viewModel.delete(category, reassignTo)

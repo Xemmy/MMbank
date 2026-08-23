@@ -30,6 +30,15 @@ interface CategoryDao {
     @Query("DELETE FROM categories WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /**
+     * Detaches every direct child of [parentId] before it's deleted, so they
+     * become top-level in the data itself rather than only in
+     * [com.xemmy.mmbank.domain.budget.CategoryHierarchy.buildTree]'s defensive
+     * fallback for an unresolvable parent.
+     */
+    @Query("UPDATE categories SET parentCategoryId = NULL WHERE parentCategoryId = :parentId")
+    suspend fun clearParent(parentId: Long): Int
+
     @Query("SELECT COUNT(*) FROM categories")
     suspend fun count(): Int
 

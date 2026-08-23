@@ -59,4 +59,35 @@ class PersonCountsTest {
     fun `key is the shared normalization rule`() {
         assertEquals(PersonCounts.key("John"), PersonCounts.key("  jOHn "))
     }
+
+    // --- reassignTargets: who a person delete is allowed to hand transactions to ---
+
+    @Test
+    fun `reassignTargets merges listed and unlisted names`() {
+        val targets = PersonCounts.reassignTargets(listed = listOf("Jane"), unlisted = listOf("Bob"), excluding = "John")
+        assertEquals(listOf("Bob", "Jane"), targets)
+    }
+
+    @Test
+    fun `reassignTargets dedupes a name present in both lists regardless of casing`() {
+        val targets = PersonCounts.reassignTargets(listed = listOf("Jane"), unlisted = listOf("jane"), excluding = "John")
+        assertEquals(listOf("Jane"), targets)
+    }
+
+    @Test
+    fun `reassignTargets excludes the deleted person regardless of casing`() {
+        val targets = PersonCounts.reassignTargets(listed = listOf("JOHN", "Jane"), unlisted = emptyList(), excluding = "john")
+        assertEquals(listOf("Jane"), targets)
+    }
+
+    @Test
+    fun `reassignTargets sorts the result`() {
+        val targets = PersonCounts.reassignTargets(listed = listOf("Zoe"), unlisted = listOf("Amy"), excluding = "John")
+        assertEquals(listOf("Amy", "Zoe"), targets)
+    }
+
+    @Test
+    fun `reassignTargets is empty when both inputs are empty`() {
+        assertTrue(PersonCounts.reassignTargets(listed = emptyList(), unlisted = emptyList(), excluding = "John").isEmpty())
+    }
 }

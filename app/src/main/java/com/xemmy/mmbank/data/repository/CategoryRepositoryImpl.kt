@@ -32,7 +32,10 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
             category.id
         }
 
-    override suspend fun delete(id: Long) = categoryDao.deleteById(id)
+    override suspend fun delete(id: Long) {
+        categoryDao.clearParent(id)
+        categoryDao.deleteById(id)
+    }
 
     override suspend fun repointMappings(oldCategoryId: Long, newCategoryId: Long?): Int =
         if (newCategoryId != null) {

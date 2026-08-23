@@ -105,4 +105,54 @@ class CategoryHierarchyTest {
         val categories = listOf(category(1, "Loop", parentCategoryId = 1))
         assertTrue(CategoryHierarchy.descendantIds(categories, 1).isEmpty())
     }
+
+    // --- reassignTargets: who a delete is allowed to hand transactions to ---
+
+    @Test
+    fun `reassignTargets excludes the root and its direct children`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Dining", parentCategoryId = 1),
+            category(3, "Bakery", parentCategoryId = 1),
+            category(4, "Travel"),
+        )
+        assertEquals(setOf(4L), CategoryHierarchy.reassignTargets(categories, 1).map { it.id }.toSet())
+    }
+
+    @Test
+    fun `reassignTargets excludes grandchildren too`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Dining", parentCategoryId = 1),
+            category(3, "Sushi", parentCategoryId = 2),
+            category(4, "Travel"),
+        )
+        assertEquals(setOf(4L), CategoryHierarchy.reassignTargets(categories, 1).map { it.id }.toSet())
+    }
+
+    @Test
+    fun `reassignTargets keeps unrelated categories, including children of another branch`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Travel"),
+            category(3, "Flights", parentCategoryId = 2),
+        )
+        assertEquals(setOf(2L, 3L), CategoryHierarchy.reassignTargets(categories, 1).map { it.id }.toSet())
+    }
+
+    @Test
+    fun `reassignTargets for a leaf excludes only itself`() {
+        val categories = listOf(category(1, "Food"), category(2, "Dining", parentCategoryId = 1))
+        assertEquals(setOf(1L), CategoryHierarchy.reassignTargets(categories, 2).map { it.id }.toSet())
+    }
+
+    @Test
+    fun `reassignTargets does not hang on a parent cycle`() {
+        val categories = listOf(
+            category(1, "A", parentCategoryId = 2),
+            category(2, "B", parentCategoryId = 1),
+            category(3, "C"),
+        )
+        assertEquals(setOf(3L), CategoryHierarchy.reassignTargets(categories, 1).map { it.id }.toSet())
+    }
 }
