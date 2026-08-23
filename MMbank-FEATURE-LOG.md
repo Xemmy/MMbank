@@ -1939,7 +1939,9 @@ and the non-gating `Build Release APK` all succeeded. `Final Status` --
 
 ## Phase 12 — Reassign transactions when deleting a category or person
 
-**Status:** landed, pending CI
+**Status:** landed, CI green (build confirmed; test-step log expired -- see
+CI verification below). Superseded in part by Phase 12.1, which fixes five
+data-safety defects found reviewing this commit.
 **Version:** `versionCode = 59`, `versionName = "0.40.0"`
 
 ### What changed
@@ -2002,7 +2004,7 @@ re-runs the whole suite and its log was read directly.
 
 ## Phase 12.1 — Reassign-on-delete hardening
 
-**Status:** landed, pending CI
+**Status:** landed, CI green
 **Version:** `versionCode = 60`, `versionName = "0.40.1"`
 
 Reviewing `db1cf50` against the surrounding code turned up five defects in the
@@ -2062,4 +2064,35 @@ gap is closed here rather than deferred.
 
 ### CI verification
 
-Pending -- to be amended once the run for this commit is read.
+Landed as `0f9abec`, CI green -- run `32662585195`, all three jobs `success`.
+Verified by reading the `Lint & Unit Tests` job log directly (job
+`97250898554`) rather than trusting the check mark, since that step carries
+`continue-on-error: true` and would report `success` even on a failing suite:
+`> Task :app:testDebugUnitTest` genuinely executed (not `UP-TO-DATE`, not
+skipped), `BUILD SUCCESSFUL in 3m 16s`, `25 actionable tasks: 25 executed`,
+with no `FAILED` line or test-failure summary anywhere in the output.
+`compileDebugUnitTestKotlin` succeeded, so the new `PersonCountsTest` and the
+added `CategoryHierarchyTest.descendantIds` cases both compiled and ran. The
+only warnings are pre-existing deprecations (`menuAnchor`,
+`LocalClipboardManager`, `Icons.Filled.Rule`, `TabRow`,
+`rememberSwipeToDismissBoxState`, `Icons.Filled.Label`) -- none from this
+change. `Build APK (with retries)` succeeded on Attempt 1 (Attempts 2-4
+`skipped`); `Verify build success`, `Check APK exists`, `Upload Debug APK` and
+the non-gating `Build Release APK` all succeeded. `Final Status` -- `success`.
+
+### Not covered by CI
+
+Every one of the five defects is runtime data behavior that the JVM test suite
+and a compile check cannot reach, so these need an on-device pass once the
+v0.40.1 APK is installed, roughly in priority order:
+
+1. Demo mode on -> delete a category holding demo transactions -> Demo mode
+   off -> real transactions untouched.
+2. Force-stop, reopen, immediately delete a person before the list settles ->
+   the picker appears rather than deleting silently.
+3. With both `John` and `john` on transactions, delete one -> every spelling
+   moves.
+4. Delete a parent whose transactions all sit on its children -> picker
+   appears, copy states both numbers, children survive as top-level.
+5. Delete a category carrying a learned merchant rule, then ingest a message
+   from that merchant -> it lands on the chosen replacement, not the dead id.
