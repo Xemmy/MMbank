@@ -138,6 +138,12 @@ interface CategoryRepository {
     /** Inserts a new category (id = 0) or updates an existing one; returns its id. */
     suspend fun save(category: Category): Long
     suspend fun delete(id: Long)
+    /**
+     * Re-homes the learned merchant rules that pointed at a category being
+     * deleted: onto [newCategoryId], or dropped entirely when it is null.
+     * Returns the number of rules affected.
+     */
+    suspend fun repointMappings(oldCategoryId: Long, newCategoryId: Long?): Int
     /** Resolves [merchant] against confirmed mappings only (see [com.xemmy.mmbank.domain.parser.CategoryMatcher]). */
     suspend fun findCategoryForMerchant(merchant: String): Long?
     /** An unconfirmed AI guess staged for [merchant], if any. */

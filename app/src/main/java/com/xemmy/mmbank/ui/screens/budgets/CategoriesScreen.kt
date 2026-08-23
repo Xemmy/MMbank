@@ -69,7 +69,20 @@ data class CategoriesUiState(
     val categories: List<Category> = emptyList(),
     /** Transaction count per category id -- drives whether deleting one needs a reassign picker. */
     val transactionCounts: Map<Long, Int> = emptyMap(),
-)
+) {
+    /** Transactions filed directly on [categoryId] -- the rows a delete would actually move. */
+    fun directCount(categoryId: Long): Int = transactionCounts[categoryId] ?: 0
+
+    /**
+     * Transactions sitting under [categoryId]'s sub-categories, at any depth.
+     * These aren't moved by a delete, but they must still be surfaced: a parent
+     * with no direct rows can have children full of them, and staying silent
+     * about that is the loss the reassign prompt exists to prevent.
+     */
+    fun descendantCount(categoryId: Long): Int =
+        CategoryHierarchy.descendantIds(categories, categoryId)
+            .sumOf { transactionCounts[it] ?: 0 }
+}
 
 class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -151,11 +164,17 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Deletes [category], first moving its transactions onto [reassignTo] (or clearing them, when null). */
+    /**
+     * Deletes [category], first moving its transactions onto [reassignTo] (or
+     * clearing them, when null), then re-homing the learned merchant rules that
+     * pointed at it -- otherwise the next transaction from those merchants would
+     * be filed straight back onto the id that just went away.
+     */
     fun delete(category: Category, reassignTo: Long?) {
         viewModelScope.launch {
             runCatching {
                 container.transactionRepository.reassignCategory(category.id, reassignTo)
+                container.categoryRepository.repointMappings(category.id, reassignTo)
                 container.categoryRepository.delete(category.id)
             }.onFailure { container.recordError("CategoriesViewModel.delete", it) }
         }
@@ -256,8 +275,9 @@ fun CategoriesTabContent(
     }
 
     confirmingDelete?.let { category ->
-        val count = state.transactionCounts[category.id] ?: 0
-        if (count == 0) {
+        val directCount = state.directCount(category.id)
+        val descendantCount = state.descendantCount(category.id)
+        if (directCount == 0 && descendantCount == 0) {
             AlertDialog(
                 onDismissRequest = { confirmingDelete = null },
                 title = { Text("Delete this category?") },
@@ -273,7 +293,8 @@ fun CategoriesTabContent(
         } else {
             CategoryReassignDialog(
                 category = category,
-                count = count,
+                directCount = directCount,
+                descendantCount = descendantCount,
                 otherCategories = state.categories.filter { it.id != category.id },
                 onDismiss = { confirmingDelete = null },
                 onConfirm = { reassignTo ->
@@ -290,11 +311,18 @@ fun CategoriesTabContent(
  * still has transactions on it -- picks where those transactions land
  * (another category, or back to uncategorized) instead of silently
  * orphaning them.
+ *
+ * [directCount] and [descendantCount] are deliberately kept apart: only the
+ * direct rows move, so promising to move a sub-category's transactions too
+ * would be a lie. The sub-category total is still shown, because a parent with
+ * zero direct rows is exactly the case where a silent delete does the most
+ * damage.
  */
 @Composable
 private fun CategoryReassignDialog(
     category: Category,
-    count: Int,
+    directCount: Int,
+    descendantCount: Int,
     otherCategories: List<Category>,
     onDismiss: () -> Unit,
     onConfirm: (Long?) -> Unit,
@@ -306,11 +334,27 @@ private fun CategoryReassignDialog(
         text = {
             Column {
                 Text(
-                    "$count transaction${if (count == 1) "" else "s"} " +
-                        "${if (count == 1) "is" else "are"} filed under this category. " +
-                        "Choose where to move ${if (count == 1) "it" else "them"}:",
+                    if (directCount > 0) {
+                        "$directCount transaction${if (directCount == 1) "" else "s"} " +
+                            "${if (directCount == 1) "is" else "are"} filed directly under this " +
+                            "category. Choose where to move ${if (directCount == 1) "it" else "them"}:"
+                    } else {
+                        "Nothing is filed directly under this category. Choose where its " +
+                            "learned merchant rules should point from now on:"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (descendantCount > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "$descendantCount " +
+                            "${if (descendantCount == 1) "transaction sits" else "transactions sit"} " +
+                            "under its sub-categories. Those stay where they are — the " +
+                            "sub-categories move up to the top level.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 280.dp),

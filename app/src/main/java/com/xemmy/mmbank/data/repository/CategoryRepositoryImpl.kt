@@ -34,6 +34,15 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
 
     override suspend fun delete(id: Long) = categoryDao.deleteById(id)
 
+    override suspend fun repointMappings(oldCategoryId: Long, newCategoryId: Long?): Int =
+        if (newCategoryId != null) {
+            mappingDao.repointCategory(oldCategoryId, newCategoryId)
+        } else {
+            // A rule that resolves to nothing has no meaning -- drop it and let
+            // the merchant fall back to the uncategorized/AI-suggestion path.
+            mappingDao.deleteByCategory(oldCategoryId)
+        }
+
     override suspend fun findCategoryForMerchant(merchant: String): Long? {
         if (merchant.isBlank()) return null
         val mappings = mappingDao.getConfirmed().map { it.toDomain() }

@@ -48,4 +48,61 @@ class CategoryHierarchyTest {
         val tree = CategoryHierarchy.buildTree(listOf(category(1, "Solo")))
         assertTrue(tree.single().children.isEmpty())
     }
+
+    // --- descendantIds: what a delete has to warn about ---
+
+    @Test
+    fun `descendantIds returns direct children`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Dining", parentCategoryId = 1),
+            category(3, "Bakery", parentCategoryId = 1),
+        )
+        assertEquals(setOf(2L, 3L), CategoryHierarchy.descendantIds(categories, 1))
+    }
+
+    @Test
+    fun `descendantIds reaches grandchildren, not just the level below`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Dining", parentCategoryId = 1),
+            category(3, "Sushi", parentCategoryId = 2),
+        )
+        assertEquals(setOf(2L, 3L), CategoryHierarchy.descendantIds(categories, 1))
+    }
+
+    @Test
+    fun `descendantIds excludes the root and unrelated branches`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Dining", parentCategoryId = 1),
+            category(3, "Travel"),
+            category(4, "Flights", parentCategoryId = 3),
+        )
+        assertEquals(setOf(2L), CategoryHierarchy.descendantIds(categories, 1))
+    }
+
+    @Test
+    fun `descendantIds is empty for a leaf and for an unknown id`() {
+        val categories = listOf(category(1, "Food"), category(2, "Dining", parentCategoryId = 1))
+        assertTrue(CategoryHierarchy.descendantIds(categories, 2).isEmpty())
+        assertTrue(CategoryHierarchy.descendantIds(categories, 999).isEmpty())
+        assertTrue(CategoryHierarchy.descendantIds(emptyList(), 1).isEmpty())
+    }
+
+    @Test
+    fun `descendantIds terminates on a parent cycle instead of hanging`() {
+        // Corrupt data (a bad restore, a hand-edited DB) must not spin the UI thread.
+        val categories = listOf(
+            category(1, "A", parentCategoryId = 2),
+            category(2, "B", parentCategoryId = 1),
+        )
+        assertEquals(setOf(2L), CategoryHierarchy.descendantIds(categories, 1))
+    }
+
+    @Test
+    fun `descendantIds terminates on a self-parented category`() {
+        val categories = listOf(category(1, "Loop", parentCategoryId = 1))
+        assertTrue(CategoryHierarchy.descendantIds(categories, 1).isEmpty())
+    }
 }

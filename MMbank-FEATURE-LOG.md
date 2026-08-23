@@ -1988,4 +1988,78 @@ and the non-gating `Build Release APK` all succeeded. `Final Status` --
 
 ### CI verification
 
-Pending -- push not yet made / CI not yet checked as of this entry.
+Landed as `db1cf50`, CI green -- run `32100792465`, all three jobs `success`
+(`Lint & Unit Tests`, `Build APK (with retries)`, `Final Status`). `Build Debug
+APK - Attempt 1` succeeded (Attempts 2-4 `skipped`), with `Verify build
+success`, `Check APK exists`, `Upload Debug APK` and the non-gating `Build
+Release APK` all succeeding -- so compilation of the new DAO/repository/UI code
+is confirmed. Caveat: the step logs and the `unit-test-results` artifact had
+already passed their retention window (expired 2026-08-20) by the time they were
+re-read, so the `Run unit tests` step text could not be re-inspected for this
+entry. Since that step carries `continue-on-error: true`, its `success`
+conclusion alone does not prove the suite passed. The follow-up push below
+re-runs the whole suite and its log was read directly.
+
+## Phase 12.1 — Reassign-on-delete hardening
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 60`, `versionName = "0.40.1"`
+
+Reviewing `db1cf50` against the surrounding code turned up five defects in the
+feature shipped in Phase 12 -- two of which could destroy exactly the data the
+feature exists to protect.
+
+### What changed
+
+1. **Demo-mode write leak.** `reassignCategory` had no `isDemo` filter while the
+   counts driving its dialog come from the demo-aware `observeTransactions()`, so
+   deleting a category during Demo mode reported demo rows and rewrote **real**
+   ones. Both `reassignCategory` and `renamePerson` are now scoped with
+   `AND isDemo = :demo`, fed from the `demoMode` StateFlow
+   `TransactionRepositoryImpl` already holds. The `TransactionRepository`
+   interface signatures are unchanged, so neither test fake needed touching.
+2. **Person count/UPDATE case mismatch.** Counts were keyed
+   `trim().lowercase()` but `renamePerson` matched `WHERE person = :from` --
+   case-sensitive in SQLite -- so with both `John` and `john` on transactions the
+   dialog promised 2 and moved 1. The match now carries `COLLATE NOCASE`, the
+   same idiom already used by `CategoryDao.getByName` and
+   `backfillCategoryByMerchant`. This makes the existing rename-everywhere path
+   case-insensitive too, matching how the People screen already groups names.
+3. **Startup race.** `personCounts` was a plain field, so before the ledger's
+   first emission it read empty and the delete button took the instant-delete
+   path -- stripping a person off transactions with no prompt at all. It is now
+   Compose state, plus a `personCountsLoaded` flag: `personDeleteNeedsPrompt`
+   errs toward showing the picker while counts are still loading, because an
+   unknown count must never be treated as zero.
+4. **Parent categories under-reported.** Counts were direct-only, so a parent
+   with no direct transactions but children full of them showed the plain
+   "will be removed" dialog. New pure `CategoryHierarchy.descendantIds` rolls the
+   count up the tree to decide whether to prompt. Per the chosen behavior the
+   children are kept, so the dialog states the two numbers separately -- only the
+   direct rows move; sub-categories stay put and surface as top-level via
+   `buildTree`'s existing dangling-parent fallback.
+5. **Stale learned rules undid the reassignment.**
+   `merchant_category_mappings.categoryId` has no FK, so it kept pointing at the
+   deleted id and the next transaction from that merchant was filed straight back
+   onto a category that no longer existed. New
+   `CategoryRepository.repointMappings` follows the user's choice: repoint to the
+   replacement, or drop the rules when "leave uncategorized" was picked.
+   `CategoriesViewModel.delete` now reassigns, repoints, then deletes.
+
+### Tests
+
+Phase 12 shipped without unit tests; the fixes create real pure seams, so that
+gap is closed here rather than deferred.
+
+- `PersonCounts` (new `domain/people/`) owns the one trim+lowercase
+  normalization rule shared by the count and the `COLLATE NOCASE` UPDATE.
+  `PersonCountsTest` covers case folding, whitespace, nulls/blanks, distinct
+  people, lookup by any casing, and unknown names.
+- `CategoryHierarchyTest` gains `descendantIds` cases: direct children,
+  grandchildren, unrelated branches, leaves and unknown ids, plus a
+  `parentCategoryId` cycle and a self-parented row -- both must terminate rather
+  than hang the UI thread on corrupt data.
+
+### CI verification
+
+Pending -- to be amended once the run for this commit is read.

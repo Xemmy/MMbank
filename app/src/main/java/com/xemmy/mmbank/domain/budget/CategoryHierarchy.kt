@@ -36,4 +36,34 @@ object CategoryHierarchy {
                 )
             }
     }
+
+    /**
+     * Every category beneath [rootId], at any depth, excluding [rootId] itself.
+     * Empty for a leaf or an id that isn't in [categories].
+     *
+     * Used by the delete flow to ask "does anything under here hold
+     * transactions?" -- a parent with no direct transactions can still have
+     * children full of them, and deleting it without saying so is the silent
+     * loss the reassign prompt exists to prevent.
+     *
+     * Walks defensively rather than trusting the data: a `parentCategoryId`
+     * cycle (corrupt rows, a bad restore) would otherwise hang the UI thread,
+     * so a visited set bounds the traversal the same way
+     * [CategoryBudgetCalculator.rollUpSpend]'s `path` guard does.
+     */
+    fun descendantIds(categories: List<Category>, rootId: Long): Set<Long> {
+        val childrenByParent = categories
+            .filter { it.parentCategoryId != null }
+            .groupBy { it.parentCategoryId }
+
+        val found = mutableSetOf<Long>()
+        val queue = ArrayDeque(childrenByParent[rootId].orEmpty().map { it.id })
+        while (queue.isNotEmpty()) {
+            val id = queue.removeFirst()
+            // Also covers a self-parented row, and re-entry back onto the root.
+            if (id == rootId || !found.add(id)) continue
+            childrenByParent[id].orEmpty().forEach { queue.addLast(it.id) }
+        }
+        return found
+    }
 }

@@ -70,6 +70,20 @@ interface MerchantCategoryDao {
     @Query("DELETE FROM merchant_category_mappings WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /**
+     * Points every learned rule for [oldCategoryId] at [newCategoryId] when its
+     * category is deleted and its transactions are reassigned. Without this the
+     * rule keeps resolving to a category that no longer exists, and the next
+     * transaction from that merchant is filed onto the dead id -- quietly
+     * undoing the reassignment the user just made.
+     */
+    @Query("UPDATE merchant_category_mappings SET categoryId = :newCategoryId WHERE categoryId = :oldCategoryId")
+    suspend fun repointCategory(oldCategoryId: Long, newCategoryId: Long): Int
+
+    /** Drops learned rules for a deleted category when no replacement was chosen. */
+    @Query("DELETE FROM merchant_category_mappings WHERE categoryId = :categoryId")
+    suspend fun deleteByCategory(categoryId: Long): Int
+
     // --- Backup support ---
 
     @Query("SELECT * FROM merchant_category_mappings")

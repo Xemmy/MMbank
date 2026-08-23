@@ -112,8 +112,14 @@ interface TransactionDao {
     @Query("UPDATE transactions SET spendingCategory = :category WHERE id = :transactionId")
     suspend fun setSpendingCategory(transactionId: Long, category: com.xemmy.mmbank.domain.model.SpendingCategory)
 
-    @Query("UPDATE transactions SET person = :to WHERE person = :from")
-    suspend fun renamePerson(from: String, to: String?)
+    /**
+     * Renames (or clears, when [to] is null) a person across the current
+     * partition. Matches case-insensitively so it covers every spelling the
+     * People screen folded together when it counted them, and stays inside
+     * [demo] so a rename made in Demo mode can't rewrite real rows.
+     */
+    @Query("UPDATE transactions SET person = :to WHERE person = :from COLLATE NOCASE AND isDemo = :demo")
+    suspend fun renamePerson(from: String, to: String?, demo: Boolean)
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -168,13 +174,17 @@ interface TransactionDao {
      * (or clears it to uncategorized, when null) -- used when deleting a
      * category that's still in use, so its transactions land somewhere
      * explicit instead of being silently orphaned. Returns the count moved.
+     *
+     * Scoped to [demo] because the count shown in the delete dialog comes from
+     * the demo-aware [observeAll]: without this filter, deleting a category
+     * while Demo mode is on would rewrite real rows the user never saw.
      */
     @Query(
         "UPDATE transactions SET categoryId = :newCategoryId, needsCategoryApproval = 0, " +
             "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
-            "WHERE categoryId = :oldCategoryId"
+            "WHERE categoryId = :oldCategoryId AND isDemo = :demo"
     )
-    suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int
+    suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?, demo: Boolean): Int
 
     /**
      * Backfills a newly learned/confirmed merchant->category rule onto every

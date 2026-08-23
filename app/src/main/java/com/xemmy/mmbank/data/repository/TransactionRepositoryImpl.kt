@@ -193,7 +193,7 @@ class TransactionRepositoryImpl(
     ) = dao.setSpendingCategory(transactionId, category)
 
     override suspend fun renamePerson(from: String, to: String?) =
-        dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() })
+        dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() }, demoMode.value)
 
     override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
 
@@ -230,7 +230,7 @@ class TransactionRepositoryImpl(
         dao.dismissCategorySuggestion(transactionId)
 
     override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int =
-        dao.reassignCategory(oldCategoryId, newCategoryId)
+        dao.reassignCategory(oldCategoryId, newCategoryId, demoMode.value)
 
     /**
      * Matches the account/card number pulled from a bank message (e.g. "*617",

@@ -102,6 +102,7 @@ import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
+import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent
@@ -210,23 +211,45 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     private var transactionPersons: List<String> = emptyList()
 
-    /** Transaction count per person, keyed by trimmed-lowercase name -- drives the reassign-on-delete prompt. */
-    private var personCounts: Map<String, Int> = emptyMap()
+    /**
+     * Transaction count per person (keys normalized by [PersonCounts]) -- drives
+     * the reassign-on-delete prompt. Compose state, not a plain field, so a
+     * dialog reading it re-renders when the ledger emits.
+     */
+    private var personCounts by mutableStateOf<Map<String, Int>>(emptyMap())
+
+    /**
+     * False until the ledger's first emission. Until then a count of zero means
+     * "not loaded yet", not "nobody uses this name" -- see [personDeleteNeedsPrompt].
+     */
+    private var personCountsLoaded by mutableStateOf(false)
 
     init {
         viewModelScope.launch {
             container.transactionRepository.observeTransactions()
                 .catch { emit(emptyList()) }
                 .collect { txs ->
-                    val names = txs.mapNotNull { it.person?.trim() }.filter { it.isNotEmpty() }
-                    transactionPersons = names.distinctBy { it.lowercase() }
-                    personCounts = names.groupingBy { it.lowercase() }.eachCount()
+                    val names = txs.map { it.person }
+                    transactionPersons = names.mapNotNull { it?.trim() }
+                        .filter { it.isNotEmpty() }
+                        .distinctBy { PersonCounts.key(it) }
+                    personCounts = PersonCounts.countByName(names)
+                    personCountsLoaded = true
                     recomputeUnlisted()
                 }
         }
     }
 
-    fun transactionCountForPerson(name: String): Int = personCounts[name.trim().lowercase()] ?: 0
+    fun transactionCountForPerson(name: String): Int = PersonCounts.countFor(personCounts, name)
+
+    /**
+     * Whether removing [name] must go through the reassign picker rather than
+     * deleting outright. Errs toward prompting while counts are still loading:
+     * a stale zero would otherwise strip the person off transactions silently,
+     * which is exactly what the picker exists to prevent.
+     */
+    fun personDeleteNeedsPrompt(name: String): Boolean =
+        !personCountsLoaded || transactionCountForPerson(name) > 0
 
     private fun recomputeUnlisted() {
         unlistedPersons = transactionPersons
@@ -1846,7 +1869,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                             )
                         }
                         IconButton(onClick = {
-                            if (viewModel.transactionCountForPerson(person) > 0) {
+                            if (viewModel.personDeleteNeedsPrompt(person)) {
                                 confirmingDelete = person
                             } else {
                                 viewModel.removePersonFromList(person)
