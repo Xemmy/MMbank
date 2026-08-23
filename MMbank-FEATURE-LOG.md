@@ -2099,7 +2099,7 @@ v0.40.1 APK is installed, roughly in priority order:
 
 ## Phase 12.2 — Three correctness bugs in the reassign pickers
 
-**Status:** landed, pending CI
+**Status:** landed, CI green
 **Version:** `versionCode = 61`, `versionName = "0.40.2"`
 
 A follow-up review of Phase 12/12.1 (no data-loss this time, all correctness/
@@ -2155,6 +2155,17 @@ are correctness bugs on their own, so they were left out of this pass.
 
 ### CI verification
 
-Pending -- to be amended once the run for this commit is read directly
-(the `Lint & Unit Tests` step is `continue-on-error: true`, so its `success`
-conclusion alone proves nothing).
+Landed as `4d8e800`, CI green -- run `32666093234` (push, run #307), all
+three jobs `success`. Verified by reading the `Lint & Unit Tests` job log
+directly (job `97259575597`) rather than trusting the check mark, since that
+step carries `continue-on-error: true` and would report `success` even on a
+failing suite: `> Task :app:testDebugUnitTest` genuinely executed (preceded
+by `kspDebugUnitTestKotlin` and `compileDebugUnitTestKotlin` succeeding, so
+the new `CategoryHierarchyTest.reassignTargets` and
+`PersonCountsTest.reassignTargets` cases compiled and ran), `BUILD SUCCESSFUL
+in 2m 59s`, `25 actionable tasks: 25 executed`, no `FAILED` line or
+test-failure summary anywhere in the output. Only the same pre-existing
+deprecation warnings as Phase 12.1 -- none from this change. `Build APK (with
+retries)` succeeded on Attempt 1; `Verify build success`, `Check APK exists`,
+`Upload Debug APK`, and the non-gating `Build Release APK` all succeeded.
+`Final Status` -- `success`.
