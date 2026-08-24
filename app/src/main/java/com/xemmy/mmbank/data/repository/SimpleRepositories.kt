@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.map
 
 class AccountRepositoryImpl(
     private val dao: AccountDao,
+    private val parsingRuleDao: ParsingRuleDao,
     /** Whether "Demo mode" is on; see TransactionRepositoryImpl. */
     private val demoMode: StateFlow<Boolean>,
 ) : AccountRepository {
@@ -70,7 +71,10 @@ class AccountRepositoryImpl(
 
     override suspend fun archive(account: Account) = dao.update(account.copy(archived = true).toEntity())
 
-    override suspend fun delete(account: Account) = dao.delete(account.toEntity())
+    override suspend fun delete(account: Account) {
+        parsingRuleDao.clearAssignAccountId(account.id)
+        dao.delete(account.toEntity())
+    }
 }
 
 class ParsingRuleRepositoryImpl(

@@ -311,7 +311,7 @@ class AppContainer(context: Context) {
         )
     }
     val accountRepository: AccountRepository by lazy {
-        AccountRepositoryImpl(database.accountDao(), demoModeEnabled)
+        AccountRepositoryImpl(database.accountDao(), database.parsingRuleDao(), demoModeEnabled)
     }
     val categoryRepository: CategoryRepository by lazy {
         CategoryRepositoryImpl(database)

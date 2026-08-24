@@ -2169,3 +2169,55 @@ deprecation warnings as Phase 12.1 -- none from this change. `Build APK (with
 retries)` succeeded on Attempt 1; `Verify build success`, `Check APK exists`,
 `Upload Debug APK`, and the non-gating `Build Release APK` all succeeded.
 `Final Status` -- `success`.
+
+## Phase 12.3 — Account delete leaves a dangling parsing-rule reference
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 62`, `versionName = "0.40.3"`
+
+A further review pass looking for the same class of bug elsewhere (an
+entity delete that leaves a downstream reference dangling, like Phase
+12.2's `parentCategoryId` fix) found one in Accounts.
+
+### What changed
+
+Deleting an Account never cleared `ParsingRuleEntity.assignAccountId` on
+rules that pointed at it -- unlike `TransactionEntity.accountId`, that
+column carries no real `@ForeignKey`. On the next capture matching such a
+rule, `TransactionRepositoryImpl.recordParsed` writes the dangling id
+straight onto `transactions.accountId`, which *does* have a real FK
+(`SET_NULL` on delete) -- violating the constraint and rolling back that
+capture inside its own `database.withTransaction`. New
+`ParsingRuleDao.clearAssignAccountId` nulls out every rule pointing at the
+account before it's deleted; `AccountRepositoryImpl.delete` now calls it
+first, mirroring Phase 12.2's `CategoryDao.clearParent` /
+`CategoryRepositoryImpl.delete` precedent exactly (app-level clear rather
+than a real FK, since this is the only account-delete path that can
+actually orphan a rule -- demo-account deletion wipes all demo rules
+unconditionally right after, and backup restore always re-inserts a
+self-consistent snapshot in the same transaction).
+
+### Tests
+
+- New `AccountRepositoryImplDeleteTest`: in-memory fake `AccountDao`/
+  `ParsingRuleDao` prove `delete()` clears `assignAccountId` only on rules
+  pointing at the deleted account, leaves other rules' pointers untouched,
+  and still deletes the account row.
+- `ParsingRuleDao.clearAssignAccountId` has no direct DAO-level test, same
+  precedent as `CategoryDao.clearParent` -- no Room/Robolectric
+  instrumented-test infra exists in this repo.
+
+### Deferred (not part of this change)
+
+A second bug from the same review pass -- `merchant_category_mappings`'s
+unique index is case-sensitive while every lookup path treats merchant
+names case-insensitively -- is a schema/migration change and lands
+separately (Phase 12.4). The three items already deferred in Phase 12.2
+(dialog dedup, Categories busy-guard, transactional delete wrap) remain
+deferred.
+
+### CI verification
+
+Pending -- this section gets filled in once the real `Lint & Unit Tests`
+job log is read (that step is `continue-on-error: true`, so the check mark
+alone doesn't prove the suite passed).

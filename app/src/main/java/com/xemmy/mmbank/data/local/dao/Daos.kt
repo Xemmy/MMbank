@@ -364,6 +364,17 @@ interface ParsingRuleDao {
     @Query("DELETE FROM parsing_rules WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /**
+     * Detaches every parsing rule's "default assign" pointer at [accountId]
+     * before the account is deleted -- ParsingRuleEntity.assignAccountId
+     * carries no real FK (unlike TransactionEntity.accountId), so a rule left
+     * pointing at a deleted account can make the next matching capture's
+     * accountId write violate transactions' real FK. Mirrors
+     * CategoryDao.clearParent.
+     */
+    @Query("UPDATE parsing_rules SET assignAccountId = NULL WHERE assignAccountId = :accountId")
+    suspend fun clearAssignAccountId(accountId: Long): Int
+
     /** [demo] selects the active partition: real rules (false) or demo rules (true). */
     @Query("SELECT * FROM parsing_rules WHERE isDemo = :demo ORDER BY priority DESC, name")
     fun observeAll(demo: Boolean): Flow<List<ParsingRuleEntity>>

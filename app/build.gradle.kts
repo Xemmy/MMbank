@@ -14,8 +14,8 @@ android {
         applicationId = "com.xemmy.mmbank"
         minSdk = 26
         targetSdk = 35
-        versionCode = 61
-        versionName = "0.40.2"
+        versionCode = 62
+        versionName = "0.40.3"
     }
 
     // A fixed debug keystore (committed, standard well-known debug password)
