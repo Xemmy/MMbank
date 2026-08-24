@@ -61,7 +61,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         GroupExpenseEntity::class,
         ExpenseSplitEntity::class,
     ],
-    version = 22,
+    version = 23,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -524,6 +524,74 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v22 -> v23: `merchant_category_mappings`' unique index on
+         * `merchantPattern` was case-sensitive (exact byte comparison), while
+         * every lookup path treats merchant names case-insensitively --
+         * [com.xemmy.mmbank.domain.parser.CategoryMatcher.match]'s
+         * `equals(ignoreCase = true)`,
+         * [com.xemmy.mmbank.data.local.dao.MerchantCategoryDao.findPending]'s
+         * `COLLATE NOCASE`. That mismatch let
+         * [com.xemmy.mmbank.data.local.dao.MerchantCategoryDao.upsert]'s
+         * REPLACE-on-conflict create duplicate rows for different casings of
+         * the same merchant (e.g. "Starbucks" and "STARBUCKS") instead of
+         * colliding into one.
+         *
+         * SQLite can't ALTER a column's collation in place, so this rebuilds
+         * the table: for each case-insensitive `merchantPattern` group, keeps
+         * exactly one row -- a confirmed mapping (`pending = 0`) over a
+         * still-pending suggestion, ties broken by highest `id` (most
+         * recently written) -- then recreates the table with
+         * `merchantPattern` declared `COLLATE NOCASE` so both the unique
+         * index and the plain-equality REPLACE upsert enforce
+         * case-insensitivity going forward. See
+         * [com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity.merchantPattern]'s
+         * matching `@ColumnInfo(collate = NOCASE)` -- Room's `onCreate` for a
+         * *fresh* v23+ install builds the table straight from the entity, not
+         * this SQL, so without that annotation a brand-new install would
+         * still get the old case-sensitive behavior.
+         */
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE merchant_category_mappings_new (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        merchantPattern TEXT NOT NULL COLLATE NOCASE,
+                        categoryId INTEGER,
+                        isExactMatch INTEGER NOT NULL DEFAULT 1,
+                        pending INTEGER NOT NULL DEFAULT 0,
+                        suggestedName TEXT,
+                        suggestedIcon TEXT,
+                        suggestedColorHex TEXT
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO merchant_category_mappings_new
+                        (id, merchantPattern, categoryId, isExactMatch, pending,
+                         suggestedName, suggestedIcon, suggestedColorHex)
+                    SELECT m.id, m.merchantPattern, m.categoryId, m.isExactMatch, m.pending,
+                           m.suggestedName, m.suggestedIcon, m.suggestedColorHex
+                    FROM merchant_category_mappings m
+                    WHERE m.id = (
+                        SELECT m2.id FROM merchant_category_mappings m2
+                        WHERE m2.merchantPattern = m.merchantPattern COLLATE NOCASE
+                        ORDER BY m2.pending ASC, m2.id DESC
+                        LIMIT 1
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE merchant_category_mappings")
+                db.execSQL("ALTER TABLE merchant_category_mappings_new RENAME TO merchant_category_mappings")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_merchant_category_mappings_merchantPattern " +
+                        "ON merchant_category_mappings(merchantPattern)"
+                )
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -567,7 +635,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7,
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-                    MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22,
+                    MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

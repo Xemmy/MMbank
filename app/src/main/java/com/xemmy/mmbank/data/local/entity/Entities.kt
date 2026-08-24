@@ -139,7 +139,7 @@ data class CategoryEntity(
 )
 data class MerchantCategoryMappingEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val merchantPattern: String,
+    @ColumnInfo(collate = ColumnInfo.NOCASE) val merchantPattern: String,
     val categoryId: Long? = null,
     val isExactMatch: Boolean = true,
     /** True for an unconfirmed AI category guess awaiting human approval. */

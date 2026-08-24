@@ -2221,3 +2221,62 @@ deferred.
 Pending -- this section gets filled in once the real `Lint & Unit Tests`
 job log is read (that step is `continue-on-error: true`, so the check mark
 alone doesn't prove the suite passed).
+
+## Phase 12.4 — Case-sensitive merchant-mapping unique index
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 63`, `versionName = "0.40.4"`
+
+The second bug from the same review pass: `merchant_category_mappings`'s
+unique index on `merchantPattern` had no collation, so it was
+case-sensitive, while every lookup path treats merchant names
+case-insensitively -- `CategoryMatcher.match`'s `equals(ignoreCase = true)`,
+`MerchantCategoryDao.findPending`'s explicit `COLLATE NOCASE`. Because
+`learnMapping`/`suggestPending` upsert with `OnConflictStrategy.REPLACE`,
+which relies on that index to decide "same merchant, replace it,"
+re-learning a merchant under different casing (e.g. "Starbucks" vs.
+"STARBUCKS") silently created a second row instead of replacing the first,
+and which duplicate a later match resolved to was undefined.
+
+### What changed
+
+Schema migration v22 -> v23 (`MIGRATION_22_23` in `AppDatabase.kt`).
+SQLite can't alter a column's collation in place, so the migration rebuilds
+`merchant_category_mappings`: a correlated subquery keeps exactly one row
+per case-insensitive `merchantPattern` group (a confirmed mapping,
+`pending = 0`, over a still-pending suggestion; ties broken by highest
+`id`), copies only those into a new table whose `merchantPattern` column
+is declared `COLLATE NOCASE`, then drops/renames and recreates the unique
+index. `MerchantCategoryMappingEntity.merchantPattern` gains a matching
+`@ColumnInfo(collate = ColumnInfo.NOCASE)` in the same commit -- Room's
+`onCreate` for a brand-new install builds the table straight from the
+entity, not from any `Migration`, so without that annotation a fresh v23+
+install would still get the old case-sensitive table. No other code
+changes needed: `learnMapping`/`suggestPending`'s existing REPLACE upsert
+starts colliding case-insensitively automatically once the index itself
+does.
+
+### Tests
+
+Not unit-tested. The migration's raw SQL (table rebuild + de-dup ranking)
+can't run without a real SQLite engine, which this repo has no
+Robolectric/`MigrationTestHelper` infra for -- matching every other
+`MIGRATION_*` in `AppDatabase.kt`, none of which have tests. Deliberately
+not adding a parallel Kotlin re-implementation of the de-dup ranking just
+to have something testable, since that would test logic production never
+calls directly. No mapper round-trip test needed either -- no field was
+added; `collate` is invisible to `toDomain()`/`toEntity()` and to
+Kotlin data-class equality.
+
+### Deferred (not part of this change)
+
+The three items deferred since Phase 12.2 (dialog dedup, Categories
+busy-guard, transactional delete wrap) remain deferred.
+
+### CI verification
+
+Pending -- this section gets filled in once the real job log is read. Since
+nothing in CI exercises the migration's raw SQL, a green `assembleDebug`
+here only proves `AppDatabase.kt` compiles, not that the migration itself
+is correct -- that limit gets noted explicitly rather than treated as
+proof.
