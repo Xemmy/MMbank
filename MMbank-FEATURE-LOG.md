@@ -2172,7 +2172,7 @@ retries)` succeeded on Attempt 1; `Verify build success`, `Check APK exists`,
 
 ## Phase 12.3 — Account delete leaves a dangling parsing-rule reference
 
-**Status:** landed, pending CI
+**Status:** landed, CI green
 **Version:** `versionCode = 62`, `versionName = "0.40.3"`
 
 A further review pass looking for the same class of bug elsewhere (an
@@ -2218,9 +2218,91 @@ deferred.
 
 ### CI verification
 
-Pending -- this section gets filled in once the real `Lint & Unit Tests`
-job log is read (that step is `continue-on-error: true`, so the check mark
-alone doesn't prove the suite passed).
+Landed as `df738b9`. Its own CI run generated two benign `Final Status:
+failure` webhooks (`32681187998`, `32681192373`) -- both are concurrency
+cancellations (`Lint & Unit Tests`/`Build APK` show `conclusion:
+cancelled`, not `failure`), caused by Phase 12.4's commit (`3382812`)
+superseding it on the branch moments later -- the same false-alarm class
+already documented for the Step 6a commit earlier in this project, not a
+real failure. Verified instead via `3382812`'s own run (`32681265491`, run
+#313), which is the branch tip and so contains both this commit's diff and
+Phase 12.4's -- see that phase's CI verification section for the full log
+read, which confirms `AccountRepositoryImplDeleteTest` compiled and ran.
+
+## Phase 12.4 -- Case-insensitive merchant-mapping unique index
+
+**Status:** landed, CI green
+**Version:** `versionCode = 63`, `versionName = "0.40.4"`
+
+The second bug from the same review pass that produced Phase 12.3, this
+one a schema change.
+
+### What changed
+
+`merchant_category_mappings`' unique index on `merchantPattern` had no
+collation (exact-byte comparison), while every lookup path treats merchant
+names case-insensitively -- `CategoryMatcher.match`'s
+`equals(ignoreCase = true)`, `MerchantCategoryDao.findPending`'s
+`COLLATE NOCASE`. `learnMapping`/`suggestPending`'s
+`OnConflictStrategy.REPLACE` upsert relies on that index to treat a
+re-learned merchant as the same row, so different casings of one merchant
+(e.g. "Starbucks" vs "STARBUCKS") silently produced duplicate rows instead
+of colliding -- and which duplicate a later match hit was undefined.
+
+New `MIGRATION_22_23` (schema v22 -> v23) rebuilds the table: a correlated
+subquery keeps exactly one row per case-insensitive `merchantPattern`
+group (a confirmed mapping, `pending = 0`, over a still-pending
+suggestion; ties broken by highest `id`), then recreates the table with
+`merchantPattern` declared `COLLATE NOCASE`.
+`MerchantCategoryMappingEntity.merchantPattern` gains a matching
+`@ColumnInfo(collate = ColumnInfo.NOCASE)` in the same commit -- Room's
+`onCreate` for a *fresh* install builds the table straight from the
+entity, not from any `Migration`, so without that annotation a brand-new
+v23+ install would still get the old case-sensitive behavior. No code
+changes needed in `learnMapping`/`suggestPending` -- their existing
+REPLACE upsert starts colliding case-insensitively automatically once the
+index itself does.
+
+### Tests
+
+No unit test: the migration's raw SQL (table rebuild + de-dup ranking)
+can't run in a pure-JVM test -- no Robolectric `MigrationTestHelper`
+exists in this repo, matching every other `MIGRATION_*` in `AppDatabase.kt`,
+none of which have tests. Not adding a parallel Kotlin re-implementation
+of the de-dup ranking just to have something testable, since that would
+test code production never calls. No mapper round-trip test either -- no
+field was added; `collate` is invisible to `toDomain()`/`toEntity()` and
+to data-class equality.
+
+### Deferred (not part of this change)
+
+Same three items deferred since Phase 12.2 (dialog dedup, Categories
+busy-guard, transactional delete wrap) remain deferred.
+
+### CI verification
+
+Landed as `3382812` (branch tip, also carries Phase 12.3's `df738b9`
+diff). Run `32681265491` (push, run #313), all three jobs `success`.
+Verified by reading the `Lint & Unit Tests` job log directly (job
+`97298312073`) rather than trusting the check mark, since that step
+carries `continue-on-error: true`: `> Task :app:testDebugUnitTest`
+genuinely executed (preceded by `kspDebugUnitTestKotlin` and
+`compileDebugUnitTestKotlin` succeeding, so Phase 12.3's new
+`AccountRepositoryImplDeleteTest` case compiled and ran), `BUILD
+SUCCESSFUL in 3m 28s`, `25 actionable tasks: 25 executed`, no `FAILED`
+line or test-failure summary anywhere in the output. Only the same
+pre-existing deprecation warnings as prior phases (`menuAnchor`,
+`LocalClipboardManager`, `Icons.Filled.Rule`, `TabRow`,
+`rememberSwipeToDismissBoxState`, `Icons.Filled.Label`) -- none new from
+either commit. Since nothing in CI actually exercises the migration's raw
+SQL against a real database (no Robolectric), `Build APK (with retries)`
+succeeding on Attempt 1 is the practical proof available here: it confirms
+the migration object and the `@ColumnInfo(collate = NOCASE)` entity change
+compile and dex cleanly, not that the migration runs correctly against
+production data -- a real-device upgrade check remains the only way to
+confirm the de-dup logic itself. `Verify build success`, `Check APK
+exists`, `Upload Debug APK`, and the non-gating `Build Release APK` all
+succeeded. `Final Status` -- `success`.
 
 ## Phase 12.4 — Case-sensitive merchant-mapping unique index
 
