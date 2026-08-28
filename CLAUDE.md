@@ -2,8 +2,6 @@
 Android personal-finance app. Kotlin, Jetpack Compose, Room, MVVM.
 
 ## Environment — CRITICAL
-- NO Android SDK in this sandbox. Gradle downloads are blocked (403).
-  NEVER run gradle build/test/run locally.
 - Verification happens ONLY via GitHub Actions
   (.github/workflows/test-build.yml) after pushing to the remote branch.
 - Workflow: write code + pure-JVM unit tests -> push -> read CI results.
