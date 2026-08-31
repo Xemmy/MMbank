@@ -2362,3 +2362,154 @@ nothing in CI exercises the migration's raw SQL, a green `assembleDebug`
 here only proves `AppDatabase.kt` compiles, not that the migration itself
 is correct -- that limit gets noted explicitly rather than treated as
 proof.
+
+## Phase 13 — Recurring bills drifted off the calendar
+
+**Status:** landed, CI verified
+**Version:** `versionCode = 64`, `versionName = "0.40.5"`
+
+`BillRecurrence` carried nominal day counts (`WEEKLY(7)`, `MONTHLY(30)`,
+`YEARLY(365)`) and `BillAdvancer.advance` moved a bill's due date forward by
+that many fixed milliseconds when the user marked it paid. A [Bill] is due on
+a *date the user picked*, so a fixed-millisecond step drifts:
+
+- `MONTHLY(30)` walked rent due on the 1st to Jan 31, then Mar 2, Apr 1, ...
+  roughly five days a year backwards through the month.
+- `YEARLY(365)` ignored leap years, slipping an annual bill a day earlier at
+  every one.
+- A fixed-millis step also shifted the due date's time of day by an hour
+  across a DST boundary.
+
+### What changed
+
+`BillRecurrence` now carries a `java.time.Period` instead of `nominalDays`;
+`BillAdvancer.advance` gains a `zone: ZoneId = ZoneId.systemDefault()`
+parameter (matching `CashFlowForecaster` / `GoalForecaster`) and adds the
+period in that zone, so a monthly bill keeps its day of month and an annual
+one keeps its calendar date.
+
+Month-end is preserved explicitly. `java.time` clamps Jan 31 + 1 month to
+Feb 28, and advancing from *that* clamped date would strand a month-end bill
+on the 28th permanently, so when the current due date is its month's last day
+and the cycle is month-based, the result snaps to the new month's last day:
+Jan 31 -> Feb 28 -> Mar 31 -> Apr 30. A weekly cycle never snaps -- landing
+on a month's last day is a coincidence there, not the user's intent. The snap
+keys off `period.toTotalMonths() > 0` rather than a second enum field.
+
+`SubscriptionCadence` deliberately keeps its nominal day counts. It describes
+an observed rhythm the detector *measures* in days with a +/-5 day tolerance
+(`SubscriptionRadarEngine.classifyCadence`) and normalizes with
+(`MonthlyReportBuilder.subscriptionMonthlyTotal`), not a user-declared date
+rule -- the two are different kinds of thing and now read differently.
+
+Also in the same commit: `MonthlyReportBuilder` scoped its subscription list
+to the report currency. The list filtered only on `dismissed` while the
+"monthly equivalent" total beneath it also filtered on currency, so a USD
+subscription appeared in an AED report above a total that silently excluded
+it. Both now read from one shared filtered list, so they cannot diverge again.
+
+### Tests
+
+`BillAdvancerTest` rewritten against calendar semantics (13 tests): day of
+month held across twelve consecutive cycles, month-end recovery after a short
+month, mid-month never snapping, weekly never snapping, leap-year handling,
+Feb 29 clamping, time-of-day preservation, a Europe/London DST crossing, and
+an overdue bill still stepping exactly one cycle. `MonthlyReportBuilderTest`
+gains off-currency list exclusion plus a check that the listed subscriptions
+are exactly the ones behind the monthly total.
+
+`BillRecurrence.nominalDays` had exactly one consumer (`BillAdvancer`), and
+the Bills UI renders `option.name`, so nothing else needed touching. Only the
+enum's `name` is persisted, so replacing the constructor arg is not a schema
+change and needs no migration.
+
+### CI verification
+
+Run `33349327158` (commit `82ee7d2`), `Lint & Unit Tests` job log read
+directly rather than the check mark: `> Task :app:testDebugUnitTest`,
+`BUILD SUCCESSFUL in 3m 27s`, `25 actionable tasks: 25 executed`, no failure
+line. Gradle exit 0 with the test task actually in the graph is what proves
+the suite passed -- the step is `continue-on-error`, so its own conclusion
+would read `success` regardless.
+
+That run's `Final Status` reported failure, which was **not** a code failure:
+pushing Phase 13.1 four minutes later cancelled the run's `Build APK` job by
+workflow concurrency, and `final-status` fails when `build-apk` did not
+succeed. The unit-test job had already completed successfully before the
+cancellation. Same benign pattern noted in Phase 12.3. Compilation is proven
+by the superseding run below, which builds the same code plus Phase 13.1.
+
+## Phase 13.1 — Backup/restore silently dropped transaction and account columns
+
+**Status:** landed, CI verified
+**Version:** `versionCode = 65`, `versionName = "0.40.6"`
+
+The backup DTOs had not kept up with the entities, and restore reset every
+field the payload didn't carry to its entity default, with no warning:
+
+- `TransactionEntity` lost `excludeFromStats`, `linkedTransactionId`,
+  `needsCategoryApproval`, `suggestedCategoryName` / `Icon` / `ColorHex`,
+  `extractedMerchant` and `aiConfidence`.
+- `AccountEntity` lost `statementCycleDay` and `hiddenFromDashboard`.
+
+`excludeFromStats` is the damaging one. Balance corrections, Tabby refund
+adjustments and reconciled transfers are all kept in the ledger but held out
+of analytics by that flag (the three ingestion points in the handover's §3),
+so restoring a backup re-admitted every one of them and **a restored ledger
+reported different spending totals than the ledger that was backed up**.
+Losing `linkedTransactionId` compounded it by unpairing reconciled transfers
+so both legs counted as real money, and also freed them to be re-matched by
+`TransferMatcher`. `statementCycleDay` silently disabled the statement-cycle
+filter preset for the card it was set on.
+
+Phase "Step 8" had fixed the *category* half of exactly this gap (adding
+`categoryId`, categories and merchant mappings, format v2) without noticing
+the other dropped columns.
+
+### What changed
+
+`BackupPayload.formatVersion` goes to 3 and the DTOs carry all of the above.
+No import gate is needed, unlike the v2 category gate: every added field
+defaults to its entity default, so a v1/v2 backup restores exactly as it did
+before. `isDemo` remains deliberately uncarried on both types -- export
+selects real rows only and import restores them as real rows.
+
+The mappers also moved off positional construction to named arguments. They
+pair DTOs with entities whose field orders differ and that have long runs of
+same-typed nullable columns, so a positional argument list compiles clean
+while writing the wrong column -- and silently absorbs a newly added field
+instead of failing, which is how these columns went unnoticed in the first
+place.
+
+They are now `internal` top-level functions rather than private methods on
+`BackupManager`, so the round trip is JVM-testable without a Room database --
+the same stance the entity <-> domain mappers take.
+
+### Tests
+
+New `BackupMappersTest` (12 tests). Each fixture sets *every* field to a
+distinctive non-default value and asserts the whole entity comes back equal;
+data-class equality is what makes this exhaustive, so a column added to an
+entity without being carried through the backup now fails here rather than on
+a user's next restore. Plus: v2-payload JSON decoding at entity defaults,
+full JSON serialization round trip (not just the mappers), amount scale
+preservation, `isDemo` exclusion, and the unknown-`spendingCategory` fallback
+for a backup written by a newer build.
+
+### CI verification
+
+Run `33349515286` (commit `713e16c`, branch tip), `Lint & Unit Tests` job log
+read directly: `> Task :app:compileDebugUnitTestKotlin`,
+`> Task :app:testDebugUnitTest`, `BUILD SUCCESSFUL in 3m 4s`,
+`25 actionable tasks: 25 executed`, no failure line. The unit-test artifact
+uploaded 132 files against the previous run's 131 -- the one extra report
+file is the new test class, confirming it was actually discovered and run
+rather than silently skipped.
+
+### Not covered by CI
+
+Both phases are runtime data behavior, so a device pass is still worth doing:
+mark a monthly bill paid on the 1st and on the 31st and confirm the next due
+dates; export a backup with some transactions excluded from analytics and
+some transfers reconciled, restore it, and confirm the Dashboard totals and
+the statement-cycle filter preset are unchanged.
