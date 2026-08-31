@@ -42,6 +42,13 @@ data class BackupAccount(
     val profitRatePa: Double?,
     val maturityDateMillis: Long?,
     val loanNotes: String?,
+    /**
+     * Absent (defaulted) on backups from before format v3. `isDemo` is
+     * deliberately never carried: the export selects real rows only, and an
+     * import restores them as real rows.
+     */
+    val statementCycleDay: Int? = null,
+    val hiddenFromDashboard: Boolean = false,
 )
 
 @Serializable
@@ -64,6 +71,23 @@ data class BackupTransaction(
     val spendingCategory: String = "UNCATEGORIZED",
     /** Dynamic category id; absent (null) on backups from before format v2. */
     val categoryId: Long? = null,
+    /**
+     * Everything below is absent (defaulted) on backups from before format v3.
+     * Dropping [excludeFromStats] in particular silently re-admitted every
+     * balance correction, refund adjustment and reconciled transfer into the
+     * analytics totals on restore, so a restored ledger reported different
+     * figures than the one that was backed up.
+     *
+     * `isDemo` is deliberately never carried, as on [BackupAccount].
+     */
+    val excludeFromStats: Boolean = false,
+    val linkedTransactionId: Long? = null,
+    val needsCategoryApproval: Boolean = false,
+    val suggestedCategoryName: String? = null,
+    val suggestedCategoryIcon: String? = null,
+    val suggestedCategoryColorHex: String? = null,
+    val extractedMerchant: String? = null,
+    val aiConfidence: Int? = null,
 )
 
 @Serializable
@@ -114,6 +138,12 @@ data class BackupPayload(
      * [merchantCategoryMappings] and [BackupTransaction.categoryId]. Import
      * gates on this: a v1 backup must never wipe categories the user built
      * up since upgrading -- see [BackupManager.import].
+     *
+     * 3 = carries the transaction and account columns v1/v2 silently dropped
+     * (analytics exclusion, transfer links, AI review fields, statement cycle
+     * day, dashboard hiding). No import gate is needed for these: every added
+     * field defaults to the entity's own default, so an older backup restores
+     * exactly as it did before.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -147,7 +177,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 2,
+            formatVersion = 3,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -241,60 +271,193 @@ class BackupManager(
         preferences.personsRaw = payload.personsRaw
         return payload.accounts.size to payload.transactions.size
     }
-
-    // --- entity <-> backup mappers ---
-
-    private fun AccountEntity.toBackup() = BackupAccount(
-        id, name, type.name, currencyCode, openingBalance.toPlainString(), archived, notes, createdAt,
-        accountNumber, bankName, accountTitle, iban, swift,
-        outstandingBalance?.toPlainString(), nextInstallmentAmount?.toPlainString(),
-        dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    )
-
-    private fun BackupAccount.toEntity() = AccountEntity(
-        id, name, AccountType.valueOf(type), currencyCode, BigDecimal(openingBalance), archived, notes, createdAt,
-        accountNumber, bankName, accountTitle, iban, swift,
-        outstandingBalance?.let(::BigDecimal), nextInstallmentAmount?.let(::BigDecimal),
-        dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    )
-
-    private fun TransactionEntity.toBackup() = BackupTransaction(
-        id, accountId, amount.toPlainString(), currencyCode, direction.name, merchant,
-        source.name, sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
-        category.name, person, spendingCategory.name, categoryId,
-    )
-
-    private fun BackupTransaction.toEntity() = TransactionEntity(
-        id, accountId, BigDecimal(amount), currencyCode, TransactionDirection.valueOf(direction), merchant,
-        TransactionSource.valueOf(source), sender, rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix,
-        TransactionCategory.valueOf(category), person,
-        runCatching { SpendingCategory.valueOf(spendingCategory) }.getOrDefault(SpendingCategory.UNCATEGORIZED),
-        categoryId = categoryId,
-    )
-
-    private fun ParsingRuleEntity.toBackup() = BackupRule(
-        id, name, pattern, senderPattern, direction.name, defaultCurrency, priority, enabled, sampleText, createdAt,
-        assignAccountId,
-    )
-
-    private fun BackupRule.toEntity() = ParsingRuleEntity(
-        id, name, pattern, senderPattern, TransactionDirection.valueOf(direction),
-        defaultCurrency, priority, enabled, sampleText, createdAt, assignAccountId,
-    )
-
-    private fun CategoryEntity.toBackup() = BackupCategory(
-        id, name, icon, colorHex, isCustom, monthlyCap?.toPlainString(), parentCategoryId,
-    )
-
-    private fun BackupCategory.toEntity() = CategoryEntity(
-        id, name, icon, colorHex, isCustom, monthlyCap?.let(::BigDecimal), parentCategoryId,
-    )
-
-    private fun MerchantCategoryMappingEntity.toBackup() = BackupMerchantMapping(
-        id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
-    )
-
-    private fun BackupMerchantMapping.toEntity() = MerchantCategoryMappingEntity(
-        id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
-    )
 }
+
+// --- entity <-> backup mappers ---
+//
+// Top-level and internal rather than private methods on BackupManager, so the
+// round trip is JVM-testable without a Room database -- the same stance the
+// entity <-> domain mappers take (see EntityMappersTest).
+//
+// Every argument is named. These pair a DTO with an entity that has a similar
+// but not identical field order, several runs of same-typed nullable columns,
+// and defaults on both sides: positional arguments here would let a field
+// added or moved in either class compile clean and silently write the wrong
+// column, which is exactly how the dropped fields below went unnoticed.
+
+internal fun AccountEntity.toBackup() = BackupAccount(
+    id = id,
+    name = name,
+    type = type.name,
+    currencyCode = currencyCode,
+    openingBalance = openingBalance.toPlainString(),
+    archived = archived,
+    notes = notes,
+    createdAt = createdAt,
+    accountNumber = accountNumber,
+    bankName = bankName,
+    accountTitle = accountTitle,
+    iban = iban,
+    swift = swift,
+    outstandingBalance = outstandingBalance?.toPlainString(),
+    nextInstallmentAmount = nextInstallmentAmount?.toPlainString(),
+    dueDayOfMonth = dueDayOfMonth,
+    profitRatePa = profitRatePa,
+    maturityDateMillis = maturityDateMillis,
+    loanNotes = loanNotes,
+    statementCycleDay = statementCycleDay,
+    hiddenFromDashboard = hiddenFromDashboard,
+)
+
+internal fun BackupAccount.toEntity() = AccountEntity(
+    id = id,
+    name = name,
+    type = AccountType.valueOf(type),
+    currencyCode = currencyCode,
+    openingBalance = BigDecimal(openingBalance),
+    archived = archived,
+    notes = notes,
+    createdAt = createdAt,
+    accountNumber = accountNumber,
+    bankName = bankName,
+    accountTitle = accountTitle,
+    iban = iban,
+    swift = swift,
+    outstandingBalance = outstandingBalance?.let(::BigDecimal),
+    nextInstallmentAmount = nextInstallmentAmount?.let(::BigDecimal),
+    dueDayOfMonth = dueDayOfMonth,
+    profitRatePa = profitRatePa,
+    maturityDateMillis = maturityDateMillis,
+    loanNotes = loanNotes,
+    statementCycleDay = statementCycleDay,
+    hiddenFromDashboard = hiddenFromDashboard,
+)
+
+internal fun TransactionEntity.toBackup() = BackupTransaction(
+    id = id,
+    accountId = accountId,
+    amount = amount.toPlainString(),
+    currencyCode = currencyCode,
+    direction = direction.name,
+    merchant = merchant,
+    source = source.name,
+    sender = sender,
+    rawMessage = rawMessage,
+    matchedRuleName = matchedRuleName,
+    timestamp = timestamp,
+    createdAt = createdAt,
+    accountNumberSuffix = accountNumberSuffix,
+    category = category.name,
+    person = person,
+    spendingCategory = spendingCategory.name,
+    categoryId = categoryId,
+    excludeFromStats = excludeFromStats,
+    linkedTransactionId = linkedTransactionId,
+    needsCategoryApproval = needsCategoryApproval,
+    suggestedCategoryName = suggestedCategoryName,
+    suggestedCategoryIcon = suggestedCategoryIcon,
+    suggestedCategoryColorHex = suggestedCategoryColorHex,
+    extractedMerchant = extractedMerchant,
+    aiConfidence = aiConfidence,
+)
+
+internal fun BackupTransaction.toEntity() = TransactionEntity(
+    id = id,
+    accountId = accountId,
+    amount = BigDecimal(amount),
+    currencyCode = currencyCode,
+    direction = TransactionDirection.valueOf(direction),
+    merchant = merchant,
+    source = TransactionSource.valueOf(source),
+    sender = sender,
+    rawMessage = rawMessage,
+    matchedRuleName = matchedRuleName,
+    timestamp = timestamp,
+    createdAt = createdAt,
+    accountNumberSuffix = accountNumberSuffix,
+    category = TransactionCategory.valueOf(category),
+    person = person,
+    // An unknown category name is tolerated (a backup written by a newer build
+    // than the one importing it); the enum's own fallback, as at capture time.
+    spendingCategory = runCatching { SpendingCategory.valueOf(spendingCategory) }
+        .getOrDefault(SpendingCategory.UNCATEGORIZED),
+    categoryId = categoryId,
+    excludeFromStats = excludeFromStats,
+    linkedTransactionId = linkedTransactionId,
+    needsCategoryApproval = needsCategoryApproval,
+    suggestedCategoryName = suggestedCategoryName,
+    suggestedCategoryIcon = suggestedCategoryIcon,
+    suggestedCategoryColorHex = suggestedCategoryColorHex,
+    extractedMerchant = extractedMerchant,
+    aiConfidence = aiConfidence,
+)
+
+internal fun ParsingRuleEntity.toBackup() = BackupRule(
+    id = id,
+    name = name,
+    pattern = pattern,
+    senderPattern = senderPattern,
+    direction = direction.name,
+    defaultCurrency = defaultCurrency,
+    priority = priority,
+    enabled = enabled,
+    sampleText = sampleText,
+    createdAt = createdAt,
+    assignAccountId = assignAccountId,
+)
+
+internal fun BackupRule.toEntity() = ParsingRuleEntity(
+    id = id,
+    name = name,
+    pattern = pattern,
+    senderPattern = senderPattern,
+    direction = TransactionDirection.valueOf(direction),
+    defaultCurrency = defaultCurrency,
+    priority = priority,
+    enabled = enabled,
+    sampleText = sampleText,
+    createdAt = createdAt,
+    assignAccountId = assignAccountId,
+)
+
+internal fun CategoryEntity.toBackup() = BackupCategory(
+    id = id,
+    name = name,
+    icon = icon,
+    colorHex = colorHex,
+    isCustom = isCustom,
+    monthlyCap = monthlyCap?.toPlainString(),
+    parentCategoryId = parentCategoryId,
+)
+
+internal fun BackupCategory.toEntity() = CategoryEntity(
+    id = id,
+    name = name,
+    icon = icon,
+    colorHex = colorHex,
+    isCustom = isCustom,
+    monthlyCap = monthlyCap?.let(::BigDecimal),
+    parentCategoryId = parentCategoryId,
+)
+
+internal fun MerchantCategoryMappingEntity.toBackup() = BackupMerchantMapping(
+    id = id,
+    merchantPattern = merchantPattern,
+    categoryId = categoryId,
+    isExactMatch = isExactMatch,
+    pending = pending,
+    suggestedName = suggestedName,
+    suggestedIcon = suggestedIcon,
+    suggestedColorHex = suggestedColorHex,
+)
+
+internal fun BackupMerchantMapping.toEntity() = MerchantCategoryMappingEntity(
+    id = id,
+    merchantPattern = merchantPattern,
+    categoryId = categoryId,
+    isExactMatch = isExactMatch,
+    pending = pending,
+    suggestedName = suggestedName,
+    suggestedIcon = suggestedIcon,
+    suggestedColorHex = suggestedColorHex,
+)
