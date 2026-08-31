@@ -210,6 +210,36 @@ class MonthlyReportBuilderTest {
     }
 
     @Test
+    fun `a subscription in another currency is left out of the list too, not just the total`() {
+        // Listing one above a total that silently omits it reads as an
+        // arithmetic error; the report is scoped to a single currency
+        // throughout, exactly as off-currency transactions are.
+        val report = build(
+            month = emptyList(),
+            subscriptions = listOf(
+                subscription("Local", "40.00"),
+                subscription("Foreign", "100.00", currencyCode = "USD"),
+            ),
+        )
+        assertEquals(listOf("Local"), report.subscriptions.map { it.merchant })
+        assertEquals(0, report.subscriptionMonthlyTotal.compareTo(BigDecimal("40.00")))
+    }
+
+    @Test
+    fun `the listed subscriptions are exactly the ones behind the monthly total`() {
+        val report = build(
+            month = emptyList(),
+            subscriptions = listOf(
+                subscription("Netflix", "40.00"),
+                subscription("Foreign", "100.00", currencyCode = "USD"),
+                subscription("Cancelled", "999.00", dismissed = true),
+            ),
+        )
+        val listedTotal = report.subscriptions.fold(BigDecimal.ZERO) { acc, s -> acc + s.averageAmount }
+        assertEquals(0, report.subscriptionMonthlyTotal.compareTo(listedTotal))
+    }
+
+    @Test
     fun `archived goals are left out`() {
         val report = build(
             month = emptyList(),

@@ -79,6 +79,16 @@ object MonthlyReportBuilder {
         val spent = current.total(TransactionDirection.DEBIT)
         val hasPrevious = previous.isNotEmpty()
 
+        // Filtered once and shared, so the rendered list and the "monthly
+        // equivalent" total underneath it can never disagree about what's in
+        // scope. Off-currency subscriptions are dropped from both for the same
+        // reason off-currency transactions are: the report has no exchange
+        // rates, so listing one above a total that silently omits it reads as
+        // an arithmetic error.
+        val activeSubscriptions = subscriptions
+            .filter { !it.dismissed && it.currencyCode.equals(currency, ignoreCase = true) }
+            .sortedBy { it.nextDueDateMillis }
+
         return MonthlyReport(
             monthLabel = monthLabel,
             currency = currency,
@@ -91,8 +101,8 @@ object MonthlyReportBuilder {
             netWorth = accountBalances.takeIf { it.isNotEmpty() }?.let(NetWorthAggregator::aggregate),
             topCategories = topCategories(current, categoryNames, spent),
             topMerchants = topMerchants(current),
-            subscriptions = subscriptions.filter { !it.dismissed }.sortedBy { it.nextDueDateMillis },
-            subscriptionMonthlyTotal = subscriptionMonthlyTotal(subscriptions, currency),
+            subscriptions = activeSubscriptions,
+            subscriptionMonthlyTotal = subscriptionMonthlyTotal(activeSubscriptions),
             goals = goals.filter { !it.archived },
             health = health,
         )
@@ -159,10 +169,12 @@ object MonthlyReportBuilder {
      * Normalizes each cadence to a monthly figure using the same nominal day
      * counts the detector itself uses ([SubscriptionCadence.nominalDays]), so a
      * weekly charge is counted at 30/7 per month rather than a hand-picked 4.
+     *
+     * Takes the already-scoped list from [build] rather than re-filtering, so
+     * there is one definition of "in this report" instead of two.
      */
-    private fun subscriptionMonthlyTotal(subscriptions: List<Subscription>, currency: String): BigDecimal =
+    private fun subscriptionMonthlyTotal(subscriptions: List<Subscription>): BigDecimal =
         subscriptions
-            .filter { !it.dismissed && it.currencyCode.equals(currency, ignoreCase = true) }
             .fold(BigDecimal.ZERO) { acc, subscription ->
                 val perMonth = subscription.averageAmount
                     .multiply(BigDecimal(SubscriptionCadence.MONTHLY.nominalDays))

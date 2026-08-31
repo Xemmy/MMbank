@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.model
 
 import java.math.BigDecimal
+import java.time.Period
 
 /** Where a captured message came from. */
 enum class TransactionSource { SMS, PUSH_NOTIFICATION, MANUAL, BINANCE_SYNC }
@@ -381,8 +382,22 @@ data class Subscription(
     val previousAmount: BigDecimal? = null,
 )
 
-/** Recurrence rhythm for a manually tracked [Bill]; kept nullable on the bill itself for one-off entries. */
-enum class BillRecurrence(val nominalDays: Long) { WEEKLY(7L), MONTHLY(30L), YEARLY(365L) }
+/**
+ * Recurrence rhythm for a manually tracked [Bill]; kept nullable on the bill
+ * itself for one-off entries.
+ *
+ * Expressed as a calendar [Period] rather than a nominal day count. A bill is
+ * due on a *date* the user picked ("rent on the 1st"), so advancing it has to
+ * move by calendar months/years -- adding a flat 30 or 365 days walks the due
+ * date backwards through the month and ignores leap years.
+ * Contrast [SubscriptionCadence], which stays in nominal days because it
+ * describes an observed rhythm the detector measures in days, not a date rule.
+ */
+enum class BillRecurrence(val period: Period) {
+    WEEKLY(Period.ofWeeks(1)),
+    MONTHLY(Period.ofMonths(1)),
+    YEARLY(Period.ofYears(1)),
+}
 
 /**
  * A manually tracked bill (rent, EMI, a variable-amount utility, a one-off
