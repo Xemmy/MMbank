@@ -14,8 +14,8 @@ android {
         applicationId = "com.xemmy.mmbank"
         minSdk = 26
         targetSdk = 35
-        versionCode = 66
-        versionName = "0.41.0"
+        versionCode = 67
+        versionName = "0.41.1"
     }
 
     // A fixed debug keystore (committed, standard well-known debug password)
@@ -39,6 +39,28 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+    }
+
+    lint {
+        // `assembleRelease` runs lintVital, and AGP 8.7.3's bundled lint CRASHES
+        // there rather than reporting a finding:
+        //
+        //   Unexpected failure during lint analysis of MMBankApp.kt
+        //   Found class ...KaCallableMemberCall, but interface was expected
+        //   detector: androidx.lifecycle.lint.NonNullableMutableLiveDataDetector
+        //
+        // An IncompatibleClassChangeError between lint's bundled Kotlin analysis
+        // API and the Kotlin it runs against -- a toolchain mismatch, not
+        // anything in this source. It took out every release build (the step is
+        // continue-on-error, so the workflow stayed green while silently
+        // producing no release APK: `Upload Release APK` is gated on
+        // steps.build_release.outcome and was skipped every run).
+        //
+        // Disabling the single issue this detector owns is what lint's own crash
+        // message recommends, and costs nothing here: the app uses no
+        // MutableLiveData at all, so the detector has nothing to find. Drop this
+        // once AGP ships a lint whose analysis API matches the Kotlin plugin.
+        disable += "NullSafeMutableLiveData"
     }
 
     compileOptions {

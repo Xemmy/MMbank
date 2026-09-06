@@ -107,11 +107,15 @@ class ImportPastedMessagesUseCaseTest {
 
     private val repository = FakeTransactionRepository()
 
+    /** Messages the importer handed to Gate 2; must stay empty (see below). */
+    private val forwardedToAi = mutableListOf<CapturedMessage>()
+
     private fun importer(ignoredSamples: List<String> = emptyList()): ImportPastedMessagesUseCase {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val ingest = IngestCapturedMessageUseCase(
             customRules = CompiledRuleCache(FakeRuleRepository(), scope),
             transactionRepository = repository,
+            onGate1Miss = { forwardedToAi += it },
             fallbackCurrencyProvider = { "AED" },
             ignoredMessages = IgnoredMessageCache(FakeIgnoredMessageRepository(ignoredSamples), scope),
         )
@@ -180,6 +184,24 @@ class ImportPastedMessagesUseCaseTest {
         val summary = importer().invoke("just some numbers 12345 with no shape", now)
         assertEquals(0, summary.imported)
         assertEquals(1, summary.unparsed)
+    }
+
+    @Test
+    fun `an unreadable pasted message never spends AI budget`() = runBlocking {
+        // Currency-adjacent amount, so a live capture of this WOULD clear
+        // AiForwardGate and reach Gate 2. A paste is a deliberate batch, so it
+        // must report unparsed instead of quietly draining the day's budget.
+        val summary = importer().invoke("Some AED 42.00 shaped text no rule matches", now)
+        assertEquals(1, summary.unparsed)
+        assertTrue(forwardedToAi.isEmpty())
+    }
+
+    @Test
+    fun `a whole batch of unreadable messages still spends nothing`() = runBlocking {
+        val blob = (1..20).joinToString("\n") { "Some AED $it.00 shaped text no rule matches" }
+        val summary = importer().invoke(blob, now)
+        assertEquals(20, summary.unparsed)
+        assertTrue(forwardedToAi.isEmpty())
     }
 
     @Test

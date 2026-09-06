@@ -22,6 +22,11 @@ import java.time.ZoneId
  *
  *  - **When it happened** comes from the date the bank printed in the text
  *    ([MessageDateExtractor]), falling back to [now] when there is none.
+ *  - **Gate-2 AI forwarding is off** for imports (`forwardOnMiss = false`).
+ *    A live capture is one unasked-for message, worth a little AI budget to
+ *    read; a paste is a deliberate batch that could be hundreds at once, and
+ *    draining the day's budget on it is not what pressing "Import" asks for.
+ *    Unreadable messages land in [Summary.unparsed] instead.
  *  - **Duplicate detection** leans on the exact message text
  *    ([TransactionRepository.findIdByRawMessage]), which is what makes
  *    re-pasting the same backlog a no-op. The ±2-minute sliding window only
@@ -75,7 +80,13 @@ class ImportPastedMessagesUseCase(
             body = text,
             timestampMillis = stated?.epochMillis ?: now,
         )
-        return ingest(message, dedupWindow = stated?.hasTimeOfDay == true)
+        return ingest(
+            message,
+            dedupWindow = stated?.hasTimeOfDay == true,
+            // A paste is a deliberate batch, potentially hundreds of messages;
+            // it must not drain the day's AI budget behind the user's back.
+            forwardOnMiss = false,
+        )
     }
 
     private fun Summary.fold(result: IngestResult): Summary = when (result) {

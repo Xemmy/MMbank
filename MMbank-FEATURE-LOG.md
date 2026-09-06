@@ -2667,3 +2667,63 @@ Device pass worth doing: paste a handful of real bank SMS and confirm the
 dates land where the messages say; paste the same batch again and confirm it
 reports everything as already imported; paste a promo into the Ignored tab and
 confirm the next one like it never appears in the ledger.
+
+## Phase 14.1 — Release build unblocked, and imports stop spending AI budget
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 67`, `versionName = "0.41.1"`
+
+Two follow-ups the user asked for after Phase 14.
+
+### 1. The release build actually builds again
+
+Phase 14 established that `assembleRelease` had been failing since before that
+phase, on a crash inside lint rather than a lint finding -- an
+`IncompatibleClassChangeError` in AndroidX's
+`NonNullableMutableLiveDataDetector`, from a mismatch between lint's bundled
+Kotlin analysis API and the Kotlin it runs against.
+
+`app/build.gradle.kts` now disables the single issue that detector owns:
+
+    lint { disable += "NullSafeMutableLiveData" }
+
+which is what lint's own crash message recommends, and costs nothing here --
+the app uses no `MutableLiveData` anywhere, so the detector has nothing to
+find. It should be dropped once AGP ships a lint whose analysis API matches
+the Kotlin plugin.
+
+**How to verify this actually worked** (the step is `continue-on-error`, so
+neither its conclusion nor the workflow's proves anything): `Upload Release
+APK` is gated on `steps.build_release.outcome == 'success'`, and `outcome` is
+the pre-`continue-on-error` result. That step being **skipped** means the
+release build failed; it **running** means it succeeded. It was skipped on
+every run up to and including `15281fa`.
+
+### 2. Pasted imports no longer spend the AI budget
+
+`IngestCapturedMessageUseCase.invoke` gained `forwardOnMiss` (default true, so
+live capture is unchanged), and `ImportPastedMessagesUseCase` passes false.
+
+The asymmetry is the point: a live capture is a single message the user never
+asked for, so spending a little AI budget to read it is worth it. A paste is a
+deliberate batch that could be hundreds of messages at once, and quietly
+draining the day's budget on it is not what someone pressing "Import" is
+asking for. Unreadable pasted messages land in `Summary.unparsed` instead, and
+the add-transaction dialog's manual "Parse with AI" is still there for the
+individual ones worth spending on.
+
+### Tests
+
+- `IngestCapturedMessageUseCaseTest` -- `forwardOnMiss = false` suppresses the
+  hand-off on a message that otherwise clears `AiForwardGate`; the default
+  still forwards, so live capture is provably unchanged.
+- `ImportPastedMessagesUseCaseTest` -- an unreadable pasted message reports
+  unparsed and forwards nothing, and a 20-message batch of them still forwards
+  nothing.
+- The lint change is build configuration; CI is its own test (see the
+  `Upload Release APK` check above).
+
+### CI verification
+
+Pending -- to be filled in from the real job logs, including whether
+`Upload Release APK` ran this time.

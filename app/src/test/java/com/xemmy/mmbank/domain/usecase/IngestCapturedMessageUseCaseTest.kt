@@ -380,6 +380,28 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
+    fun `forwardOnMiss false suppresses the gate1 AI hand-off`() = runBlocking {
+        // What the paste importer passes: a deliberate batch must not drain
+        // the day's AI budget behind the user's back.
+        var fired = false
+        val uc = useCase(onGate1Miss = { fired = true })
+        val result = uc.invoke(
+            push("com.adcb.bank", "Some AED 42.00 shaped text no rule matches"),
+            forwardOnMiss = false,
+        )
+        assertEquals(IngestResult.NoMatch, result)
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `forwardOnMiss defaults to true so live capture still reaches gate2`() = runBlocking {
+        var fired = false
+        val uc = useCase(onGate1Miss = { fired = true })
+        uc.invoke(push("com.adcb.bank", "Some AED 42.00 shaped text no rule matches"))
+        assertTrue(fired)
+    }
+
+    @Test
     fun `an empty ignore list changes nothing`() = runBlocking {
         assertTrue(useCase(ignoredSamples = emptyList()).invoke(push("com.adcb.bank", bankStyleBody)) is IngestResult.Inserted)
     }

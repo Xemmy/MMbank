@@ -49,8 +49,20 @@ class IngestCapturedMessageUseCase(
      * [dedupWindow] is passed straight through to
      * [TransactionRepository.recordParsed]; only the paste importer ever turns
      * it off, and only for messages whose clock time it doesn't know.
+     *
+     * [forwardOnMiss] = false suppresses the Gate-2 hand-off for this message.
+     * A live capture is one message the user never asked for, so spending a
+     * little AI budget to read it is worth it; a paste is a deliberate batch
+     * that could be hundreds of messages at once, and quietly draining the
+     * day's budget on it is not what someone pressing "Import" is asking for.
+     * Those simply report as unparsed -- the add-transaction dialog's manual
+     * "Parse with AI" is still there for the individual ones worth spending on.
      */
-    suspend operator fun invoke(message: CapturedMessage, dedupWindow: Boolean = true): IngestResult {
+    suspend operator fun invoke(
+        message: CapturedMessage,
+        dedupWindow: Boolean = true,
+        forwardOnMiss: Boolean = true,
+    ): IngestResult {
         // Every rule requires an amount and an amount requires a digit
         // (Character.isDigit covers Arabic-Indic digits too, pre-normalization),
         // so most chat/media notifications exit here for the cost of a scan.
@@ -82,7 +94,7 @@ class IngestCapturedMessageUseCase(
 
         val parser = TransactionParser(rules, fallbackCurrencyProvider())
         val parsed = parser.parse(message) ?: run {
-            if (AiForwardGate.isPlausibleTransaction(message.title, message.body)) {
+            if (forwardOnMiss && AiForwardGate.isPlausibleTransaction(message.title, message.body)) {
                 onGate1Miss(message)
             }
             return IngestResult.NoMatch
