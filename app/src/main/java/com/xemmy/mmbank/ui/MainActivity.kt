@@ -74,6 +74,7 @@ import com.xemmy.mmbank.ui.screens.settings.CategoriesAndPeopleScreen
 import com.xemmy.mmbank.ui.screens.settings.DemoSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DesignSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.ImportMessagesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
@@ -351,6 +352,7 @@ private fun AppNavHost(
             SettingsScreen(onOpen = { route -> navController.navigate(route) })
         }
         composable("settings_capture") { CaptureSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_import") { ImportMessagesSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_prefs") { PreferencesSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_categories_people") {
             CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)

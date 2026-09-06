@@ -3,8 +3,13 @@ package com.xemmy.mmbank.domain.model
 import java.math.BigDecimal
 import java.time.Period
 
-/** Where a captured message came from. */
-enum class TransactionSource { SMS, PUSH_NOTIFICATION, MANUAL, BINANCE_SYNC }
+/**
+ * Where a captured message came from. [PASTED] is text the user pasted into
+ * the importer themselves — parsed exactly like a live capture, but kept
+ * distinguishable in the ledger since its timestamp comes from the message's
+ * own printed date rather than from the moment it arrived.
+ */
+enum class TransactionSource { SMS, PUSH_NOTIFICATION, MANUAL, BINANCE_SYNC, PASTED }
 
 enum class TransactionDirection { DEBIT, CREDIT }
 
@@ -238,6 +243,24 @@ data class SenderLabel(
 )
 
 /**
+ * A kind of message the user has told the app to stop capturing — a promo, an
+ * OTP, a marketing blast.
+ *
+ * [sample] is the text they pasted, kept verbatim so the list stays readable
+ * and removable. [fingerprint] is that sample's template shape per
+ * [com.xemmy.mmbank.domain.parser.MessageSimilarity.fingerprint], stored
+ * alongside it so the capture path can reject the common case (the same
+ * template again, only the numbers changed) on an exact string comparison,
+ * before falling back to the fuzzier token overlap.
+ */
+data class IgnoredMessagePattern(
+    val id: Long = 0,
+    val fingerprint: String,
+    val sample: String,
+    val createdAt: Long,
+)
+
+/**
  * Bank account details extracted from pasted text by [com.xemmy.mmbank.domain.parser.BankDetailsParser].
  * Every field is optional; the importer fills in whatever it can recognise.
  */
@@ -288,6 +311,14 @@ sealed interface IngestResult {
     data class Inserted(val transactionId: Long) : IngestResult
     data class Duplicate(val existingTransactionId: Long) : IngestResult
     data object NoMatch : IngestResult
+
+    /**
+     * The message matched a template the user muted — see
+     * [IgnoredMessagePattern]. Distinct from [NoMatch] (which means "nothing
+     * here looked like a transaction") because this one was a deliberate
+     * choice, and the paste importer reports the two counts separately.
+     */
+    data object Ignored : IngestResult
 }
 
 /** Detected repeat-charge rhythm — see [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]. */

@@ -67,6 +67,23 @@ data class SenderLabelEntity(
     val label: String,
 )
 
+/**
+ * A message template the user asked the app to stop capturing — see
+ * [com.xemmy.mmbank.domain.model.IgnoredMessagePattern]. The unique index on
+ * [fingerprint] is what makes re-adding the same promo a no-op instead of a
+ * second row (the DAO upserts on conflict).
+ */
+@Entity(
+    tableName = "ignored_message_patterns",
+    indices = [Index(value = ["fingerprint"], unique = true)],
+)
+data class IgnoredMessagePatternEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fingerprint: String,
+    val sample: String,
+    val createdAt: Long,
+)
+
 @Entity(
     tableName = "transactions",
     foreignKeys = [
@@ -334,6 +351,20 @@ fun Account.toEntity() = AccountEntity(
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)
 fun com.xemmy.mmbank.domain.model.SenderLabel.toEntity() = SenderLabelEntity(sender, label)
+
+fun IgnoredMessagePatternEntity.toDomain() = com.xemmy.mmbank.domain.model.IgnoredMessagePattern(
+    id = id,
+    fingerprint = fingerprint,
+    sample = sample,
+    createdAt = createdAt,
+)
+
+fun com.xemmy.mmbank.domain.model.IgnoredMessagePattern.toEntity() = IgnoredMessagePatternEntity(
+    id = id,
+    fingerprint = fingerprint,
+    sample = sample,
+    createdAt = createdAt,
+)
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,

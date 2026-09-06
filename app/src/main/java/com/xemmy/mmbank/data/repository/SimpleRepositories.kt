@@ -5,6 +5,7 @@ import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.FriendDao
 import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
+import com.xemmy.mmbank.data.local.dao.IgnoredMessagePatternDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
@@ -12,6 +13,7 @@ import com.xemmy.mmbank.data.local.dao.SplitGroupDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
@@ -25,13 +27,16 @@ import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ExpenseSplit
 import com.xemmy.mmbank.domain.model.Friend
 import com.xemmy.mmbank.domain.model.GroupExpense
+import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SplitGroup
 import com.xemmy.mmbank.domain.model.Subscription
+import com.xemmy.mmbank.domain.parser.MessageSimilarity
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.FriendRepository
+import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
 import com.xemmy.mmbank.domain.repository.SavingsGoalRepository
@@ -110,6 +115,28 @@ class SenderLabelRepositoryImpl(private val dao: SenderLabelDao) : SenderLabelRe
         dao.upsert(SenderLabelEntity(sender = sender, label = label))
 
     override suspend fun clearLabel(sender: String) = dao.delete(sender)
+}
+
+class IgnoredMessageRepositoryImpl(
+    private val dao: IgnoredMessagePatternDao,
+) : IgnoredMessageRepository {
+
+    override fun observeAll(): Flow<List<IgnoredMessagePattern>> =
+        dao.observeAll().map { list -> list.map(IgnoredMessagePatternEntity::toDomain) }
+
+    override suspend fun add(sample: String, now: Long): Boolean {
+        val trimmed = sample.trim()
+        val fingerprint = MessageSimilarity.fingerprint(trimmed)
+        // No fingerprint means nothing to match on later, so there is nothing
+        // worth storing -- see IgnoredMessageRepository.add.
+        if (fingerprint.isEmpty()) return false
+        dao.upsert(
+            IgnoredMessagePatternEntity(fingerprint = fingerprint, sample = trimmed, createdAt = now),
+        )
+        return true
+    }
+
+    override suspend fun delete(id: Long) = dao.deleteById(id)
 }
 
 class RatesRepositoryImpl(

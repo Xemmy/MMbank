@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BuiltInRules
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
+import com.xemmy.mmbank.domain.parser.IgnoredMessageCache
 import com.xemmy.mmbank.domain.parser.SocialApps
 import com.xemmy.mmbank.domain.parser.TransactionParser
 import com.xemmy.mmbank.domain.repository.TransactionRepository
@@ -15,7 +16,8 @@ import com.xemmy.mmbank.domain.repository.TransactionRepository
  * The single entry point both capture channels (notification listener + SMS
  * receiver) push into:
  *
- *   captured text -> [TransactionParser] (custom rules first, then built-ins)
+ *   captured text -> [IgnoredMessageCache] (templates the user muted)
+ *                 -> [TransactionParser] (custom rules first, then built-ins)
  *                 -> sliding-window dedup + insert in the repository.
  *
  * Battery shape: this runs for every notification on the device, so the fast
@@ -40,15 +42,26 @@ class IngestCapturedMessageUseCase(
     private val transactionRepository: TransactionRepository,
     private val onGate1Miss: (CapturedMessage) -> Unit = {},
     private val fallbackCurrencyProvider: () -> String,
+    private val ignoredMessages: IgnoredMessageCache? = null,
 ) {
 
-    suspend operator fun invoke(message: CapturedMessage): IngestResult {
+    /**
+     * [dedupWindow] is passed straight through to
+     * [TransactionRepository.recordParsed]; only the paste importer ever turns
+     * it off, and only for messages whose clock time it doesn't know.
+     */
+    suspend operator fun invoke(message: CapturedMessage, dedupWindow: Boolean = true): IngestResult {
         // Every rule requires an amount and an amount requires a digit
         // (Character.isDigit covers Arabic-Indic digits too, pre-normalization),
         // so most chat/media notifications exit here for the cost of a scan.
         val hasDigit = message.body.any { it.isDigit() } ||
             message.title?.any { it.isDigit() } == true
         if (!hasDigit) return IngestResult.NoMatch
+
+        // Deliberately after the digit check, not before it: a digit-free
+        // message is already leaving as NoMatch, so muting it would change
+        // nothing while costing every chat notification a fingerprint pass.
+        if (ignoredMessages?.shouldIgnore(message.body) == true) return IngestResult.Ignored
 
         val custom = customRules.enabledRules()
         val sender = message.sender
@@ -91,7 +104,7 @@ class IngestCapturedMessageUseCase(
                 parsed.copy(excludeFromStats = true, spendingCategoryOverride = SpendingCategory.TRANSFERS)
             else -> parsed
         }
-        return transactionRepository.recordParsed(flagged, message)
+        return transactionRepository.recordParsed(flagged, message, dedupWindow)
     }
 
     companion object {

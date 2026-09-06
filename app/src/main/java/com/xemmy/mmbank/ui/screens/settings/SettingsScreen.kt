@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
@@ -791,13 +792,22 @@ fun SettingsScreen(
 
         MenuSectionLabel("Capture")
         Card(Modifier.fillMaxWidth()) {
-            MenuRow(
-                icon = Icons.Filled.NotificationsActive,
-                title = "Capture & permissions",
-                subtitle = if (captureOk) "All channels enabled" else "Action needed",
-                subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
-                onClick = { onOpen("settings_capture") },
-            )
+            Column {
+                MenuRow(
+                    icon = Icons.Filled.NotificationsActive,
+                    title = "Capture & permissions",
+                    subtitle = if (captureOk) "All channels enabled" else "Action needed",
+                    subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
+                    onClick = { onOpen("settings_capture") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.ContentPaste,
+                    title = "Import & ignore messages",
+                    subtitle = "Paste a backlog to import — or an example to stop capturing",
+                    onClick = { onOpen("settings_import") },
+                )
+            }
         }
 
         MenuSectionLabel("General")

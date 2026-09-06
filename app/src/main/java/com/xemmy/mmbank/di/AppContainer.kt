@@ -28,6 +28,7 @@ import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.BillRepositoryImpl
 import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
 import com.xemmy.mmbank.data.repository.FriendRepositoryImpl
+import com.xemmy.mmbank.data.repository.IgnoredMessageRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
 import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
@@ -50,6 +51,7 @@ import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.FriendRepository
+import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
@@ -69,7 +71,9 @@ import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
+import com.xemmy.mmbank.domain.parser.IgnoredMessageCache
 import com.xemmy.mmbank.domain.usecase.BulkUpdateTransactionsUseCase
+import com.xemmy.mmbank.domain.usecase.ImportPastedMessagesUseCase
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import com.xemmy.mmbank.util.BudgetNotificationHelper
 import com.xemmy.mmbank.util.CategoryBudgetNotificationHelper
@@ -322,6 +326,9 @@ class AppContainer(context: Context) {
     val senderLabelRepository: SenderLabelRepository by lazy {
         SenderLabelRepositoryImpl(database.senderLabelDao())
     }
+    val ignoredMessageRepository: IgnoredMessageRepository by lazy {
+        IgnoredMessageRepositoryImpl(database.ignoredMessagePatternDao())
+    }
     val subscriptionRepository: SubscriptionRepository by lazy {
         SubscriptionRepositoryImpl(database.subscriptionDao())
     }
@@ -363,6 +370,10 @@ class AppContainer(context: Context) {
         CompiledRuleCache(parsingRuleRepository, applicationScope)
     }
 
+    private val ignoredMessageCache by lazy {
+        IgnoredMessageCache(ignoredMessageRepository, applicationScope)
+    }
+
     /**
      * Client for the Gate-2 AI server -- local (on-device) or online (cloud),
      * per the user's selected mode. Timeouts are generous enough for a real
@@ -402,11 +413,17 @@ class AppContainer(context: Context) {
             transactionRepository = transactionRepository,
             onGate1Miss = ::enqueueAiParsingWorker,
             fallbackCurrencyProvider = { preferences.defaultCurrency },
+            ignoredMessages = ignoredMessageCache,
         )
     }
 
     val bulkUpdateTransactions: BulkUpdateTransactionsUseCase by lazy {
         BulkUpdateTransactionsUseCase(transactionRepository)
+    }
+
+    /** Backs the Settings "Import & ignore messages" screen's paste box. */
+    val importPastedMessages: ImportPastedMessagesUseCase by lazy {
+        ImportPastedMessagesUseCase(ingestCapturedMessage, transactionRepository)
     }
 
     /**

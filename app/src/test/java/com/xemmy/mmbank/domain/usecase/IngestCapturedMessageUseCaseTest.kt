@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.usecase
 
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -8,6 +9,9 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
+import com.xemmy.mmbank.domain.parser.IgnoredMessageCache
+import com.xemmy.mmbank.domain.parser.MessageSimilarity
+import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
@@ -37,10 +41,18 @@ class IngestCapturedMessageUseCaseTest {
 
     private class RecordingTransactionRepository : TransactionRepository {
         var lastParsed: ParsedTransaction? = null
-        override suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult {
+        var lastDedupWindow: Boolean? = null
+        override suspend fun recordParsed(
+            parsed: ParsedTransaction,
+            message: CapturedMessage,
+            dedupWindow: Boolean,
+        ): IngestResult {
             lastParsed = parsed
+            lastDedupWindow = dedupWindow
             return IngestResult.Inserted(1L)
         }
+
+        override suspend fun findIdByRawMessage(rawMessage: String): Long? = null
 
         override fun observeTransactions(): Flow<List<Transaction>> = flowOf(emptyList())
         override fun observeRecent(limit: Int): Flow<List<Transaction>> = flowOf(emptyList())
@@ -72,20 +84,39 @@ class IngestCapturedMessageUseCaseTest {
         override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int = 0
     }
 
+    private class FakeIgnoredMessageRepository(
+        private val patterns: List<IgnoredMessagePattern>,
+    ) : IgnoredMessageRepository {
+        override fun observeAll(): Flow<List<IgnoredMessagePattern>> = flowOf(patterns)
+        override suspend fun add(sample: String, now: Long): Boolean = true
+        override suspend fun delete(id: Long) = Unit
+    }
+
     private val recorder = RecordingTransactionRepository()
     private val ruleFlow = MutableStateFlow<List<ParsingRule>>(emptyList())
 
-    private fun useCase(onGate1Miss: (CapturedMessage) -> Unit = {}): IngestCapturedMessageUseCase {
+    private fun useCase(
+        onGate1Miss: (CapturedMessage) -> Unit = {},
+        ignoredSamples: List<String> = emptyList(),
+    ): IngestCapturedMessageUseCase {
         // Unconfined scope: the cache's stateIn collects the fake flow synchronously.
-        val cache = CompiledRuleCache(
-            FakeRuleRepository(ruleFlow),
-            CoroutineScope(Dispatchers.Unconfined),
-        )
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val cache = CompiledRuleCache(FakeRuleRepository(ruleFlow), scope)
+        val ignored = ignoredSamples
+            .mapIndexed { index, sample ->
+                IgnoredMessagePattern(
+                    id = index + 1L,
+                    fingerprint = MessageSimilarity.fingerprint(sample),
+                    sample = sample,
+                    createdAt = 0L,
+                )
+            }
         return IngestCapturedMessageUseCase(
             customRules = cache,
             transactionRepository = recorder,
             onGate1Miss = onGate1Miss,
             fallbackCurrencyProvider = { "USD" },
+            ignoredMessages = IgnoredMessageCache(FakeIgnoredMessageRepository(ignored), scope),
         )
     }
 
@@ -309,5 +340,47 @@ class IngestCapturedMessageUseCaseTest {
         var fired = false
         useCase(onGate1Miss = { fired = true }).invoke(push("com.adcb.bank", bankStyleBody))
         assertFalse(fired)
+    }
+
+    // --- the ignore list ---
+
+    @Test
+    fun `a message matching an ignored template never reaches the ledger`() = runBlocking {
+        val uc = useCase(ignoredSamples = listOf("Your OTP is 483920. Valid for 5 minutes."))
+        val result = uc.invoke(push("com.adcb.bank", "Your OTP is 112233. Valid for 9 minutes."))
+        assertEquals(IngestResult.Ignored, result)
+        assertNull(recorder.lastParsed)
+    }
+
+    @Test
+    fun `an unrelated ignore pattern leaves real transactions alone`() = runBlocking {
+        val uc = useCase(ignoredSamples = listOf("Your OTP is 483920. Valid for 5 minutes."))
+        assertTrue(uc.invoke(push("com.adcb.bank", bankStyleBody)) is IngestResult.Inserted)
+    }
+
+    @Test
+    fun `an ignored template does not fire the gate1 AI hook`() = runBlocking {
+        // Muting a message means "stop spending anything on this", including
+        // the Gate-2 round trip it would otherwise earn.
+        var fired = false
+        val uc = useCase(
+            onGate1Miss = { fired = true },
+            ignoredSamples = listOf("Spend AED 500 and get 20% cashback this month, T&C apply"),
+        )
+        uc.invoke(push("com.adcb.bank", "Spend AED 900 and get 30% cashback this month, T&C apply"))
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `the digit-free short-circuit still wins over the ignore check`() = runBlocking {
+        // Ordering matters for battery: a digit-free message is already leaving
+        // as NoMatch, so it must never pay for a fingerprint pass.
+        val uc = useCase(ignoredSamples = listOf("Your statement is ready"))
+        assertEquals(IngestResult.NoMatch, uc.invoke(push("com.adcb.bank", "Your statement is ready")))
+    }
+
+    @Test
+    fun `an empty ignore list changes nothing`() = runBlocking {
+        assertTrue(useCase(ignoredSamples = emptyList()).invoke(push("com.adcb.bank", bankStyleBody)) is IngestResult.Inserted)
     }
 }

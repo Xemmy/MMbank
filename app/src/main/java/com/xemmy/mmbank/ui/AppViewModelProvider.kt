@@ -19,6 +19,7 @@ import com.xemmy.mmbank.ui.screens.report.MonthlyReportViewModel
 import com.xemmy.mmbank.ui.screens.review.ReviewViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
+import com.xemmy.mmbank.ui.screens.settings.ImportMessagesViewModel
 import com.xemmy.mmbank.ui.screens.settings.SettingsViewModel
 import com.xemmy.mmbank.ui.screens.splits.GroupDetailViewModel
 import com.xemmy.mmbank.ui.screens.splits.SplitsViewModel
@@ -37,6 +38,7 @@ object AppViewModelProvider {
         initializer { RulesViewModel(mmBankApp().container) }
         initializer { RuleEditorViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SettingsViewModel(mmBankApp().container) }
+        initializer { ImportMessagesViewModel(mmBankApp().container) }
         initializer { UncategorizedQueueViewModel(mmBankApp().container) }
         initializer { SubscriptionsViewModel(mmBankApp().container) }
         initializer { AnalyticsViewModel(mmBankApp().container) }

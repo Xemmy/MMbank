@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
@@ -144,6 +145,10 @@ data class BackupPayload(
      * day, dashboard hiding). No import gate is needed for these: every added
      * field defaults to the entity's own default, so an older backup restores
      * exactly as it did before.
+     *
+     * 4 = adds [ignoredMessagePatterns]. Gated like the category data: a
+     * pre-v4 backup never held an ignore list, so restoring one must leave the
+     * list on this device alone rather than silently un-muting everything.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -157,6 +162,15 @@ data class BackupPayload(
     val senderLabels: List<BackupSenderLabel>,
     val categories: List<BackupCategory> = emptyList(),
     val merchantCategoryMappings: List<BackupMerchantMapping> = emptyList(),
+    val ignoredMessagePatterns: List<BackupIgnoredMessagePattern> = emptyList(),
+)
+
+@Serializable
+data class BackupIgnoredMessagePattern(
+    val id: Long,
+    val fingerprint: String,
+    val sample: String,
+    val createdAt: Long,
 )
 
 /**
@@ -177,7 +191,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 3,
+            formatVersion = 4,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -188,6 +202,7 @@ class BackupManager(
             senderLabels = database.senderLabelDao().getAll().map { BackupSenderLabel(it.sender, it.label) },
             categories = database.categoryDao().getAll().map { it.toBackup() },
             merchantCategoryMappings = database.merchantCategoryDao().getAll().map { it.toBackup() },
+            ignoredMessagePatterns = database.ignoredMessagePatternDao().getAll().map { it.toBackup() },
         )
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
@@ -243,6 +258,9 @@ class BackupManager(
         // it for zero benefit. Every other table always fully replaces, same
         // as before.
         val hasCategoryData = payload.formatVersion >= 2
+        // Same reasoning one version later: a pre-v4 backup carries no ignore
+        // list, so restoring it must not un-mute what this device is muting.
+        val hasIgnoreList = payload.formatVersion >= 4
         database.withTransaction {
             database.transactionDao().clearAll()
             database.accountDao().clearAll()
@@ -264,6 +282,13 @@ class BackupManager(
                 // stay valid with no remapping.
                 database.categoryDao().insertAll(payload.categories.map { it.toEntity() })
                 database.merchantCategoryDao().insertAll(payload.merchantCategoryMappings.map { it.toEntity() })
+            }
+
+            if (hasIgnoreList) {
+                database.ignoredMessagePatternDao().clearAll()
+                database.ignoredMessagePatternDao().insertAll(
+                    payload.ignoredMessagePatterns.map { it.toEntity() }
+                )
             }
         }
         preferences.defaultCurrency = payload.defaultCurrency
@@ -460,4 +485,18 @@ internal fun BackupMerchantMapping.toEntity() = MerchantCategoryMappingEntity(
     suggestedName = suggestedName,
     suggestedIcon = suggestedIcon,
     suggestedColorHex = suggestedColorHex,
+)
+
+internal fun IgnoredMessagePatternEntity.toBackup() = BackupIgnoredMessagePattern(
+    id = id,
+    fingerprint = fingerprint,
+    sample = sample,
+    createdAt = createdAt,
+)
+
+internal fun BackupIgnoredMessagePattern.toEntity() = IgnoredMessagePatternEntity(
+    id = id,
+    fingerprint = fingerprint,
+    sample = sample,
+    createdAt = createdAt,
 )

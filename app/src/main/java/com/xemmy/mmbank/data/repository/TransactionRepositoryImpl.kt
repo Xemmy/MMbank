@@ -70,18 +70,26 @@ class TransactionRepositoryImpl(
      * timestamp falls within ±[DEDUP_WINDOW_MILLIS]. The check and the insert
      * run inside one Room transaction so two channels racing each other can't
      * both pass the check.
+     *
+     * [dedupWindow] = false skips that check entirely — see the interface: the
+     * window only means something when the timestamp is a real arrival time.
      */
     override suspend fun recordParsed(
         parsed: ParsedTransaction,
         message: CapturedMessage,
+        dedupWindow: Boolean,
     ): IngestResult = database.withTransaction {
-        val existing = dao.findDuplicateInWindow(
-            amount = parsed.amount,
-            currencyCode = parsed.currencyCode,
-            direction = parsed.direction,
-            timestamp = message.timestampMillis,
-            windowMillis = DEDUP_WINDOW_MILLIS,
-        )
+        val existing = if (dedupWindow) {
+            dao.findDuplicateInWindow(
+                amount = parsed.amount,
+                currencyCode = parsed.currencyCode,
+                direction = parsed.direction,
+                timestamp = message.timestampMillis,
+                windowMillis = DEDUP_WINDOW_MILLIS,
+            )
+        } else {
+            null
+        }
         if (existing != null) {
             IngestResult.Duplicate(existing.id)
         } else {
@@ -151,6 +159,9 @@ class TransactionRepositoryImpl(
             IngestResult.Inserted(id)
         }
     }
+
+    override suspend fun findIdByRawMessage(rawMessage: String): Long? =
+        dao.findByRawMessage(rawMessage)?.id
 
     /**
      * Reconciles a credit-card statement payment's two legs (see

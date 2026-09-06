@@ -1716,6 +1716,7 @@ internal fun sourceLabel(source: TransactionSource): String = when (source) {
     TransactionSource.SMS -> "SMS"
     TransactionSource.PUSH_NOTIFICATION -> "Notification"
     TransactionSource.BINANCE_SYNC -> "Binance sync"
+    TransactionSource.PASTED -> "Pasted"
 }
 
 internal val chipDateFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")

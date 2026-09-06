@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.backup
 
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -214,5 +215,35 @@ class BackupMappersTest {
 
         val encodedAccount = json.encodeToString(BackupAccount.serializer(), fullAccount.toBackup())
         assertEquals(fullAccount, json.decodeFromString(BackupAccount.serializer(), encodedAccount).toEntity())
+    }
+
+    @Test
+    fun `an ignored message pattern survives the backup round-trip`() {
+        val pattern = IgnoredMessagePatternEntity(
+            id = 5,
+            fingerprint = "enjoy # off at noon this weekend",
+            sample = "Enjoy 50% off at Noon this weekend!",
+            createdAt = 1_700_000_000_000,
+        )
+        assertEquals(pattern, pattern.toBackup().toEntity())
+
+        val encoded = json.encodeToString(BackupIgnoredMessagePattern.serializer(), pattern.toBackup())
+        assertEquals(
+            pattern,
+            json.decodeFromString(BackupIgnoredMessagePattern.serializer(), encoded).toEntity(),
+        )
+    }
+
+    @Test
+    fun `a pre-v4 payload decodes with an empty ignore list rather than failing`() {
+        // Restoring an older backup must not blow up on the missing field --
+        // and BackupManager.import leaves the device's own list alone for it.
+        val v3 = """
+            {"formatVersion":3,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+             "personsRaw":"","accounts":[],"transactions":[],"rules":[],"senderLabels":[]}
+        """.trimIndent()
+        val decoded = json.decodeFromString(BackupPayload.serializer(), v3)
+        assertEquals(emptyList<BackupIgnoredMessagePattern>(), decoded.ignoredMessagePatterns)
+        assertEquals(3, decoded.formatVersion)
     }
 }

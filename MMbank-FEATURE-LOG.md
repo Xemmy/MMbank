@@ -2513,3 +2513,103 @@ mark a monthly bill paid on the 1st and on the 31st and confirm the next due
 dates; export a backup with some transactions excluded from analytics and
 some transfers reconciled, restore it, and confirm the Dashboard totals and
 the statement-cycle filter preset are unchanged.
+
+## Phase 14 — Paste a backlog to import, paste an example to ignore
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 66`, `versionName = "0.41.0"`
+**Schema:** v23 -> v24 (`ignored_message_patterns`)
+
+Two halves of the same idea -- deciding, by example, what the app does with a
+message -- reached from Settings > Capture > "Import & ignore messages".
+
+### What changed
+
+1. **Paste a backlog to import.** `ImportPastedMessagesUseCase` splits the
+   pasted text into individual messages and feeds each through the same
+   `IngestCapturedMessageUseCase` the SMS receiver and notification listener
+   use, so rules, categorization and the ignore list behave identically. It
+   reports back four counts: imported, already in the ledger, skipped by the
+   ignore list, and not recognised.
+2. **Paste an example to ignore.** A pasted sample is stored as a template
+   (`ignored_message_patterns`), and every captured message is checked against
+   the list before parsing. Matching messages return the new
+   `IngestResult.Ignored` and never reach the ledger or the Gate-2 AI worker.
+
+Two things necessarily differ from a live capture, both because pasted text
+has no arrival time of its own:
+
+- **When it happened** comes from the date the bank printed in the message
+  (`MessageDateExtractor`), falling back to import time. Without this a pasted
+  backlog would land in the ledger dated today.
+- **Duplicate detection** leans on the exact message text (new
+  `TransactionDao.findByRawMessage`), which is what makes re-pasting the same
+  backlog a no-op. The ±2-minute sliding window still runs, but only for
+  messages that state a real clock time -- for a date-only message it would
+  compare midnight against midnight and could silently swallow a genuine
+  second purchase of the same amount that day. `recordParsed` gained a
+  `dedupWindow` flag for exactly that.
+
+### Design notes
+
+- **Matching is by template shape, not by text.** `MessageSimilarity`
+  fingerprints a message by collapsing every digit run to `#` and dropping
+  punctuation (reusing `TextNormalizer`, so Arabic-Indic digits normalize
+  first), which is what makes one pasted OTP mute every future OTP. Templates
+  that also vary a word fall back to Jaccard token overlap at 0.75.
+- **Short messages only ever match exactly.** Below `MIN_FUZZY_TOKENS` (4)
+  the fuzzy path is disabled: a three-word message overlaps other three-word
+  messages far too easily, and a false ignore silently drops a real
+  transaction -- worse than letting noise through.
+- **The ignore check sits after the digit fast-path**, not before it. A
+  digit-free message is already leaving as `NoMatch`, so checking it first
+  would cost every chat notification a fingerprint pass for no behavior
+  change. The list itself is held in memory by `IgnoredMessageCache`, mirroring
+  `CompiledRuleCache`, so capture never pays a Room read per notification.
+- **New `TransactionSource.PASTED`** keeps imported rows honest: their
+  timestamps come from the message text, not from when they arrived.
+- Backup format v3 -> v4 carries the ignore list, gated on import the same way
+  category data is: restoring a pre-v4 backup leaves this device's list alone
+  rather than silently un-muting everything.
+
+### Tests
+
+- `MessageSimilarityTest` — fingerprint collapses digits/case/punctuation and
+  Arabic-Indic digits; Jaccard scoring; the same promo template with different
+  numbers matches; a real purchase doesn't match a promo; short messages match
+  only exactly; blank text never matches.
+- `PastedMessageSplitterTest` — blank-line separation, wrapped messages
+  rejoined, one-per-line fallback, CRLF/CR endings, duplicates preserved.
+- `MessageDateExtractorTest` — day-first slash/dash/dot dates, ISO dates,
+  month-first when the second component exceeds 12, two-digit years, named
+  months, clock times with seconds and am/pm, and the rejections: a two-part
+  card expiry, future dates, decade-old dates, impossible dates, and a
+  malformed candidate not hiding a real date later in the text.
+- `IgnoredMessageCacheTest` — exact and near-miss matching, real transactions
+  left alone, deletes taking effect immediately, and a failing repository
+  ignoring nothing rather than killing capture.
+- `IngestCapturedMessageUseCaseTest` — muted messages return `Ignored` and
+  never reach the ledger or fire the Gate-1 AI hook; the digit-free
+  short-circuit still wins; an unrelated pattern leaves real transactions alone.
+- `ImportPastedMessagesUseCaseTest` — the four summary counts, `PASTED` as the
+  recorded source, re-pasting importing nothing, repeats inside one paste, the
+  printed date becoming the timestamp, and the window-dedup flag following
+  whether a clock time was stated.
+- `EntityMappersTest` / `BackupMappersTest` — round-trips for the new entity,
+  plus a pre-v4 payload decoding to an empty ignore list rather than failing.
+- Not unit-testable here (no Robolectric): the v23 -> v24 migration SQL and
+  the new DAO queries, matching the standing precedent for every other
+  migration in `AppDatabase.kt`.
+
+### CI verification
+
+Pending -- this section gets filled in once the real `Lint & Unit Tests` job
+log is read (that step is `continue-on-error: true`, so the check mark alone
+doesn't prove the suite passed).
+
+### Not covered by CI
+
+Device pass worth doing: paste a handful of real bank SMS and confirm the
+dates land where the messages say; paste the same batch again and confirm it
+reports everything as already imported; paste a promo into the Ignored tab and
+confirm the next one like it never appears in the ledger.

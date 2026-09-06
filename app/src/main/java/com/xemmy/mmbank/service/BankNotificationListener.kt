@@ -57,6 +57,8 @@ class BankNotificationListener : NotificationListenerService() {
                         Log.d(TAG, LogRedactor.redactSensitiveData("Captured tx #${result.transactionId} from ${sbn.packageName}"))
                     is IngestResult.Duplicate ->
                         Log.d(TAG, LogRedactor.redactSensitiveData("Deduped against tx #${result.existingTransactionId} (${sbn.packageName})"))
+                    IngestResult.Ignored ->
+                        Log.d(TAG, LogRedactor.redactSensitiveData("Muted by the ignore list (${sbn.packageName})"))
                     IngestResult.NoMatch -> Unit
                 }
             } catch (t: Throwable) {

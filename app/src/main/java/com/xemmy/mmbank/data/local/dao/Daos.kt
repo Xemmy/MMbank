@@ -13,6 +13,7 @@ import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
@@ -65,6 +66,16 @@ interface TransactionDao {
         timestamp: Long,
         windowMillis: Long,
     ): TransactionEntity?
+
+    /**
+     * The row already captured from this exact message text, if any. Backs the
+     * paste importer's "already imported" check: re-pasting the same backlog
+     * must not double-record it, and unlike
+     * [findDuplicateInWindow] this holds however long ago the message was
+     * captured and whatever its clock time was.
+     */
+    @Query("SELECT * FROM transactions WHERE rawMessage = :rawMessage AND isDemo = 0 LIMIT 1")
+    suspend fun findByRawMessage(rawMessage: String): TransactionEntity?
 
     /** [demo] selects the active partition: real rows (false) or demo rows (true). */
     @Query("SELECT * FROM transactions WHERE isDemo = :demo ORDER BY timestamp DESC")
@@ -405,6 +416,31 @@ interface ParsingRuleDao {
 
     @Insert
     suspend fun insertAll(entities: List<ParsingRuleEntity>)
+}
+
+@Dao
+interface IgnoredMessagePatternDao {
+
+    @Query("SELECT * FROM ignored_message_patterns ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<IgnoredMessagePatternEntity>>
+
+    /** REPLACE on the unique fingerprint: re-adding the same template refreshes it, never duplicates it. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: IgnoredMessagePatternEntity): Long
+
+    @Query("DELETE FROM ignored_message_patterns WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM ignored_message_patterns")
+    suspend fun getAll(): List<IgnoredMessagePatternEntity>
+
+    @Query("DELETE FROM ignored_message_patterns")
+    suspend fun clearAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<IgnoredMessagePatternEntity>)
 }
 
 @Dao

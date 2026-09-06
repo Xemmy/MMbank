@@ -14,6 +14,7 @@ import com.xemmy.mmbank.data.local.dao.CategoryDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.FriendDao
 import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
+import com.xemmy.mmbank.data.local.dao.IgnoredMessagePatternDao
 import com.xemmy.mmbank.data.local.dao.MerchantCategoryDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
@@ -30,6 +31,7 @@ import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
@@ -60,8 +62,9 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         SplitGroupMemberEntity::class,
         GroupExpenseEntity::class,
         ExpenseSplitEntity::class,
+        IgnoredMessagePatternEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -82,6 +85,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun friendDao(): FriendDao
     abstract fun splitGroupDao(): SplitGroupDao
     abstract fun groupExpenseDao(): GroupExpenseDao
+    abstract fun ignoredMessagePatternDao(): IgnoredMessagePatternDao
 
     companion object {
         /**
@@ -592,6 +596,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v23 -> v24: the ignore list. Holds the message templates the user
+         * pasted in to stop capturing (promos, OTPs, marketing) -- see
+         * [com.xemmy.mmbank.domain.model.IgnoredMessagePattern] and the check
+         * [com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase] runs
+         * on every captured message. Purely additive: one new table, nothing
+         * existing is touched.
+         */
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ignored_message_patterns` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `fingerprint` TEXT NOT NULL,
+                        `sample` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_ignored_message_patterns_fingerprint " +
+                        "ON ignored_message_patterns(fingerprint)"
+                )
+            }
+        }
+
         /** name, icon, colorHex -- mirrors [com.xemmy.mmbank.domain.model.SpendingCategory]'s built-in buckets. */
         val DEFAULT_CATEGORIES = listOf(
             Triple("Groceries", "🛒", "#4CAF50"),
@@ -636,6 +667,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
+                    MIGRATION_23_24,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

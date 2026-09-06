@@ -9,6 +9,7 @@ import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ExpenseSplit
 import com.xemmy.mmbank.domain.model.Friend
 import com.xemmy.mmbank.domain.model.GroupExpense
+import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsedTransaction
@@ -29,7 +30,22 @@ interface TransactionRepository {
     /** accountId -> net movement (credits - debits), for balance computation. */
     fun observeNetByAccount(): Flow<Map<Long, Double>>
     /** Dedup + insert; the heart of the automated capture pipeline. */
-    suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult
+    /**
+     * Records a parsed capture. [dedupWindow] runs the ±2-minute
+     * same-amount/currency/direction check that catches one purchase arriving
+     * on two channels seconds apart; the paste importer turns it off for
+     * messages whose clock time it doesn't actually know, where a same-day
+     * coincidence would otherwise silently swallow a real transaction (it
+     * guards re-imports with [findIdByRawMessage] instead).
+     */
+    suspend fun recordParsed(
+        parsed: ParsedTransaction,
+        message: CapturedMessage,
+        dedupWindow: Boolean = true,
+    ): IngestResult
+
+    /** Id of the transaction already captured from this exact message text, if any. */
+    suspend fun findIdByRawMessage(rawMessage: String): Long?
     /** Inserts a user-entered transaction (no dedup — a manual entry is intentional). */
     suspend fun recordManual(transaction: Transaction): Long
     /** Updates an existing transaction's editable fields (manual edit flow). */
@@ -106,6 +122,20 @@ interface SenderLabelRepository {
     fun observeLabels(): Flow<Map<String, String>>
     suspend fun setLabel(sender: String, label: String)
     suspend fun clearLabel(sender: String)
+}
+
+/** The message templates capture must skip — see [IgnoredMessagePattern]. */
+interface IgnoredMessageRepository {
+    fun observeAll(): Flow<List<IgnoredMessagePattern>>
+    /**
+     * Stores [sample] as a template to ignore. Re-adding a sample whose
+     * fingerprint is already stored replaces that row rather than adding a
+     * second one. Returns false (storing nothing) for a sample with no
+     * fingerprint at all — punctuation, or digits alone — since that would
+     * match nothing and only clutter the list.
+     */
+    suspend fun add(sample: String, now: Long): Boolean
+    suspend fun delete(id: Long)
 }
 
 interface PortfolioRepository {

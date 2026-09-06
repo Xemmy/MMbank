@@ -72,8 +72,12 @@ class BulkUpdateTransactionsUseCaseTest {
         override fun observeTransactions(): Flow<List<Transaction>> = flowOf(emptyList())
         override fun observeRecent(limit: Int): Flow<List<Transaction>> = flowOf(emptyList())
         override fun observeNetByAccount(): Flow<Map<Long, Double>> = flowOf(emptyMap())
-        override suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult =
-            IngestResult.Inserted(1L)
+        override suspend fun recordParsed(
+            parsed: ParsedTransaction,
+            message: CapturedMessage,
+            dedupWindow: Boolean,
+        ): IngestResult = IngestResult.Inserted(1L)
+        override suspend fun findIdByRawMessage(rawMessage: String): Long? = null
         override suspend fun recordManual(transaction: Transaction): Long = 1L
         override suspend fun update(transaction: Transaction) = Unit
         override suspend fun assignAccount(transactionId: Long, accountId: Long?) = Unit
