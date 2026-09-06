@@ -2603,9 +2603,51 @@ has no arrival time of its own:
 
 ### CI verification
 
-Pending -- this section gets filled in once the real `Lint & Unit Tests` job
-log is read (that step is `continue-on-error: true`, so the check mark alone
-doesn't prove the suite passed).
+Run `34019575001` (commit `9baea43`, branch tip), workflow conclusion
+`success`, `Final Status` success.
+
+`Lint & Unit Tests` job log read directly rather than trusting the check mark
+(the step is `continue-on-error: true`, so its conclusion reads success
+whether or not tests pass): `> Task :app:compileDebugUnitTestKotlin`,
+`> Task :app:testDebugUnitTest`, `BUILD SUCCESSFUL in 4m 43s`,
+`25 actionable tasks: 25 executed`, no failure line. The unit-test artifact
+uploaded 137 files against the previous run's 132 -- five extra report files
+for the five new test classes, confirming they were discovered and run rather
+than silently skipped.
+
+`Build APK` job: `Build Debug APK - Attempt 1` succeeded first try (attempts
+2-4 skipped), `Check APK exists` and `Upload Debug APK` both succeeded. So
+the gating contract -- compilation -- is genuinely met.
+
+### Known: the non-gating release build fails on a lint crash
+
+The `Build Release APK` step logged `BUILD FAILED in 5m 5s`. That step is
+`continue-on-error: true`, so its own conclusion still reads success and the
+workflow stays green -- the same trap the unit-test step sets, worth reading
+past here too.
+
+The failure is a crash *inside lint itself*, not a lint finding:
+
+    Unexpected failure during lint analysis of MMBankApp.kt
+    Found class org.jetbrains.kotlin.analysis.api.resolution.KaCallableMemberCall,
+      but interface was expected
+    The crash seems to involve the detector
+      `androidx.lifecycle.lint.NonNullableMutableLiveDataDetector`
+
+An `IncompatibleClassChangeError` between lint's bundled Kotlin analysis API
+and the Kotlin it is run against -- a toolchain binary incompatibility, which
+application source cannot cause. Nothing in this phase's diff plausibly
+reaches it: it does not touch `MMBankApp.kt`, introduces no LiveData, and the
+app contains no `MutableLiveData` anywhere for that detector to have a finding
+about. Every toolchain version is pinned (AGP 8.7.3, Kotlin 2.0.21, lifecycle
+2.8.7), so nothing floated between runs either.
+
+Whether the previous run failed here too could NOT be established: GitHub had
+already expired that job's logs (410 Gone), and the step's `continue-on-error`
+conclusion reads success either way, so the run list cannot answer it. Left
+alone rather than papered over -- suppressing `NullSafeMutableLiveData` in
+`app/build.gradle.kts` would silence it, but that is a decision about the
+release pipeline, not part of this change.
 
 ### Not covered by CI
 
