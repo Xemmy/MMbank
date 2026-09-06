@@ -2725,5 +2725,29 @@ individual ones worth spending on.
 
 ### CI verification
 
-Pending -- to be filled in from the real job logs, including whether
-`Upload Release APK` ran this time.
+Run `34055721764` (commit `3362853`), workflow conclusion `success`,
+`Final Status` success.
+
+**The release build is fixed, and this is the proof:** `Upload Release APK`
+**ran** (conclusion `success`, 19:57:48 -> 19:57:50) instead of being skipped.
+Since that step is gated on `steps.build_release.outcome == 'success'` and
+`outcome` is the pre-`continue-on-error` result, it only runs when
+`assembleRelease` genuinely succeeded. It had been skipped on every previous
+run. A release APK now exists as a build artifact for the first time.
+
+`Lint & Unit Tests` job log read directly (the step is `continue-on-error`, so
+its conclusion proves nothing): `> Task :app:compileDebugUnitTestKotlin`,
+`> Task :app:testDebugUnitTest`, `BUILD SUCCESSFUL in 4m 34s`,
+`25 actionable tasks: 25 executed`, no failure line. The artifact held 137
+report files, unchanged from Phase 14 -- correct here, since this phase added
+test methods to existing classes rather than new test classes.
+
+`Build APK` job: debug APK succeeded on attempt 1, `Check APK exists` and
+`Upload Debug APK` both succeeded.
+
+### Not covered by CI
+
+The AI-budget change is runtime behavior: worth confirming on a device that
+pasting a batch of messages the rules can't read reports them as unparsed and
+leaves Settings > AI parsing's daily counter untouched, while a live SMS that
+misses still forwards.
