@@ -2642,12 +2642,24 @@ app contains no `MutableLiveData` anywhere for that detector to have a finding
 about. Every toolchain version is pinned (AGP 8.7.3, Kotlin 2.0.21, lifecycle
 2.8.7), so nothing floated between runs either.
 
-Whether the previous run failed here too could NOT be established: GitHub had
-already expired that job's logs (410 Gone), and the step's `continue-on-error`
-conclusion reads success either way, so the run list cannot answer it. Left
-alone rather than papered over -- suppressing `NullSafeMutableLiveData` in
+**It is pre-existing.** The previous run's log had already expired (410 Gone)
+and the step's `continue-on-error` conclusion reads success either way, so
+neither answers the question -- but the *next* step does. `Upload Release APK`
+is gated on
+
+    if: steps.build_release.outcome == 'success'
+
+and `outcome` is the step's result *before* `continue-on-error` is applied
+(only `conclusion` is rewritten to success). That step shows `skipped` on the
+previous run `33349877137` (commit `0d5da88`) exactly as it does here, so
+`assembleRelease` was already failing before this phase, and no release APK
+has been produced on either commit.
+
+Left alone rather than papered over: suppressing `NullSafeMutableLiveData` in
 `app/build.gradle.kts` would silence it, but that is a decision about the
-release pipeline, not part of this change.
+release pipeline and predates this change. Worth noting that `outcome` vs
+`conclusion` is the same trap as the unit-test step, one level deeper -- the
+run list makes this look green in three separate places.
 
 ### Not covered by CI
 
