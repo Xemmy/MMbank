@@ -12,8 +12,9 @@ import org.junit.Test
 
 /**
  * [computeSpendSummary] backs the Activity tab's Premium hero card: the
- * already-filtered feed's total spend, converted into the base currency, and
- * how much of the monthly budget threshold that consumes.
+ * already-filtered feed's total spend and total received, converted into the
+ * base currency, the resulting net, and how much of the monthly budget
+ * threshold the spend consumes.
  */
 class SpendSummaryTest {
 
@@ -26,7 +27,7 @@ class SpendSummaryTest {
     )
 
     @Test
-    fun `sums only DEBIT rows, ignoring CREDIT`() {
+    fun `sums only DEBIT rows into totalSpent, ignoring CREDIT`() {
         val result = computeSpendSummary(
             transactions = listOf(
                 tx("100.00", TransactionDirection.DEBIT),
@@ -38,6 +39,46 @@ class SpendSummaryTest {
             monthlyBudget = 0.0,
         )
         assertEquals(150.0, result.totalSpent, 1e-9)
+    }
+
+    @Test
+    fun `sums only CREDIT rows into totalReceived, ignoring DEBIT`() {
+        val result = computeSpendSummary(
+            transactions = listOf(
+                tx("100.00", TransactionDirection.DEBIT),
+                tx("1000.00", TransactionDirection.CREDIT),
+                tx("200.00", TransactionDirection.CREDIT),
+            ),
+            rates = emptyList(),
+            baseCurrency = "AED",
+            monthlyBudget = 0.0,
+        )
+        assertEquals(1200.0, result.totalReceived, 1e-9)
+    }
+
+    @Test
+    fun `netAmount is received minus spent, and can go negative`() {
+        val positive = computeSpendSummary(
+            transactions = listOf(
+                tx("100.00", TransactionDirection.DEBIT),
+                tx("1000.00", TransactionDirection.CREDIT),
+            ),
+            rates = emptyList(),
+            baseCurrency = "AED",
+            monthlyBudget = 0.0,
+        )
+        assertEquals(900.0, positive.netAmount, 1e-9)
+
+        val negative = computeSpendSummary(
+            transactions = listOf(
+                tx("1000.00", TransactionDirection.DEBIT),
+                tx("100.00", TransactionDirection.CREDIT),
+            ),
+            rates = emptyList(),
+            baseCurrency = "AED",
+            monthlyBudget = 0.0,
+        )
+        assertEquals(-900.0, negative.netAmount, 1e-9)
     }
 
     @Test

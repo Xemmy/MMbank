@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +26,8 @@ import kotlin.math.roundToInt
 
 /**
  * Premium-only hero card above [TransactionFilterBar]: the currently
- * filtered feed's total spend, and — once a monthly budget threshold is set
+ * filtered feed's total spend, total received and the resulting net
+ * (received minus spent), and — once a monthly budget threshold is set
  * in Settings (see [com.xemmy.mmbank.data.prefs.AppPreferences.monthlySpendBudget])
  * — a bar showing how much of it that total consumes. Gated at the call site
  * in [TransactionsScreen] on [com.xemmy.mmbank.ui.theme.LocalDesignMode];
@@ -58,6 +60,29 @@ internal fun HeroSpendSummaryCard(
             fontWeight = FontWeight.SemiBold,
             fontSize = ObsidianTokens.titleFontSize,
         )
+        Spacer(Modifier.height(2.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                MetaLabel("Received")
+                Text(
+                    state.totalReceived.asMoney(state.currencyCode),
+                    color = ObsidianTokens.credit,
+                    fontFamily = AppFonts.inter,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = ObsidianTokens.bodyFontSize,
+                )
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                MetaLabel("Remaining")
+                Text(
+                    (if (state.netAmount >= 0) "+" else "") + state.netAmount.asMoney(state.currencyCode),
+                    color = if (state.netAmount >= 0) ObsidianTokens.credit else ObsidianTokens.debit,
+                    fontFamily = AppFonts.inter,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = ObsidianTokens.bodyFontSize,
+                )
+            }
+        }
         if (state.hasBudget) {
             Spacer(Modifier.height(2.dp))
             LinearProgressIndicator(

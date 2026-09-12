@@ -215,13 +215,17 @@ data class AiEditorFill(
 
 /**
  * [TransactionsViewModel.spendSummaryState]: the currently filtered feed's
- * total spend (Time/Type/Account chips plus any secondary filter — see
- * [TransactionsUiState.transactions]) and how much of the monthly budget
- * threshold ([com.xemmy.mmbank.data.prefs.AppPreferences.monthlySpendBudget])
- * that consumes. Premium-only; see [HeroSpendSummaryCard].
+ * total spend, total received and net (Time/Type/Account chips plus any
+ * secondary filter — see [TransactionsUiState.transactions]), and how much
+ * of the monthly budget threshold
+ * ([com.xemmy.mmbank.data.prefs.AppPreferences.monthlySpendBudget]) the
+ * spend consumes. Premium-only; see [HeroSpendSummaryCard].
  */
 data class SpendSummaryState(
     val totalSpent: Double = 0.0,
+    val totalReceived: Double = 0.0,
+    /** [totalReceived] minus [totalSpent] for the currently filtered feed; can be negative. */
+    val netAmount: Double = 0.0,
     val currencyCode: String = "USD",
     /** Monthly budget threshold from Settings; <= 0 means none is set. */
     val budgetAmount: Double = 0.0,
@@ -231,11 +235,11 @@ data class SpendSummaryState(
 )
 
 /**
- * Sums the DEBIT amount of every already-filtered [transactions] row into
- * [baseCurrency] using the latest Forex [rates] — the same FX handling as
- * [com.xemmy.mmbank.ui.screens.dashboard.computeDashboardStats]. A row whose
- * currency has no rate to [baseCurrency] is skipped, same as the Dashboard.
- * Pure and top-level so it's JVM-testable off the main thread.
+ * Sums the DEBIT and CREDIT amounts of every already-filtered [transactions]
+ * row into [baseCurrency] using the latest Forex [rates] — the same FX
+ * handling as [com.xemmy.mmbank.ui.screens.dashboard.computeDashboardStats].
+ * A row whose currency has no rate to [baseCurrency] is skipped, same as the
+ * Dashboard. Pure and top-level so it's JVM-testable off the main thread.
  */
 internal fun computeSpendSummary(
     transactions: List<Transaction>,
@@ -246,12 +250,16 @@ internal fun computeSpendSummary(
     val ratesFromBase = rates
         .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
         .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
-    val totalSpent = transactions
-        .filter { it.direction == TransactionDirection.DEBIT }
+    fun sum(direction: TransactionDirection) = transactions
+        .filter { it.direction == direction }
         .sumOf { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase) ?: 0.0 }
+    val totalSpent = sum(TransactionDirection.DEBIT)
+    val totalReceived = sum(TransactionDirection.CREDIT)
     val hasBudget = monthlyBudget > 0.0
     return SpendSummaryState(
         totalSpent = totalSpent,
+        totalReceived = totalReceived,
+        netAmount = totalReceived - totalSpent,
         currencyCode = baseCurrency,
         budgetAmount = monthlyBudget,
         hasBudget = hasBudget,
