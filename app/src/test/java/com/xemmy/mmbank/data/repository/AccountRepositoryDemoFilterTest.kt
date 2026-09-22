@@ -29,6 +29,7 @@ class AccountRepositoryDemoFilterTest {
             flowOf(rows.filter { !it.archived && it.isDemo == demo }.sortedBy { it.name })
         override suspend fun getActive(): List<AccountEntity> = rows.filter { !it.archived && !it.isDemo }
         override suspend fun getById(id: Long): AccountEntity? = rows.firstOrNull { it.id == id }
+        override suspend fun setOpeningBalance(id: Long, openingBalance: BigDecimal) {}
         override suspend fun deleteDemo(): Int {
             val n = rows.count { it.isDemo }; rows.removeAll { it.isDemo }; return n
         }

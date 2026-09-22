@@ -287,7 +287,7 @@ class TransactionFilterEngineTest {
         // triage predicate keys on. If either side drifts, this fails.
         val adjustment = buildBalanceAdjustment(
             account = tabby,
-            computedBalance = 100.0,
+            computedBalance = BigDecimal("100.00"),
             targetBalance = BigDecimal("250.00"),
         )
         assertTrue(TransactionFilterEngine.needsTriage(adjustment!!))

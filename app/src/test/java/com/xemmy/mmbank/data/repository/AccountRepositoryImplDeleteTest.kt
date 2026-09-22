@@ -32,6 +32,7 @@ class AccountRepositoryImplDeleteTest {
         override fun observeActive(demo: Boolean): Flow<List<AccountEntity>> = flowOf(emptyList())
         override suspend fun getActive(): List<AccountEntity> = emptyList()
         override suspend fun getById(id: Long): AccountEntity? = rows.firstOrNull { it.id == id }
+        override suspend fun setOpeningBalance(id: Long, openingBalance: BigDecimal) {}
         override suspend fun deleteDemo(): Int = 0
         override suspend fun countDemo(): Int = 0
         override suspend fun getAll(): List<AccountEntity> = rows.toList()
