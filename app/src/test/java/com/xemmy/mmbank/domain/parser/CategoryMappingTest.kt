@@ -16,11 +16,88 @@ class CategoryMappingTest {
     }
 
     @Test
-    fun `exact match requires the whole string, not a substring`() {
+    fun `a longer store name now resolves through the normalized-key tier`() {
+        // This used to assert null: an exact mapping for "Carrefour" did not
+        // apply to "Carrefour Express Mall", so the user had to teach the app
+        // the same thing once per branch. The normalized-key tier is exactly
+        // the feature that changed it.
         val mappings = listOf(
             MerchantCategoryMapping(merchantPattern = "Carrefour", categoryId = 1, isExactMatch = true),
         )
-        assertNull(CategoryMatcher.match("Carrefour Express Mall", mappings))
+        assertEquals(1L, CategoryMatcher.match("Carrefour Express Mall", mappings))
+        assertEquals(1L, CategoryMatcher.match("POS CARREFOUR HYPERMARKET DXB *4543", mappings))
+    }
+
+    @Test
+    fun `an exact mapping still does not match an unrelated merchant`() {
+        // Replaces the null coverage the test above used to carry: generalizing
+        // must not turn into matching everything.
+        val mappings = listOf(
+            MerchantCategoryMapping(merchantPattern = "Carrefour", categoryId = 1, isExactMatch = true),
+        )
+        assertNull(CategoryMatcher.match("Spinneys Express Mall", mappings))
+        assertNull(CategoryMatcher.match("Emirates Airline", mappings))
+    }
+
+    @Test
+    fun `exact beats a normalized-key candidate pointing elsewhere`() {
+        val mappings = listOf(
+            // Listed FIRST and would win on the key tier (it keys to "carrefour")...
+            MerchantCategoryMapping(merchantPattern = "Carrefour", categoryId = 1, isExactMatch = true),
+            // ...but this one is the literal spelling the user taught.
+            MerchantCategoryMapping(merchantPattern = "Carrefour Market Jumeirah", categoryId = 99, isExactMatch = true),
+        )
+        assertEquals(99L, CategoryMatcher.match("Carrefour Market Jumeirah", mappings))
+    }
+
+    @Test
+    fun `the normalized-key tier beats a regex mapping listed first`() {
+        val mappings = listOf(
+            MerchantCategoryMapping(merchantPattern = ".*", categoryId = 50, isExactMatch = false),
+            MerchantCategoryMapping(merchantPattern = "Carrefour", categoryId = 1, isExactMatch = true),
+        )
+        assertEquals(1L, CategoryMatcher.match("CARREFOUR MARKET JUMEIRAH", mappings))
+    }
+
+    @Test
+    fun `the key tier ignores regex mappings, so a regex still has to match`() {
+        // A regex pattern is a pattern, not a merchant name. "^carrefour$"
+        // would NORMALIZE to the key "carrefour" and so would wrongly match
+        // this merchant through the key tier -- but the regex itself is
+        // anchored and does not match, so the answer must be null.
+        val mappings = listOf(
+            MerchantCategoryMapping(merchantPattern = "^carrefour$", categoryId = 8, isExactMatch = false),
+        )
+        assertNull(CategoryMatcher.match("CARREFOUR MARKET JUMEIRAH", mappings))
+    }
+
+    @Test
+    fun `regex mappings keep their own first-hit-wins order`() {
+        val mappings = listOf(
+            MerchantCategoryMapping(merchantPattern = "carrefour.*", categoryId = 8, isExactMatch = false),
+            MerchantCategoryMapping(merchantPattern = "express.*", categoryId = 7, isExactMatch = false),
+        )
+        assertEquals(8L, CategoryMatcher.match("CARREFOUR EXPRESS", mappings))
+    }
+
+    @Test
+    fun `an unkeyable merchant falls through to the regex tier`() {
+        val mappings = listOf(
+            MerchantCategoryMapping(merchantPattern = "88", categoryId = 4, isExactMatch = true),
+            MerchantCategoryMapping(merchantPattern = "7", categoryId = 5, isExactMatch = false),
+        )
+        // "77" keys to "" (a bare number is not a merchant name), so the key
+        // tier must skip it rather than match it against the other unkeyable
+        // mapping, which also keys to "".
+        assertEquals(5L, CategoryMatcher.match("77", mappings))
+    }
+
+    @Test
+    fun `two unkeyable merchants never collide on the empty key`() {
+        val mappings = listOf(
+            MerchantCategoryMapping(merchantPattern = "@@", categoryId = 1, isExactMatch = true),
+        )
+        assertNull(CategoryMatcher.match("##", mappings))
     }
 
     @Test
@@ -71,7 +148,7 @@ class CategoryMappingTest {
     }
 
     @Test
-    fun `a malformed regex pattern is skipped instead of throwing`() {
+    fun `a malformed regex is still skipped after the key tier misses`() {
         val mappings = listOf(
             MerchantCategoryMapping(merchantPattern = "(unclosed", categoryId = 1, isExactMatch = false),
             MerchantCategoryMapping(merchantPattern = "carrefour", categoryId = 2, isExactMatch = false),

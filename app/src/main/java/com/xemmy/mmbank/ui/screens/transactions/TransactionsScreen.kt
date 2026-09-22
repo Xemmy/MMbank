@@ -499,11 +499,30 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             container.transactionRepository.update(transaction.copy(excludeFromStats = !transaction.excludeFromStats))
         }
 
-    fun setCategoryId(transactionId: Long, categoryId: Long?) =
-        safeWrite("setCategoryId") { container.transactionRepository.setCategory(transactionId, categoryId) }
+    /**
+     * Picks a category for one transaction from the Activity feed, and -- this
+     * is the part that used to be missing -- remembers it.
+     *
+     * The Review queue (`ReviewViewModel.learnCategory`), the Uncategorized
+     * queue and the Merchant screen all already taught the app from a
+     * correction. This path, the one people actually use day to day, only set
+     * the row and forgot, so the same merchant arrived uncategorized forever.
+     *
+     * [CategoryRepository.learnMapping] backfills only rows whose category is
+     * still unset, so a category picked deliberately somewhere else is never
+     * overwritten by this.
+     *
+     * Bulk mode deliberately does NOT call this: a multi-select spanning
+     * several merchants is the worst possible thing to learn one rule from.
+     */
+    fun setCategoryId(transaction: Transaction, categoryId: Long?) =
+        safeWrite("setCategoryId") {
+            container.transactionRepository.setCategory(transaction.id, categoryId)
+            learnCategory(transaction, categoryId)
+        }
 
     fun createAndAssignCategory(
-        transactionId: Long,
+        transaction: Transaction,
         name: String,
         colorHex: String,
         icon: String,
@@ -520,7 +539,18 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 parentCategoryId = parentCategoryId,
             )
         )
-        container.transactionRepository.setCategory(transactionId, categoryId)
+        container.transactionRepository.setCategory(transaction.id, categoryId)
+        learnCategory(transaction, categoryId)
+    }
+
+    /**
+     * Teaches merchant -> category from a manual correction. Clearing a
+     * category ([categoryId] null) teaches nothing: "not this" is not a rule.
+     */
+    private suspend fun learnCategory(transaction: Transaction, categoryId: Long?) {
+        if (categoryId == null) return
+        val merchant = transaction.merchant?.takeIf { it.isNotBlank() } ?: return
+        container.categoryRepository.learnMapping(merchant, categoryId)
     }
 
     fun delete(transactionId: Long) =
@@ -938,11 +968,11 @@ fun TransactionsScreen(
             categories = state.categories,
             currency = state.defaultCurrency,
             onSelect = { category ->
-                viewModel.setCategoryId(tx.id, category.id)
+                viewModel.setCategoryId(tx, category.id)
                 categoryPickerFor = null
             },
             onCreateNew = { name, colorHex, icon, cap, parentId ->
-                viewModel.createAndAssignCategory(tx.id, name, colorHex, icon, cap, parentId)
+                viewModel.createAndAssignCategory(tx, name, colorHex, icon, cap, parentId)
                 categoryPickerFor = null
             },
             onDismiss = { categoryPickerFor = null },

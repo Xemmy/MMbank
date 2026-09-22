@@ -2886,3 +2886,136 @@ and that derivation existed in three places that disagreed with each other.
 ### CI verification
 
 Pending — to be amended with the run id, job id and log excerpt once read.
+
+## Phase 15.1 — Corrections that stick: merchant normalization + category learning
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 70`, `versionName = "0.44.0"`
+**Migration:** none — the key is computed at match time, never stored
+
+Second of three. Commit 1 made balances truthful; this makes the app learn
+from the corrections you already make.
+
+### Why
+
+Two findings, and the second explains why fixing the first alone wouldn't have
+been worth much.
+
+1. **The everyday correction taught the app nothing.** `ReviewViewModel`,
+   `UncategorizedQueueScreen`, `MerchantDetailScreen` and the AI suggestion
+   path all called `CategoryRepository.learnMapping`. The category chip on the
+   Activity feed — the path people actually use — called `setCategory` and
+   stopped there. So the same merchant arrived uncategorized forever no matter
+   how many times you fixed it.
+2. **Nothing normalized merchants.** A merchant is whatever the parser's regex
+   clause grabbed, only trimmed, and `CategoryMatcher` compared it by exact
+   string equality. `POS CARREFOUR HYPERMARKET DXB *4543` and
+   `CARREFOUR MALL OF EMIRATES` are unrelated strings, so a rule learned for
+   one never applied to the other — you would have had to teach the app once
+   per branch, per card, per message format.
+
+### What changed
+
+**Domain (pure)**
+- `domain/parser/MerchantNormalizer.kt` (new) — `key(raw)` for comparison,
+  `displayName(raw)` for reading, `sameMerchant(a, b)`. Reuses
+  `TextNormalizer` (Arabic-Indic digits, bidi, whitespace are already solved
+  there), then strips payment-rail prefixes, trailing city/country tokens,
+  store numbers, card tails and reference codes, and finally collapses to a
+  known brand when one unambiguously leads the name.
+
+  Ordering matters and is commented in the code: noise is dropped **before**
+  the suffix strip, or a trailing `*4543` shields the `DXB` in front of it from
+  ever being removed.
+
+- `MerchantCategorizer` — gained a curated `BRAND_TOKEN_SET` and a derived
+  `BRAND_TOKENS`. The existing `rules` list is untouched, so `categorize()` is
+  byte-identical and its test stays green; `BRAND_TOKENS` is a *filter* over
+  that same list rather than a second copy of it.
+
+- `CategoryMatcher` — now three ordered tiers: exact (unchanged, still
+  strongest) -> normalized key -> regex. Tier 2 considers only `isExactMatch`
+  mappings: a regex pattern is a pattern, not a merchant name, and normalizing
+  `carrefour.*` would be meaningless and would quietly reorder regex
+  precedence.
+
+**UI**
+- `TransactionsScreen` — `setCategoryId` and `createAndAssignCategory` take the
+  `Transaction` (already in scope at both call sites) and learn the mapping
+  after setting it. Clearing a category teaches nothing: "not this" is not a
+  rule. Bulk mode deliberately does not learn — a multi-select spanning several
+  merchants is the worst possible thing to infer one rule from, and the KDoc
+  says so, so the omission reads as intentional.
+
+### Why it under-merges on purpose
+
+Over-merging is far worse than under-merging: a missed merge costs one extra
+correction, a wrong merge files one merchant's rules onto another and the
+resulting budget or balance quietly attributes itself to the wrong place. Every
+ambiguous branch therefore resolves toward "leave it alone":
+
+- Only curated proper nouns are collapsible. The categorizer's vocabulary is
+  half generic words (`mart`, `store`, `mall`, `coop`, `parking`, `hotel`);
+  collapsing on `store` would merge every unrelated shop in the ledger.
+- Brands match whole tokens, never substrings — `ACE` cannot match inside
+  `PALACE`, `SMART DUBAI` cannot become `mart`.
+- Brands under 4 characters are not collapsible at all (`kfc`, `nol`, `rta`,
+  `osn`, `vox`, `ace` are real brands but also common letter runs).
+- **Two different brands in one name never collapse.** This is the guard that
+  stops `CARREFOUR MALL OF THE EMIRATES` from being filed as an airline.
+- A brand that neither leads the name nor sits in a short one never collapses,
+  so `MALL OF THE EMIRATES PARKING LEVEL` stays whole.
+- `emirates`, `noon`, `apple store` and `prime video` are blocklisted outright:
+  each is both a brand and an ordinary part of unrelated venue names.
+
+### Why the key is computed, not stored
+
+A `merchantKey` column would go stale the moment the normalizer's rules
+changed, silently orphaning every learned mapping with nothing to detect the
+drift. Recomputing at match time means a normalizer change re-keys existing
+data instead. Mapping counts are in the tens-to-hundreds and `key()` is pure
+string work, so this costs nothing at capture.
+
+### Tests
+
+- `MerchantNormalizerTest` (24) — roughly half are negative cases, because
+  refusing to merge is the harder half of the job: prefixes/suffixes/store
+  numbers/reference codes stripped; a *leading* city kept (Dubai Mall is a
+  name, not a location); `ABU DHABI` falling out as two tokens; `H&M` surviving
+  as one; Arabic-Indic digits; **two spellings of the same Carrefour sharing a
+  key**; and then `SMART DUBAI` not becoming `mart`, `ACE` not matching inside
+  `PALACE`, two brands never collapsing, `noon food` not becoming `noon`,
+  blocklisted brands never collapsing, short brands left alone, generic words
+  never being brands, different merchants keeping different keys, empty input
+  producing an empty key that can never match, and `key` being idempotent.
+- `MerchantCategorizerBrandsTest` (5) — the drift guard. `BRAND_TOKENS` being
+  *derived* means a typo in the curated set silently yields a shorter list
+  rather than an error, and the only symptom would be merchants failing to
+  merge months later; these tests are that error. Also asserts `categorize()`
+  is unchanged by the split.
+- `CategoryMappingTest` — six new cases (exact beats the key tier; the key tier
+  beats a regex listed first; a regex still has to actually match; regex
+  first-hit-wins order preserved; an unkeyable merchant falls through; two
+  unkeyable merchants never collide on the empty key).
+
+  **One existing test changed meaning, and that is the feature.**
+  `exact match requires the whole string, not a substring` asserted that an
+  exact mapping for "Carrefour" did *not* apply to "Carrefour Express Mall".
+  It now does. Rewritten as `a longer store name now resolves through the
+  normalized-key tier`, with `an exact mapping still does not match an
+  unrelated merchant` added so the null coverage it used to carry is not lost.
+
+### Deferred
+
+- **`SubscriptionRadarEngine` and `MerchantProfiler` still group on
+  `merchant.trim().lowercase()`**, not the new key. Re-keying them would
+  silently merge existing subscription rows (`subscriptions.merchant` carries a
+  unique index) and change detection results for every user — that needs its
+  own migration and its own evidence, not a ride along with this.
+- Existing `transactions.merchant` values are not rewritten. `extractedMerchant`
+  exists to preserve the raw capture, and a one-way bulk rewrite buys nothing
+  the normalizer doesn't already give at read time.
+
+### CI verification
+
+Pending — to be amended once the job log is read.
