@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.xemmy.mmbank.data.local.dao.MerchantAccountDao
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
 import com.xemmy.mmbank.data.local.dao.BillDao
@@ -23,6 +24,7 @@ import com.xemmy.mmbank.data.local.dao.SplitGroupDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
+import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
@@ -54,6 +56,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         SenderLabelEntity::class,
         CategoryEntity::class,
         MerchantCategoryMappingEntity::class,
+        MerchantAccountMappingEntity::class,
         SubscriptionEntity::class,
         SavingsGoalEntity::class,
         BillEntity::class,
@@ -64,7 +67,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExpenseSplitEntity::class,
         IgnoredMessagePatternEntity::class,
     ],
-    version = 24,
+    version = 25,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -79,6 +82,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun senderLabelDao(): SenderLabelDao
     abstract fun categoryDao(): CategoryDao
     abstract fun merchantCategoryDao(): MerchantCategoryDao
+
+    abstract fun merchantAccountDao(): MerchantAccountDao
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun savingsGoalDao(): SavingsGoalDao
     abstract fun billDao(): BillDao
@@ -657,6 +662,55 @@ abstract class AppDatabase : RoomDatabase() {
          * null opens plaintext — the pre-encryption format, kept as the
          * fallback so a failed encryption migration never bricks the app.
          */
+        /**
+         * v24 -> v25: learned merchant -> account rules.
+         *
+         * Manually assigning a captured transaction to an account used to teach
+         * the app nothing, so a merchant whose messages carry no card number
+         * stayed unassigned forever -- and an unassigned transaction sits in no
+         * balance at all. This table remembers the correction and applies it to
+         * later captures (see
+         * [com.xemmy.mmbank.domain.parser.CaptureAccountResolver]).
+         *
+         * Two details that must not drift, because Room builds a FRESH
+         * install's table from the entity rather than from this SQL and throws
+         * a schema mismatch at startup if the two disagree (the trap
+         * MIGRATION_22_23 documents):
+         *  - `merchantPattern` is `COLLATE NOCASE`, matching the entity's
+         *    `@ColumnInfo(collate = NOCASE)`, so the unique index and the
+         *    REPLACE-on-conflict upsert are both case-insensitive.
+         *  - the FK child column `accountId` carries its own index, which Room
+         *    requires.
+         *
+         * `ON DELETE CASCADE` means deleting an account cannot leave a rule
+         * pointing at a dead id -- the failure `parsing_rules.assignAccountId`
+         * had to be fixed by hand because it has no FK.
+         */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `merchant_account_mappings` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `merchantPattern` TEXT NOT NULL COLLATE NOCASE,
+                        `accountId` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_merchant_account_mappings_merchantPattern " +
+                        "ON merchant_account_mappings(merchantPattern)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_merchant_account_mappings_accountId " +
+                        "ON merchant_account_mappings(accountId)"
+                )
+            }
+        }
+
         fun build(
             context: Context,
             factory: androidx.sqlite.db.SupportSQLiteOpenHelper.Factory? = null,
@@ -667,7 +721,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
-                    MIGRATION_23_24,
+                    MIGRATION_23_24, MIGRATION_24_25,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

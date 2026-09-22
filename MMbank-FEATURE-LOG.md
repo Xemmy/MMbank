@@ -3019,3 +3019,125 @@ string work, so this costs nothing at capture.
 ### CI verification
 
 Pending — to be amended once the job log is read.
+
+## Phase 15.2 — Assigning an account teaches the app where that merchant belongs
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 71`, `versionName = "0.45.0"`
+**Schema:** v24 -> v25 (`merchant_account_mappings`)
+
+Last of three. Commit 1 made balances truthful, 15.1 made category corrections
+stick; this does the same for account assignment — which is also what stops
+feeding the "money in no account" problem 15 surfaced.
+
+### Why
+
+Two mechanisms decided a captured transaction's account: a rule's explicit
+"assign matches to" pin, and `detectAccountByNumber`, which matches the card
+digits printed in the message against an account's configured number. Nothing
+learned. So a merchant whose messages carry no card number the app can match
+stayed unassigned **forever**, no matter how many times the user filed it by
+hand — and an unassigned transaction sits in no balance at all, which is
+exactly the total Phase 15 had to start surfacing on Home and Accounts.
+
+### What changed
+
+**Schema — `MIGRATION_24_25`**, one new table, purely additive.
+
+Two details that must not drift, because Room builds a *fresh* install's table
+from the entity rather than from the migration SQL and throws a schema mismatch
+at startup if they disagree — the trap `MIGRATION_22_23` already documents:
+`merchantPattern` is `COLLATE NOCASE` on both sides, and the FK child column
+`accountId` carries its own index.
+
+`ON DELETE CASCADE` means deleting an account cannot leave a rule pointing at a
+dead id. `parsing_rules.assignAccountId` has no FK and needed
+`clearAssignAccountId` plus a bug fix (Phase 12.3) to get the same guarantee by
+hand; this gets it from the schema.
+
+**Domain (all pure)**
+- `domain/parser/AccountMatcher.kt` — exact, then normalized key. Deliberately
+  **no regex tier**, unlike `CategoryMatcher`: an account rule is always
+  written from a concrete merchant the user corrected, never hand-authored as
+  a pattern, so a regex tier would only add a way to be surprised.
+- `domain/parser/CaptureAccountResolver.kt` — the precedence, mirroring the
+  existing `CaptureCategoryResolver` so it is a stated, tested decision rather
+  than something to reconstruct from `recordParsed`: rule pin (an explicit
+  instruction) > account number in the message (hard evidence in the text) >
+  learned rule (an inference from past behaviour).
+- `domain/parser/MerchantAccountLearner.kt` — which already-captured rows a new
+  rule reaches backwards into. SQL cannot express the normalizer, so the match
+  happens in Kotlin over the small unassigned-row candidate set.
+
+**Data**
+- Entity + domain model + both mappers, `MerchantAccountDao`, and
+  `TransactionDao.getUnassignedWithMerchant()` — which selects only
+  `accountId IS NULL` rows, the same posture as `assignAccountByRuleName`, so a
+  transaction the user filed by hand can never be overwritten by a later rule.
+- `MerchantAccountRepositoryImpl` — `learnMapping` stores the rule and
+  backfills in **one** `withTransaction`: a rule stored but not backfilled
+  would leave the user looking at transactions that contradict the correction
+  they just made.
+- `TransactionRepositoryImpl` gained one nullable, defaulted constructor
+  parameter, exactly mirroring `categoryRepository`, so every existing
+  construction site and hand-written test fake still compiles unchanged. The
+  learned lookup is skipped entirely unless both stronger signals came up empty
+  — which *includes* a message that carried a card number matching no account,
+  the case that otherwise leaves a transaction unassigned forever.
+- Backup format 4 -> 5, gated on import exactly like the ignore list: a pre-v5
+  backup never held these rules, so restoring one must not erase what this
+  device has learned. Inserted after `accountDao().insertAll`, necessarily —
+  the cascading FK needs its parents to exist first.
+
+**A new interface, not new members on `TransactionRepository`.** That one
+already has ~25 members and three hand-written fakes that each pay for every
+addition; a separate `MerchantAccountRepository` costs them nothing. It is also
+kept apart from `CategoryRepository` on purpose: a category correction must
+never disturb account knowledge, and `repointMappings`/`deleteByCategory` would
+have started doing exactly that if the two shared a row.
+
+### Learning silently, and how to undo it
+
+`assignAccount` learns on a manual pick, consistent with 15.1. Clearing an
+account teaches nothing ("not this one" is not a rule), and bulk assignment
+never learns — a multi-select spanning several merchants is the worst possible
+thing to infer one rule from.
+
+A wrong account is a sharper failure than a wrong category: it silently moves
+money between balances. So the rule is visible and revocable — the merchant's
+own screen shows "New charges file under {account}" with a **Forget** action.
+Forgetting stops future guessing; it does not un-assign past transactions. That
+reversibility is what makes silent learning safe rather than merely convenient.
+
+### Tests
+
+- `AccountMatcherTest` (9) — exact; case-insensitive; a differently-formatted
+  spelling resolving through the key tier; unrelated merchant; blank/null;
+  empty list; **two unkeyable merchants never colliding on the empty key**; an
+  exact match beating a key match pointing elsewhere; a regex-looking pattern
+  treated as a literal.
+- `CaptureAccountResolverTest` (5) — each rung of the precedence, and no signal
+  at all.
+- `MerchantAccountLearnerTest` (9) — exact and whitespace/case-insensitive
+  backfill; a different spelling of the same merchant reached; a different
+  merchant never reached; two unkeyable merchants not matching while an
+  unkeyable merchant still backfills its own exact spelling; blank merchant;
+  empty candidates; a brand's other branches reached while a *different* brand
+  (ENOC vs ADNOC) is not.
+- `EntityMappersTest` — round-trip both directions, per convention.
+- `BackupMappersTest` — the new mapping survives the round trip, and a pre-v5
+  payload decodes to an empty list rather than failing.
+
+### Deferred
+
+- Not unit-testable here (no Robolectric): the v24 -> v25 migration SQL itself
+  and the new DAO queries — the standing precedent for every migration in
+  `AppDatabase.kt`. Room's KSP processor validating the entity at compile time
+  is the only automated check, so `assembleDebug` passing is the real evidence
+  the entity and the migration agree.
+- No screen lists every learned account rule; they are reachable one merchant
+  at a time from the merchant screen.
+
+### CI verification
+
+Pending — to be amended once the job log is read.

@@ -2,6 +2,7 @@ package com.xemmy.mmbank.data.backup
 
 import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
+import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
@@ -149,6 +150,10 @@ data class BackupPayload(
      * 4 = adds [ignoredMessagePatterns]. Gated like the category data: a
      * pre-v4 backup never held an ignore list, so restoring one must leave the
      * list on this device alone rather than silently un-muting everything.
+     *
+     * 5 = adds [merchantAccountMappings], the learned merchant -> account
+     * rules. Gated the same way: a pre-v5 backup never held them, so restoring
+     * one must not erase what this device has learned.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -163,6 +168,16 @@ data class BackupPayload(
     val categories: List<BackupCategory> = emptyList(),
     val merchantCategoryMappings: List<BackupMerchantMapping> = emptyList(),
     val ignoredMessagePatterns: List<BackupIgnoredMessagePattern> = emptyList(),
+    val merchantAccountMappings: List<BackupMerchantAccountMapping> = emptyList(),
+)
+
+/** A learned merchant -> account rule; see [BackupPayload.formatVersion] 5. */
+@Serializable
+data class BackupMerchantAccountMapping(
+    val id: Long,
+    val merchantPattern: String,
+    val accountId: Long,
+    val createdAt: Long,
 )
 
 @Serializable
@@ -191,7 +206,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 4,
+            formatVersion = 5,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -203,6 +218,7 @@ class BackupManager(
             categories = database.categoryDao().getAll().map { it.toBackup() },
             merchantCategoryMappings = database.merchantCategoryDao().getAll().map { it.toBackup() },
             ignoredMessagePatterns = database.ignoredMessagePatternDao().getAll().map { it.toBackup() },
+            merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
         )
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
@@ -261,6 +277,8 @@ class BackupManager(
         // Same reasoning one version later: a pre-v4 backup carries no ignore
         // list, so restoring it must not un-mute what this device is muting.
         val hasIgnoreList = payload.formatVersion >= 4
+        // And again for the learned merchant -> account rules.
+        val hasAccountMappings = payload.formatVersion >= 5
         database.withTransaction {
             database.transactionDao().clearAll()
             database.accountDao().clearAll()
@@ -288,6 +306,16 @@ class BackupManager(
                 database.ignoredMessagePatternDao().clearAll()
                 database.ignoredMessagePatternDao().insertAll(
                     payload.ignoredMessagePatterns.map { it.toEntity() }
+                )
+            }
+
+            if (hasAccountMappings) {
+                // After accountDao().insertAll above, necessarily: these rows
+                // carry a cascading FK to accounts, so the parents have to
+                // exist first or every insert is rejected.
+                database.merchantAccountDao().clearAll()
+                database.merchantAccountDao().insertAll(
+                    payload.merchantAccountMappings.map { it.toEntity() }
                 )
             }
         }
@@ -463,6 +491,20 @@ internal fun BackupCategory.toEntity() = CategoryEntity(
     isCustom = isCustom,
     monthlyCap = monthlyCap?.let(::BigDecimal),
     parentCategoryId = parentCategoryId,
+)
+
+internal fun MerchantAccountMappingEntity.toBackup() = BackupMerchantAccountMapping(
+    id = id,
+    merchantPattern = merchantPattern,
+    accountId = accountId,
+    createdAt = createdAt,
+)
+
+internal fun BackupMerchantAccountMapping.toEntity() = MerchantAccountMappingEntity(
+    id = id,
+    merchantPattern = merchantPattern,
+    accountId = accountId,
+    createdAt = createdAt,
 )
 
 internal fun MerchantCategoryMappingEntity.toBackup() = BackupMerchantMapping(

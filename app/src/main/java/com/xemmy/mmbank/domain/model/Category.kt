@@ -52,3 +52,23 @@ data class MerchantCategoryMapping(
     val suggestedIcon: String? = null,
     val suggestedColorHex: String? = null,
 )
+
+/**
+ * A learned merchant -> account rule, consulted at capture time (see
+ * [com.xemmy.mmbank.domain.parser.AccountMatcher]) after the account number in
+ * the message fails to identify an account.
+ *
+ * The sibling of [MerchantCategoryMapping], kept as its own table rather than
+ * a column on that one: the two learnings are independent, and folding them
+ * together would mean category maintenance (`repointMappings`,
+ * `deleteByCategory`) destroying account knowledge as a side effect.
+ *
+ * [merchantPattern] holds the raw merchant the user corrected, never a
+ * normalized key — see [com.xemmy.mmbank.domain.parser.MerchantNormalizer].
+ */
+data class MerchantAccountMapping(
+    val id: Long = 0,
+    val merchantPattern: String,
+    val accountId: Long,
+    val createdAt: Long = System.currentTimeMillis(),
+)

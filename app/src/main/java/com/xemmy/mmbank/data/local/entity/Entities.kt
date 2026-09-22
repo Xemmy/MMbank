@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
@@ -164,6 +165,42 @@ data class MerchantCategoryMappingEntity(
     val suggestedName: String? = null,
     val suggestedIcon: String? = null,
     val suggestedColorHex: String? = null,
+)
+
+/**
+ * A learned merchant -> account rule. Written when the user manually assigns a
+ * captured transaction to an account, and applied to later captures from the
+ * same merchant once the card number in the message fails to identify one.
+ *
+ * `ON DELETE CASCADE` rather than a bare column: deleting an account must not
+ * leave a rule pointing at a dead id. `parsing_rules.assignAccountId` has no
+ * FK and needed `ParsingRuleDao.clearAssignAccountId` plus a bug fix to get the
+ * same guarantee by hand.
+ *
+ * [merchantPattern] holds the RAW merchant, not a normalized key -- the key is
+ * recomputed at match time so that changing [com.xemmy.mmbank.domain.parser.MerchantNormalizer]
+ * re-keys existing rules instead of orphaning them.
+ */
+@Entity(
+    tableName = "merchant_account_mappings",
+    foreignKeys = [
+        ForeignKey(
+            entity = AccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["accountId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["merchantPattern"], unique = true),
+        Index(value = ["accountId"]),
+    ],
+)
+data class MerchantAccountMappingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(collate = ColumnInfo.NOCASE) val merchantPattern: String,
+    val accountId: Long,
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(tableName = "parsing_rules")
@@ -412,6 +449,14 @@ fun MerchantCategoryMappingEntity.toDomain() = MerchantCategoryMapping(
 
 fun MerchantCategoryMapping.toEntity() = MerchantCategoryMappingEntity(
     id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,
+)
+
+fun MerchantAccountMappingEntity.toDomain() = MerchantAccountMapping(
+    id, merchantPattern, accountId, createdAt,
+)
+
+fun MerchantAccountMapping.toEntity() = MerchantAccountMappingEntity(
+    id, merchantPattern, accountId, createdAt,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

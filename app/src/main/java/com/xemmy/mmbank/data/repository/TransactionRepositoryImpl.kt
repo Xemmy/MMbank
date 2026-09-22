@@ -14,9 +14,11 @@ import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.parser.AiConfidenceScorer
+import com.xemmy.mmbank.domain.parser.CaptureAccountResolver
 import com.xemmy.mmbank.domain.parser.CaptureCategoryResolver
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.repository.CategoryRepository
+import com.xemmy.mmbank.domain.repository.MerchantAccountRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import com.xemmy.mmbank.domain.usecase.TransferMatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,6 +40,14 @@ class TransactionRepositoryImpl(
     private val defaultPersonProvider: () -> String? = { null },
     /** Dynamic category lookup for newly captured transactions (see [CategoryMatcher]). */
     private val categoryRepository: CategoryRepository? = null,
+    /**
+     * Learned merchant -> account lookup, consulted only after the account
+     * number in the message fails to identify one (see [CaptureAccountResolver]).
+     * Nullable and defaulted like [categoryRepository] so every existing
+     * construction site -- including the hand-written test fakes -- still
+     * compiles and behaves exactly as before.
+     */
+    private val merchantAccountRepository: MerchantAccountRepository? = null,
     /**
      * Fire-and-forget hook run after a real, dedup-passing transaction is
      * inserted -- used by [com.xemmy.mmbank.di.AppContainer] to run the daily
@@ -103,10 +113,27 @@ class TransactionRepositoryImpl(
         if (existing != null) {
             IngestResult.Duplicate(existing.id)
         } else {
-            // A rule's explicit account ("default assign") wins over the
-            // number sniffed out of the message text.
-            val detectedAccountId = parsed.assignAccountId
-                ?: parsed.accountNumberSuffix?.let { detectAccountByNumber(it, parsed.currencyCode) }
+            // Rule pin > account number printed in the message > learned
+            // merchant rule. The ordering itself lives in CaptureAccountResolver
+            // so it can be tested on its own rather than inferred from this
+            // block.
+            val rulePinnedAccountId = parsed.assignAccountId
+            val numberAccountId = parsed.accountNumberSuffix
+                ?.let { detectAccountByNumber(it, parsed.currencyCode) }
+            // Only pay for the learned-rule read when the two stronger signals
+            // both came up empty -- which includes a message that DID carry a
+            // card number that matches no account, the case that otherwise
+            // leaves a transaction unassigned forever.
+            val learnedAccountId = if (rulePinnedAccountId == null && numberAccountId == null) {
+                parsed.merchant?.let { merchantAccountRepository?.findAccountForMerchant(it) }
+            } else {
+                null
+            }
+            val detectedAccountId = CaptureAccountResolver.resolve(
+                rulePinnedAccountId = rulePinnedAccountId,
+                detectedAccountId = numberAccountId,
+                learnedAccountId = learnedAccountId,
+            )
 
             // Dynamic category: a confirmed merchant mapping wins outright; failing
             // that, an unconfirmed AI guess for the same merchant rides along as a

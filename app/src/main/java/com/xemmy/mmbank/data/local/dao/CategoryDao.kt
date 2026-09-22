@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
+import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -103,4 +104,44 @@ interface MerchantCategoryDao {
 
     @Insert
     suspend fun insertAll(entities: List<MerchantCategoryMappingEntity>)
+}
+
+/** A still-unassigned transaction's id and merchant, for learned-rule backfill. */
+data class UnassignedMerchantRow(val id: Long, val merchant: String)
+
+/**
+ * Learned merchant -> account rules. Full CRUD rather than
+ * [MerchantCategoryDao]'s pending/confirmed split: there is no AI path
+ * proposing accounts, so every row here exists because the user assigned one.
+ */
+@Dao
+interface MerchantAccountDao {
+
+    /**
+     * REPLACE on conflict, against a `COLLATE NOCASE` unique index on
+     * merchantPattern, so re-assigning the same merchant updates its rule
+     * rather than accumulating a second contradictory one.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: MerchantAccountMappingEntity): Long
+
+    @Query("SELECT * FROM merchant_account_mappings")
+    suspend fun getAll(): List<MerchantAccountMappingEntity>
+
+    @Query("SELECT * FROM merchant_account_mappings ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<MerchantAccountMappingEntity>>
+
+    @Query("SELECT * FROM merchant_account_mappings WHERE accountId = :accountId")
+    suspend fun getForAccount(accountId: Long): List<MerchantAccountMappingEntity>
+
+    @Query("DELETE FROM merchant_account_mappings WHERE merchantPattern = :merchant COLLATE NOCASE")
+    suspend fun deleteByMerchant(merchant: String): Int
+
+    // --- Backup support ---
+
+    @Query("DELETE FROM merchant_account_mappings")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<MerchantAccountMappingEntity>)
 }

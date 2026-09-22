@@ -483,8 +483,33 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun assignAccount(transactionId: Long, accountId: Long?) =
-        safeWrite("assignAccount") { container.transactionRepository.assignAccount(transactionId, accountId) }
+    /**
+     * Files one transaction under an account, and remembers that this merchant
+     * belongs there.
+     *
+     * Before this, assigning an account taught the app nothing: a merchant
+     * whose messages carry no card number the app can match stayed unassigned
+     * forever, however many times you fixed it -- and an unassigned transaction
+     * sits in no balance at all.
+     *
+     * Clearing the account ([accountId] null) deliberately teaches nothing:
+     * "not this one" is not a rule. Bulk assignment does not learn either -- a
+     * multi-select spanning several merchants is the worst possible thing to
+     * infer one rule from.
+     *
+     * The rule is reversible from the merchant's own screen ("Forget"), which
+     * matters more here than for categories: a wrong account silently moves
+     * money between balances.
+     */
+    fun assignAccount(transaction: Transaction, accountId: Long?) =
+        safeWrite("assignAccount") {
+            container.transactionRepository.assignAccount(transaction.id, accountId)
+            if (accountId != null) {
+                transaction.merchant?.takeIf { it.isNotBlank() }?.let {
+                    container.merchantAccountRepository.learnMapping(it, accountId)
+                }
+            }
+        }
 
     fun setPerson(transactionId: Long, person: String?) =
         safeWrite("setPerson") {
@@ -900,7 +925,7 @@ fun TransactionsScreen(
                                         accountFilterTint = activeAccountGlow,
                                         isInBulkMode = state.isInBulkMode,
                                         isSelected = tx.id in state.selectedTransactionIds,
-                                        onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
+                                        onAssignAccount = { accountId -> viewModel.assignAccount(tx, accountId) },
                                         onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
                                         onOpenCategoryPicker = { categoryPickerFor = tx },
                                         onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },

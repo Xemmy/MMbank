@@ -24,6 +24,7 @@ import com.xemmy.mmbank.data.remote.binance.BinanceApi
 import com.xemmy.mmbank.data.remote.binance.BinanceSigningInterceptor
 import com.xemmy.mmbank.data.remote.binance.BinanceWalletAssetsService
 import com.xemmy.mmbank.data.remote.forex.ForexApi
+import com.xemmy.mmbank.data.repository.MerchantAccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.BillRepositoryImpl
 import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
@@ -48,6 +49,7 @@ import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
+import com.xemmy.mmbank.domain.repository.MerchantAccountRepository
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.CategoryRepository
@@ -308,6 +310,7 @@ class AppContainer(context: Context) {
             demoMode = demoModeEnabled,
             defaultPersonProvider = { preferences.defaultPerson },
             categoryRepository = categoryRepository,
+            merchantAccountRepository = merchantAccountRepository,
             onTransactionRecorded = { transaction ->
                 checkDailyBudgetPacing(transaction)
                 checkCategoryBudget(transaction)
@@ -320,6 +323,16 @@ class AppContainer(context: Context) {
     }
     val categoryRepository: CategoryRepository by lazy {
         CategoryRepositoryImpl(database)
+    }
+
+    /**
+     * Learned merchant -> account rules, written when the user assigns a
+     * transaction by hand and read back at capture time. Lazy over [database]
+     * like [categoryRepository], so no initialization cycle with
+     * [transactionRepository].
+     */
+    val merchantAccountRepository: MerchantAccountRepository by lazy {
+        MerchantAccountRepositoryImpl(database)
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao(), demoModeEnabled)

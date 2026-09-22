@@ -16,7 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,7 +43,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.parser.AccountMatcher
 import com.xemmy.mmbank.domain.intelligence.MerchantProfiler
+import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
@@ -66,6 +70,11 @@ data class MerchantDetailUiState(
     /** True when [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine] currently flags this merchant as recurring. */
     val isSubscription: Boolean = false,
     val defaultCurrency: String = "USD",
+    /**
+     * The account future captures from this merchant are auto-filed under,
+     * learned from a manual assignment. Null when nothing has been learned.
+     */
+    val learnedAccount: Account? = null,
 )
 
 class MerchantDetailViewModel(
@@ -85,7 +94,9 @@ class MerchantDetailViewModel(
         container.transactionRepository.observeTransactions(),
         container.categoryRepository.observeAll(),
         container.subscriptionRepository.observeActive(),
-    ) { transactions, categories, subscriptions ->
+        container.merchantAccountRepository.observeMappings(),
+        container.accountRepository.observeActive(),
+    ) { transactions, categories, subscriptions, accountMappings, accounts ->
         val key = merchantName.trim()
         val currentCategoryId = transactions
             .asSequence()
@@ -101,6 +112,8 @@ class MerchantDetailViewModel(
             categories = categories,
             isSubscription = subscriptions.any { it.merchant.trim().equals(key, ignoreCase = true) },
             defaultCurrency = container.preferences.defaultCurrency,
+            learnedAccount = AccountMatcher.match(merchantName, accountMappings)
+                ?.let { id -> accounts.firstOrNull { it.id == id } },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MerchantDetailUiState(merchant = merchantName))
 
@@ -109,6 +122,23 @@ class MerchantDetailViewModel(
         viewModelScope.launch {
             runCatching { container.categoryRepository.learnMapping(merchantName, category.id) }
                 .onFailure { container.recordError("MerchantDetailViewModel.recategorize", it) }
+        }
+    }
+
+    /**
+     * Drops the learned merchant -> account rule. Transactions already filed
+     * keep their account: this stops the app guessing in future, it does not
+     * undo past assignments.
+     *
+     * Account learning is silent, and a wrong account quietly moves money
+     * between balances -- a sharper failure than a wrong category -- so being
+     * able to see and revoke the rule is what makes learning silently safe
+     * rather than merely convenient.
+     */
+    fun forgetLearnedAccount() {
+        viewModelScope.launch {
+            runCatching { container.merchantAccountRepository.forget(merchantName) }
+                .onFailure { container.recordError("MerchantDetailViewModel.forgetLearnedAccount", it) }
         }
     }
 
@@ -219,6 +249,33 @@ fun MerchantDetailScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                    }
+
+                    // The learned merchant -> account rule, and the way to
+                    // revoke it. Assigning an account teaches this silently, so
+                    // it has to be visible somewhere -- a wrong account moves
+                    // money between balances without saying anything.
+                    state.learnedAccount?.let { account ->
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Filled.AccountBalanceWallet,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(18.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "New charges file under ${account.name}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = viewModel::forgetLearnedAccount) { Text("Forget") }
                         }
                     }
                 }

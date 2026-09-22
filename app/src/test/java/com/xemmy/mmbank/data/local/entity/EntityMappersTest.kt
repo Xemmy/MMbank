@@ -1,5 +1,7 @@
 package com.xemmy.mmbank.data.local.entity
 
+import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
+import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.Bill
@@ -392,6 +394,25 @@ class EntityMappersTest {
         val roundTripped = original.toEntity().toDomain()
         assertEquals(original, roundTripped)
         assertNull(roundTripped.parentCategoryId)
+    }
+
+    @Test
+    fun `merchant account mapping round-trips in both directions`() {
+        val original = MerchantAccountMapping(
+            id = 3,
+            merchantPattern = "Golden Fork",
+            accountId = 12,
+            createdAt = 1_700_000_000_000,
+        )
+        assertEquals(original, original.toEntity().toDomain())
+
+        val entity = MerchantAccountMappingEntity(
+            id = 4,
+            merchantPattern = "ADNOC",
+            accountId = 5,
+            createdAt = 1_700_000_000_001,
+        )
+        assertEquals(entity, entity.toDomain().toEntity())
     }
 
     @Test

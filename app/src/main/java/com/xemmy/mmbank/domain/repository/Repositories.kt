@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.repository
 
+import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.Bill
@@ -282,4 +283,32 @@ interface SplitGroupRepository {
      */
     suspend fun saveExpense(expense: GroupExpense, splits: List<ExpenseSplit>): Long
     suspend fun deleteExpense(expenseId: Long)
+}
+
+/**
+ * Learned merchant -> account rules.
+ *
+ * Its own interface rather than members on [TransactionRepository] or
+ * [CategoryRepository]: the former already has around twenty-five members and
+ * three hand-written test fakes that each pay for every new one, and the
+ * latter is about categories — a category correction must never disturb
+ * account knowledge, or vice versa.
+ */
+interface MerchantAccountRepository {
+    fun observeMappings(): Flow<List<MerchantAccountMapping>>
+
+    /** Resolves [merchant] against learned rules: exact, then normalized key. */
+    suspend fun findAccountForMerchant(merchant: String): Long?
+
+    /** Every rule currently pointing at [accountId]. */
+    suspend fun findMappingForAccount(accountId: Long): List<MerchantAccountMapping>
+
+    /**
+     * Remembers merchant -> account and backfills every real transaction from
+     * that merchant still left unassigned. Returns how many rows were filled.
+     */
+    suspend fun learnMapping(merchant: String, accountId: Long): Int
+
+    /** Drops the rule for [merchant]; already-assigned transactions stay put. */
+    suspend fun forget(merchant: String): Int
 }

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.data.backup
 
+import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
@@ -245,5 +246,33 @@ class BackupMappersTest {
         val decoded = json.decodeFromString(BackupPayload.serializer(), v3)
         assertEquals(emptyList<BackupIgnoredMessagePattern>(), decoded.ignoredMessagePatterns)
         assertEquals(3, decoded.formatVersion)
+    }
+
+    @Test
+    fun `a learned merchant account mapping survives the backup round trip`() {
+        val mapping = MerchantAccountMappingEntity(
+            id = 9,
+            merchantPattern = "Golden Fork",
+            accountId = 4,
+            createdAt = 1_700_000_000_000,
+        )
+        val encoded = json.encodeToString(BackupMerchantAccountMapping.serializer(), mapping.toBackup())
+        assertEquals(
+            mapping,
+            json.decodeFromString(BackupMerchantAccountMapping.serializer(), encoded).toEntity(),
+        )
+    }
+
+    @Test
+    fun `a pre-v5 payload decodes with no learned account mappings rather than failing`() {
+        // Same gate as the ignore list one version earlier: restoring an older
+        // backup must not erase what this device has learned.
+        val v4 = """
+            {"formatVersion":4,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+             "personsRaw":"","accounts":[],"transactions":[],"rules":[],"senderLabels":[]}
+        """.trimIndent()
+        val decoded = json.decodeFromString(BackupPayload.serializer(), v4)
+        assertEquals(emptyList<BackupMerchantAccountMapping>(), decoded.merchantAccountMappings)
+        assertEquals(4, decoded.formatVersion)
     }
 }

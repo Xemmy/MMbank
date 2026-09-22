@@ -118,6 +118,19 @@ interface TransactionDao {
     @Query("SELECT accountId, amount, currencyCode, direction FROM transactions WHERE isDemo = :demo")
     fun observeLedgerEntries(demo: Boolean): Flow<List<LedgerEntryRow>>
 
+    /**
+     * Real transactions that carry a merchant but no account -- the only rows a
+     * learned merchant -> account rule is ever allowed to touch, matching
+     * [assignAccountByRuleName]'s `accountId IS NULL` posture so a transaction
+     * the user filed by hand is never overwritten.
+     *
+     * Returns merchants rather than filtering in SQL because the match is by
+     * normalized key (see MerchantNormalizer), which SQL cannot express; the
+     * candidate set is small by construction.
+     */
+    @Query("SELECT id, merchant FROM transactions WHERE accountId IS NULL AND merchant IS NOT NULL AND isDemo = 0")
+    suspend fun getUnassignedWithMerchant(): List<UnassignedMerchantRow>
+
     /** The balance-relevant fields of specific rows, for a retention prune. */
     @Query(
         "SELECT id, accountId, amount, currencyCode, direction FROM transactions WHERE id IN (:ids)"
