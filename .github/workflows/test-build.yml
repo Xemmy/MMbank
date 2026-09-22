@@ -67,9 +67,16 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      # packages: '' is load-bearing. Without it the action runs
+      # `sdkmanager tools` by default, and Google has removed the obsolete
+      # `tools` package from the SDK repository -- so the step dies with
+      # "Warning: Failed to find package 'tools'" before a single Gradle task
+      # runs, taking the whole gating build with it. The runner image already
+      # ships the SDK, so skipping the default install costs nothing.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
+          packages: ''
           api-levels: '35'
           ndk-version: '26.1.10909125'
 
