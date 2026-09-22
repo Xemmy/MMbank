@@ -20,7 +20,8 @@ import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
  * Deletion decisions are entirely [TransactionRetentionPlanner]'s (which in
  * turn defers "is this row worth keeping regardless of age" to
  * [com.xemmy.mmbank.domain.ai.AiRetentionScorer]) -- this class only supplies
- * the real transaction snapshot and the wall clock, then executes the plan.
+ * the real transaction snapshot and the wall clock, then hands the plan to
+ * [RetentionPruner], which is what keeps the deletion from moving a balance.
  *
  * Fails silently (`Result.success` with no side effect) on every non-fatal
  * condition, like [com.xemmy.mmbank.data.ai.AiParsingWorker] and
@@ -46,7 +47,11 @@ class TransactionRetentionWorker(
                 nowMillis = System.currentTimeMillis(),
             )
             if (plan.transactionIdsToDelete.isNotEmpty()) {
-                container.transactionRepository.deleteMany(plan.transactionIdsToDelete)
+                // Not a plain deleteMany: balances are derived from these rows,
+                // so deleting them would silently shift every balance they fed.
+                // RetentionPruner folds that net into the accounts' opening
+                // balances in the same Room transaction as the delete.
+                container.retentionPruner.prune(plan.transactionIdsToDelete)
             }
         }.onFailure { container.recordError("TransactionRetentionWorker", it) }
 

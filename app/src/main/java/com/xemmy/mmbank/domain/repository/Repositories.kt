@@ -22,13 +22,19 @@ import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.Transaction
 import java.math.BigDecimal
 import com.xemmy.mmbank.domain.model.WalletBalance
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import kotlinx.coroutines.flow.Flow
 
 interface TransactionRepository {
     fun observeTransactions(): Flow<List<Transaction>>
     fun observeRecent(limit: Int): Flow<List<Transaction>>
-    /** accountId -> net movement (credits - debits), for balance computation. */
-    fun observeNetByAccount(): Flow<Map<Long, Double>>
+    /**
+     * Every entry balances are derived from, in the active partition. Exact
+     * (BigDecimal) and includes rows belonging to no account, so the Accounts
+     * and Home screens can surface money that is in no balance. Fold it with
+     * [com.xemmy.mmbank.domain.account.AccountBalanceCalculator].
+     */
+    fun observeLedgerEntries(): Flow<List<AccountBalanceCalculator.LedgerEntry>>
     /** Dedup + insert; the heart of the automated capture pipeline. */
     /**
      * Records a parsed capture. [dedupWindow] runs the ±2-minute

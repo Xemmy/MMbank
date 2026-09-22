@@ -142,13 +142,20 @@ private data class TopLevelDestination(
     val childRoutePrefixes: List<String> = emptyList(),
 )
 
+/** Activity, pre-filtered to transactions that belong to no account. */
+private const val UNASSIGNED_ACTIVITY_ROUTE = "transactions?accountFilter=unassigned"
+
 // Five destinations, Material 3's sweet spot. Rules lives under Settings and
 // Rewards under the Dashboard tab, so neither crowds the bar.
 private val topLevelDestinations = listOf(
     TopLevelDestination("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
     TopLevelDestination(
+        // The Activity route carries an optional accountFilter arg, so the
+        // current route reads as "transactions?accountFilter={...}" when
+        // deep-linked -- the prefix is what keeps the tab highlighted.
         "transactions", "Activity",
         Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong,
+        childRoutePrefixes = listOf("transactions"),
     ),
     TopLevelDestination(
         "insights", "Dashboard", Icons.Filled.Insights, Icons.Outlined.Insights,
@@ -275,10 +282,26 @@ private fun AppNavHost(
         modifier = modifier,
     ) {
         composable("home") {
-            DashboardScreen(onOpenReview = { navController.navigate("review_transactions") })
+            DashboardScreen(
+                onOpenReview = { navController.navigate("review_transactions") },
+                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+            )
         }
-        composable("transactions") {
+        // The optional arg lets Home and Accounts deep-link straight into the
+        // "Unassigned" account filter the Activity tab already has. Query args
+        // are optional, so the bottom bar's plain navigate("transactions")
+        // still matches this route.
+        composable(
+            route = "transactions?accountFilter={accountFilter}",
+            arguments = listOf(
+                navArgument("accountFilter") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { entry ->
             TransactionsScreen(
+                initialAccountFilter = entry.arguments?.getString("accountFilter").orEmpty(),
                 onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") },
                 onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
             )
@@ -303,7 +326,9 @@ private fun AppNavHost(
             )
         }
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
-        composable("accounts") { AccountsScreen() }
+        composable("accounts") {
+            AccountsScreen(onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) })
+        }
         composable("cashback") { CashbackScreen() }
         composable("subscriptions") {
             SubscriptionsScreen(

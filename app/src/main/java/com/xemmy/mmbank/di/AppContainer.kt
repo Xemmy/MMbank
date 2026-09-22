@@ -39,6 +39,7 @@ import com.xemmy.mmbank.data.repository.SubscriptionRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.retention.RetentionPruner
 import com.xemmy.mmbank.data.retention.TransactionRetentionWorker
 import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
@@ -364,6 +365,16 @@ class AppContainer(context: Context) {
 
     val backupManager: BackupManager by lazy {
         BackupManager(database, preferences)
+    }
+
+    /**
+     * Executes a retention prune without moving a balance (see
+     * [RetentionPruner]). Held here rather than behind `TransactionRepository`
+     * for the same reason as [backupManager]: it is a whole-database operation,
+     * not a ledger query.
+     */
+    val retentionPruner: RetentionPruner by lazy {
+        RetentionPruner(database)
     }
 
     private val compiledRuleCache by lazy {

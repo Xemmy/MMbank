@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.screens.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
@@ -16,6 +17,7 @@ import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.WalletBalance
+import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
 import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.time.Instant
@@ -171,6 +173,11 @@ data class DashboardUiState(
     val message: String? = null,
     /** Account the carousel/transaction feed are filtered to; null = "All Accounts". */
     val selectedAccountId: Long? = null,
+    /**
+     * Money in the ledger that belongs to no account, and so is in no balance.
+     * Surfaced rather than left invisible -- see the Accounts screen's card.
+     */
+    val unassigned: UnassignedTotal = UnassignedTotal(),
 )
 
 class DashboardViewModel(private val container: AppContainer) : ViewModel() {
@@ -216,10 +223,10 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
     private val ledgerState = combine(
         container.accountRepository.observeActive(),
-        container.transactionRepository.observeNetByAccount(),
+        container.transactionRepository.observeLedgerEntries(),
         cryptoFlow,
         container.ratesRepository.observeRates(),
-    ) { accounts, netByAccount, crypto, rates ->
+    ) { accounts, ledgerEntries, crypto, rates ->
         val base = container.preferences.defaultCurrency
         val hideZeroBalances = container.preferences.hideZeroBalances
         val hideCryptoBalance = container.preferences.hideCryptoBalance
@@ -230,14 +237,22 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             .filter { it.baseCode.equals(base, ignoreCase = true) }
             .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
 
+        // Exact in BigDecimal (AccountBalanceCalculator), then to Double only at
+        // this boundary: everything downstream -- CurrencyMath.toBase, the
+        // presentation split, the carousel -- is display math and stays as it was.
+        val netByAccount = AccountBalanceCalculator.netByAccount(ledgerEntries)
         val allAccountRows = accounts.map { account ->
-            val balance = account.openingBalance.toDouble() + (netByAccount[account.id] ?: 0.0)
+            val balance = AccountBalanceCalculator.balanceOf(account, netByAccount).toDouble()
             AccountRow(
                 account = account,
                 balance = balance,
                 balanceInBase = CurrencyMath.toBase(balance, account.currencyCode, base, ratesFromBase),
             )
         }
+        val unassigned = UnassignedTotal(
+            totalsByCurrency = AccountBalanceCalculator.unassignedTotals(ledgerEntries),
+            entryCount = AccountBalanceCalculator.unassignedCount(ledgerEntries),
+        )
 
         val accountsResult = computeAccountsPresentation(
             accountRows = allAccountRows,
@@ -270,6 +285,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             hasUnconvertedAmounts = hasUnconverted,
             cryptoExcludedFromTotal = excludeCryptoFromTotal,
             creditCardExcludedFromTotal = excludeCreditCardFromTotal,
+            unassigned = unassigned,
         )
     }.recoverAndRetry("DashboardViewModel", container) { e ->
         // Never let a bad row (or a rates/DB hiccup) take the whole app down —

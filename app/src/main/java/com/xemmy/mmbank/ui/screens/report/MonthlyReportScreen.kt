@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.intelligence.NetWorthAggregator
 import com.xemmy.mmbank.domain.model.Account
@@ -128,20 +129,28 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
         }
 
         val monthTransactions = slice(selectedMonth)
-        val netByAccount = transactions
-            .filter { !it.excludeFromStats }
-            .groupBy { it.accountId }
-            .mapValues { (_, rows) ->
-                rows.fold(BigDecimal.ZERO) { acc, tx ->
-                    if (tx.direction == TransactionDirection.DEBIT) acc - tx.amount else acc + tx.amount
-                }
+        // The same formula the Accounts and Home screens use, so the report's
+        // net worth agrees with them. This deliberately does NOT filter
+        // excludeFromStats: that flag keeps balance corrections and transfer
+        // legs out of income/spend analytics (which `income`/`expenses` below
+        // still honour), but they are real movements and dropping them here is
+        // what used to make this figure disagree with the Accounts screen.
+        val netByAccount = AccountBalanceCalculator.netByAccount(
+            transactions.map {
+                AccountBalanceCalculator.LedgerEntry(
+                    accountId = it.accountId,
+                    amount = it.amount,
+                    currencyCode = it.currencyCode,
+                    direction = it.direction,
+                )
             }
+        )
 
         val balances = accounts.map { account ->
             NetWorthAggregator.AccountBalance(
                 accountId = account.id,
                 type = account.type,
-                balance = account.openingBalance + (netByAccount[account.id] ?: BigDecimal.ZERO),
+                balance = AccountBalanceCalculator.balanceOf(account, netByAccount),
             )
         }
 

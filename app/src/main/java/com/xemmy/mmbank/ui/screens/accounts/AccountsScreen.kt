@@ -92,6 +92,7 @@ import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -99,27 +100,51 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class AccountWithBalance(val account: Account, val balance: Double)
+data class AccountWithBalance(val account: Account, val balance: BigDecimal)
+
+/**
+ * Money that is in the ledger but in no account, so it appears in no balance.
+ * Grouped by currency because, unlike an account balance, this total has no
+ * single currency to be denominated in.
+ */
+data class UnassignedTotal(
+    val totalsByCurrency: Map<String, BigDecimal> = emptyMap(),
+    val entryCount: Int = 0,
+) {
+    val isEmpty: Boolean get() = entryCount == 0
+}
+
+data class AccountsUiState(
+    val rows: List<AccountWithBalance> = emptyList(),
+    val unassigned: UnassignedTotal = UnassignedTotal(),
+)
 
 class AccountsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Set when a database write or the accounts list itself fails, instead of crashing. */
     val lastError = MutableStateFlow<String?>(null)
 
-    val uiState: StateFlow<List<AccountWithBalance>> = combine(
+    val uiState: StateFlow<AccountsUiState> = combine(
         container.accountRepository.observeActive(),
-        container.transactionRepository.observeNetByAccount(),
-    ) { accounts, netByAccount ->
-        accounts.map { account ->
-            AccountWithBalance(
-                account = account,
-                balance = account.openingBalance.toDouble() + (netByAccount[account.id] ?: 0.0),
-            )
-        }
+        container.transactionRepository.observeLedgerEntries(),
+    ) { accounts, entries ->
+        val net = AccountBalanceCalculator.netByAccount(entries)
+        AccountsUiState(
+            rows = accounts.map { account ->
+                AccountWithBalance(
+                    account = account,
+                    balance = AccountBalanceCalculator.balanceOf(account, net),
+                )
+            },
+            unassigned = UnassignedTotal(
+                totalsByCurrency = AccountBalanceCalculator.unassignedTotals(entries),
+                entryCount = AccountBalanceCalculator.unassignedCount(entries),
+            ),
+        )
     }.recoverAndRetry("AccountsViewModel", container) { e ->
         lastError.value = "Couldn't load accounts: ${e.message}"
-        emptyList()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        AccountsUiState()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountsUiState())
 
     /** Shared, live hide-balances flag — see [AppContainer.hideBalances]. */
     val hideBalances: StateFlow<Boolean> = container.hideBalances
@@ -160,7 +185,7 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
      * computed balance and the real one, pinned to this account. It's an ordinary
      * row, so the fix is visible in Activity and reversible (just delete it).
      */
-    fun adjustBalance(account: Account, computedBalance: Double, targetBalance: BigDecimal) {
+    fun adjustBalance(account: Account, computedBalance: BigDecimal, targetBalance: BigDecimal) {
         viewModelScope.launch {
             runCatching {
                 val adjustment = buildBalanceAdjustment(account, computedBalance, targetBalance)
@@ -182,11 +207,11 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
  */
 internal fun buildBalanceAdjustment(
     account: Account,
-    computedBalance: Double,
+    computedBalance: BigDecimal,
     targetBalance: BigDecimal,
     nowMillis: Long = System.currentTimeMillis(),
 ): Transaction? {
-    val current = BigDecimal.valueOf(computedBalance).setScale(2, RoundingMode.HALF_UP)
+    val current = computedBalance.setScale(2, RoundingMode.HALF_UP)
     val delta = targetBalance.setScale(2, RoundingMode.HALF_UP).subtract(current)
     if (delta.signum() == 0) return null
     return Transaction(
@@ -205,9 +230,11 @@ internal fun buildBalanceAdjustment(
 
 @Composable
 fun AccountsScreen(
+    onOpenUnassigned: () -> Unit = {},
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
-    val rows by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val rows = state.rows
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
@@ -250,6 +277,15 @@ fun AccountsScreen(
                             "“Paste bank details” to import an account from a copied statement.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (!state.unassigned.isEmpty) {
+                item(key = "unassigned_total") {
+                    UnassignedCard(
+                        unassigned = state.unassigned,
+                        hidden = hidden,
+                        onClick = onOpenUnassigned,
                     )
                 }
             }
@@ -358,7 +394,7 @@ private fun AccountCard(
                 )
                 AmountText(
                     display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
-                    color = if (!hidden && row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
+                    color = if (!hidden && row.balance.signum() < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
                     style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
                 )
             }
@@ -412,6 +448,55 @@ private fun AccountCard(
  * single "Balance adjustment" entry is posted for the difference. Nothing happens
  * when the numbers already match.
  */
+/**
+ * Money in the ledger that belongs to no account, and so appears in no balance.
+ *
+ * Without this the total is simply invisible: a capture whose card number the
+ * app could not match to an account is filed, counted in analytics, and missing
+ * from every balance, with nothing on screen to say so. Tapping opens the
+ * Activity tab already filtered to those rows, which is where they get fixed.
+ */
+@Composable
+private fun UnassignedCard(
+    unassigned: UnassignedTotal,
+    hidden: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, ObsidianTokens.hairline, shape),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                if (unassigned.entryCount == 1) {
+                    "1 transaction isn't in any account"
+                } else {
+                    "${unassigned.entryCount} transactions aren't in any account"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = ObsidianTokens.textPrimary,
+            )
+            unassigned.totalsByCurrency.forEach { (code, total) ->
+                Text(
+                    total.asMoneyOrMask(code, hidden),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ObsidianTokens.textMeta,
+                )
+            }
+            Text(
+                "They're counted in analytics but in no balance. Tap to assign them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = ObsidianTokens.textMeta,
+            )
+        }
+    }
+}
+
 @Composable
 private fun AdjustBalanceDialog(
     row: AccountWithBalance,
@@ -419,9 +504,9 @@ private fun AdjustBalanceDialog(
     onConfirm: (BigDecimal) -> Unit,
 ) {
     val account = row.account
-    var text by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", row.balance)) }
+    var text by remember { mutableStateOf(row.balance.setScale(2, RoundingMode.HALF_UP).toPlainString()) }
     val target = text.replace(",", "").trim().toBigDecimalOrNull()
-    val current = BigDecimal.valueOf(row.balance).setScale(2, RoundingMode.HALF_UP)
+    val current = row.balance.setScale(2, RoundingMode.HALF_UP)
     val delta = target?.setScale(2, RoundingMode.HALF_UP)?.subtract(current)
 
     AlertDialog(

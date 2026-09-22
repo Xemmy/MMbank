@@ -6,6 +6,7 @@ import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.IngestResult
@@ -57,9 +58,18 @@ class TransactionRepositoryImpl(
             .map { list -> list.map(TransactionEntity::toDomain) }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    override fun observeNetByAccount(): Flow<Map<Long, Double>> =
-        demoMode.flatMapLatest { demo -> dao.observeNetByAccount(demo) }
-            .map { rows -> rows.associate { it.accountId to it.net } }
+    override fun observeLedgerEntries(): Flow<List<AccountBalanceCalculator.LedgerEntry>> =
+        demoMode.flatMapLatest { demo -> dao.observeLedgerEntries(demo) }
+            .map { rows ->
+                rows.map {
+                    AccountBalanceCalculator.LedgerEntry(
+                        accountId = it.accountId,
+                        amount = it.amount,
+                        currencyCode = it.currencyCode,
+                        direction = it.direction,
+                    )
+                }
+            }
 
     /**
      * Sliding-Window Deduplication Engine.

@@ -36,6 +36,14 @@ fun BigDecimal.asMoney(currencyCode: String): String =
     toDouble().asMoney(currencyCode)
 
 /**
+ * [asMoneyOrMask] for the exact type. Account balances are computed in
+ * BigDecimal (see [com.xemmy.mmbank.domain.account.AccountBalanceCalculator]),
+ * so they reach the UI without ever passing through a Double.
+ */
+fun BigDecimal.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
+    if (hidden) AMOUNT_MASK else asMoney(currencyCode)
+
+/**
  * Accepted currency-code length: 3–5 uppercase letters. Covers ISO-4217 fiat
  * (3, e.g. AED/USD) plus the crypto tickers the app now ingests — notably USDT
  * (4) from Binance, and up to 5 (MATIC). Single source of truth so the

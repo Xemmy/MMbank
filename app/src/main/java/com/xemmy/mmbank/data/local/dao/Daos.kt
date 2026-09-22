@@ -26,10 +26,30 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
 
-/** Net movement (credits - debits) per account; joined onto accounts for balances. */
-data class AccountNetRow(
-    val accountId: Long,
-    val net: Double,
+/**
+ * One transaction reduced to what a balance needs, so the balance surfaces
+ * never load whole rows (which carry the full `rawMessage` SMS body) just to
+ * add up money. [amount] stays TEXT -> BigDecimal through `Converters`, never a
+ * lossy `CAST(amount AS REAL)`.
+ *
+ * [accountId] is nullable on purpose: a transaction belonging to no account is
+ * in the ledger but in no balance, and the Accounts and Home screens surface
+ * that total rather than letting it disappear.
+ */
+data class LedgerEntryRow(
+    val accountId: Long?,
+    val amount: BigDecimal,
+    val currencyCode: String,
+    val direction: TransactionDirection,
+)
+
+/** [LedgerEntryRow] plus its row id, for pruning (which must delete by id). */
+data class IdentifiedLedgerEntryRow(
+    val id: Long,
+    val accountId: Long?,
+    val amount: BigDecimal,
+    val currencyCode: String,
+    val direction: TransactionDirection,
 )
 
 @Dao
@@ -84,17 +104,25 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE isDemo = :demo ORDER BY timestamp DESC LIMIT :limit")
     fun observeRecent(demo: Boolean, limit: Int): Flow<List<TransactionEntity>>
 
+    /**
+     * Every entry a balance is built from, in the active partition.
+     *
+     * Deliberately NOT a SQL aggregate: amounts are plain-decimal TEXT, so any
+     * `SUM` needs `CAST(amount AS REAL)` and loses exactness. Summing in Kotlin
+     * over this 4-column projection keeps the arithmetic in BigDecimal, and
+     * costs far less than the whole-ledger loads the Home and Monthly Report
+     * screens already do.
+     *
+     * Rows with no account are included -- see [LedgerEntryRow.accountId].
+     */
+    @Query("SELECT accountId, amount, currencyCode, direction FROM transactions WHERE isDemo = :demo")
+    fun observeLedgerEntries(demo: Boolean): Flow<List<LedgerEntryRow>>
+
+    /** The balance-relevant fields of specific rows, for a retention prune. */
     @Query(
-        """
-        SELECT accountId,
-               SUM(CASE WHEN direction = 'CREDIT' THEN CAST(amount AS REAL)
-                        ELSE -CAST(amount AS REAL) END) AS net
-        FROM transactions
-        WHERE accountId IS NOT NULL AND isDemo = :demo
-        GROUP BY accountId
-        """
+        "SELECT id, accountId, amount, currencyCode, direction FROM transactions WHERE id IN (:ids)"
     )
-    fun observeNetByAccount(demo: Boolean): Flow<List<AccountNetRow>>
+    suspend fun getLedgerEntriesByIds(ids: List<Long>): List<IdentifiedLedgerEntryRow>
 
     /** Removes every demo transaction. Delete these BEFORE demo accounts (FK SET_NULL). */
     @Query("DELETE FROM transactions WHERE isDemo = 1")
@@ -345,6 +373,15 @@ interface AccountDao {
 
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getById(id: Long): AccountEntity?
+
+    /**
+     * Rewrites a derived balance's only stored input. Used by the retention
+     * prune to fold the net of the rows it deletes back into the opening
+     * balance, so the balance on screen does not move when history is trimmed
+     * (see [com.xemmy.mmbank.domain.account.PrunedBalanceFolder]).
+     */
+    @Query("UPDATE accounts SET openingBalance = :openingBalance WHERE id = :id")
+    suspend fun setOpeningBalance(id: Long, openingBalance: BigDecimal)
 
     /** Removes every demo account. Delete demo transactions FIRST (FK SET_NULL). */
     @Query("DELETE FROM accounts WHERE isDemo = 1")

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.usecase
 
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.IngestResult
@@ -83,7 +84,7 @@ class ImportPastedMessagesUseCaseTest {
 
         override fun observeTransactions(): Flow<List<Transaction>> = flowOf(emptyList())
         override fun observeRecent(limit: Int): Flow<List<Transaction>> = flowOf(emptyList())
-        override fun observeNetByAccount(): Flow<Map<Long, Double>> = flowOf(emptyMap())
+        override fun observeLedgerEntries(): Flow<List<AccountBalanceCalculator.LedgerEntry>> = flowOf(emptyList())
         override suspend fun recordManual(transaction: Transaction): Long = 1L
         override suspend fun update(transaction: Transaction) = Unit
         override suspend fun assignAccount(transactionId: Long, accountId: Long?) = Unit

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -55,6 +56,7 @@ import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.AccountCarousel
 import com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet
@@ -80,6 +82,7 @@ import kotlin.math.roundToInt
 @Composable
 fun DashboardScreen(
     onOpenReview: () -> Unit = {},
+    onOpenUnassigned: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -153,6 +156,18 @@ fun DashboardScreen(
                     onSelectAccount = viewModel::selectAccount,
                     onManageAccounts = { showManageAccounts = true },
                 )
+            }
+
+            // Money in no account is in no balance above -- say so rather than
+            // letting it silently vanish from the net worth figure.
+            if (!state.unassigned.isEmpty) {
+                item(key = "unassigned_total") {
+                    UnassignedRow(
+                        unassigned = state.unassigned,
+                        hidden = hidden,
+                        onClick = onOpenUnassigned,
+                    )
+                }
             }
 
             state.selectedAccountId?.let { accountId ->
@@ -267,6 +282,68 @@ private fun ReviewBadgeCard(count: Int, onClick: () -> Unit) {
                 Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    }
+}
+
+/**
+ * "N transactions aren't in any account" -- money that is in the ledger but in
+ * no balance, so it is missing from the net worth above with nothing to
+ * explain the gap. Tapping opens Activity already filtered to those rows.
+ *
+ * Shaped like [ReviewBadgeCard]: both are "here is a pile of things needing
+ * your attention, tap to go fix them".
+ */
+@Composable
+private fun UnassignedRow(
+    unassigned: UnassignedTotal,
+    hidden: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.HelpOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Text(
+                    if (unassigned.entryCount == 1) {
+                        "1 transaction isn't in any account"
+                    } else {
+                        "${unassigned.entryCount} transactions aren't in any account"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    unassigned.totalsByCurrency.entries.joinToString("  ") { (code, total) ->
+                        total.asMoneyOrMask(code, hidden)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

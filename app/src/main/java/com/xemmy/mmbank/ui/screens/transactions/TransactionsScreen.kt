@@ -636,10 +636,23 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
+    /**
+     * Optional deep-link filter from the nav route. "unassigned" opens the
+     * screen already showing only transactions that belong to no account --
+     * what the Home and Accounts screens' "not in any account" card links to.
+     */
+    initialAccountFilter: String = "",
     onOpenUncategorizedQueue: () -> Unit = {},
     onOpenMerchant: (String) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
+    // Keyed on the arg so re-navigating with it re-applies the filter, while a
+    // recomposition (or the user clearing the filter) does not fight the user.
+    LaunchedEffect(initialAccountFilter) {
+        if (initialAccountFilter == "unassigned") {
+            viewModel.setAccountFilter(AccountFilter.Unassigned)
+        }
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
     val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()

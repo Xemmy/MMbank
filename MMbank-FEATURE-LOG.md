@@ -2751,3 +2751,138 @@ The AI-budget change is runtime behavior: worth confirming on a device that
 pasting a batch of messages the rules can't read reports them as unparsed and
 leaves Settings > AI parsing's daily counter untouched, while a live SMS that
 misses still forwards.
+
+## Phase 15 — Balances that tell the truth
+
+**Status:** landed, pending CI
+**Version:** `versionCode = 69`, `versionName = "0.43.0"`
+**Migration:** none — no schema change
+
+First of three commits answering "make transactions smarter, assignment better,
+and balances update better in real time". The liveness half of that was already
+solved: every balance surface is a cold Room `Flow` -> `combine` -> `stateIn`
+with no polling, so a balance already updated the instant a message landed.
+Accuracy was the real gap.
+
+### Why
+
+Balances are derived, never stored — `openingBalance + (credits - debits)` —
+and that derivation existed in three places that disagreed with each other.
+
+1. **A retention prune silently moved every balance.** `TransactionRetentionWorker`
+   deleted old rows via `deleteMany` and never folded their net back into
+   `openingBalance`. Turning the (opt-in) retention setting on meant watching
+   your balances drift by the net of whatever window got pruned, with nothing
+   on screen to explain it. This was the sharpest of the five.
+2. **`Double`, not `BigDecimal`.** `observeNetByAccount` summed
+   `CAST(amount AS REAL)` in SQL, but amounts are stored as plain-decimal TEXT
+   (see `Converters`), so the CAST was a lossy re-parse — in an app that is
+   otherwise exact end to end.
+3. **The Monthly Report disagreed with the Accounts screen.** It recomputed
+   balances in Kotlin with `.filter { !it.excludeFromStats }`, which drops
+   balance-adjustment rows *and both legs of every linked transfer*
+   (`linkAsTransfer` sets that flag). Those are real movements; excluding them
+   from analytics is right, excluding them from a balance is not.
+4. **Money in no account was invisible.** A row with `accountId = null` is in
+   the ledger and in no balance, and neither Home nor Accounts said so.
+
+### What changed
+
+**Domain (pure, JVM-testable)**
+- `domain/account/AccountBalanceCalculator.kt` (new) — the single balance
+  formula, `BigDecimal` throughout. Two semantics are deliberate and each has
+  its own named test so neither can decay into an accident: `excludeFromStats`
+  rows **are** counted (fixing the report), and amounts are summed **regardless
+  of currency**, preserving existing behaviour rather than changing it
+  underneath the user (see Deferred).
+- `domain/account/PrunedBalanceFolder.kt` (new) — the arithmetic that keeps a
+  prune balance-neutral. If the deleted rows contribute a net of `n`, the
+  balance would move by `-n`, so `newOpening = opening + n` holds it fixed.
+  Rows with no account fold into nothing; accounts with no pruned rows produce
+  no adjustment at all, so the pruner writes only what it must.
+
+**Data**
+- `Daos.kt` — `AccountNetRow` / `observeNetByAccount` deleted, replaced by
+  `LedgerEntryRow` + `observeLedgerEntries(demo)`: a 4-column projection whose
+  amount goes TEXT -> BigDecimal through `Converters`, never a CAST. It also
+  drops the old `accountId IS NOT NULL` filter, which is what makes unassigned
+  money visible. Plus `getLedgerEntriesByIds(ids)` and
+  `AccountDao.setOpeningBalance(id, openingBalance)`.
+
+  Deliberately not a new SQL aggregate: the only exact variant needs a hidden
+  `ROUND(... * 1000)` rule, which would be invisible to a pure-JVM test — the
+  same class of quiet lie this phase removes. Deliberately not
+  `observeTransactions()` either: full entities carry the whole `rawMessage`
+  SMS body, ~27 fields against 4. The Accounts screen now holds one small
+  object per transaction where it previously held a tiny aggregate; Home and
+  the Monthly Report already hold the entire ledger as full entities, so this
+  is strictly cheaper than what two screens already did.
+- `data/retention/RetentionPruner.kt` (new) — folds and deletes inside **one**
+  `withTransaction`, so a failure can never leave the balance folded but the
+  rows present. Held by `AppContainer` directly, following `BackupManager`,
+  rather than added to `TransactionRepository`: that interface already has ~25
+  members and three hand-written test fakes that each pay for every new one.
+
+**UI**
+- `AccountsScreen` — `AccountWithBalance.balance` is now `BigDecimal`; the
+  ViewModel emits an `AccountsUiState` carrying the rows plus an
+  `UnassignedTotal`. `buildBalanceAdjustment` takes a `BigDecimal` computed
+  balance, so the reconciliation dialog compares exact figures.
+- `DashboardViewModel` — computes in `BigDecimal`, then `.toDouble()` at the
+  boundary. `AccountRow.balance` stays `Double` on purpose: everything
+  downstream (`computeAccountsPresentation`, `CurrencyMath.toBase`, the
+  carousel) is display math that is already well covered, and converting it
+  would buy nothing once the computation itself is exact. `DashboardViewModelTest`
+  is untouched as a result.
+- `MonthlyReportScreen` — the local fold is gone; the `excludeFromStats` filter
+  with it, for the net-worth figure only. `income`/`expenses` keep theirs,
+  which is correct for analytics. `MonthlyReportBuilder` is untouched, so
+  `MonthlyReportBuilderTest` stays green.
+- Both Home and Accounts show a "N transactions aren't in any account" card
+  when there are any, tapping through to the `AccountFilter.Unassigned` the
+  Activity tab already had. The route gained an optional
+  `transactions?accountFilter=` arg (the `rule_editor?ruleId=` pattern);
+  `"transactions"` was added to that tab's `childRoutePrefixes` so the bottom
+  bar stays highlighted when deep-linked.
+- `Format.kt` — a `BigDecimal.asMoneyOrMask`, so an exact balance reaches the
+  UI without passing through a `Double`.
+
+### Tests
+
+- `AccountBalanceCalculatorTest` (14): opening + credits - debits; other
+  accounts never leak in; **a fraction Double cannot represent survives
+  exactly**; no scale is imposed so nothing is silently rounded; **balance
+  adjustments and both transfer legs are counted**; **mixed currencies are
+  summed one to one - deliberate**; liabilities trend negative;
+  `unassignedTotals` groups by currency and normalizes its case;
+  `unassignedCount`; `netByAccount` omits empty accounts rather than reporting
+  zero.
+- `PrunedBalanceFolderTest` (10): most cases assert the invariant rather than a
+  magic number — compute, prune, fold, balance unchanged. **The headline case**
+  plus: debits lower / credits raise the opening; the previous opening is
+  reported for auditing; each account folds only by its own rows; an account
+  with no pruned rows produces no adjustment; unassigned rows fold into
+  nothing; an empty prune is a no-op; exactness for amounts Double would round;
+  a foreign-currency row folds at face value (the fold must use the same
+  arithmetic as the balance it protects); pruning everything leaves the balance
+  standing.
+- Updated: the three `TransactionRepository` fakes (one-line override swap) and
+  `BalanceAdjustmentTest`'s four `Double` literals, plus a new case proving an
+  exact computed balance can't manufacture a phantom one-cent correction.
+
+### Deferred
+
+- **Foreign-currency amounts still sum 1:1** into an account of a different
+  currency — a USD 100 charge reduces an AED account by 100. Raised as the
+  defect most likely to be quietly wrong on a real ledger; the user chose
+  explicitly to leave the behaviour alone, so the new calculator preserves it
+  exactly rather than changing it silently, and the named test above keeps the
+  choice visible. Revisiting it is self-contained: a conversion step inside
+  `AccountBalanceCalculator`, with unconvertible rows flagged using the app's
+  existing "≈" convention.
+- Not provable in CI: that a real prune leaves balances untouched on a device,
+  and that the Monthly Report's net worth now matches the Accounts screen.
+
+### CI verification
+
+Pending — to be amended with the run id, job id and log excerpt once read.

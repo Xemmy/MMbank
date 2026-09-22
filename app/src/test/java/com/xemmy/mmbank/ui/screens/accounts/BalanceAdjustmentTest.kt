@@ -29,7 +29,7 @@ class BalanceAdjustmentTest {
     fun `shortfall posts an excluded credit for the gap`() {
         val adjustment = buildBalanceAdjustment(
             account = account,
-            computedBalance = 900.0,
+            computedBalance = BigDecimal("900.00"),
             targetBalance = BigDecimal("1000.00"),
             nowMillis = 1_700_000_000_000,
         )!!
@@ -48,7 +48,7 @@ class BalanceAdjustmentTest {
     fun `overshoot posts an excluded debit for the gap`() {
         val adjustment = buildBalanceAdjustment(
             account = account,
-            computedBalance = 1250.75,
+            computedBalance = BigDecimal("1250.75"),
             targetBalance = BigDecimal("1200.00"),
         )!!
         assertTrue(adjustment.excludeFromStats)
@@ -61,7 +61,7 @@ class BalanceAdjustmentTest {
         assertNull(
             buildBalanceAdjustment(
                 account = account,
-                computedBalance = 1000.0,
+                computedBalance = BigDecimal("1000.00"),
                 targetBalance = BigDecimal("1000.00"),
             )
         )
@@ -69,13 +69,29 @@ class BalanceAdjustmentTest {
 
     @Test
     fun `sub-cent drift rounds away to no adjustment`() {
-        // Computed balances arrive as doubles; anything under half a cent
-        // rounds to the same 2-dp figure and must not create a phantom row.
+        // Anything under half a cent rounds to the same 2-dp figure and must
+        // not create a phantom row.
         assertNull(
             buildBalanceAdjustment(
                 account = account,
-                computedBalance = 1000.004,
+                computedBalance = BigDecimal("1000.004"),
                 targetBalance = BigDecimal("1000.00"),
+            )
+        )
+    }
+
+    @Test
+    fun `an exact computed balance produces no spurious one-cent adjustment`() {
+        // The computed balance now arrives as an exact BigDecimal rather than a
+        // Double. A sum like 0.1 + 0.2 that Double renders as 0.30000000000000004
+        // used to be capable of manufacturing a one-cent correction out of
+        // nothing; with exact arithmetic it agrees with the target exactly.
+        val exact = BigDecimal("0.1") + BigDecimal("0.2")
+        assertNull(
+            buildBalanceAdjustment(
+                account = account,
+                computedBalance = exact,
+                targetBalance = BigDecimal("0.30"),
             )
         )
     }
