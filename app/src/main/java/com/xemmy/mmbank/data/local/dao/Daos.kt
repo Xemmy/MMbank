@@ -270,11 +270,19 @@ interface TransactionDao {
     )
     fun observeUncategorized(demo: Boolean): Flow<List<TransactionEntity>>
 
-    /** Total real debit spend (analytics-eligible) in [currencyCode] within [ [startMillis], [endMillis] ) -- feeds [com.xemmy.mmbank.domain.budget.DailyBudgetPacing]. */
+    /**
+     * Total real net spend in [currencyCode] within [ [startMillis], [endMillis] )
+     * -- feeds [com.xemmy.mmbank.domain.budget.DailyBudgetPacing]. "Spend" here is
+     * exactly [com.xemmy.mmbank.domain.ledger.LedgerMath.spendDelta]: SPEND and
+     * ATM rows add, REFUND rows subtract, transfers/card payments/adjustments
+     * and anything the user hid from analytics don't count.
+     */
     @Query(
         """
-        SELECT COALESCE(SUM(CAST(amount AS REAL)), 0.0) FROM transactions
-        WHERE isDemo = 0 AND excludeFromStats = 0 AND direction = 'DEBIT' AND currencyCode = :currencyCode
+        SELECT COALESCE(SUM(CASE WHEN kind = 'REFUND' THEN -CAST(amount AS REAL) ELSE CAST(amount AS REAL) END), 0.0)
+        FROM transactions
+        WHERE isDemo = 0 AND excludeFromStats = 0 AND kind IN ('SPEND', 'ATM', 'REFUND')
+          AND currencyCode = :currencyCode
           AND timestamp >= :startMillis AND timestamp < :endMillis
         """
     )
@@ -288,8 +296,10 @@ interface TransactionDao {
      */
     @Query(
         """
-        SELECT COALESCE(SUM(CAST(amount AS REAL)), 0.0) FROM transactions
-        WHERE isDemo = 0 AND excludeFromStats = 0 AND direction = 'DEBIT' AND currencyCode = :currencyCode
+        SELECT COALESCE(SUM(CASE WHEN kind = 'REFUND' THEN -CAST(amount AS REAL) ELSE CAST(amount AS REAL) END), 0.0)
+        FROM transactions
+        WHERE isDemo = 0 AND excludeFromStats = 0 AND kind IN ('SPEND', 'ATM', 'REFUND')
+          AND currencyCode = :currencyCode
           AND categoryId = :categoryId
           AND timestamp >= :startMillis AND timestamp < :endMillis
         """
@@ -310,7 +320,7 @@ interface TransactionDao {
     @Query(
         """
         SELECT * FROM transactions
-        WHERE isDemo = 0 AND excludeFromStats = 0 AND direction = 'DEBIT'
+        WHERE isDemo = 0 AND excludeFromStats = 0 AND kind = 'SPEND'
           AND merchant IS NOT NULL AND LOWER(TRIM(merchant)) = LOWER(TRIM(:merchant))
         ORDER BY timestamp ASC
         """
@@ -343,12 +353,29 @@ interface TransactionDao {
         windowMillis: Long,
     ): List<TransactionEntity>
 
-    /** Marks a transfer-reconciliation match: both sides call this with each other's id. */
+    /**
+     * Marks a transfer-reconciliation match: both sides call this with each
+     * other's id. The [kind] (TRANSFER or CARD_PAYMENT) is what keeps both legs
+     * out of Spent/Received; a kind the user set by hand is left alone.
+     */
     @Query(
-        "UPDATE transactions SET linkedTransactionId = :linkedId, excludeFromStats = 1, spendingCategory = :category " +
+        "UPDATE transactions SET linkedTransactionId = :linkedId, spendingCategory = :category, " +
+            "kind = CASE WHEN kindUserSet = 1 THEN kind ELSE :kind END " +
             "WHERE id = :id"
     )
-    suspend fun linkAsTransfer(id: Long, linkedId: Long, category: com.xemmy.mmbank.domain.model.SpendingCategory)
+    suspend fun linkAsTransfer(
+        id: Long,
+        linkedId: Long,
+        kind: com.xemmy.mmbank.domain.model.TransactionKind,
+        category: com.xemmy.mmbank.domain.model.SpendingCategory,
+    )
+
+    /** Rows linked to any of [ids] that are not themselves in [ids] -- the partners a delete would orphan. */
+    @Query("SELECT * FROM transactions WHERE linkedTransactionId IN (:ids) AND id NOT IN (:ids)")
+    suspend fun getLinkedPartners(ids: List<Long>): List<TransactionEntity>
+
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    suspend fun getById(id: Long): TransactionEntity?
 
     // --- Backup support ---
 

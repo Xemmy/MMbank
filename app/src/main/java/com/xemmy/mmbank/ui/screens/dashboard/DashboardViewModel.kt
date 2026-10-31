@@ -15,6 +15,7 @@ import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.WalletBalance
 import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
@@ -804,7 +805,10 @@ internal fun computeDashboardStats(
     thisMonth: YearMonth = YearMonth.now(zone),
     dateRange: DashboardDateRange = DashboardDateRange.ThisMonth,
 ): DashboardStats {
-    val counted = if (includeExcluded) transactions else transactions.filter { !it.excludeFromStats }
+    // includeExcluded is the "show the whole ledger" view: plain debits vs
+    // credits, kinds and the exclusion flag ignored (see LedgerMath.raw).
+    val raw = includeExcluded
+    val counted = transactions.filter { LedgerMath.effect(it, raw) != LedgerMath.Effect.NONE }
     val ratesFromBase = rates
         .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
         .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
@@ -822,7 +826,12 @@ internal fun computeDashboardStats(
         var spend = 0.0
         byMonth[month].orEmpty().forEach { tx ->
             val value = inBase(tx) ?: return@forEach
-            if (tx.direction == TransactionDirection.CREDIT) income += value else spend += value
+            when (LedgerMath.effect(tx, raw)) {
+                LedgerMath.Effect.INCOME -> income += value
+                LedgerMath.Effect.SPEND -> spend += value
+                LedgerMath.Effect.REFUND -> spend -= value
+                LedgerMath.Effect.NONE -> Unit
+            }
         }
         MonthlyFlow(
             label = month.month.getDisplayName(TextStyle.SHORT, Locale.US),
@@ -834,11 +843,13 @@ internal fun computeDashboardStats(
     fun inWindow(tx: Transaction, window: DateWindow?): Boolean =
         window == null || window.contains(tx.timestampMillis, zone)
 
+    // Refunds net against their category; a category refunded down to zero
+    // or below drops out rather than showing a negative slice.
     fun categorySpendsOf(txs: List<Transaction>): List<CategorySpend> = txs
-        .filter { it.direction == TransactionDirection.DEBIT }
+        .filter { LedgerMath.affectsSpend(it, raw) }
         .groupBy { resolveCategory(it.categoryId, categories) }
         .mapNotNull { (category, catTxs) ->
-            val total = catTxs.sumOf { inBase(it) ?: 0.0 }
+            val total = LedgerMath.netSpend(catTxs, raw, ::inBase)
             if (total <= 0.0) null else CategorySpend(category, total)
         }
         .sortedByDescending { it.amount }
@@ -846,14 +857,14 @@ internal fun computeDashboardStats(
     val window = resolveDashboardWindow(dateRange, thisMonth)
     val periodTx = counted.filter { inWindow(it, window) }
 
-    val periodIncome = periodTx.filter { it.direction == TransactionDirection.CREDIT }.sumOf { inBase(it) ?: 0.0 }
-    val periodSpend = periodTx.filter { it.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
+    val periodIncome = LedgerMath.income(periodTx, raw, ::inBase)
+    val periodSpend = LedgerMath.netSpend(periodTx, raw, ::inBase)
 
     val personSpends = periodTx
-        .filter { it.direction == TransactionDirection.DEBIT }
+        .filter { LedgerMath.affectsSpend(it, raw) }
         .groupBy { it.person?.trim()?.takeIf(String::isNotEmpty) ?: "Unassigned" }
         .mapNotNull { (person, txs) ->
-            val total = txs.sumOf { inBase(it) ?: 0.0 }
+            val total = LedgerMath.netSpend(txs, raw, ::inBase)
             if (total <= 0.0) null else PersonSpend(person, total)
         }
         .sortedByDescending { it.amount }
@@ -872,12 +883,12 @@ internal fun computeDashboardStats(
     }
     val previousPeriodTx = previousWindow?.let { pw -> counted.filter { inWindow(it, pw) } }.orEmpty()
     val previousPeriodSpend = previousWindow?.let {
-        previousPeriodTx.filter { tx -> tx.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
+        LedgerMath.netSpend(previousPeriodTx, raw, ::inBase)
     }
     val previousCategorySpends = categorySpendsOf(previousPeriodTx)
 
     val biggestExpense = periodTx
-        .filter { it.direction == TransactionDirection.DEBIT }
+        .filter { LedgerMath.isSpend(it, raw) }
         .mapNotNull { tx -> inBase(tx)?.let { tx to it } }
         .maxByOrNull { (_, amount) -> amount }
         ?.let { (tx, amount) ->
@@ -948,10 +959,10 @@ internal fun computeFinancialHealth(
     val monthStartMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
     val nextMonthStartMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
     val monthTx = transactions.filter {
-        !it.excludeFromStats && it.timestampMillis >= monthStartMillis && it.timestampMillis < nextMonthStartMillis
+        it.timestampMillis >= monthStartMillis && it.timestampMillis < nextMonthStartMillis
     }
-    val income = monthTx.filter { it.direction == TransactionDirection.CREDIT }.sumOf { inBase(it) ?: 0.0 }
-    val expenses = monthTx.filter { it.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
+    val income = LedgerMath.income(monthTx, value = ::inBase)
+    val expenses = LedgerMath.netSpend(monthTx, value = ::inBase)
 
     val liquidBalance = accounts
         .filter { it.account.type in LIQUID_ACCOUNT_TYPES }

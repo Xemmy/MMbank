@@ -21,6 +21,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
@@ -60,11 +61,11 @@ private suspend fun loadWidgetPacing(container: AppContainer): WidgetPacing {
 
     val transactions = container.transactionRepository.observeTransactions().first()
     val monthDebits = transactions.filter { tx ->
-        tx.direction == TransactionDirection.DEBIT && !tx.excludeFromStats &&
+        LedgerMath.affectsSpend(tx) &&
             tx.currencyCode.equals(base, ignoreCase = true) && tx.timestampMillis >= monthStartMillis
     }
-    val spentBeforeToday = monthDebits.filter { it.timestampMillis < todayStartMillis }.sumOf { it.amount.toDouble() }
-    val spentToday = monthDebits.filter { it.timestampMillis >= todayStartMillis }.sumOf { it.amount.toDouble() }
+    val spentBeforeToday = LedgerMath.netSpendExact(monthDebits.filter { it.timestampMillis < todayStartMillis }).toDouble()
+    val spentToday = LedgerMath.netSpendExact(monthDebits.filter { it.timestampMillis >= todayStartMillis }).toDouble()
 
     val allowance = DailyBudgetPacing.dailyAllowance(
         monthlyBudget = BigDecimal.valueOf(monthlyBudget),

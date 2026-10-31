@@ -15,6 +15,8 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import kotlinx.serialization.Serializable
@@ -90,6 +92,14 @@ data class BackupTransaction(
     val suggestedCategoryColorHex: String? = null,
     val extractedMerchant: String? = null,
     val aiConfidence: Int? = null,
+    /**
+     * Absent (null) on backups from before format v6. Such a row is
+     * classified on restore exactly as the v25 -> v26 database upgrade
+     * classifies it (see [TransactionKindDetector.fromLegacy]), so restoring
+     * an old backup lands on the same totals as upgrading in place.
+     */
+    val kind: String? = null,
+    val kindUserSet: Boolean = false,
 )
 
 @Serializable
@@ -105,6 +115,8 @@ data class BackupRule(
     val sampleText: String?,
     val createdAt: Long,
     val assignAccountId: Long? = null,
+    /** Absent (null = automatic) on backups from before format v6. */
+    val assignKind: String? = null,
 )
 
 @Serializable
@@ -154,6 +166,10 @@ data class BackupPayload(
      * 5 = adds [merchantAccountMappings], the learned merchant -> account
      * rules. Gated the same way: a pre-v5 backup never held them, so restoring
      * one must not erase what this device has learned.
+     *
+     * 6 = adds [BackupTransaction.kind]/[BackupTransaction.kindUserSet] and
+     * [BackupRule.assignKind]. No gate: an older row's kind is derived on
+     * restore (see [BackupTransaction.toEntity]).
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -206,7 +222,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 5,
+            formatVersion = 6,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -286,7 +302,18 @@ class BackupManager(
             database.senderLabelDao().clearAll()
 
             database.accountDao().insertAll(payload.accounts.map { it.toEntity() })
-            database.transactionDao().insertAll(payload.transactions.map { it.toEntity() })
+            // Only consulted for pre-v6 rows, which carry no kind: a reconciled
+            // leg on (or paired with) a credit card was a card payment.
+            val cardAccountIds = payload.accounts.filter { it.type == AccountType.CREDIT_CARD.name }.map { it.id }.toSet()
+            val accountOfTransaction = payload.transactions.associate { it.id to it.accountId }
+            database.transactionDao().insertAll(
+                payload.transactions.map { t ->
+                    t.toEntity(
+                        onCreditCard = t.accountId in cardAccountIds ||
+                            t.linkedTransactionId?.let { accountOfTransaction[it] } in cardAccountIds,
+                    )
+                }
+            )
             database.parsingRuleDao().insertAll(payload.rules.map { it.toEntity() })
             database.senderLabelDao().insertAll(
                 payload.senderLabels.map { SenderLabelEntity(it.sender, it.label) }
@@ -412,38 +439,63 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     suggestedCategoryColorHex = suggestedCategoryColorHex,
     extractedMerchant = extractedMerchant,
     aiConfidence = aiConfidence,
+    kind = kind.name,
+    kindUserSet = kindUserSet,
 )
 
-internal fun BackupTransaction.toEntity() = TransactionEntity(
-    id = id,
-    accountId = accountId,
-    amount = BigDecimal(amount),
-    currencyCode = currencyCode,
-    direction = TransactionDirection.valueOf(direction),
-    merchant = merchant,
-    source = TransactionSource.valueOf(source),
-    sender = sender,
-    rawMessage = rawMessage,
-    matchedRuleName = matchedRuleName,
-    timestamp = timestamp,
-    createdAt = createdAt,
-    accountNumberSuffix = accountNumberSuffix,
-    category = TransactionCategory.valueOf(category),
-    person = person,
-    // An unknown category name is tolerated (a backup written by a newer build
-    // than the one importing it); the enum's own fallback, as at capture time.
-    spendingCategory = runCatching { SpendingCategory.valueOf(spendingCategory) }
-        .getOrDefault(SpendingCategory.UNCATEGORIZED),
-    categoryId = categoryId,
-    excludeFromStats = excludeFromStats,
-    linkedTransactionId = linkedTransactionId,
-    needsCategoryApproval = needsCategoryApproval,
-    suggestedCategoryName = suggestedCategoryName,
-    suggestedCategoryIcon = suggestedCategoryIcon,
-    suggestedCategoryColorHex = suggestedCategoryColorHex,
-    extractedMerchant = extractedMerchant,
-    aiConfidence = aiConfidence,
-)
+/**
+ * [onCreditCard] only matters for a pre-v6 row (null [BackupTransaction.kind]):
+ * whether it, or the leg it was reconciled with, sits on a credit card.
+ */
+internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): TransactionEntity {
+    val dir = TransactionDirection.valueOf(direction)
+    val txCategory = TransactionCategory.valueOf(category)
+    val (restoredKind, restoredExclude) = if (kind != null) {
+        TransactionKind.parse(kind, dir) to excludeFromStats
+    } else {
+        TransactionKindDetector.fromLegacy(
+            direction = dir,
+            matchedRuleName = matchedRuleName,
+            merchant = merchant,
+            category = txCategory,
+            excludeFromStats = excludeFromStats,
+            linked = linkedTransactionId != null,
+            onCreditCard = onCreditCard,
+        )
+    }
+    return TransactionEntity(
+        id = id,
+        accountId = accountId,
+        amount = BigDecimal(amount),
+        currencyCode = currencyCode,
+        direction = dir,
+        merchant = merchant,
+        source = TransactionSource.valueOf(source),
+        sender = sender,
+        rawMessage = rawMessage,
+        matchedRuleName = matchedRuleName,
+        timestamp = timestamp,
+        createdAt = createdAt,
+        accountNumberSuffix = accountNumberSuffix,
+        category = txCategory,
+        person = person,
+        // An unknown category name is tolerated (a backup written by a newer build
+        // than the one importing it); the enum's own fallback, as at capture time.
+        spendingCategory = runCatching { SpendingCategory.valueOf(spendingCategory) }
+            .getOrDefault(SpendingCategory.UNCATEGORIZED),
+        categoryId = categoryId,
+        excludeFromStats = restoredExclude,
+        linkedTransactionId = linkedTransactionId,
+        needsCategoryApproval = needsCategoryApproval,
+        suggestedCategoryName = suggestedCategoryName,
+        suggestedCategoryIcon = suggestedCategoryIcon,
+        suggestedCategoryColorHex = suggestedCategoryColorHex,
+        extractedMerchant = extractedMerchant,
+        aiConfidence = aiConfidence,
+        kind = restoredKind,
+        kindUserSet = kindUserSet,
+    )
+}
 
 internal fun ParsingRuleEntity.toBackup() = BackupRule(
     id = id,
@@ -457,6 +509,7 @@ internal fun ParsingRuleEntity.toBackup() = BackupRule(
     sampleText = sampleText,
     createdAt = createdAt,
     assignAccountId = assignAccountId,
+    assignKind = assignKind?.name,
 )
 
 internal fun BackupRule.toEntity() = ParsingRuleEntity(
@@ -471,6 +524,7 @@ internal fun BackupRule.toEntity() = ParsingRuleEntity(
     sampleText = sampleText,
     createdAt = createdAt,
     assignAccountId = assignAccountId,
+    assignKind = assignKind?.let { n -> TransactionKind.entries.firstOrNull { it.name == n } },
 )
 
 internal fun CategoryEntity.toBackup() = BackupCategory(

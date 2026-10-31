@@ -307,6 +307,14 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putInt(KEY_TRANSACTION_RETENTION_MONTHS, value.coerceAtLeast(0)).apply()
 
     /**
+     * Last version of the one-time ledger re-classification pass that ran
+     * (see AppContainer.reclassifyLedgerOnce). 0 = never.
+     */
+    var ledgerKindBackfillVersion: Int
+        get() = prefs.getInt(KEY_LEDGER_KIND_BACKFILL_VERSION, 0)
+        set(value) = prefs.edit().putInt(KEY_LEDGER_KIND_BACKFILL_VERSION, value).apply()
+
+    /**
      * Opt-in daily reminder shortly before a manually tracked [com.xemmy.mmbank.domain.model.Bill]
      * is due. Same off-by-default posture as [subscriptionRemindersEnabled],
      * and independent of it -- a user may want one reminder stream but not
@@ -363,6 +371,7 @@ class AppPreferences(context: Context) {
         const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
+        const val KEY_LEDGER_KIND_BACKFILL_VERSION = "ledger_kind_backfill_version"
         const val KEY_BILL_REMINDERS = "bill_reminders_enabled"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }

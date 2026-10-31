@@ -3141,3 +3141,121 @@ reversibility is what makes silent learning safe rather than merely convenient.
 ### CI verification
 
 Pending — to be amended once the job log is read.
+
+## Phase 16.1 — One money model: every transaction knows what it is
+
+Version 0.46.0 (versionCode 72). Schema v25 -> v26.
+
+### Why
+
+A row only knew its direction plus one `excludeFromStats` flag, set
+automatically in three narrow cases. The app therefore had no way to tell a
+purchase from a card payment, a transfer between the user's own accounts, a
+refund or an ATM withdrawal. As a result:
+- A card payment counted twice. The bank-side debit counted as spend on top of
+  the card purchases, unless one exact English message arrived within ten
+  minutes.
+- Own-account transfers counted as spend on one side and income on the other.
+- Refunds counted as income. Tabby partial refunds vanished entirely, so the
+  full original purchase stayed counted.
+- About fifteen screens and engines each wrote their own
+  `!excludeFromStats && direction == DEBIT`, and they disagreed:
+  - The Activity hero card ignored the exclusion flag.
+  - The report's health figures added AED and USD together.
+  - Cashback counted as income.
+- `MerchantCategorizer` keyword hits ("atm", "transfer") made rows eligible for
+  transfer pairing. An ATM withdrawal and an unrelated same-amount deposit
+  could pair, and then both disappeared from the stats.
+
+### What changed
+
+- **`TransactionKind`** (`SPEND, INCOME, REFUND, ATM, TRANSFER, CARD_PAYMENT,
+  CASHBACK, ADJUSTMENT`) on every transaction, plus `kindUserSet`. Parsing
+  rules gain `assignKind`.
+- **`TransactionKindDetector`** (pure) decides the kind at capture time, once
+  the account is known.
+  - Precedence: rule kind → learned kind → built-in rule families → cashback
+    tag → message wording (card payment, own transfer, ATM, refund) → a credit
+    landing on a credit card is a payment → the direction's default.
+  - A one-sided kind can never land on the wrong direction (`coerce`).
+  - The Arabic `builtin.ar.transfer.*` rules are deliberately **not** treated
+    as transfers: they also catch salary and other incoming money.
+- **`LedgerMath`** is the single definition of Spent/Received:
+  - SPEND/ATM add to spending. REFUND subtracts from it. INCOME adds to
+    received. Everything else counts toward neither.
+  - The user's `excludeFromStats` switch always wins.
+  - The Dashboard's "whole ledger" toggle is `raw = true`, which counts plain
+    debits vs credits.
+  - Now used by the Dashboard, Goals, Analytics heatmap and pacing, Activity
+    hero card, Monthly Report (builder and health inputs, now currency-scoped),
+    category budgets, the daily-budget widget, Copilot, forecaster payday
+    detection, merchant profiler, subscription radar, weekly digest and
+    retention planner.
+  - The two SQL budget aggregates now filter on kind and subtract refunds.
+- **`TransferMatcher` rewrite:**
+  - Pairs only when one leg is already an internal move by kind. The keyword
+    category no longer qualifies a row.
+  - Never pairs two legs on the same account, or a leg the user classified by
+    hand.
+  - Card payments get a 72-hour window, because banks post the card credit
+    late. Plain transfers keep the 10-minute window.
+  - A pair becomes CARD_PAYMENT when either side is a card, otherwise TRANSFER.
+  - Linking no longer flips `excludeFromStats`.
+- **Repository fixes:**
+  - Budget, subscription and pacing hooks now see the row *after* linking.
+  - Deleting a linked leg releases its partner: the link is cleared and the
+    partner's kind is re-detected.
+  - Editing Spent ↔ Received coerces the kind.
+- **Net worth:** a credit card or loan in credit (positive balance) now counts
+  as an asset instead of being `abs()`-ed into debt.
+- **Balance adjustments** are written as kind ADJUSTMENT instead of relying on
+  the exclusion flag.
+
+### Upgrade path
+
+`MIGRATION_25_26` backfills in SQL, mirroring `TransactionKindDetector.fromLegacy`
+statement for statement:
+- Linked legs and card-payment credits become CARD_PAYMENT or TRANSFER.
+- "Balance adjustment" rows become ADJUSTMENT.
+- Tabby "decreased by" becomes REFUND and "increased by" becomes SPEND.
+- `CASHBACK_EARNED` becomes CASHBACK.
+
+Those automatic exclusions drop the flag. An exclusion the user set by hand
+survives.
+
+On the next launch, `AppContainer.reclassifyLedgerOnce` re-reads old message
+text with the full detector (ATM, refunds, wording-only card payments and
+transfers). It only ever upgrades rows still on the plain default.
+
+Backups move to format v6 and carry `kind`, `kindUserSet` and `assignKind`. A
+pre-v6 row restores through the same `fromLegacy` path, so restoring an old
+backup lands on the same totals as upgrading in place.
+
+### Tests
+
+- `TransactionKindDetectorTest`: every kind; Arabic transfer rules stay
+  income; precedence; coercion; legacy conversion; `reclassify` guards.
+- `LedgerMathTest`: refund netting; internal moves and cashback in neither
+  total; user exclusion; raw mode; unconvertible rows.
+- `TransferMatcherTest` (rewritten):
+  - The ATM false pair.
+  - The 72-hour card window and its edge.
+  - A card account giving the long window.
+  - The same-account and user-classified guards.
+  - Pair kind.
+- `DashboardViewModelTest`: card payment pair, refund netting by category and
+  month, ATM.
+- `NetWorthAggregatorTest`: a card in credit is an asset. Fixtures are now
+  signed.
+- `EntityMappersTest`, `BackupMappersTest`: kind fields round-trip, pre-v6
+  restore, unknown kind.
+- Ingest tests assert kinds instead of the old automatic flag.
+
+### Deferred
+
+- The migration SQL is not executed in CI (no instrumented tests). `assembleDebug`
+  passing Room's schema check is the only automated evidence.
+
+### CI verification
+
+Pending — to be amended once the job log is read.

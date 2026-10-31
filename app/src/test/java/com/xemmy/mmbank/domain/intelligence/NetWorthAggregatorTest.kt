@@ -17,8 +17,8 @@ class NetWorthAggregatorTest {
         val balances = listOf(
             AccountBalance(1, AccountType.CHECKING, BigDecimal("5000.00")),
             AccountBalance(2, AccountType.SAVINGS, BigDecimal("10000.00")),
-            AccountBalance(3, AccountType.CREDIT_CARD, BigDecimal("1200.00")),
-            AccountBalance(4, AccountType.LOAN, BigDecimal("3000.00")),
+            AccountBalance(3, AccountType.CREDIT_CARD, BigDecimal("-1200.00")),
+            AccountBalance(4, AccountType.LOAN, BigDecimal("-3000.00")),
         )
         val result = NetWorthAggregator.aggregate(balances)
 
@@ -28,17 +28,23 @@ class NetWorthAggregatorTest {
     }
 
     @Test
-    fun `credit account balance sign is normalized to a magnitude owed`() {
-        // Some callers track a credit card's balance as negative (debt), others as a positive amount owed.
-        val negativeConvention = NetWorthAggregator.aggregate(
+    fun `a negative credit card balance is debt`() {
+        val result = NetWorthAggregator.aggregate(
             listOf(AccountBalance(1, AccountType.CREDIT_CARD, BigDecimal("-500.00")))
         )
-        val positiveConvention = NetWorthAggregator.aggregate(
-            listOf(AccountBalance(1, AccountType.CREDIT_CARD, BigDecimal("500.00")))
+        assertEquals(BigDecimal("500.00"), result.creditTotal)
+        assertEquals(0, BigDecimal("-500").compareTo(result.netWorth))
+    }
+
+    @Test
+    fun `a credit card in credit counts as an asset, not debt`() {
+        // Overpaid, or refunded after being paid off: the bank owes you.
+        val result = NetWorthAggregator.aggregate(
+            listOf(AccountBalance(1, AccountType.CREDIT_CARD, BigDecimal("40.00")))
         )
-        assertEquals(BigDecimal("500.00"), negativeConvention.creditTotal)
-        assertEquals(BigDecimal("500.00"), positiveConvention.creditTotal)
-        assertEquals(negativeConvention.netWorth, positiveConvention.netWorth)
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.creditTotal))
+        assertEquals(0, BigDecimal("40").compareTo(result.debitTotal))
+        assertEquals(0, BigDecimal("40").compareTo(result.netWorth))
     }
 
     @Test
@@ -57,7 +63,7 @@ class NetWorthAggregatorTest {
     fun `net worth can go negative when liabilities exceed assets`() {
         val balances = listOf(
             AccountBalance(1, AccountType.CHECKING, BigDecimal("100.00")),
-            AccountBalance(2, AccountType.LOAN, BigDecimal("5000.00")),
+            AccountBalance(2, AccountType.LOAN, BigDecimal("-5000.00")),
         )
         val result = NetWorthAggregator.aggregate(balances)
         assertTrue(result.netWorth < BigDecimal.ZERO)
@@ -77,7 +83,7 @@ class NetWorthAggregatorTest {
     fun `per-account contribution is signed negative for a credit account`() {
         val balances = listOf(
             AccountBalance(1, AccountType.CHECKING, BigDecimal("1000.00")),
-            AccountBalance(2, AccountType.CREDIT_CARD, BigDecimal("300.00")),
+            AccountBalance(2, AccountType.CREDIT_CARD, BigDecimal("-300.00")),
         )
         val result = NetWorthAggregator.aggregate(balances)
         assertEquals(BigDecimal("1000.00"), result.perAccount[1])

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.intelligence
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
@@ -54,8 +55,9 @@ object CashFlowForecaster {
     fun detectIncomePattern(transactions: List<Transaction>, currencyCode: String): IncomePattern? {
         val credits = transactions
             .filter {
-                it.direction == TransactionDirection.CREDIT &&
-                    !it.excludeFromStats &&
+                // Only real income: refunds, cashback and money moved in from
+                // the user's own accounts are not paydays.
+                LedgerMath.isIncome(it) &&
                     it.currencyCode.equals(currencyCode, ignoreCase = true) &&
                     it.amount.toDouble() >= MIN_INCOME_AMOUNT
             }

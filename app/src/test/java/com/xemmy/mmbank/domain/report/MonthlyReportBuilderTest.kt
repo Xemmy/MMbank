@@ -168,7 +168,7 @@ class MonthlyReportBuilderTest {
             month = emptyList(),
             accountBalances = listOf(
                 NetWorthAggregator.AccountBalance(1L, AccountType.CHECKING, BigDecimal("5000")),
-                NetWorthAggregator.AccountBalance(2L, AccountType.CREDIT_CARD, BigDecimal("1200")),
+                NetWorthAggregator.AccountBalance(2L, AccountType.CREDIT_CARD, BigDecimal("-1200")),
             ),
         )
         val netWorth = report.netWorth!!

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.ai
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
@@ -68,7 +69,7 @@ object TransactionRetentionPlanner {
 
     /** Real, analytics-eligible debit spend averaged per calendar month present in the data, keyed by currency. */
     private fun averageMonthlyDebitByCurrency(transactions: List<Transaction>): Map<String, BigDecimal> {
-        val debits = transactions.filter { it.direction == TransactionDirection.DEBIT && !it.excludeFromStats }
+        val debits = transactions.filter { LedgerMath.isSpend(it) }
         return debits.groupBy { it.currencyCode.uppercase() }.mapValues { (_, rows) ->
             val total = rows.fold(BigDecimal.ZERO) { acc, tx -> acc + tx.amount }
             val months = rows.map { monthKey(it.timestampMillis) }.distinct().size.coerceAtLeast(1)

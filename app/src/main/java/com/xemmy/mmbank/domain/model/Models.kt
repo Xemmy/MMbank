@@ -17,6 +17,52 @@ enum class TransactionDirection { DEBIT, CREDIT }
 enum class TransactionCategory { NORMAL, CASHBACK_EARNED }
 
 /**
+ * What a transaction *is*, as opposed to which way the money moved
+ * ([TransactionDirection]). Every total in the app -- Spent, Received,
+ * budgets, reports, forecasts -- is derived from this through
+ * [com.xemmy.mmbank.domain.ledger.LedgerMath], so a card payment or a move
+ * between two of the user's own accounts can never be counted as spending on
+ * one side and income on the other.
+ *
+ * Every kind still moves its account's balance; the kind only decides how the
+ * row reads in analytics:
+ *  - [SPEND], [ATM]: spending.
+ *  - [REFUND]: money back for an earlier purchase -- lowers spending rather
+ *    than counting as income.
+ *  - [INCOME]: money received.
+ *  - [CASHBACK]: rewards; shown on the Cashback screen, in neither total.
+ *  - [TRANSFER], [CARD_PAYMENT]: money moving between the user's own
+ *    accounts (a card payment is the special case of paying a credit card
+ *    off); in neither total, because the purchases on the card were already
+ *    counted when they happened.
+ *  - [ADJUSTMENT]: balance corrections; in neither total.
+ */
+enum class TransactionKind(val label: String) {
+    SPEND("Spent"),
+    INCOME("Received"),
+    REFUND("Refund"),
+    ATM("Cash withdrawal"),
+    TRANSFER("Transfer"),
+    CARD_PAYMENT("Card payment"),
+    CASHBACK("Cashback"),
+    ADJUSTMENT("Adjustment"),
+    ;
+
+    /** True for kinds that move money between the user's own accounts. */
+    val isInternalMove: Boolean get() = this == TRANSFER || this == CARD_PAYMENT
+
+    companion object {
+        /** The kind a plain, unclassified transaction in [direction] is. */
+        fun defaultFor(direction: TransactionDirection): TransactionKind =
+            if (direction == TransactionDirection.CREDIT) INCOME else SPEND
+
+        /** Lenient parse for persisted/backed-up names; unknown -> [defaultFor]. */
+        fun parse(name: String?, direction: TransactionDirection): TransactionKind =
+            name?.let { n -> entries.firstOrNull { it.name == n } } ?: defaultFor(direction)
+    }
+}
+
+/**
  * User-facing spending category, assignable per transaction (like account and
  * person) and auto-suggested from the merchant at capture time. A fixed set —
  * kept deliberately small so the Dashboard breakdown stays legible and no
@@ -77,6 +123,11 @@ data class ParsedTransaction(
      * regardless of what "merchant" text happens to be nearby).
      */
     val spendingCategoryOverride: SpendingCategory? = null,
+    /**
+     * The kind the matched rule pins (see [ParsingRule.assignKind]); null
+     * leaves it to [com.xemmy.mmbank.domain.ledger.TransactionKindDetector].
+     */
+    val kindOverride: TransactionKind? = null,
 )
 
 data class Account(
@@ -160,14 +211,16 @@ data class Transaction(
     /** Spending category (auto-suggested from the merchant, user-overridable). */
     val spendingCategory: SpendingCategory = SpendingCategory.UNCATEGORIZED,
     /**
-     * Stays visible in the raw ledger (and keeps counting toward account
-     * balances) but is omitted from analytics: balance corrections, Tabby
-     * refund adjustments, internal transfers, cash refunds.
+     * The user's manual "hide from analytics" switch: the row stays in the
+     * ledger (and keeps counting toward account balances) but is omitted
+     * from every total regardless of [kind]. Transfers, card payments and
+     * balance corrections no longer need it -- their [kind] already keeps
+     * them out of Spent/Received.
      */
     val excludeFromStats: Boolean = false,
     /**
      * The counterpart transaction this one was reconciled with — the other
-     * leg of a credit-card statement payment (see
+     * leg of a transfer or credit-card payment (see
      * [com.xemmy.mmbank.domain.usecase.TransferMatcher]). Null until/unless
      * a matching opposite-direction transaction is found; set on both rows
      * at once, so it's always symmetric.
@@ -204,6 +257,19 @@ data class Transaction(
      * Null for rows recorded before this field existed or entered manually.
      */
     val aiConfidence: Int? = null,
+    /**
+     * What this transaction is -- spend, income, refund, transfer, card
+     * payment... -- see [TransactionKind]. Set at capture time by
+     * [com.xemmy.mmbank.domain.ledger.TransactionKindDetector]; defaults to
+     * the plain kind for [direction].
+     */
+    val kind: TransactionKind = TransactionKind.defaultFor(direction),
+    /**
+     * True once the user picked [kind] by hand. Automatic re-classification
+     * (backfills, transfer linking/unlinking, learned merchant kinds) never
+     * overrides a user-set kind.
+     */
+    val kindUserSet: Boolean = false,
 )
 
 /**
@@ -234,6 +300,12 @@ data class ParsingRule(
     val assignAccountId: Long? = null,
     /** True for sample rules created by the Settings "Demo mode" toggle. */
     val isDemo: Boolean = false,
+    /**
+     * Kind every transaction matched by this rule gets (e.g. a rule for the
+     * bank's "card payment" message -> [TransactionKind.CARD_PAYMENT]); null
+     * keeps the automatic classification.
+     */
+    val assignKind: TransactionKind? = null,
 )
 
 /** User-defined friendly name for a transaction sender (SMS short code or app package). */

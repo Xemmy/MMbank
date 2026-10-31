@@ -69,6 +69,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -201,9 +202,9 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
 
 /**
  * Builds the "Balance adjustment" transaction that reconciles a drifted computed
- * balance to the real one, or null when they already match. The row is excluded
- * from analytics by construction: it corrects the ledger, it isn't a real spend
- * or income, so it must never show up in stats.
+ * balance to the real one, or null when they already match. Its kind is
+ * [TransactionKind.ADJUSTMENT] by construction: it corrects the ledger, it
+ * isn't a real spend or income, so it never shows up in Spent/Received.
  */
 internal fun buildBalanceAdjustment(
     account: Account,
@@ -224,7 +225,8 @@ internal fun buildBalanceAdjustment(
         timestampMillis = nowMillis,
         matchedRuleName = "Balance adjustment",
         spendingCategory = SpendingCategory.OTHER,
-        excludeFromStats = true,
+        kind = TransactionKind.ADJUSTMENT,
+        kindUserSet = true,
     )
 }
 

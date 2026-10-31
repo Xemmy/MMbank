@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.demo
 
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -79,6 +80,11 @@ object DemoDataGenerator {
             categoryId = categoryId,
             person = person,
             isDemo = true,
+            kind = when {
+                category == TransactionCategory.CASHBACK_EARNED -> TransactionKind.CASHBACK
+                spendingCategory == SpendingCategory.TRANSFERS -> TransactionKind.TRANSFER
+                else -> TransactionKind.defaultFor(direction)
+            },
         )
     }
 

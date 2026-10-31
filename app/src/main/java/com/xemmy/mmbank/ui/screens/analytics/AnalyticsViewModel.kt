@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.screens.analytics
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
 import com.xemmy.mmbank.domain.model.Category
@@ -118,13 +119,15 @@ private fun computeAnalyticsState(
     fun Transaction.localDate(): LocalDate = Instant.ofEpochMilli(timestampMillis).atZone(zone).toLocalDate()
 
     val (windowStart, windowEnd) = windowFor(range, today)
+    // Purchases and refunds: a refund nets against the day and category it
+    // lands in (see LedgerMath).
     val debitsInWindow = transactions.filter { tx ->
-        tx.direction == TransactionDirection.DEBIT && !tx.excludeFromStats &&
+        LedgerMath.affectsSpend(tx) &&
             tx.localDate() >= windowStart && tx.localDate() <= windowEnd
     }
 
     val spendByDay = debitsInWindow.groupBy { it.localDate() }
-        .mapValues { (_, txs) -> txs.sumOf { inBase(it) ?: 0.0 } }
+        .mapValues { (_, txs) -> LedgerMath.netSpend(txs, value = ::inBase).coerceAtLeast(0.0) }
     val dailySpend = generateSequence(windowStart) { it.plusDays(1) }
         .takeWhile { it <= windowEnd }
         .map { day -> DailySpend(day, spendByDay[day] ?: 0.0) }
@@ -139,7 +142,7 @@ private fun computeAnalyticsState(
     val categorySpends = debitsInWindow
         .groupBy { resolveCategory(it.categoryId, categories) }
         .mapNotNull { (category, txs) ->
-            val total = txs.sumOf { inBase(it) ?: 0.0 }
+            val total = LedgerMath.netSpend(txs, value = ::inBase)
             if (total <= 0.0) null else CategorySpend(category, total)
         }
         .sortedByDescending { it.amount }
@@ -152,12 +155,12 @@ private fun computeAnalyticsState(
     val pacing = if (monthlyBudget > 0.0) {
         val monthStart = YearMonth.from(today).atDay(1)
         val monthTx = transactions.filter { tx ->
-            tx.direction == TransactionDirection.DEBIT && !tx.excludeFromStats &&
+            LedgerMath.affectsSpend(tx) &&
                 tx.currencyCode.equals(base, ignoreCase = true) &&
                 tx.localDate() >= monthStart && tx.localDate() <= today
         }
-        val spentToday = monthTx.filter { it.localDate() == today }.sumOf { it.amount.toDouble() }
-        val spentBeforeToday = monthTx.filter { it.localDate() < today }.sumOf { it.amount.toDouble() }
+        val spentToday = LedgerMath.netSpendExact(monthTx.filter { it.localDate() == today }).toDouble()
+        val spentBeforeToday = LedgerMath.netSpendExact(monthTx.filter { it.localDate() < today }).toDouble()
         val allowance = DailyBudgetPacing.dailyAllowance(
             monthlyBudget = BigDecimal.valueOf(monthlyBudget),
             fixedExpenses = BigDecimal.valueOf(container.preferences.fixedMonthlyExpenses),

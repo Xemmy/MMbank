@@ -27,6 +27,7 @@ import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.model.WalletBalance
 import java.math.BigDecimal
@@ -137,6 +138,10 @@ data class TransactionEntity(
     val extractedMerchant: String? = null,
     /** 0-100 automated-categorization confidence; see [Transaction.aiConfidence]. */
     val aiConfidence: Int? = null,
+    /** What the row is (spend, refund, transfer, card payment...); see [TransactionKind]. */
+    val kind: TransactionKind = TransactionKind.defaultFor(direction),
+    /** True once the user picked [kind] by hand; see [Transaction.kindUserSet]. */
+    val kindUserSet: Boolean = false,
 )
 
 @Entity(tableName = "categories")
@@ -218,6 +223,8 @@ data class ParsingRuleEntity(
     val assignAccountId: Long? = null,
     /** True for sample rules created by the Settings "Demo mode" toggle. */
     val isDemo: Boolean = false,
+    /** Kind matched transactions get; null = automatic. See [ParsingRule.assignKind]. */
+    val assignKind: TransactionKind? = null,
 )
 
 @Entity(tableName = "asset_balances")
@@ -408,7 +415,7 @@ fun TransactionEntity.toDomain() = Transaction(
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
-    extractedMerchant, aiConfidence,
+    extractedMerchant, aiConfidence, kind, kindUserSet,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -438,6 +445,8 @@ fun Transaction.toEntity() = TransactionEntity(
     suggestedCategoryColorHex = suggestedCategoryColorHex,
     extractedMerchant = extractedMerchant,
     aiConfidence = aiConfidence,
+    kind = kind,
+    kindUserSet = kindUserSet,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)
@@ -461,12 +470,12 @@ fun MerchantAccountMapping.toEntity() = MerchantAccountMappingEntity(
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
-    assignAccountId, isDemo,
+    assignAccountId, isDemo, assignKind,
 )
 
 fun ParsingRule.toEntity() = ParsingRuleEntity(
     id, name, pattern, senderPattern, direction, defaultCurrency, priority, enabled, sampleText, createdAt,
-    assignAccountId, isDemo,
+    assignAccountId, isDemo, assignKind,
 )
 
 fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, valueUsd, updatedAt)

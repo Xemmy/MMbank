@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.intelligence
 
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
@@ -37,7 +38,7 @@ object SubscriptionRadarEngine {
     fun detect(transactions: List<Transaction>): List<Subscription> =
         transactions
             .asSequence()
-            .filter { it.direction == TransactionDirection.DEBIT && !it.excludeFromStats }
+            .filter { it.kind == TransactionKind.SPEND && !it.excludeFromStats }
             .filter { !it.merchant.isNullOrBlank() }
             .groupBy { it.merchant!!.trim().lowercase() to it.currencyCode.uppercase() }
             .values

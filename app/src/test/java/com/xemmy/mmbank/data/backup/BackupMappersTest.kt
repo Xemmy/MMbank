@@ -11,6 +11,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import kotlinx.serialization.json.Json
@@ -60,6 +61,8 @@ class BackupMappersTest {
         suggestedCategoryColorHex = "#00FF00",
         extractedMerchant = "CARREFOUR HYPER",
         aiConfidence = 87,
+        kind = TransactionKind.CARD_PAYMENT,
+        kindUserSet = true,
     )
 
     private val fullAccount = AccountEntity(
@@ -127,6 +130,7 @@ class BackupMappersTest {
             createdAt = 1_650_000_000_000L,
             assignAccountId = 7,
             isDemo = false,
+            assignKind = TransactionKind.TRANSFER,
         )
         assertEquals(rule, rule.toBackup().toEntity())
     }
@@ -207,6 +211,39 @@ class BackupMappersTest {
         val decodedAccount = json.decodeFromString(BackupAccount.serializer(), v2Account).toEntity()
         assertNull(decodedAccount.statementCycleDay)
         assertFalse(decodedAccount.hiddenFromDashboard)
+    }
+
+    @Test
+    fun `a pre-v6 transaction gets its kind exactly as the database upgrade would`() {
+        // A reconciled card-payment leg from before kinds existed: excluded,
+        // linked, on a credit card. Restoring it must land on CARD_PAYMENT with
+        // the automatic exclusion dropped -- the same row upgraded in place.
+        val v5Linked = """
+            {"id":1,"accountId":3,"amount":"3600","currencyCode":"AED","direction":"DEBIT",
+             "merchant":null,"source":"SMS","sender":null,"rawMessage":null,"matchedRuleName":"builtin.en.debit.af.cur-amt",
+             "timestamp":1,"createdAt":1,"accountNumberSuffix":null,"category":"NORMAL","person":null,
+             "spendingCategory":"TRANSFERS","categoryId":null,"excludeFromStats":true,"linkedTransactionId":2}
+        """.trimIndent()
+        val linked = json.decodeFromString(BackupTransaction.serializer(), v5Linked).toEntity(onCreditCard = true)
+        assertEquals(TransactionKind.CARD_PAYMENT, linked.kind)
+        assertFalse(linked.excludeFromStats)
+
+        // A credit the user hid by hand keeps its flag and reads as income.
+        val v5Hidden = """
+            {"id":4,"accountId":null,"amount":"50","currencyCode":"AED","direction":"CREDIT",
+             "merchant":"Gift","source":"MANUAL","sender":null,"rawMessage":null,"matchedRuleName":null,
+             "timestamp":1,"createdAt":1,"accountNumberSuffix":null,"excludeFromStats":true}
+        """.trimIndent()
+        val hidden = json.decodeFromString(BackupTransaction.serializer(), v5Hidden).toEntity()
+        assertEquals(TransactionKind.INCOME, hidden.kind)
+        assertTrue(hidden.excludeFromStats)
+        assertFalse(hidden.kindUserSet)
+    }
+
+    @Test
+    fun `an unknown kind from a newer build falls back to the direction's default`() {
+        val fromNewerBuild = fullTransaction.toBackup().copy(kind = "KIND_FROM_THE_FUTURE")
+        assertEquals(TransactionKind.SPEND, fromNewerBuild.toEntity().kind)
     }
 
     @Test

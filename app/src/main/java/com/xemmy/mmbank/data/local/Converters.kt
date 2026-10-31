@@ -8,6 +8,7 @@ import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 
@@ -32,6 +33,14 @@ class Converters {
     @TypeConverter
     fun stringToDirection(value: String?): TransactionDirection? =
         value?.let { TransactionDirection.valueOf(it) }
+
+    @TypeConverter
+    fun kindToString(value: TransactionKind?): String? = value?.name
+
+    /** Lenient: an unknown name (a newer build's kind) reads back as null rather than crashing. */
+    @TypeConverter
+    fun stringToKind(value: String?): TransactionKind? =
+        value?.let { n -> TransactionKind.entries.firstOrNull { it.name == n } }
 
     @TypeConverter
     fun sourceToString(value: TransactionSource?): String? = value?.name

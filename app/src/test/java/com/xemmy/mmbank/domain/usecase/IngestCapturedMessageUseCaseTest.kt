@@ -1,5 +1,7 @@
 package com.xemmy.mmbank.domain.usecase
 
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
@@ -186,7 +188,7 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
-    fun `tabby decreased adjustment is a credit excluded from stats`() = runBlocking {
+    fun `tabby decreased adjustment is a credit classified as a refund`() = runBlocking {
         val result = useCase().invoke(
             push(
                 sender = "com.tabby.customer",
@@ -198,11 +200,12 @@ class IngestCapturedMessageUseCaseTest {
         val parsed = recorder.lastParsed!!
         assertEquals("builtin.en.adjust.decrease", parsed.matchedRuleName)
         assertEquals(TransactionDirection.CREDIT, parsed.direction)
-        assertTrue(parsed.excludeFromStats)
+        // A partial refund now lowers spending instead of vanishing from it.
+        assertEquals(TransactionKind.REFUND, kindOf(parsed))
     }
 
     @Test
-    fun `tabby increased adjustment is a debit excluded from stats`() = runBlocking {
+    fun `tabby increased adjustment is a debit classified as spend`() = runBlocking {
         val result = useCase().invoke(
             push(
                 sender = "com.tabby.customer",
@@ -214,7 +217,7 @@ class IngestCapturedMessageUseCaseTest {
         val parsed = recorder.lastParsed!!
         assertEquals("builtin.en.adjust.increase", parsed.matchedRuleName)
         assertEquals(TransactionDirection.DEBIT, parsed.direction)
-        assertTrue(parsed.excludeFromStats)
+        assertEquals(TransactionKind.SPEND, kindOf(parsed))
     }
 
     @Test
@@ -225,7 +228,7 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
-    fun `card payment credited message is excluded from stats and tagged as a transfer`() = runBlocking {
+    fun `card payment credited message is a card payment tagged as a transfer`() = runBlocking {
         val result = useCase().invoke(
             push(
                 "com.adcb.bank",
@@ -236,7 +239,7 @@ class IngestCapturedMessageUseCaseTest {
         val parsed = recorder.lastParsed!!
         assertEquals("builtin.en.transfer.card-payment-credit", parsed.matchedRuleName)
         assertEquals(TransactionDirection.CREDIT, parsed.direction)
-        assertTrue(parsed.excludeFromStats)
+        assertEquals(TransactionKind.CARD_PAYMENT, kindOf(parsed))
         assertEquals(
             com.xemmy.mmbank.domain.model.SpendingCategory.TRANSFERS,
             parsed.spendingCategoryOverride,
@@ -406,4 +409,16 @@ class IngestCapturedMessageUseCaseTest {
     fun `an empty ignore list changes nothing`() = runBlocking {
         assertTrue(useCase(ignoredSamples = emptyList()).invoke(push("com.adcb.bank", bankStyleBody)) is IngestResult.Inserted)
     }
+
+    /** The kind the repository will give [parsed] (see TransactionRepositoryImpl.recordParsed). */
+    private fun kindOf(parsed: com.xemmy.mmbank.domain.model.ParsedTransaction): TransactionKind =
+        TransactionKindDetector.detect(
+            TransactionKindDetector.Input(
+                direction = parsed.direction,
+                matchedRuleName = parsed.matchedRuleName,
+                merchant = parsed.merchant,
+                category = parsed.category,
+                ruleKind = parsed.kindOverride,
+            ),
+        )
 }

@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.intelligence
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.time.Instant
@@ -50,16 +51,16 @@ object FinancialCopilotQueryHandler {
         fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
 
         val inRange = transactions.filter { tx ->
-            !tx.excludeFromStats && tx.timestampMillis.toLocalDate().let { d -> !d.isBefore(start) && !d.isAfter(end) }
+            tx.timestampMillis.toLocalDate().let { d -> !d.isBefore(start) && !d.isAfter(end) }
         }
 
-        val income = inRange.filter { it.direction == TransactionDirection.CREDIT }.sumOf { toBase(it) ?: 0.0 }
-        val debits = inRange.filter { it.direction == TransactionDirection.DEBIT }
-        val expenses = debits.sumOf { toBase(it) ?: 0.0 }
+        val income = LedgerMath.income(inRange) { toBase(it) }
+        val debits = inRange.filter { LedgerMath.affectsSpend(it) }
+        val expenses = LedgerMath.netSpend(debits) { toBase(it) }
 
         val byCategory = debits
             .groupBy { it.spendingCategory.label }
-            .mapValues { (_, txs) -> txs.sumOf { toBase(it) ?: 0.0 } }
+            .mapValues { (_, txs) -> LedgerMath.netSpend(txs) { toBase(it) } }
             .filterValues { it > 0.0 }
             .toList()
             .sortedByDescending { it.second }
@@ -67,7 +68,7 @@ object FinancialCopilotQueryHandler {
 
         val byMerchant = debits
             .groupBy { it.merchant?.trim()?.takeIf(String::isNotEmpty) ?: "Unknown" }
-            .mapValues { (_, txs) -> txs.sumOf { toBase(it) ?: 0.0 } }
+            .mapValues { (_, txs) -> LedgerMath.netSpend(txs) { toBase(it) } }
             .filterValues { it > 0.0 }
             .toList()
             .sortedByDescending { it.second }

@@ -100,29 +100,22 @@ class IngestCapturedMessageUseCase(
             return IngestResult.NoMatch
         }
 
-        // "Transaction adjusted" messages (Tabby partial refunds / extra
-        // charges) correct an already-recorded purchase rather than describe a
-        // new spend, so they must not skew analytics. They stay in the ledger
-        // (balances remain right) but carry the exclusion flag.
-        //
-        // A recognized credit-card statement payment (the credit leg landing
-        // on the card) is similarly not a fresh spend or fresh income — it's
-        // one side of an internal transfer. Tagging it here (excludeFromStats
-        // + SpendingCategory.TRANSFERS) is what lets TransactionRepositoryImpl's
-        // TransferMatcher step later find and re-tag its debit counterpart too.
-        val flagged = when {
-            parsed.matchedRuleName.startsWith(ADJUSTMENT_RULE_PREFIX) -> parsed.copy(excludeFromStats = true)
-            parsed.matchedRuleName.startsWith(TRANSFER_RULE_PREFIX) ->
-                parsed.copy(excludeFromStats = true, spendingCategoryOverride = SpendingCategory.TRANSFERS)
-            else -> parsed
+        // What the message *is* (spend, refund, card payment...) is decided
+        // in the repository by TransactionKindDetector, once the account --
+        // and so whether it's a credit card -- is known. The one thing settled
+        // here is the spending category of a recognized card-payment credit:
+        // it's a TRANSFERS row regardless of whatever "merchant" text happens
+        // to be nearby, which is also what lets TransferMatcher find and
+        // re-tag its debit counterpart.
+        val flagged = if (parsed.matchedRuleName.startsWith(TRANSFER_RULE_PREFIX)) {
+            parsed.copy(spendingCategoryOverride = SpendingCategory.TRANSFERS)
+        } else {
+            parsed
         }
         return transactionRepository.recordParsed(flagged, message, dedupWindow)
     }
 
     companion object {
-        /** The priority-20 builtin.en.adjust.* rules in [BuiltInRules]. */
-        const val ADJUSTMENT_RULE_PREFIX = "builtin.en.adjust."
-
         /** The priority-15 builtin.en.transfer.* rules in [BuiltInRules] (credit-card statement payments). */
         const val TRANSFER_RULE_PREFIX = "builtin.en.transfer."
     }

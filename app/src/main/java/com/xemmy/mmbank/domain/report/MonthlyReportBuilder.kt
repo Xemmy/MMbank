@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.report
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.intelligence.NetWorthAggregator
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.SavingsGoal
@@ -75,8 +76,8 @@ object MonthlyReportBuilder {
         val current = monthTransactions.filter { it.countsToward(currency) }
         val previous = previousMonthTransactions.filter { it.countsToward(currency) }
 
-        val income = current.total(TransactionDirection.CREDIT)
-        val spent = current.total(TransactionDirection.DEBIT)
+        val income = LedgerMath.incomeExact(current)
+        val spent = LedgerMath.netSpendExact(current)
         val hasPrevious = previous.isNotEmpty()
 
         // Filtered once and shared, so the rendered list and the "monthly
@@ -95,8 +96,8 @@ object MonthlyReportBuilder {
             income = income,
             spent = spent,
             net = income - spent,
-            incomeDelta = if (hasPrevious) income - previous.total(TransactionDirection.CREDIT) else null,
-            spentDelta = if (hasPrevious) spent - previous.total(TransactionDirection.DEBIT) else null,
+            incomeDelta = if (hasPrevious) income - LedgerMath.incomeExact(previous) else null,
+            spentDelta = if (hasPrevious) spent - LedgerMath.netSpendExact(previous) else null,
             transactionCount = current.size,
             netWorth = accountBalances.takeIf { it.isNotEmpty() }?.let(NetWorthAggregator::aggregate),
             topCategories = topCategories(current, categoryNames, spent),
@@ -109,15 +110,13 @@ object MonthlyReportBuilder {
     }
 
     /**
-     * Real outgoing/incoming money in [currency]: analytics-excluded rows
-     * (balance adjustments, cashback) are skipped so the statement agrees with
-     * every other total in the app.
+     * Spending, refunds and income in [currency] -- exactly the rows
+     * [LedgerMath] counts, so the statement agrees with every other total in
+     * the app. Transfers, card payments, cashback, balance corrections and
+     * anything the user hid are left out.
      */
     private fun Transaction.countsToward(currency: String): Boolean =
-        !excludeFromStats && currencyCode.equals(currency, ignoreCase = true)
-
-    private fun List<Transaction>.total(direction: TransactionDirection): BigDecimal =
-        filter { it.direction == direction }.fold(BigDecimal.ZERO) { acc, tx -> acc + tx.amount }
+        LedgerMath.effect(this) != LedgerMath.Effect.NONE && currencyCode.equals(currency, ignoreCase = true)
 
     private fun topCategories(
         transactions: List<Transaction>,
@@ -126,15 +125,17 @@ object MonthlyReportBuilder {
     ): List<ReportCategoryLine> {
         val sums = mutableMapOf<String, BigDecimal>()
         transactions
-            .filter { it.direction == TransactionDirection.DEBIT }
+            .filter { LedgerMath.affectsSpend(it) }
             .forEach { tx ->
                 // Uncategorized spend is shown rather than dropped -- a report
                 // whose category rows don't add up to the headline is worse
-                // than one that admits what hasn't been filed yet.
+                // than one that admits what hasn't been filed yet. Refunds net
+                // against their category.
                 val name = tx.categoryId?.let { categoryNames[it] } ?: "Uncategorized"
-                sums[name] = (sums[name] ?: BigDecimal.ZERO) + tx.amount
+                sums[name] = (sums[name] ?: BigDecimal.ZERO) + LedgerMath.spendDelta(tx)
             }
         return sums.entries
+            .filter { it.value.signum() > 0 }
             .sortedByDescending { it.value }
             .take(TOP_N)
             .map { (name, amount) ->
@@ -153,7 +154,7 @@ object MonthlyReportBuilder {
     private fun topMerchants(transactions: List<Transaction>): List<ReportMerchantLine> {
         val sums = mutableMapOf<String, Pair<BigDecimal, Int>>()
         transactions
-            .filter { it.direction == TransactionDirection.DEBIT }
+            .filter { LedgerMath.isSpend(it) }
             .forEach { tx ->
                 val name = tx.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
                 val (amount, count) = sums[name] ?: (BigDecimal.ZERO to 0)

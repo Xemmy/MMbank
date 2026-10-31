@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.budget
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -45,10 +46,11 @@ object CategoryBudgetCalculator {
     /**
      * Month-to-date spend per `categoryId`, in [currencyCode].
      *
-     * Only real outgoing money counts: CREDIT rows (refunds, income) and
-     * analytics-excluded rows (balance adjustments, cashback) are skipped, so
-     * this agrees with every other spend total in the app. Transactions with no
-     * dynamic category are skipped -- they belong to no budget.
+     * Net spending as [LedgerMath] defines it: purchases add, refunds give
+     * the money back to the category's envelope, and transfers, card
+     * payments, income and hidden rows are skipped -- so this agrees with
+     * every other spend total in the app. Transactions with no dynamic
+     * category are skipped -- they belong to no budget.
      *
      * The window is half-open, `[startMillis, endMillisExclusive)`, so a
      * transaction landing exactly on the next month's first millisecond counts
@@ -62,14 +64,13 @@ object CategoryBudgetCalculator {
     ): Map<Long, BigDecimal> {
         val sums = mutableMapOf<Long, BigDecimal>()
         for (tx in transactions) {
-            if (tx.direction != TransactionDirection.DEBIT) continue
-            if (tx.excludeFromStats) continue
+            if (!LedgerMath.affectsSpend(tx)) continue
             if (!tx.currencyCode.equals(currencyCode, ignoreCase = true)) continue
             if (tx.timestampMillis < startMillis || tx.timestampMillis >= endMillisExclusive) continue
             val categoryId = tx.categoryId ?: continue
-            sums[categoryId] = (sums[categoryId] ?: BigDecimal.ZERO) + tx.amount
+            sums[categoryId] = (sums[categoryId] ?: BigDecimal.ZERO) + LedgerMath.spendDelta(tx)
         }
-        return sums
+        return sums.mapValues { (_, v) -> v.max(BigDecimal.ZERO) }
     }
 
     /**

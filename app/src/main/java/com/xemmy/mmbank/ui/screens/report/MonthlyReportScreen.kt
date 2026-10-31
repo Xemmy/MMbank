@@ -40,6 +40,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
@@ -158,12 +159,12 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
             .filter { it.type in LIQUID_TYPES }
             .fold(BigDecimal.ZERO) { acc, it -> acc + it.balance }
 
-        val income = monthTransactions
-            .filter { !it.excludeFromStats && it.direction == TransactionDirection.CREDIT }
-            .fold(BigDecimal.ZERO) { acc, tx -> acc + tx.amount }
-        val expenses = monthTransactions
-            .filter { !it.excludeFromStats && it.direction == TransactionDirection.DEBIT }
-            .fold(BigDecimal.ZERO) { acc, tx -> acc + tx.amount }
+        // Same scope as the report headline: one currency, LedgerMath's
+        // definition of spent/received. Summing every currency at face value
+        // here used to make the health figures disagree with the headline.
+        val inCurrency = monthTransactions.filter { it.currencyCode.equals(currency, ignoreCase = true) }
+        val income = LedgerMath.incomeExact(inCurrency)
+        val expenses = LedgerMath.netSpendExact(inCurrency)
 
         val report = MonthlyReportBuilder.build(
             monthLabel = selectedMonth.format(MONTH_FORMAT),

@@ -67,7 +67,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExpenseSplitEntity::class,
         IgnoredMessagePatternEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -658,11 +658,6 @@ abstract class AppDatabase : RoomDatabase() {
         const val DB_NAME = "mmbank.db"
 
         /**
-         * [factory] swaps in the SQLCipher open helper (see AppContainer);
-         * null opens plaintext — the pre-encryption format, kept as the
-         * fallback so a failed encryption migration never bricks the app.
-         */
-        /**
          * v24 -> v25: learned merchant -> account rules.
          *
          * Manually assigning a captured transaction to an account used to teach
@@ -711,6 +706,73 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v25 -> v26: transaction kinds.
+         *
+         * Until now a row only knew its direction plus one `excludeFromStats`
+         * flag, which the app set automatically for three things (Tabby
+         * adjustments, reconciled transfer legs, the card-payment credit) and
+         * the user set by hand for everything else -- so every total had to
+         * guess what a debit or credit meant, and card payments and transfers
+         * between the user's own accounts were routinely counted as spending
+         * on one side and income on the other.
+         *
+         * `kind` now carries that meaning (see
+         * [com.xemmy.mmbank.domain.model.TransactionKind]). The backfill below
+         * mirrors [com.xemmy.mmbank.domain.ledger.TransactionKindDetector.fromLegacy]
+         * statement for statement: the automatic exclusions become kinds and
+         * lose the flag, while a flag the user set by hand survives. Message
+         * wording (ATM, refunds...) can't be read reliably in SQL;
+         * [com.xemmy.mmbank.data.ledger.LedgerKindBackfill] re-runs the full
+         * detector in Kotlin once after the upgrade.
+         *
+         * `parsing_rules.assignKind` lets a custom rule pin the kind of what it
+         * matches.
+         */
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN kind TEXT NOT NULL DEFAULT 'SPEND'")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN kindUserSet INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE parsing_rules ADD COLUMN assignKind TEXT")
+
+                db.execSQL("UPDATE transactions SET kind = 'INCOME' WHERE direction = 'CREDIT'")
+                db.execSQL("UPDATE transactions SET kind = 'CASHBACK' WHERE category = 'CASHBACK_EARNED' AND direction = 'CREDIT'")
+                // Linked legs and card-payment credits. A leg on a credit card,
+                // or whose partner is, is a card payment; anything else linked
+                // is a plain transfer between the user's own accounts.
+                db.execSQL(
+                    """
+                    UPDATE transactions SET excludeFromStats = 0, kind = CASE
+                        WHEN matchedRuleName LIKE 'builtin.en.transfer.%'
+                            OR accountId IN (SELECT id FROM accounts WHERE type = 'CREDIT_CARD')
+                            OR linkedTransactionId IN (
+                                SELECT t.id FROM transactions t
+                                JOIN accounts a ON a.id = t.accountId
+                                WHERE a.type = 'CREDIT_CARD'
+                            )
+                        THEN 'CARD_PAYMENT' ELSE 'TRANSFER' END
+                    WHERE linkedTransactionId IS NOT NULL OR matchedRuleName LIKE 'builtin.en.transfer.%'
+                    """.trimIndent(),
+                )
+                db.execSQL("UPDATE transactions SET excludeFromStats = 0, kind = 'ADJUSTMENT' WHERE merchant = 'Balance adjustment'")
+                // Tabby partial refunds lower spending now instead of vanishing
+                // from it; an "increased by" extra charge is ordinary spending.
+                db.execSQL(
+                    "UPDATE transactions SET excludeFromStats = 0, kind = 'REFUND' " +
+                        "WHERE matchedRuleName = 'builtin.en.adjust.decrease' AND direction = 'CREDIT'"
+                )
+                db.execSQL(
+                    "UPDATE transactions SET excludeFromStats = 0, kind = 'SPEND' " +
+                        "WHERE matchedRuleName = 'builtin.en.adjust.increase' AND direction = 'DEBIT'"
+                )
+            }
+        }
+
+        /**
+         * [factory] swaps in the SQLCipher open helper (see AppContainer);
+         * null opens plaintext — the pre-encryption format, kept as the
+         * fallback so a failed encryption migration never bricks the app.
+         */
         fun build(
             context: Context,
             factory: androidx.sqlite.db.SupportSQLiteOpenHelper.Factory? = null,
@@ -721,7 +783,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
-                    MIGRATION_23_24, MIGRATION_24_25,
+                    MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

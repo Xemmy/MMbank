@@ -113,6 +113,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.AccountFilter
 import com.xemmy.mmbank.domain.filter.ActivityFilters
@@ -250,11 +251,12 @@ internal fun computeSpendSummary(
     val ratesFromBase = rates
         .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
         .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
-    fun sum(direction: TransactionDirection) = transactions
-        .filter { it.direction == direction }
-        .sumOf { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase) ?: 0.0 }
-    val totalSpent = sum(TransactionDirection.DEBIT)
-    val totalReceived = sum(TransactionDirection.CREDIT)
+    // The same definition every other total uses (see LedgerMath): this card
+    // used to sum raw debits/credits, so card payments, transfers and balance
+    // corrections inflated Spent/Received here and nowhere else.
+    fun inBase(tx: Transaction) = CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase)
+    val totalSpent = LedgerMath.netSpend(transactions, value = ::inBase)
+    val totalReceived = LedgerMath.income(transactions, value = ::inBase)
     val hasBudget = monthlyBudget > 0.0
     return SpendSummaryState(
         totalSpent = totalSpent,
@@ -671,6 +673,9 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 spendingCategory = resolveLegacySpendingCategory(categoryId),
                 timestampMillis = timestampMillis,
                 excludeFromStats = excludeFromStats,
+                // Flipping Spent <-> Received must not leave a one-sided kind
+                // on the wrong side (a "spend" credit would count as spending).
+                kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(original.kind, direction),
             )
         )
     }

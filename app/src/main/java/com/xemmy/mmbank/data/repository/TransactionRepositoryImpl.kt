@@ -7,6 +7,8 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.IngestResult
@@ -156,6 +158,22 @@ class TransactionRepositoryImpl(
             } else null
             val categoryId = CaptureCategoryResolver.resolve(confirmedCategoryId, pendingSuggestion != null, bridgedCategoryId)
 
+            // What the message is -- spend, refund, ATM, card payment... --
+            // decided once the account is known, since a credit landing on a
+            // credit card is a payment or a refund, never income.
+            val accountType = detectedAccountId?.let { database.accountDao().getById(it)?.type }
+            val kind = TransactionKindDetector.detect(
+                TransactionKindDetector.Input(
+                    direction = parsed.direction,
+                    matchedRuleName = parsed.matchedRuleName,
+                    rawMessage = message.body,
+                    merchant = parsed.merchant,
+                    accountType = accountType,
+                    category = parsed.category,
+                    ruleKind = parsed.kindOverride,
+                ),
+            )
+
             val entity = TransactionEntity(
                 amount = parsed.amount,
                 currencyCode = parsed.currencyCode,
@@ -188,11 +206,14 @@ class TransactionRepositoryImpl(
                     hasPendingSuggestion = pendingSuggestion != null,
                     spendingCategory = spendingCategory,
                 ),
+                kind = kind,
             )
             val id = dao.insert(entity)
-            val inserted = entity.copy(id = id)
-            tryLinkTransfer(inserted)
-            onTransactionRecorded(inserted.toDomain())
+            tryLinkTransfer(entity.copy(id = id))
+            // The row as it stands AFTER linking: a debit that just turned out
+            // to be one leg of a card payment must not trip a budget alert or
+            // feed subscription detection as if it were a purchase.
+            onTransactionRecorded((dao.getById(id) ?: entity.copy(id = id)).toDomain())
             IngestResult.Inserted(id)
         }
     }
@@ -201,7 +222,7 @@ class TransactionRepositoryImpl(
         dao.findByRawMessage(rawMessage)?.id
 
     /**
-     * Reconciles a credit-card statement payment's two legs (see
+     * Reconciles the two legs of a transfer or card payment (see
      * [TransferMatcher]) right after inserting [inserted], inside the same
      * Room transaction as the insert itself — matching [recordParsed]'s own
      * atomicity guarantee, so a second, unrelated pair racing in can never
@@ -213,11 +234,51 @@ class TransactionRepositoryImpl(
             currencyCode = inserted.currencyCode,
             direction = inserted.direction,
             timestamp = inserted.timestamp,
-            windowMillis = TransferMatcher.MATCH_WINDOW_MILLIS,
+            windowMillis = TransferMatcher.MAX_WINDOW_MILLIS,
         )
-        val match = TransferMatcher.bestMatch(inserted.toDomain(), candidates.map(TransactionEntity::toDomain)) ?: return
-        dao.linkAsTransfer(inserted.id, match.id, SpendingCategory.TRANSFERS)
-        dao.linkAsTransfer(match.id, inserted.id, SpendingCategory.TRANSFERS)
+        if (candidates.isEmpty()) return
+        val accountTypes = accountTypes()
+        val self = inserted.toDomain()
+        val match = TransferMatcher.bestMatch(self, candidates.map(TransactionEntity::toDomain), accountTypes) ?: return
+        val kind = TransferMatcher.pairKind(self, match, accountTypes)
+        dao.linkAsTransfer(inserted.id, match.id, kind, SpendingCategory.TRANSFERS)
+        dao.linkAsTransfer(match.id, inserted.id, kind, SpendingCategory.TRANSFERS)
+    }
+
+    private suspend fun accountTypes(): Map<Long, AccountType> =
+        database.accountDao().getActive().associate { it.id to it.type }
+
+    /**
+     * Deletes [ids] and releases whatever they were linked to. Without this
+     * the surviving leg kept pointing at a row that no longer exists and kept
+     * its transfer kind -- silently hidden from Spent/Received forever. The
+     * partner gets the kind it would have had on its own (a kind the user set
+     * by hand is kept).
+     */
+    private suspend fun deleteAndRelease(ids: List<Long>): Int = database.withTransaction {
+        val partners = dao.getLinkedPartners(ids)
+        val deleted = dao.deleteMany(ids)
+        if (partners.isNotEmpty()) {
+            val accountTypes = accountTypes()
+            partners.forEach { partner ->
+                val kind = if (partner.kindUserSet) {
+                    partner.kind
+                } else {
+                    TransactionKindDetector.detect(
+                        TransactionKindDetector.Input(
+                            direction = partner.direction,
+                            matchedRuleName = partner.matchedRuleName,
+                            rawMessage = partner.rawMessage,
+                            merchant = partner.merchant,
+                            accountType = partner.accountId?.let { accountTypes[it] },
+                            category = partner.category,
+                        ),
+                    )
+                }
+                dao.update(partner.copy(linkedTransactionId = null, kind = kind))
+            }
+        }
+        deleted
     }
 
     override suspend fun recordManual(transaction: Transaction): Long =
@@ -243,7 +304,9 @@ class TransactionRepositoryImpl(
     override suspend fun renamePerson(from: String, to: String?) =
         dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() }, demoMode.value)
 
-    override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
+    override suspend fun delete(transactionId: Long) {
+        deleteAndRelease(listOf(transactionId))
+    }
 
     override suspend fun bulkSetCategory(
         ids: List<Long>,
@@ -253,7 +316,7 @@ class TransactionRepositoryImpl(
     override suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int =
         dao.bulkSetExcludeFromStats(ids, excluded)
 
-    override suspend fun deleteMany(ids: List<Long>): Int = dao.deleteMany(ids)
+    override suspend fun deleteMany(ids: List<Long>): Int = deleteAndRelease(ids)
 
     override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int =
         dao.bulkAssignAccount(ids, accountId)

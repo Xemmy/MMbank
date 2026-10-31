@@ -10,6 +10,9 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.data.ai.AiParsingWorker
 import com.xemmy.mmbank.data.ai.LocalAiConfig
 import com.xemmy.mmbank.data.ai.LocalAiManager
@@ -566,7 +569,7 @@ class AppContainer(context: Context) {
      * ingest pipeline's own result.
      */
     private fun checkDailyBudgetPacing(transaction: Transaction) {
-        if (transaction.direction != TransactionDirection.DEBIT || transaction.excludeFromStats) return
+        if (!LedgerMath.isSpend(transaction)) return
         val monthlyBudget = preferences.monthlySpendBudget
         if (monthlyBudget <= 0.0) return
 
@@ -610,7 +613,7 @@ class AppContainer(context: Context) {
      * fire-and-forget -- neither may affect the ingest result.
      */
     private fun checkCategoryBudget(transaction: Transaction) {
-        if (transaction.direction != TransactionDirection.DEBIT || transaction.excludeFromStats) return
+        if (!LedgerMath.isSpend(transaction)) return
         val categoryId = transaction.categoryId ?: return
 
         applicationScope.launch {
@@ -656,7 +659,7 @@ class AppContainer(context: Context) {
      * user already dismissed can't silently un-dismiss it.
      */
     private fun refreshSubscriptionForMerchant(transaction: Transaction) {
-        if (transaction.direction != TransactionDirection.DEBIT || transaction.excludeFromStats) return
+        if (transaction.kind != TransactionKind.SPEND || transaction.excludeFromStats) return
         val merchant = transaction.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return
 
         applicationScope.launch {
@@ -779,6 +782,32 @@ class AppContainer(context: Context) {
      * "assign matches to" account, which is the whole point: these messages
      * carry no account number, so each rule pins its card explicitly.
      */
+    /**
+     * One-time pass after the v26 upgrade: the SQL migration can only tell a
+     * plain debit from a plain credit, so ATM withdrawals, refunds, card
+     * payments and own-account transfers recognizable from their message text
+     * are re-read here with the full [TransactionKindDetector]. Bump
+     * [LEDGER_KIND_BACKFILL_VERSION] to re-run it after the detector learns
+     * new wording -- it only ever upgrades rows still on the plain default.
+     */
+    fun reclassifyLedgerOnce() {
+        if (preferences.ledgerKindBackfillVersion >= LEDGER_KIND_BACKFILL_VERSION) return
+        applicationScope.launch {
+            runCatching {
+                database.withTransaction {
+                    val accountTypes = database.accountDao().getAll().associate { it.id to it.type }
+                    database.transactionDao().getAll().forEach { entity ->
+                        val tx = entity.toDomain()
+                        val better = TransactionKindDetector.reclassify(tx, tx.accountId?.let { accountTypes[it] })
+                            ?: return@forEach
+                        database.transactionDao().update(entity.copy(kind = better))
+                    }
+                }
+                preferences.ledgerKindBackfillVersion = LEDGER_KIND_BACKFILL_VERSION
+            }.onFailure { recordError("AppContainer.reclassifyLedgerOnce", it) }
+        }
+    }
+
     fun seedDefaultRulesOnce() {
         if (preferences.tabbyRulesSeeded) return
         applicationScope.launch {
@@ -812,3 +841,6 @@ class AppContainer(context: Context) {
         }
     }
 }
+
+/** See [AppContainer.reclassifyLedgerOnce]. */
+private const val LEDGER_KIND_BACKFILL_VERSION = 1

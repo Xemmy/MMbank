@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.intelligence
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
@@ -46,8 +47,7 @@ object MerchantProfiler {
     ): MerchantProfile? {
         val key = merchant.trim().lowercase()
         val matches = transactions.filter {
-            it.direction == TransactionDirection.DEBIT &&
-                !it.excludeFromStats &&
+            LedgerMath.isSpend(it) &&
                 !it.isDemo &&
                 it.merchant?.trim()?.lowercase() == key
         }

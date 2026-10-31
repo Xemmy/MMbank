@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.intelligence
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.time.Instant
@@ -46,7 +47,7 @@ object AiWeeklyDigestGenerator {
 
         fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
 
-        val debits = transactions.filter { it.direction == TransactionDirection.DEBIT && !it.excludeFromStats }
+        val debits = transactions.filter { LedgerMath.isSpend(it) }
         val thisWeek = debits.filter { tx ->
             val day = tx.timestampMillis.toLocalDate()
             day >= thisWeekStart && day <= today

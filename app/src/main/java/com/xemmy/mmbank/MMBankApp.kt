@@ -17,6 +17,9 @@ class MMBankApp : Application() {
         installCrashRecorder()
         container = AppContainer(this)
         container.seedDefaultRulesOnce()
+        // One-time re-read of old messages for ATM/refund/card-payment wording
+        // after the transaction-kind upgrade. A no-op once it has run.
+        container.reclassifyLedgerOnce()
         // Re-arms the opt-in subscription reminder if it's on. Idempotent
         // (unique work, KEEP), and a no-op entirely while the toggle is off.
         container.ensureSubscriptionReminderWork()

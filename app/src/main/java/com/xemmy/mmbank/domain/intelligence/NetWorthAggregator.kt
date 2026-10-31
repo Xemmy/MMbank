@@ -39,18 +39,21 @@ object NetWorthAggregator {
 
     /**
      * Aggregates every account's balance into asset/liability totals and a
-     * net-worth figure. A credit/loan account's [AccountBalance.balance] is
-     * taken as a magnitude owed (its sign is not assumed) so callers that
-     * track credit balances as negative numbers or as positive debt figures
-     * both aggregate correctly.
+     * net-worth figure. Balances are signed the way
+     * [com.xemmy.mmbank.domain.account.AccountBalanceCalculator] computes
+     * them: a credit card or loan you owe on is negative.
+     *
+     * A liability account that's in credit -- a card overpaid, or refunded
+     * after being paid off -- is money the bank owes you, so its positive
+     * balance counts as an asset. (This used to take the magnitude, which
+     * turned an overpaid card into debt.)
      */
     fun aggregate(balances: List<AccountBalance>): NetWorthBreakdown {
-        val debitTotal = balances.filter { it.type in DEBIT_TYPES }.sumOf { it.balance }
-        val creditTotal = balances.filter { it.type in CREDIT_TYPES }.sumOf { it.balance.abs() }
-        val perAccount = balances.associate { account ->
-            val signed = if (account.type in CREDIT_TYPES) -account.balance.abs() else account.balance
-            account.accountId to signed
-        }
+        val liabilities = balances.filter { it.type in CREDIT_TYPES }
+        val debitTotal = balances.filter { it.type in DEBIT_TYPES }.sumOf { it.balance } +
+            liabilities.sumOf { it.balance.max(BigDecimal.ZERO) }
+        val creditTotal = liabilities.sumOf { it.balance.negate().max(BigDecimal.ZERO) }
+        val perAccount = balances.associate { it.accountId to it.balance }
         return NetWorthBreakdown(
             debitTotal = debitTotal,
             creditTotal = creditTotal,

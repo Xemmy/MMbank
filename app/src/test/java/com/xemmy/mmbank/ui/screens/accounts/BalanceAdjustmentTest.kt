@@ -1,9 +1,11 @@
 package com.xemmy.mmbank.ui.screens.accounts
 
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
@@ -33,7 +35,8 @@ class BalanceAdjustmentTest {
             targetBalance = BigDecimal("1000.00"),
             nowMillis = 1_700_000_000_000,
         )!!
-        assertTrue(adjustment.excludeFromStats)
+        assertEquals(TransactionKind.ADJUSTMENT, adjustment.kind)
+        assertEquals(LedgerMath.Effect.NONE, LedgerMath.effect(adjustment))
         assertEquals(TransactionDirection.CREDIT, adjustment.direction)
         assertEquals(BigDecimal("100.00"), adjustment.amount)
         assertEquals(5L, adjustment.accountId)
@@ -51,7 +54,8 @@ class BalanceAdjustmentTest {
             computedBalance = BigDecimal("1250.75"),
             targetBalance = BigDecimal("1200.00"),
         )!!
-        assertTrue(adjustment.excludeFromStats)
+        assertEquals(TransactionKind.ADJUSTMENT, adjustment.kind)
+        assertEquals(LedgerMath.Effect.NONE, LedgerMath.effect(adjustment))
         assertEquals(TransactionDirection.DEBIT, adjustment.direction)
         assertEquals(BigDecimal("50.75"), adjustment.amount)
     }

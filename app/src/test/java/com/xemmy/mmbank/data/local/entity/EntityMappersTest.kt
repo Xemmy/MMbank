@@ -22,6 +22,7 @@ import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
@@ -666,5 +667,46 @@ class EntityMappersTest {
         // The verbatim sample is what the list shows and what fuzzy matching
         // re-reads, so it must survive untouched -- punctuation included.
         assertEquals("Enjoy 50% off at Noon this weekend!", roundTripped.sample)
+    }
+
+    @Test
+    fun `transaction kind and kindUserSet survive both directions`() {
+        TransactionKind.entries.forEach { kind ->
+            val original = transaction(excludeFromStats = false).copy(kind = kind, kindUserSet = true)
+            assertEquals(original, original.toEntity().toDomain())
+            val entity = original.toEntity()
+            assertEquals(kind, entity.kind)
+            assertTrue(entity.kindUserSet)
+            assertEquals(entity, entity.toDomain().toEntity())
+        }
+    }
+
+    @Test
+    fun `a transaction built without a kind defaults to the plain kind for its direction`() {
+        val debit = transaction(excludeFromStats = false)
+        assertEquals(TransactionKind.SPEND, debit.kind)
+        assertFalse(debit.kindUserSet)
+        val credit = debit.copy(direction = TransactionDirection.CREDIT)
+        // copy() keeps the old kind -- callers that flip the direction must
+        // coerce (see TransactionKindDetector.coerce); a fresh row defaults.
+        assertEquals(TransactionKind.SPEND, credit.kind)
+        assertEquals(
+            TransactionKind.INCOME,
+            Transaction(amount = BigDecimal.ONE, currencyCode = "AED", direction = TransactionDirection.CREDIT,
+                source = TransactionSource.MANUAL, timestampMillis = 0).kind,
+        )
+    }
+
+    @Test
+    fun `parsing rule round-trip preserves assignKind`() {
+        val rule = ParsingRule(
+            name = "ADCB card payment",
+            pattern = "card payment (?<amount>\\d+)",
+            direction = TransactionDirection.DEBIT,
+            assignKind = TransactionKind.CARD_PAYMENT,
+        )
+        assertEquals(rule, rule.toEntity().toDomain())
+        assertEquals(TransactionKind.CARD_PAYMENT, rule.toEntity().assignKind)
+        assertNull(rule.copy(assignKind = null).toEntity().assignKind)
     }
 }

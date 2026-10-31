@@ -107,6 +107,7 @@ class TransactionParser(
                 accountNumberSuffix = accountNumberSuffix,
                 category = rule.category,
                 assignAccountId = rule.assignAccountId,
+                kindOverride = rule.assignKind,
             )
         }
 
@@ -201,6 +202,7 @@ class TransactionParser(
             accountNumberSuffix = GenericExtractors.extractAccountSuffix(text),
             category = winner.rule.category,
             assignAccountId = winner.rule.assignAccountId,
+            kindOverride = winner.rule.assignKind,
         )
     }
 

@@ -46,6 +46,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.intelligence.GoalForecaster
 import com.xemmy.mmbank.domain.model.SavingsGoal
@@ -96,10 +97,10 @@ class GoalsViewModel(private val container: AppContainer) : ViewModel() {
             CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase)
 
         val monthTx = transactions.filter {
-            !it.excludeFromStats && it.timestampMillis >= monthStartMillis && it.timestampMillis < nextMonthStartMillis
+            it.timestampMillis >= monthStartMillis && it.timestampMillis < nextMonthStartMillis
         }
-        val income = monthTx.filter { it.direction == TransactionDirection.CREDIT }.sumOf { inBase(it) ?: 0.0 }
-        val expenses = monthTx.filter { it.direction == TransactionDirection.DEBIT }.sumOf { inBase(it) ?: 0.0 }
+        val income = LedgerMath.income(monthTx, value = ::inBase)
+        val expenses = LedgerMath.netSpend(monthTx, value = ::inBase)
 
         // categories is unused by avgMonthlyNet (a pure income/spend-by-month
         // figure) -- this call never needs real category data, so an empty
