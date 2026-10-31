@@ -7,6 +7,7 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.AccountNumberMatcher
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
@@ -419,28 +420,17 @@ class TransactionRepositoryImpl(
 
     /**
      * Matches the account/card number pulled from a bank message (e.g. "*617",
-     * "XXX810001") against the identifying number the user configured on each
-     * account. Comparison is on digits only, tolerating masking characters and
-     * differing lengths by matching on a shared suffix. When several accounts
-     * share the same trailing digits, currency is used to disambiguate.
+     * "XXX810001") against each account's number and extra card numbers; see
+     * [AccountNumberMatcher] for the rules.
      */
-    private suspend fun detectAccountByNumber(detected: String, currencyCode: String): Long? {
-        val detectedDigits = detected.filter(Char::isDigit)
-        if (detectedDigits.isEmpty()) return null
-
-        val candidates = database.accountDao().getActive().filter { account ->
-            val accountDigits = account.accountNumber?.filter(Char::isDigit).orEmpty()
-            accountDigits.length >= 3 &&
-                (detectedDigits.endsWith(accountDigits) || accountDigits.endsWith(detectedDigits))
-        }
-
-        return when {
-            candidates.isEmpty() -> null
-            candidates.size == 1 -> candidates.first().id
-            else -> candidates.firstOrNull { it.currencyCode.equals(currencyCode, ignoreCase = true) }?.id
-                ?: candidates.first().id
-        }
-    }
+    private suspend fun detectAccountByNumber(detected: String, currencyCode: String): Long? =
+        AccountNumberMatcher.match(
+            detected = detected,
+            currencyCode = currencyCode,
+            candidates = database.accountDao().getActive().map {
+                AccountNumberMatcher.Candidate(it.id, it.accountNumber, it.cardEndings, it.currencyCode)
+            },
+        )
 
     companion object {
         /** ±2 minutes, per the dedup strategy. */

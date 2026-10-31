@@ -3332,3 +3332,84 @@ month.
 ### CI verification
 
 Pending — to be amended once the job log is read.
+
+## Phase 16.3 — Accounts and cards that are easy to set up and file money correctly
+
+Version 0.48.0 (versionCode 74). Schema v27 -> v28.
+
+### Why
+
+Adding a card or account by hand was awkward and error-prone:
+- A card's statement day could not be edited anywhere.
+- There was no credit limit.
+- One number per account meant a current account couldn't also answer to
+  its debit card, and supplementary cards had nowhere to go.
+- Credit cards showed loan fields (the manual "Outstanding" contradicted the
+  computed balance).
+- Bad input silently became null.
+- "1,000" was rejected as an opening balance but accepted in Adjust.
+- New accounts defaulted to AED regardless of the user's currency.
+- There was no archive at all.
+- An account hidden from the Dashboard vanished from the very sheet that
+  could unhide it.
+
+Capture matching had its own problems:
+- A short scraped suffix could match several accounts, and the code then
+  silently picked the first.
+
+### What changed
+
+- **New account fields:** `Account.creditLimit` and `Account.cardEndings`
+  (extra card numbers, comma-separated). Added to entity, mappers,
+  `MIGRATION_27_28` and backup format v8.
+- **`AccountNumberMatcher`** (pure) replaces the inline matcher:
+  - Matches the account number *and* every extra card number.
+  - Needs at least 3 digits on both sides.
+  - Prefers the transaction's currency, then the longest shared suffix.
+  - Returns null on a true tie, so the learned merchant rule or the user
+    decides instead of `first()`.
+- **Account form, rebuilt on a pure `AccountFormValidator`:**
+  - Readable type names.
+  - Type-specific sections:
+    - **Card**: credit limit, statement day, payment due day.
+    - **Matching**: account/card number, plus debit or supplementary card
+      numbers.
+    - **Loan**: the existing fields, for loans only.
+  - Inline errors.
+  - `parseMoneyInput`, shared with Adjust, accepts "1,250.50" and "2 000".
+  - Fields that don't apply to the chosen type are cleared on save.
+  - Notes are editable.
+  - New accounts start in the default currency.
+- **Archive:**
+  - An archive button, with a warning when money is still on the account.
+  - A collapsible "Archived (n)" section with Restore.
+  - Backed by `AccountDao.observeArchived` and
+    `AccountRepository.observeArchived`/`unarchive`. Both `FakeAccountDao`s
+    are updated.
+- **Dashboard:** "Manage accounts" lists every active account
+  (`DashboardUiState.manageableAccounts`), so a hidden one can be switched
+  back on.
+- **Doc fixes:** the `AdjustBalanceDialog` and `AppDatabase.build` docs were
+  sitting above the wrong declarations.
+
+### Tests
+
+- `AccountNumberMatcherTest`:
+  - Main number and extra card numbers match.
+  - Fewer than 3 digits never matches.
+  - Currency breaks a tie.
+  - The longer suffix wins.
+  - A true tie returns null.
+  - Splitting of the card-number list.
+- `AccountFormTest`:
+  - Money parsing.
+  - Required fields.
+  - Card and loan validation only for their own types.
+  - What a card and a loan save.
+  - Switching type clears stale fields.
+  - Card-number normalisation.
+- `EntityMappersTest`, `BackupMappersTest`: the new fields round-trip.
+
+### CI verification
+
+Pending — to be amended once the job log is read.

@@ -212,7 +212,7 @@ fun DashboardScreen(
 
     if (showManageAccounts) {
         ManageAccountsBottomSheet(
-            accounts = state.accounts,
+            accounts = state.manageableAccounts,
             hidden = hidden,
             onRename = viewModel::renameAccount,
             onToggleVisibility = viewModel::toggleAccountVisibility,

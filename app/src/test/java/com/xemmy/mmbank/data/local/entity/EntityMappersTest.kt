@@ -103,6 +103,8 @@ class EntityMappersTest {
         statementCycleDay = statementCycleDay,
         isDemo = isDemo,
         hiddenFromDashboard = hiddenFromDashboard,
+        creditLimit = BigDecimal("15000.00"),
+        cardEndings = "4321, 8765",
     )
 
     @Test

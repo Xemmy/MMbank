@@ -59,6 +59,10 @@ data class AccountEntity(
     val isDemo: Boolean = false,
     /** Hides this account's card from the Dashboard's account carousel; see [Account]. */
     val hiddenFromDashboard: Boolean = false,
+    /** See [Account.creditLimit]. */
+    val creditLimit: BigDecimal? = null,
+    /** See [Account.cardEndings]. */
+    val cardEndings: String? = null,
 )
 
 @Entity(tableName = "sender_labels")
@@ -399,14 +403,14 @@ fun AccountEntity.toDomain() = Account(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    statementCycleDay, isDemo, hiddenFromDashboard,
+    statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings,
 )
 
 fun Account.toEntity() = AccountEntity(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    statementCycleDay, isDemo, hiddenFromDashboard,
+    statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings,
 )
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)

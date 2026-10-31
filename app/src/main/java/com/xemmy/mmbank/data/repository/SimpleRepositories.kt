@@ -74,7 +74,14 @@ class AccountRepositoryImpl(
             account.id
         }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeArchived(): Flow<List<Account>> =
+        demoMode.flatMapLatest { demo -> dao.observeArchived(demo) }
+            .map { list -> list.map(AccountEntity::toDomain) }
+
     override suspend fun archive(account: Account) = dao.update(account.copy(archived = true).toEntity())
+
+    override suspend fun unarchive(account: Account) = dao.update(account.copy(archived = false).toEntity())
 
     override suspend fun delete(account: Account) {
         parsingRuleDao.clearAssignAccountId(account.id)

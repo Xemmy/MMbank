@@ -108,8 +108,11 @@ interface AccountRepository {
      * account that vanishes when Demo mode is switched off.
      */
     fun observeActiveReal(): Flow<List<Account>>
+    /** Archived accounts in the current view; they stay out of every list and picker. */
+    fun observeArchived(): Flow<List<Account>>
     suspend fun save(account: Account): Long
     suspend fun archive(account: Account)
+    suspend fun unarchive(account: Account)
     suspend fun delete(account: Account)
 }
 

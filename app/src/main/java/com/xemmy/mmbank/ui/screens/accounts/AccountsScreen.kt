@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
@@ -118,6 +119,8 @@ data class UnassignedTotal(
 data class AccountsUiState(
     val rows: List<AccountWithBalance> = emptyList(),
     val unassigned: UnassignedTotal = UnassignedTotal(),
+    /** Retired accounts, with what's left on them -- see [AccountsViewModel.archive]. */
+    val archived: List<AccountWithBalance> = emptyList(),
 )
 
 class AccountsViewModel(private val container: AppContainer) : ViewModel() {
@@ -127,8 +130,9 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
 
     val uiState: StateFlow<AccountsUiState> = combine(
         container.accountRepository.observeActive(),
+        container.accountRepository.observeArchived(),
         container.transactionRepository.observeLedgerEntries(),
-    ) { accounts, entries ->
+    ) { accounts, archived, entries ->
         val net = AccountBalanceCalculator.netByAccount(entries)
         AccountsUiState(
             rows = accounts.map { account ->
@@ -136,6 +140,9 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                     account = account,
                     balance = AccountBalanceCalculator.balanceOf(account, net),
                 )
+            },
+            archived = archived.map { account ->
+                AccountWithBalance(account, AccountBalanceCalculator.balanceOf(account, net))
             },
             unassigned = UnassignedTotal(
                 totalsByCurrency = AccountBalanceCalculator.unassignedTotals(entries),
@@ -149,6 +156,19 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Shared, live hide-balances flag — see [AppContainer.hideBalances]. */
     val hideBalances: StateFlow<Boolean> = container.hideBalances
+
+    /** New accounts start in the user's own currency rather than a hard-coded one. */
+    val defaultCurrency: String get() = container.preferences.defaultCurrency
+
+    fun unarchive(account: Account) {
+        viewModelScope.launch {
+            runCatching { container.accountRepository.unarchive(account) }
+                .onFailure {
+                    container.recordError("AccountsViewModel.unarchive", it)
+                    lastError.value = "Couldn't restore account: ${it.message}"
+                }
+        }
+    }
 
     fun save(account: Account) {
         viewModelScope.launch {
@@ -243,10 +263,11 @@ fun AccountsScreen(
     var editing by remember { mutableStateOf<Account?>(null) }
     // The account row whose balance is being corrected; null = dialog closed.
     var adjusting by remember { mutableStateOf<AccountWithBalance?>(null) }
+    var showArchived by remember { mutableStateOf(false) }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = Account(name = "", type = AccountType.CHECKING, currencyCode = "AED") }) {
+            FloatingActionButton(onClick = { editing = Account(name = "", type = AccountType.CHECKING, currencyCode = viewModel.defaultCurrency) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add account")
             }
         },
@@ -297,8 +318,24 @@ fun AccountsScreen(
                     hidden = hidden,
                     onEdit = { editing = row.account },
                     onAdjust = { adjusting = row },
+                    onArchive = { viewModel.archive(row.account) },
                     onDelete = { viewModel.delete(row.account) },
                 )
+            }
+            if (state.archived.isNotEmpty()) {
+                item(key = "archived_header") {
+                    TextButton(onClick = { showArchived = !showArchived }) {
+                        Text(
+                            (if (showArchived) "Hide" else "Show") + " archived (${state.archived.size})",
+                            color = ObsidianTokens.textMeta,
+                        )
+                    }
+                }
+                if (showArchived) {
+                    items(state.archived, key = { "archived_${it.account.id}" }) { row ->
+                        ArchivedAccountRow(row = row, hidden = hidden, onRestore = { viewModel.unarchive(row.account) })
+                    }
+                }
             }
         }
     }
@@ -332,10 +369,12 @@ private fun AccountCard(
     hidden: Boolean,
     onEdit: () -> Unit,
     onAdjust: () -> Unit,
+    onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val a = row.account
     var confirmingDelete by remember { mutableStateOf(false) }
+    var confirmingArchive by remember { mutableStateOf(false) }
     // Edge glow (spec 5.3): the account's brand origin, or a neutral slate
     // for accounts with none registered.
     val originTone = GlowTones.forAccountOrigin(a.name, a.bankName) ?: GlowTone.SYSTEM_SLATE
@@ -368,6 +407,9 @@ private fun AccountCard(
                 IconButton(onClick = onAdjust) {
                     Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = ObsidianTokens.textMeta)
                 }
+                IconButton(onClick = { confirmingArchive = true }) {
+                    Icon(Icons.Filled.Archive, contentDescription = "Archive account", tint = ObsidianTokens.textMeta)
+                }
                 IconButton(onClick = { confirmingDelete = true }) {
                     Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = ObsidianTokens.textMeta)
                 }
@@ -384,7 +426,7 @@ private fun AccountCard(
                 MetaLabel(
                     buildString {
                         a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
-                        append(a.type.name.replace('_', ' '))
+                        append(accountTypeLabel(a.type))
                         append(" · ")
                         append(a.currencyCode)
                         a.accountNumber?.takeIf { it.isNotBlank() }?.let {
@@ -430,6 +472,28 @@ private fun AccountCard(
         }
     }
 
+    if (confirmingArchive) {
+        AlertDialog(
+            onDismissRequest = { confirmingArchive = false },
+            title = { Text("Archive this account?") },
+            text = {
+                Text(
+                    if (row.balance.signum() == 0) {
+                        "“${a.name}” moves to Archived: out of your lists and pickers, history kept. You can restore it any time."
+                    } else {
+                        "“${a.name}” still shows ${row.balance.asMoney(a.currencyCode)}. Archiving keeps that " +
+                            "in your history but hides the account from lists and totals. If it's closed, " +
+                            "adjust the balance to 0 first."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onArchive(); confirmingArchive = false }) { Text("Archive") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingArchive = false }) { Text("Cancel") } },
+        )
+    }
+
     if (confirmingDelete) {
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
@@ -445,11 +509,23 @@ private fun AccountCard(
     }
 }
 
-/**
- * Reconciles a drifted balance: the user types the account's real balance and a
- * single "Balance adjustment" entry is posted for the difference. Nothing happens
- * when the numbers already match.
- */
+/** One retired account, with what's left on it and a way back. */
+@Composable
+private fun ArchivedAccountRow(row: AccountWithBalance, hidden: Boolean, onRestore: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(row.account.name, style = MaterialTheme.typography.bodyMedium, color = ObsidianTokens.textMeta)
+            MetaLabel(accountTypeLabel(row.account.type) + " · " + row.balance.asMoneyOrMask(row.account.currencyCode, hidden))
+        }
+        TextButton(onClick = onRestore) { Text("Restore") }
+    }
+}
+
 /**
  * Money in the ledger that belongs to no account, and so appears in no balance.
  *
@@ -499,6 +575,11 @@ private fun UnassignedCard(
     }
 }
 
+/**
+ * Reconciles a drifted balance: the user types the account's real balance and a
+ * single "Balance adjustment" entry is posted for the difference. Nothing happens
+ * when the numbers already match.
+ */
 @Composable
 private fun AdjustBalanceDialog(
     row: AccountWithBalance,
@@ -507,7 +588,7 @@ private fun AdjustBalanceDialog(
 ) {
     val account = row.account
     var text by remember { mutableStateOf(row.balance.setScale(2, RoundingMode.HALF_UP).toPlainString()) }
-    val target = text.replace(",", "").trim().toBigDecimalOrNull()
+    val target = parseMoneyInput(text)
     val current = row.balance.setScale(2, RoundingMode.HALF_UP)
     val delta = target?.setScale(2, RoundingMode.HALF_UP)?.subtract(current)
 
@@ -610,10 +691,14 @@ private fun AccountDialog(
     var currency by remember { mutableStateOf(existing.currencyCode) }
     var openingBalance by remember { mutableStateOf(existing.openingBalance.toPlainString()) }
     var accountNumber by remember { mutableStateOf(existing.accountNumber.orEmpty()) }
+    var cardEndings by remember { mutableStateOf(existing.cardEndings.orEmpty()) }
     var bankName by remember { mutableStateOf(existing.bankName.orEmpty()) }
     var accountTitle by remember { mutableStateOf(existing.accountTitle.orEmpty()) }
     var iban by remember { mutableStateOf(existing.iban.orEmpty()) }
     var swift by remember { mutableStateOf(existing.swift.orEmpty()) }
+    var notes by remember { mutableStateOf(existing.notes.orEmpty()) }
+    var creditLimit by remember { mutableStateOf(existing.creditLimit?.toPlainString().orEmpty()) }
+    var statementDay by remember { mutableStateOf(existing.statementCycleDay?.toString().orEmpty()) }
     var outstanding by remember { mutableStateOf(existing.outstandingBalance?.toPlainString().orEmpty()) }
     var nextInstallment by remember { mutableStateOf(existing.nextInstallmentAmount?.toPlainString().orEmpty()) }
     var dueDay by remember { mutableStateOf(existing.dueDayOfMonth?.toString().orEmpty()) }
@@ -624,23 +709,39 @@ private fun AccountDialog(
     var showPaste by remember { mutableStateOf(false) }
     var showCopy by remember { mutableStateOf(false) }
 
-    val opening = openingBalance.toBigDecimalOrNull()
-    val valid = name.isNotBlank() && currency.trim().length == 3 && opening != null
-    val showLoanFields = type == AccountType.LOAN || type == AccountType.CREDIT_CARD
+    val input = AccountFormInput(
+        name = name, type = type, currency = currency, openingBalance = openingBalance,
+        accountNumber = accountNumber, cardEndings = cardEndings, bankName = bankName,
+        accountTitle = accountTitle, iban = iban, swift = swift, notes = notes,
+        creditLimit = creditLimit, statementDay = statementDay, dueDay = dueDay,
+        outstanding = outstanding, nextInstallment = nextInstallment, profitRate = profitRate,
+        maturity = maturity, loanNotes = loanNotes,
+    )
+    val errors = AccountFormValidator.errors(input)
+    // Name/currency only nag once something's been typed, so a fresh form
+    // doesn't open covered in red.
+    fun errorFor(field: AccountField, typed: String): String? = errors[field]?.takeIf { typed.isNotBlank() || field !in setOf(AccountField.NAME, AccountField.CURRENCY) }
+    val valid = errors.isEmpty()
 
     // Live field list for "Copy details" — reflects whatever is currently
     // typed/pasted in this dialog, not just the last-saved account.
     val copyFields: List<Pair<String, String>> = buildList {
         if (name.isNotBlank()) add("Name" to name)
-        add("Type" to type.name.replace('_', ' '))
+        add("Type" to accountTypeLabel(type))
         if (currency.isNotBlank()) add("Currency" to currency)
         if (openingBalance.isNotBlank()) add("Opening balance" to openingBalance)
         if (accountNumber.isNotBlank()) add("Account/card number" to accountNumber)
+        if (type.hasCards() && cardEndings.isNotBlank()) add("Other card numbers" to cardEndings)
         if (bankName.isNotBlank()) add("Bank name" to bankName)
         if (accountTitle.isNotBlank()) add("Account title" to accountTitle)
         if (iban.isNotBlank()) add("IBAN" to iban)
         if (swift.isNotBlank()) add("SWIFT/BIC" to swift)
-        if (showLoanFields) {
+        if (type.isCreditCard()) {
+            if (creditLimit.isNotBlank()) add("Credit limit" to creditLimit)
+            if (statementDay.isNotBlank()) add("Statement day" to statementDay)
+            if (dueDay.isNotBlank()) add("Payment due day" to dueDay)
+        }
+        if (type.isLoan()) {
             if (outstanding.isNotBlank()) add("Outstanding balance" to outstanding)
             if (nextInstallment.isNotBlank()) add("Next installment amount" to nextInstallment)
             if (dueDay.isNotBlank()) add("Installment due day" to dueDay)
@@ -681,10 +782,15 @@ private fun AccountDialog(
                 }
 
                 EditorSectionHeader("Essentials")
-                CompactField(value = name, onValueChange = { name = it }, label = "Name")
+                CompactField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = "Name",
+                    error = errorFor(AccountField.NAME, name),
+                )
                 ExposedDropdownMenuBox(expanded = typeMenuOpen, onExpandedChange = { typeMenuOpen = it }) {
                     CompactField(
-                        value = type.name.replace('_', ' '),
+                        value = accountTypeLabel(type),
                         onValueChange = {},
                         label = "Type",
                         readOnly = true,
@@ -694,7 +800,7 @@ private fun AccountDialog(
                     ExposedDropdownMenu(expanded = typeMenuOpen, onDismissRequest = { typeMenuOpen = false }) {
                         AccountType.entries.forEach { entry ->
                             DropdownMenuItem(
-                                text = { Text(entry.name.replace('_', ' '), style = MaterialTheme.typography.bodyMedium) },
+                                text = { Text(accountTypeLabel(entry), style = MaterialTheme.typography.bodyMedium) },
                                 onClick = {
                                     type = entry
                                     typeMenuOpen = false
@@ -708,24 +814,63 @@ private fun AccountDialog(
                         value = currency,
                         onValueChange = { currency = it.uppercase().take(3) },
                         label = "Currency",
+                        error = errorFor(AccountField.CURRENCY, currency),
                         modifier = Modifier.weight(0.42f),
                     )
                     CompactField(
                         value = openingBalance,
                         onValueChange = { openingBalance = it },
                         label = "Opening balance",
-                        supporting = "Negative for debt.",
+                        supporting = if (type.isCreditCard() || type.isLoan()) "Negative = what you owe." else null,
+                        error = errorFor(AccountField.OPENING, openingBalance),
                         modifier = Modifier.weight(0.58f),
                     )
                 }
 
-                EditorSectionHeader("Bank details")
+                if (type.isCreditCard()) {
+                    EditorSectionHeader("Card")
+                    CompactField(
+                        value = creditLimit,
+                        onValueChange = { creditLimit = it },
+                        label = "Credit limit",
+                        supporting = "Shows available credit and how much you've used.",
+                        error = errorFor(AccountField.CREDIT_LIMIT, creditLimit),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        CompactField(
+                            value = statementDay,
+                            onValueChange = { statementDay = it.filter(Char::isDigit).take(2) },
+                            label = "Statement day",
+                            error = errorFor(AccountField.STATEMENT_DAY, statementDay),
+                            modifier = Modifier.weight(1f),
+                        )
+                        CompactField(
+                            value = dueDay,
+                            onValueChange = { dueDay = it.filter(Char::isDigit).take(2) },
+                            label = "Payment due day",
+                            error = errorFor(AccountField.DUE_DAY, dueDay),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                EditorSectionHeader("Matching")
                 CompactField(
                     value = accountNumber,
                     onValueChange = { accountNumber = it },
-                    label = "Account/card number",
-                    supporting = "Used to auto-assign captured transactions.",
+                    label = if (type.isCreditCard()) "Card number (last digits)" else "Account number",
+                    supporting = "Bank messages quoting it are filed here automatically.",
                 )
+                if (type.hasCards()) {
+                    CompactField(
+                        value = cardEndings,
+                        onValueChange = { cardEndings = it },
+                        label = if (type.isCreditCard()) "Supplementary card numbers" else "Debit card numbers",
+                        supporting = "Last 4 digits, comma-separated, e.g. 4321, 8765",
+                    )
+                }
+
+                EditorSectionHeader("Bank details")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     CompactField(
                         value = bankName,
@@ -743,19 +888,21 @@ private fun AccountDialog(
                 CompactField(value = accountTitle, onValueChange = { accountTitle = it }, label = "Account title / holder")
                 CompactField(value = iban, onValueChange = { iban = it }, label = "IBAN")
 
-                if (showLoanFields) {
+                if (type.isLoan()) {
                     EditorSectionHeader("Loan / financing")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         CompactField(
                             value = outstanding,
                             onValueChange = { outstanding = it },
                             label = "Outstanding",
+                            error = errorFor(AccountField.OUTSTANDING, outstanding),
                             modifier = Modifier.weight(1f),
                         )
                         CompactField(
                             value = nextInstallment,
                             onValueChange = { nextInstallment = it },
                             label = "Next installment",
+                            error = errorFor(AccountField.INSTALLMENT, nextInstallment),
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -764,16 +911,23 @@ private fun AccountDialog(
                             value = dueDay,
                             onValueChange = { dueDay = it.filter(Char::isDigit).take(2) },
                             label = "Due day (1-31)",
+                            error = errorFor(AccountField.DUE_DAY, dueDay),
                             modifier = Modifier.weight(1f),
                         )
                         CompactField(
                             value = profitRate,
                             onValueChange = { profitRate = it },
                             label = "Profit rate % p.a.",
+                            error = errorFor(AccountField.PROFIT_RATE, profitRate),
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    CompactField(value = maturity, onValueChange = { maturity = it }, label = "Maturity date (YYYY-MM-DD)")
+                    CompactField(
+                        value = maturity,
+                        onValueChange = { maturity = it },
+                        label = "Maturity date (YYYY-MM-DD)",
+                        error = errorFor(AccountField.MATURITY, maturity),
+                    )
                     CompactField(
                         value = loanNotes,
                         onValueChange = { loanNotes = it },
@@ -781,32 +935,14 @@ private fun AccountDialog(
                         singleLine = false,
                     )
                 }
+
+                CompactField(value = notes, onValueChange = { notes = it }, label = "Notes", singleLine = false)
             }
         },
         confirmButton = {
             TextButton(
                 enabled = valid,
-                onClick = {
-                    onSave(
-                        existing.copy(
-                            name = name.trim(),
-                            type = type,
-                            currencyCode = currency.trim().uppercase(),
-                            openingBalance = opening ?: BigDecimal.ZERO,
-                            accountNumber = accountNumber.trim().takeIf { it.isNotBlank() },
-                            bankName = bankName.trim().takeIf { it.isNotBlank() },
-                            accountTitle = accountTitle.trim().takeIf { it.isNotBlank() },
-                            iban = iban.trim().takeIf { it.isNotBlank() },
-                            swift = swift.trim().takeIf { it.isNotBlank() },
-                            outstandingBalance = outstanding.toBigDecimalOrNull(),
-                            nextInstallmentAmount = nextInstallment.toBigDecimalOrNull(),
-                            dueDayOfMonth = dueDay.toIntOrNull()?.takeIf { it in 1..31 },
-                            profitRatePa = profitRate.toDoubleOrNull(),
-                            maturityDateMillis = parseIsoDateToMillis(maturity),
-                            loanNotes = loanNotes.trim().takeIf { it.isNotBlank() },
-                        )
-                    )
-                },
+                onClick = { onSave(AccountFormValidator.apply(existing, input)) },
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -844,12 +980,15 @@ private fun CompactField(
     singleLine: Boolean = true,
     readOnly: Boolean = false,
     trailingIcon: @Composable (() -> Unit)? = null,
+    /** Shown in place of [supporting], in the error colour, when set. */
+    error: String? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-        supportingText = supporting?.let { { Text(it, style = MaterialTheme.typography.labelSmall) } },
+        isError = error != null,
+        supportingText = (error ?: supporting)?.let { { Text(it, style = MaterialTheme.typography.labelSmall) } },
         singleLine = singleLine,
         readOnly = readOnly,
         trailingIcon = trailingIcon,
@@ -1001,13 +1140,6 @@ private fun CopyDetailsDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
-}
-
-private fun parseIsoDateToMillis(s: String): Long? = try {
-    s.trim().takeIf { it.isNotBlank() }
-        ?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() }
-} catch (_: Exception) {
-    null
 }
 
 private fun millisToIsoDate(millis: Long): String =

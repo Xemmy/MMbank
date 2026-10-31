@@ -416,6 +416,10 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE archived = 0 AND isDemo = :demo ORDER BY name")
     fun observeActive(demo: Boolean): Flow<List<AccountEntity>>
 
+    /** Archived accounts in the [demo] partition -- the Accounts screen's "Archived" section. */
+    @Query("SELECT * FROM accounts WHERE archived = 1 AND isDemo = :demo ORDER BY name")
+    fun observeArchived(demo: Boolean): Flow<List<AccountEntity>>
+
     // Capture auto-assignment only ever binds to REAL accounts, so a demo
     // account can never end up owning a real transaction.
     @Query("SELECT * FROM accounts WHERE archived = 0 AND isDemo = 0 ORDER BY name")

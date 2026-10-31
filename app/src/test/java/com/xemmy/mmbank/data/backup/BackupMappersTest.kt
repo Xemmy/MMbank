@@ -89,6 +89,8 @@ class BackupMappersTest {
         statementCycleDay = 10,
         isDemo = false,
         hiddenFromDashboard = true,
+        creditLimit = BigDecimal("20000.00"),
+        cardEndings = "5555, 6666",
     )
 
     @Test

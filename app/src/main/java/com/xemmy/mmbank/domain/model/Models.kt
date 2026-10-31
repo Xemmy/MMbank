@@ -189,6 +189,15 @@ data class Account(
      * unhidden any time, where an archived one is retired from the ledger entirely.
      */
     val hiddenFromDashboard: Boolean = false,
+    /** A credit card's limit, for available credit and utilisation; null = not set. */
+    val creditLimit: BigDecimal? = null,
+    /**
+     * Extra card numbers that belong to this account, comma-separated -- a
+     * debit card on a current account, supplementary cards on a credit card.
+     * Matched against captured messages alongside [accountNumber] (see
+     * [com.xemmy.mmbank.domain.account.AccountNumberMatcher]).
+     */
+    val cardEndings: String? = null,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement

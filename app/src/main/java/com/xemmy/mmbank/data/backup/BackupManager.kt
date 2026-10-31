@@ -54,6 +54,9 @@ data class BackupAccount(
      */
     val statementCycleDay: Int? = null,
     val hiddenFromDashboard: Boolean = false,
+    /** Absent (null) on backups from before format v8. */
+    val creditLimit: String? = null,
+    val cardEndings: String? = null,
 )
 
 @Serializable
@@ -174,6 +177,9 @@ data class BackupPayload(
      *
      * 7 = adds [merchantKindMappings], the learned merchant -> kind rules.
      * Gated like the account rules: a pre-v7 backup never held them.
+     *
+     * 8 = adds [BackupAccount.creditLimit]/[BackupAccount.cardEndings]. No
+     * gate: both default to "not set".
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -236,7 +242,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 7,
+            formatVersion = 8,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -411,6 +417,8 @@ internal fun AccountEntity.toBackup() = BackupAccount(
     loanNotes = loanNotes,
     statementCycleDay = statementCycleDay,
     hiddenFromDashboard = hiddenFromDashboard,
+    creditLimit = creditLimit?.toPlainString(),
+    cardEndings = cardEndings,
 )
 
 internal fun BackupAccount.toEntity() = AccountEntity(
@@ -435,6 +443,8 @@ internal fun BackupAccount.toEntity() = AccountEntity(
     loanNotes = loanNotes,
     statementCycleDay = statementCycleDay,
     hiddenFromDashboard = hiddenFromDashboard,
+    creditLimit = creditLimit?.let(::BigDecimal),
+    cardEndings = cardEndings,
 )
 
 internal fun TransactionEntity.toBackup() = BackupTransaction(

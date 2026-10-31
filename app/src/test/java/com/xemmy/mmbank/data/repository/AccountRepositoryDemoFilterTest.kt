@@ -27,6 +27,8 @@ class AccountRepositoryDemoFilterTest {
         override suspend fun delete(entity: AccountEntity) {}
         override fun observeActive(demo: Boolean): Flow<List<AccountEntity>> =
             flowOf(rows.filter { !it.archived && it.isDemo == demo }.sortedBy { it.name })
+        override fun observeArchived(demo: Boolean): Flow<List<AccountEntity>> =
+            flowOf(rows.filter { it.archived && it.isDemo == demo }.sortedBy { it.name })
         override suspend fun getActive(): List<AccountEntity> = rows.filter { !it.archived && !it.isDemo }
         override suspend fun getById(id: Long): AccountEntity? = rows.firstOrNull { it.id == id }
         override suspend fun setOpeningBalance(id: Long, openingBalance: BigDecimal) {}

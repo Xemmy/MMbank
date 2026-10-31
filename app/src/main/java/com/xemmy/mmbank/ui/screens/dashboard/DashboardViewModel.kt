@@ -143,6 +143,12 @@ data class FinancialHealthState(
 data class DashboardUiState(
     val baseCurrency: String = "USD",
     val accounts: List<AccountRow> = emptyList(),
+    /**
+     * Every active account, hidden ones included -- what "Manage accounts"
+     * lists. Passing [accounts] there meant an account switched off the
+     * Dashboard vanished from the very sheet that could switch it back on.
+     */
+    val manageableAccounts: List<AccountRow> = emptyList(),
     val cryptoBalances: List<AssetBalance> = emptyList(),
     /** Per-wallet totals (Earn, Funding, Trading Bots, …), biggest first. */
     val cryptoWallets: List<WalletBalance> = emptyList(),
@@ -278,6 +284,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         DashboardUiState(
             baseCurrency = base,
             accounts = accountsResult.visibleAccounts,
+            manageableAccounts = allAccountRows,
             cryptoBalances = cryptoResult.visibleAssets,
             cryptoWallets = cryptoResult.visibleWallets,
             cryptoTotalUsd = cryptoResult.cryptoTotalUsd,
