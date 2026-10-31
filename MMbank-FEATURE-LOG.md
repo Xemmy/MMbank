@@ -3575,3 +3575,49 @@ Verified on run 41178449993 (commit 6027e37):
   in that build.
 - Build APK: success.
 - Final Status: success.
+
+## Phase 16.6 — A month of real messages, end to end
+
+Version 0.50.1 (versionCode 77). Fix plus test, no schema change.
+
+### What changed
+
+- **Fix:** the "More filters (n)" badge did not count the new Kind filter. In
+  the single-row filter bar, where Kind lives inside More filters, an active
+  kind filter left the feed silently narrowed with no badge.
+  `TransactionFilterEngine.activeSecondaryFilterCount` now counts it.
+- **`MoneyPipelineScenarioTest`:** one October of real-format bank messages
+  goes through the real `TransactionParser` + `BuiltInRules`,
+  `AccountNumberMatcher`, `TransactionKindDetector` and `TransferMatcher`
+  (glued as `recordParsed` glues them), plus a manual transfer via
+  `TransferLegs`. The month contains:
+  - salary 15,000;
+  - two card purchases (68.00 and 275.18);
+  - a 500 ATM withdrawal;
+  - last month's 3,600 card bill, with the card side posting a day after the
+    bank side;
+  - 2,000 moved to savings;
+  - a 5.58 Tabby partial refund and 2.23 Tabby cashback.
+
+  The test then checks what the user reads:
+  - every row's kind, and that both card-payment legs link to each other;
+  - Spent 837.60 and Received 15,000, on both the exact and the Double
+    (Dashboard) paths;
+  - balances: Current 18,900, Card −343.18, Savings 2,000;
+  - the Tabby rows with no account show up as 7.81 unassigned;
+  - net worth 20,556.82;
+  - the card: statement 3,600, paid 3,600, nothing due, status PAID,
+    343.18 spent this cycle, available 19,656.82, due 25 Oct;
+  - the monthly report agrees with the dashboard.
+
+### Local verification
+
+The pure domain layer and its tests were also compiled and run in this
+session in a scratch JVM project (Kotlin 2.0.21; Android-dependent tests
+excluded): 753 tests passed. The only failures were `MigrationSqlTest`'s
+three tests, which need Room's exported 28.json; that file only exists in
+the Android build, where it passes (run 41178449993).
+
+### CI verification
+
+Pending — to be amended once the job log is read.

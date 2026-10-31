@@ -420,13 +420,20 @@ class TransactionFilterEngineTest {
             ),
         )
         assertEquals(
-            5,
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)
+            ),
+        )
+        assertEquals(
+            6,
             TransactionFilterEngine.activeSecondaryFilterCount(
                 ActivityFilters(
                     person = PersonFilter.Specific("Ahmed"),
                     triageOnly = true,
                     minAmount = BigDecimal.ONE,
                     source = TransactionSource.MANUAL,
+                    kind = com.xemmy.mmbank.domain.model.TransactionKind.CARD_PAYMENT,
                     analyticsStatus = AnalyticsStatusFilter.EXCLUDED_ONLY,
                 )
             ),

@@ -115,7 +115,7 @@ object TransactionFilterEngine {
 
     /**
      * How many independent secondary-filter categories (person, triage,
-     * amount, source, analytics status) are active — drives the "More
+     * amount, source, kind, analytics status) are active — drives the "More
      * filters" badge count in the single-row filter bar.
      */
     fun activeSecondaryFilterCount(filters: ActivityFilters): Int {
@@ -124,6 +124,7 @@ object TransactionFilterEngine {
         if (filters.triageOnly) count++
         if (filters.minAmount != null || filters.maxAmount != null) count++
         if (filters.source != null) count++
+        if (filters.kind != null) count++
         if (filters.analyticsStatus != null) count++
         return count
     }
