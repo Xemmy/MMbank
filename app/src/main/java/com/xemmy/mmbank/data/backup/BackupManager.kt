@@ -13,6 +13,7 @@ import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -104,6 +105,9 @@ data class BackupTransaction(
      */
     val kind: String? = null,
     val kindUserSet: Boolean = false,
+    /** Absent (null) on backups from before format v9. */
+    val reportedBalance: String? = null,
+    val reportedBalanceKind: String? = null,
 )
 
 @Serializable
@@ -180,6 +184,9 @@ data class BackupPayload(
      *
      * 8 = adds [BackupAccount.creditLimit]/[BackupAccount.cardEndings]. No
      * gate: both default to "not set".
+     *
+     * 9 = adds [BackupTransaction.reportedBalance]/[BackupTransaction.reportedBalanceKind].
+     * No gate: an older row simply has no bank-reported balance.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -242,7 +249,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 8,
+            formatVersion = 9,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -475,6 +482,8 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     aiConfidence = aiConfidence,
     kind = kind.name,
     kindUserSet = kindUserSet,
+    reportedBalance = reportedBalance?.toPlainString(),
+    reportedBalanceKind = reportedBalanceKind?.name,
 )
 
 /**
@@ -528,6 +537,8 @@ internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): Transact
         aiConfidence = aiConfidence,
         kind = restoredKind,
         kindUserSet = kindUserSet,
+        reportedBalance = reportedBalance?.let { runCatching { BigDecimal(it) }.getOrNull() },
+        reportedBalanceKind = reportedBalanceKind?.let { n -> ReportedBalanceKind.entries.firstOrNull { it.name == n } },
     )
 }
 

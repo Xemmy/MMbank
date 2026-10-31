@@ -64,6 +64,8 @@ class BackupMappersTest {
         aiConfidence = 87,
         kind = TransactionKind.CARD_PAYMENT,
         kindUserSet = true,
+        reportedBalance = BigDecimal("46120.85"),
+        reportedBalanceKind = com.xemmy.mmbank.domain.model.ReportedBalanceKind.AVAILABLE_CREDIT,
     )
 
     private val fullAccount = AccountEntity(
@@ -269,6 +271,26 @@ class BackupMappersTest {
                "accounts":[],"transactions":[],"rules":[],"senderLabels":[]}""",
         )
         assertTrue(payload.merchantKindMappings.isEmpty())
+    }
+
+    @Test
+    fun `a pre-v9 transaction has no reported balance`() {
+        val old = """
+            {"id":1,"accountId":null,"amount":"10.00","currencyCode":"AED","direction":"DEBIT",
+             "merchant":null,"source":"MANUAL","sender":null,"rawMessage":null,"matchedRuleName":null,
+             "timestamp":1,"createdAt":1,"accountNumberSuffix":null}
+        """.trimIndent()
+        val decoded = json.decodeFromString(BackupTransaction.serializer(), old).toEntity()
+        assertNull(decoded.reportedBalance)
+        assertNull(decoded.reportedBalanceKind)
+    }
+
+    @Test
+    fun `an unknown reported-balance kind or an unreadable amount is dropped, not fatal`() {
+        val odd = fullTransaction.toBackup().copy(reportedBalance = "not-a-number", reportedBalanceKind = "FROM_THE_FUTURE")
+        val restored = odd.toEntity()
+        assertNull(restored.reportedBalance)
+        assertNull(restored.reportedBalanceKind)
     }
 
     @Test

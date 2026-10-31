@@ -70,7 +70,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExpenseSplitEntity::class,
         IgnoredMessagePatternEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -763,6 +763,18 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * v28 -> v29: the balance a bank prints in its message
+         * ("available balance AED 46,120.85"), kept on the transaction it
+         * arrived with (see [com.xemmy.mmbank.domain.parser.BalanceExtractor]).
+         * It is the bank's own statement of what the account held, which is
+         * what the integrity check reconciles the app's computed balance
+         * against. Both columns are nullable: existing rows simply have none.
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_28_29_SQL.forEach(db::execSQL)
+        }
+
+        /**
          * [factory] swaps in the SQLCipher open helper (see AppContainer);
          * null opens plaintext — the pre-encryption format, kept as the
          * fallback so a failed encryption migration never bricks the app.
@@ -777,7 +789,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
-                    MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28,
+                    MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

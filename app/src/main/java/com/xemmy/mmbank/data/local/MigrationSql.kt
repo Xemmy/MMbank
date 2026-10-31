@@ -55,4 +55,9 @@ object MigrationSql {
         "ALTER TABLE accounts ADD COLUMN creditLimit TEXT",
         "ALTER TABLE accounts ADD COLUMN cardEndings TEXT",
     )
+
+    val MIGRATION_28_29_SQL: List<String> = listOf(
+        "ALTER TABLE transactions ADD COLUMN reportedBalance TEXT",
+        "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
+    )
 }

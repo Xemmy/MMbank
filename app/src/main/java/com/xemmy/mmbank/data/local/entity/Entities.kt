@@ -18,6 +18,7 @@ import com.xemmy.mmbank.domain.model.Friend
 import com.xemmy.mmbank.domain.model.GroupExpense
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.SplitGroup
@@ -146,6 +147,9 @@ data class TransactionEntity(
     val kind: TransactionKind = TransactionKind.defaultFor(direction),
     /** True once the user picked [kind] by hand; see [Transaction.kindUserSet]. */
     val kindUserSet: Boolean = false,
+    /** Bank-printed balance in the source message; see [Transaction.reportedBalance]. */
+    val reportedBalance: BigDecimal? = null,
+    val reportedBalanceKind: ReportedBalanceKind? = null,
 )
 
 @Entity(tableName = "categories")
@@ -435,7 +439,7 @@ fun TransactionEntity.toDomain() = Transaction(
     rawMessage, matchedRuleName, timestamp, createdAt, accountNumberSuffix, category, person,
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
-    extractedMerchant, aiConfidence, kind, kindUserSet,
+    extractedMerchant, aiConfidence, kind, kindUserSet, reportedBalance, reportedBalanceKind,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -467,6 +471,8 @@ fun Transaction.toEntity() = TransactionEntity(
     aiConfidence = aiConfidence,
     kind = kind,
     kindUserSet = kindUserSet,
+    reportedBalance = reportedBalance,
+    reportedBalanceKind = reportedBalanceKind,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)

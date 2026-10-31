@@ -3626,3 +3626,53 @@ Verified on run 41179681450 (commit 8919fa2):
   and passed.
 - Build APK: success.
 - Final Status: success.
+
+## Phase 17.1 — Keep the balance the bank prints
+
+Version 0.51.0 (versionCode 78). Schema v28 -> v29.
+
+### Why
+
+The app is a single-entry ledger, so nothing proved its books were complete: a
+missed SMS or a wrong amount left the computed balance drifting from the bank's
+with no sign. Most bank messages end with the bank's own balance, and that
+figure was thrown away. The amount rules were only positioned so they wouldn't
+mistake it for the amount (`BuiltInRules.kt`).
+
+### What changed
+
+- **`BalanceExtractor`** (pure) reads the printed balance from the normalized
+  message: "available account balance", "Avl. card bal", "available Tabby
+  Card limit", "Tabby Cash balance", "Balance: AED …", and the Arabic
+  "الرصيد المتوفر", "رصيد حسابك الحالي", "الرصيد المتاح".
+  - Wording decides the kind. Anything about a limit or card balance is
+    `AVAILABLE_CREDIT`; the rest is `ACCOUNT_BALANCE`.
+  - It handles thousands separators and a minus on either side of the
+    currency.
+  - A balance in a different currency than the transaction is dropped, since
+    the stored figure carries no currency of its own.
+  - The first balance statement wins.
+  - It is independent of the amount rules and can only add information.
+    `TransactionParser.parse` now wraps the existing parser as `parseCore` and
+    attaches the balance afterwards.
+- **Storage:** `reportedBalance` and `reportedBalanceKind` on `Transaction`,
+  `TransactionEntity` and `ParsedTransaction`, with mappers, converters and
+  `recordParsed` persisting them.
+- **`MIGRATION_28_29`:** two nullable `ALTER TABLE` columns, in `MigrationSql`.
+  Existing rows simply have none.
+- **Backup format 9** carries both fields. An unreadable amount or an unknown
+  kind from a newer build restores as empty rather than failing.
+
+### Tests
+
+- `BalanceExtractorTest` (12): every real phrasing above, no-balance messages,
+  currency mismatch, first-wins, and the parser keeping the transaction amount
+  while adding the balance.
+- `MigrationSqlTest` now targets v29 and the new columns.
+- Mapper and backup round trips, a pre-v9 payload, and an unknown kind.
+- Locally, the existing parser, signature, ingest and scenario suites all still
+  pass with the extractor active (the extractor tests too).
+
+### CI verification
+
+Pending — to be amended once the job log is read.

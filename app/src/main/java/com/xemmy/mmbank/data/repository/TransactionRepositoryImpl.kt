@@ -215,6 +215,8 @@ class TransactionRepositoryImpl(
                     spendingCategory = spendingCategory,
                 ),
                 kind = kind,
+                reportedBalance = parsed.reportedBalance,
+                reportedBalanceKind = parsed.reportedBalanceKind,
             )
             val id = dao.insert(entity)
             tryLinkTransfer(entity.copy(id = id))

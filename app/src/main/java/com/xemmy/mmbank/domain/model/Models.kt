@@ -17,6 +17,15 @@ enum class TransactionDirection { DEBIT, CREDIT }
 enum class TransactionCategory { NORMAL, CASHBACK_EARNED }
 
 /**
+ * What a bank-reported figure at the end of a message means (see
+ * [com.xemmy.mmbank.domain.parser.BalanceExtractor]): a balance held, or
+ * credit still available (a card limit remaining). Which one a message carries
+ * depends on its wording; what that implies for an account depends on the
+ * account's type, so the integrity check decides.
+ */
+enum class ReportedBalanceKind { ACCOUNT_BALANCE, AVAILABLE_CREDIT }
+
+/**
  * What a transaction *is*, as opposed to which way the money moved
  * ([TransactionDirection]). Every total in the app -- Spent, Received,
  * budgets, reports, forecasts -- is derived from this through
@@ -139,6 +148,9 @@ data class ParsedTransaction(
      * leaves it to [com.xemmy.mmbank.domain.ledger.TransactionKindDetector].
      */
     val kindOverride: TransactionKind? = null,
+    /** The balance the bank printed in the same message, if any; null when it printed none. */
+    val reportedBalance: BigDecimal? = null,
+    val reportedBalanceKind: ReportedBalanceKind? = null,
 )
 
 data class Account(
@@ -290,6 +302,15 @@ data class Transaction(
      * overrides a user-set kind.
      */
     val kindUserSet: Boolean = false,
+    /**
+     * The balance the bank itself printed in the message this row came from
+     * ("available balance AED 46,120.85"), in this row's currency; null when
+     * the message carried none (manual rows, most notifications). The bank's
+     * statement of what the account held right after this transaction -- the
+     * reference the integrity check reconciles the app's own balance against.
+     */
+    val reportedBalance: BigDecimal? = null,
+    val reportedBalanceKind: ReportedBalanceKind? = null,
 )
 
 /**

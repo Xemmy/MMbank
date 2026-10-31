@@ -700,6 +700,22 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `reported bank balance round-trips both directions`() {
+        com.xemmy.mmbank.domain.model.ReportedBalanceKind.entries.forEach { kind ->
+            val original = transaction(excludeFromStats = false)
+                .copy(reportedBalance = BigDecimal("46120.85"), reportedBalanceKind = kind)
+            assertEquals(original, original.toEntity().toDomain())
+            val entity = original.toEntity()
+            assertEquals(BigDecimal("46120.85"), entity.reportedBalance)
+            assertEquals(kind, entity.reportedBalanceKind)
+            assertEquals(entity, entity.toDomain().toEntity())
+        }
+        val none = transaction(excludeFromStats = false)
+        assertNull(none.toEntity().reportedBalance)
+        assertNull(none.toEntity().reportedBalanceKind)
+    }
+
+    @Test
     fun `parsing rule round-trip preserves assignKind`() {
         val rule = ParsingRule(
             name = "ADCB card payment",
