@@ -3258,7 +3258,15 @@ backup lands on the same totals as upgrading in place.
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41177467632 (commit 92644da, which contains Phases 16.1–16.4):
+- "Run unit tests": `compileDebugUnitTestKotlin` compiled and `testDebugUnitTest`
+  passed (BUILD SUCCESSFUL, no failures).
+- Build APK: success.
+- Final Status: success.
+
+Run 41176466032, for the first push of 16.1, failed at `compileDebugUnitTestKotlin`.
+The new dashboard tests had been appended after the file's last class. That was
+fixed in ab9cdbf.
 
 ## Phase 16.2 — Say what it is: manual transfers, a type picker, and kinds that are learned
 
@@ -3331,7 +3339,15 @@ month.
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41177467632 (commit 92644da, which contains Phases 16.1–16.4):
+- "Run unit tests": `compileDebugUnitTestKotlin` compiled and `testDebugUnitTest`
+  passed (BUILD SUCCESSFUL, no failures).
+- Build APK: success.
+- Final Status: success.
+
+Run 41176466032, for the first push of 16.1, failed at `compileDebugUnitTestKotlin`.
+The new dashboard tests had been appended after the file's last class. That was
+fixed in ab9cdbf.
 
 ## Phase 16.3 — Accounts and cards that are easy to set up and file money correctly
 
@@ -3412,7 +3428,15 @@ Capture matching had its own problems:
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41177467632 (commit 92644da, which contains Phases 16.1–16.4):
+- "Run unit tests": `compileDebugUnitTestKotlin` compiled and `testDebugUnitTest`
+  passed (BUILD SUCCESSFUL, no failures).
+- Build APK: success.
+- Final Status: success.
+
+Run 41176466032, for the first push of 16.1, failed at `compileDebugUnitTestKotlin`.
+The new dashboard tests had been appended after the file's last class. That was
+fixed in ab9cdbf.
 
 ## Phase 16.4 — Credit cards that tell you where you stand
 
@@ -3487,4 +3511,12 @@ personal-finance app can help avoid.
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41177467632 (commit 92644da, which contains Phases 16.1–16.4):
+- "Run unit tests": `compileDebugUnitTestKotlin` compiled and `testDebugUnitTest`
+  passed (BUILD SUCCESSFUL, no failures).
+- Build APK: success.
+- Final Status: success.
+
+Run 41176466032, for the first push of 16.1, failed at `compileDebugUnitTestKotlin`.
+The new dashboard tests had been appended after the file's last class. That was
+fixed in ab9cdbf.
