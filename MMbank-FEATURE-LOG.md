@@ -3568,4 +3568,10 @@ and no way to list "every card payment" or "every refund".
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41178449993 (commit 6027e37):
+- "Run unit tests": `testDebugUnitTest` finished BUILD SUCCESSFUL. The test
+  report grew from 155 to 156 files; the only new test class is
+  `MigrationSqlTest`, so it ran and passed against the schema Room exported
+  in that build.
+- Build APK: success.
+- Final Status: success.
