@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.screens.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
@@ -341,6 +342,18 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         .map { it.size }
         .recoverAndRetry("DashboardViewModel.pendingReviewCount", container) { 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Credit cards with a payment due within a week, or overdue -- the Dashboard's "Cards due" strip. */
+    val cardsDue: StateFlow<List<CardPaymentReminders.CardReminder>> = combine(
+        container.accountRepository.observeActive(),
+        container.transactionRepository.observeTransactions(),
+        container.transactionRepository.observeLedgerEntries(),
+    ) { accounts, transactions, entries ->
+        CardPaymentReminders.dueSoon(
+            CardPaymentReminders.build(accounts, transactions, entries, java.time.LocalDate.now()),
+        )
+    }.recoverAndRetry("DashboardViewModel.cardsDue", container) { emptyList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * Financial Health Summary Card: this month's savings rate / cash runway

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.intelligence.BillReminders
 import com.xemmy.mmbank.util.BillNotificationHelper
 import kotlinx.coroutines.flow.first
@@ -42,6 +43,17 @@ class BillReminderWorker(
             val updated = announced + due.map { BillReminders.reminderKey(it) }
             container.preferences.billRemindersSent = BillReminders.prune(updated, bills)
         }.onFailure { container.recordError("BillReminderWorker", it) }
+
+        // Credit-card payments ride on the same opt-in: a card statement is
+        // a bill the app can work out by itself.
+        runCatching {
+            val cards = container.cardStatuses()
+            val announced = container.preferences.cardRemindersSent
+            val due = CardPaymentReminders.pending(cards, announced)
+            due.forEach { BillNotificationHelper.postCardDueReminder(applicationContext, it) }
+            val updated = announced + due.map(CardPaymentReminders::reminderKey)
+            container.preferences.cardRemindersSent = CardPaymentReminders.prune(updated, cards)
+        }.onFailure { container.recordError("BillReminderWorker.cards", it) }
 
         return Result.success()
     }

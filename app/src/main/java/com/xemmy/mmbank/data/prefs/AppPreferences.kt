@@ -333,6 +333,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getStringSet(KEY_BILL_REMINDERS_SENT, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_BILL_REMINDERS_SENT, value).apply()
 
+    /** Credit-card due dates already announced; see [com.xemmy.mmbank.domain.account.CardPaymentReminders]. */
+    var cardRemindersSent: Set<String>
+        get() = prefs.getStringSet(KEY_CARD_REMINDERS_SENT, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_CARD_REMINDERS_SENT, value).apply()
+
     private companion object {
         const val DEFAULT_AI_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
         const val KEY_AI_PARSING_ENABLED = "ai_parsing_enabled"
@@ -372,6 +377,7 @@ class AppPreferences(context: Context) {
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
         const val KEY_LEDGER_KIND_BACKFILL_VERSION = "ledger_kind_backfill_version"
+        const val KEY_CARD_REMINDERS_SENT = "card_reminders_sent"
         const val KEY_BILL_REMINDERS = "bill_reminders_enabled"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }

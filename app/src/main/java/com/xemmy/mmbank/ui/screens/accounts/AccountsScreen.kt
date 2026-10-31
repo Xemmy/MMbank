@@ -40,6 +40,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -95,6 +96,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.account.CreditCardStatusCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -102,7 +105,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class AccountWithBalance(val account: Account, val balance: BigDecimal)
+data class AccountWithBalance(
+    val account: Account,
+    val balance: BigDecimal,
+    /** Credit cards only: owed, available, statement and due date. */
+    val card: CreditCardStatusCalculator.CardStatus? = null,
+)
 
 /**
  * Money that is in the ledger but in no account, so it appears in no balance.
@@ -132,13 +140,17 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         container.accountRepository.observeActive(),
         container.accountRepository.observeArchived(),
         container.transactionRepository.observeLedgerEntries(),
-    ) { accounts, archived, entries ->
+        container.transactionRepository.observeTransactions(),
+    ) { accounts, archived, entries, transactions ->
         val net = AccountBalanceCalculator.netByAccount(entries)
+        val cards = CardPaymentReminders.build(accounts, transactions, entries, LocalDate.now())
+            .associate { it.accountId to it.status }
         AccountsUiState(
             rows = accounts.map { account ->
                 AccountWithBalance(
                     account = account,
                     balance = AccountBalanceCalculator.balanceOf(account, net),
+                    card = cards[account.id],
                 )
             },
             archived = archived.map { account ->
@@ -443,6 +455,8 @@ private fun AccountCard(
                 )
             }
 
+            row.card?.let { CardStatusBlock(it, a.currencyCode, hidden) }
+
             if (a.outstandingBalance != null || a.nextInstallmentAmount != null) {
                 Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     a.outstandingBalance?.let {
@@ -508,6 +522,62 @@ private fun AccountCard(
         )
     }
 }
+
+/**
+ * A credit card at a glance: how much of the limit is used, what's left, and
+ * whether this statement is paid.
+ */
+@Composable
+private fun CardStatusBlock(card: CreditCardStatusCalculator.CardStatus, currency: String, hidden: Boolean) {
+    fun money(v: BigDecimal) = if (hidden) AMOUNT_MASK else v.asMoney(currency)
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        card.utilisation?.let { used ->
+            LinearProgressIndicator(
+                progress = { used.toFloat().coerceIn(0f, 1f) },
+                color = when {
+                    used > 0.9 -> ObsidianTokens.debit
+                    used > 0.3 -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LoanLine(
+                "Available",
+                "${money(card.available ?: BigDecimal.ZERO)} of ${money(card.creditLimit ?: BigDecimal.ZERO)} · " +
+                    String.format(java.util.Locale.US, "%.0f%% used", used * 100),
+            )
+        }
+        card.statementBalance?.let { LoanLine("Last statement", money(it)) }
+        LoanLine("Spent this cycle", money(card.spentThisCycle))
+        val dueText = when (card.status) {
+            CreditCardStatusCalculator.Status.NOTHING_OWED -> "Nothing owed"
+            CreditCardStatusCalculator.Status.PAID -> "Statement paid ✓"
+            CreditCardStatusCalculator.Status.NO_DUE_DATE ->
+                money(card.amountDue) + " owed · set a payment due day to get reminders"
+            else -> {
+                val days = card.daysUntilDue ?: 0L
+                money(card.amountDue) + (if (card.estimated) " (all owed)" else "") + " · " +
+                    when {
+                        days < 0 -> "overdue by ${-days}d"
+                        days == 0L -> "due today"
+                        else -> "due ${card.dueDate?.asShortDate()} (${days}d)"
+                    }
+            }
+        }
+        Text(
+            dueText,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (card.status == CreditCardStatusCalculator.Status.OVERDUE) {
+                MaterialTheme.colorScheme.error
+            } else {
+                ObsidianTokens.textPrimary
+            },
+        )
+    }
+}
+
+private fun LocalDate.asShortDate(): String =
+    "${dayOfMonth} ${month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())}"
 
 /** One retired account, with what's left on it and a way back. */
 @Composable

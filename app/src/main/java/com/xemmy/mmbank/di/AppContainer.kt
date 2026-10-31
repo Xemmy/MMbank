@@ -781,11 +781,29 @@ class AppContainer(context: Context) {
     fun recordError(tag: String, throwable: Throwable) = Diagnostics.recordError(appContext, tag, throwable)
 
     /**
-     * Inserts the starter Tabby Card / Tabby Cash rules exactly once. They are
-     * ordinary custom rules, so the Rules screen can edit them — including the
-     * "assign matches to" account, which is the whole point: these messages
-     * carry no account number, so each rule pins its card explicitly.
+     * Where every real credit card stands today (see
+     * [com.xemmy.mmbank.domain.account.CreditCardStatusCalculator]) -- feeds
+     * the daily card-payment reminder. Balances come from the same
+     * [com.xemmy.mmbank.domain.account.AccountBalanceCalculator] every screen
+     * uses.
      */
+    suspend fun cardStatuses(): List<com.xemmy.mmbank.domain.account.CardPaymentReminders.CardReminder> {
+        val transactions = transactionRepository.getAllReal()
+        return com.xemmy.mmbank.domain.account.CardPaymentReminders.build(
+            accounts = accountRepository.observeActiveReal().first(),
+            transactions = transactions,
+            entries = transactions.map {
+                com.xemmy.mmbank.domain.account.AccountBalanceCalculator.LedgerEntry(
+                    accountId = it.accountId,
+                    amount = it.amount,
+                    currencyCode = it.currencyCode,
+                    direction = it.direction,
+                )
+            },
+            today = java.time.LocalDate.now(),
+        )
+    }
+
     /**
      * One-time pass after the v26 upgrade: the SQL migration can only tell a
      * plain debit from a plain credit, so ATM withdrawals, refunds, card
@@ -812,6 +830,12 @@ class AppContainer(context: Context) {
         }
     }
 
+    /**
+     * Inserts the starter Tabby Card / Tabby Cash rules exactly once. They are
+     * ordinary custom rules, so the Rules screen can edit them — including the
+     * "assign matches to" account, which is the whole point: these messages
+     * carry no account number, so each rule pins its card explicitly.
+     */
     fun seedDefaultRulesOnce() {
         if (preferences.tabbyRulesSeeded) return
         applicationScope.launch {

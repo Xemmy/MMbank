@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.model.BankNames
@@ -89,6 +90,7 @@ fun DashboardScreen(
     val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
     val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
     val pendingReviewCount by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
+    val cardsDue by viewModel.cardsDue.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
     var showManageAccounts by remember { mutableStateOf(false) }
@@ -158,6 +160,10 @@ fun DashboardScreen(
                 )
             }
 
+            if (cardsDue.isNotEmpty()) {
+                item(key = "cards_due") { CardsDueCard(cardsDue, hidden) }
+            }
+
             // Money in no account is in no balance above -- say so rather than
             // letting it silently vanish from the net worth figure.
             if (!state.unassigned.isEmpty) {
@@ -218,6 +224,34 @@ fun DashboardScreen(
             onToggleVisibility = viewModel::toggleAccountVisibility,
             onDismiss = { showManageAccounts = false },
         )
+    }
+}
+
+/** Card payments due within a week or overdue, most urgent first. */
+@Composable
+private fun CardsDueCard(cards: List<CardPaymentReminders.CardReminder>, hidden: Boolean) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Cards due", style = MaterialTheme.typography.titleSmall)
+        cards.forEach { card ->
+            val days = card.status.daysUntilDue ?: return@forEach
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${card.accountName} · ${CardPaymentReminders.whenText(days)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (days < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    card.status.amountDue.asMoneyOrMask(card.currencyCode, hidden),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
     }
 }
 

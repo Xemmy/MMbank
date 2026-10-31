@@ -3413,3 +3413,78 @@ Capture matching had its own problems:
 ### CI verification
 
 Pending — to be amended once the job log is read.
+
+## Phase 16.4 — Credit cards that tell you where you stand
+
+Version 0.49.0 (versionCode 75). No schema change.
+
+### Why
+
+A credit card was just a negative balance. Nothing said how much of the limit
+was used, what the last statement asked for, whether it had been paid, or when
+the payment was due. A missed card payment is the most expensive mistake a
+personal-finance app can help avoid.
+
+### What changed
+
+- **`CreditCardStatusCalculator`** (pure). It takes the card's computed
+  balance, which still comes from `AccountBalanceCalculator` as the single
+  source of truth, plus its transactions. It returns:
+  - What's owed now, available credit, and utilisation.
+  - The current cycle start, from `statementCycleDay`, clamped for short
+    months.
+  - The statement balance: the balance at the moment the cycle started.
+  - Payments since then. Only card payment and transfer credits count, not
+    refunds.
+  - The amount still due, never more than is owed now.
+  - The due date: the first `dueDayOfMonth` on or after the cycle start.
+  - Spending this cycle (via `LedgerMath`, refunds netted).
+  - A status: NOTHING_OWED / PAID / DUE / DUE_SOON (within 7 days) /
+    OVERDUE / NO_DUE_DATE.
+  - Without a statement day, everything owed is treated as due and flagged
+    `estimated`.
+- **`CardPaymentReminders`** (pure):
+  - `build` gives the status of every card from accounts, transactions and
+    ledger entries. The worker, the Dashboard and the Accounts screen all use
+    it, so they can't disagree.
+  - `pending` reminds within 3 days of the due date, or when overdue,
+    keyed on card plus due date, so each date is announced once and the
+    next month re-arms.
+  - `prune` keeps the stored set small.
+- **Accounts screen:** each credit card shows:
+  - A utilisation bar, coloured by how much is used.
+  - "Available X of Y · N% used".
+  - The last statement and spending this cycle.
+  - "AED X · due 25 Oct (5d)", "Statement paid ✓", "Nothing owed", or overdue
+    in red.
+- **Dashboard:** a "Cards due" strip whenever a card is due within a week or
+  overdue.
+- **Reminders:** `BillReminderWorker` also posts card-payment notifications
+  under the existing (opt-in) Bill reminders toggle. Sent keys are stored in
+  `AppPreferences.cardRemindersSent`.
+- The Tabby seed-rules doc comment had been displaced by Phase 16.1. It is
+  back on `seedDefaultRulesOnce`.
+
+### Tests
+
+- `CreditCardStatusCalculatorTest`:
+  - Owed, available and utilisation.
+  - Statement, payments and amount due across a cycle.
+  - Paid in full despite new spending.
+  - A refund is not a payment, and the amount due is capped at what's owed.
+  - Overdue.
+  - A due day falling in the next month.
+  - A card in credit.
+  - No statement day, no due day, no limit.
+  - Other accounts are ignored.
+  - Day-31 and leap-year clamping.
+- `CardPaymentRemindersTest`:
+  - The reminder window and order.
+  - Announce-once, with next month re-arming.
+  - Prune.
+  - `build` covers only cards and takes balances from the ledger.
+  - Wording.
+
+### CI verification
+
+Pending — to be amended once the job log is read.
