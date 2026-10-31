@@ -53,6 +53,7 @@ internal fun MoreFiltersDialog(
     onAmountRange: (BigDecimal?, BigDecimal?) -> Unit,
     onSourceFilter: (TransactionSource?) -> Unit,
     onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
+    onKindFilter: (com.xemmy.mmbank.domain.model.TransactionKind?) -> Unit = {},
     onClearAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -146,6 +147,26 @@ internal fun MoreFiltersDialog(
                                 selected = f.source == source,
                                 onClick = { onSourceFilter(source) },
                                 label = sourceLabel(source),
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SectionLabel("What it is")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterBarChip(
+                            selected = f.kind == null,
+                            onClick = { onKindFilter(null) },
+                            label = "Any",
+                        )
+                        com.xemmy.mmbank.domain.model.TransactionKind.entries.forEach { kind ->
+                            FilterBarChip(
+                                selected = f.kind == kind,
+                                onClick = { onKindFilter(kind) },
+                                label = kind.label,
                             )
                         }
                     }

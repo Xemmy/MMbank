@@ -229,6 +229,25 @@ class TransactionFilterEngineTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `kind filter isolates card payments, refunds and the rest`() {
+        val spend = tx()
+        val cardPayment = tx().copy(kind = com.xemmy.mmbank.domain.model.TransactionKind.CARD_PAYMENT)
+        val refund = tx(direction = TransactionDirection.CREDIT)
+            .copy(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)
+        val all = listOf(spend, cardPayment, refund)
+        assertEquals(
+            listOf(cardPayment.id),
+            filter(all, ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.CARD_PAYMENT)).map { it.id },
+        )
+        assertEquals(
+            listOf(refund.id),
+            filter(all, ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)).map { it.id },
+        )
+        assertEquals(3, filter(all, ActivityFilters()).size)
+        assertTrue(ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.SPEND).active)
+    }
+
+    @Test
     fun `source filter isolates each capture source`() {
         val manual = tx(source = TransactionSource.MANUAL)
         val sms = tx(source = TransactionSource.SMS)

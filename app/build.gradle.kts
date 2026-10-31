@@ -14,8 +14,8 @@ android {
         applicationId = "com.xemmy.mmbank"
         minSdk = 26
         targetSdk = 35
-        versionCode = 75
-        versionName = "0.49.0"
+        versionCode = 76
+        versionName = "0.50.0"
     }
 
     // A fixed debug keystore (committed, standard well-known debug password)
@@ -130,4 +130,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
+    // Real SQLite on the JVM, so migration SQL is executed in tests (MigrationSqlTest)
+    // rather than only type-checked by Room at build time.
+    testImplementation(libs.sqlite.jdbc)
 }

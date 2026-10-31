@@ -409,6 +409,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         filters.value = filters.value.copy(minAmount = min, maxAmount = max)
     }
     fun setSourceFilter(source: TransactionSource?) { filters.value = filters.value.copy(source = source) }
+    fun setKindFilter(kind: TransactionKind?) {
+        filters.value = filters.value.copy(kind = kind)
+    }
+
     fun setAnalyticsStatus(status: AnalyticsStatusFilter?) {
         filters.value = filters.value.copy(analyticsStatus = status)
     }
@@ -889,6 +893,7 @@ fun TransactionsScreen(
                             onSourceFilter = viewModel::setSourceFilter,
                             onAnalyticsStatus = viewModel::setAnalyticsStatus,
                             onClear = viewModel::clearFilters,
+                            onKindFilter = viewModel::setKindFilter,
                         )
                         FilterBarLayout.CLASSIC -> ActivityFilterBar(
                             state = state,
@@ -902,6 +907,7 @@ fun TransactionsScreen(
                             onSourceFilter = viewModel::setSourceFilter,
                             onAnalyticsStatus = viewModel::setAnalyticsStatus,
                             onClear = viewModel::clearFilters,
+                            onKindFilter = viewModel::setKindFilter,
                         )
                     }
                 }
@@ -1568,8 +1574,10 @@ private fun ActivityFilterBar(
     onSourceFilter: (TransactionSource?) -> Unit,
     onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
     onClear: () -> Unit,
+    onKindFilter: (TransactionKind?) -> Unit = {},
 ) {
     val f = state.filters
+    var kindMenuOpen by remember { mutableStateOf(false) }
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
     var sourceMenuOpen by remember { mutableStateOf(false) }
@@ -1756,6 +1764,27 @@ private fun ActivityFilterBar(
                         DropdownMenuItem(
                             text = { Text(sourceLabel(source)) },
                             onClick = { sourceMenuOpen = false; onSourceFilter(source) },
+                        )
+                    }
+                }
+            }
+
+            // What it is: spend, refund, card payment, transfer...
+            Box {
+                SecondaryActionChip(
+                    selected = f.kind != null,
+                    onClick = { kindMenuOpen = true },
+                    label = f.kind?.label ?: "Kind",
+                )
+                DropdownMenu(expanded = kindMenuOpen, onDismissRequest = { kindMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Any kind") },
+                        onClick = { kindMenuOpen = false; onKindFilter(null) },
+                    )
+                    TransactionKind.entries.forEach { kind ->
+                        DropdownMenuItem(
+                            text = { Text(kind.label) },
+                            onClick = { kindMenuOpen = false; onKindFilter(kind) },
                         )
                     }
                 }

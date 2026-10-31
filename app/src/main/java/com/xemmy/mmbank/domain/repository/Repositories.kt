@@ -352,4 +352,7 @@ interface LedgerRepository {
 
     /** Drops the learned kind for [merchant]; past rows keep their kind. */
     suspend fun forgetMerchantKind(merchant: String): Int
+
+    /** Every learned merchant -> kind rule, newest first. */
+    fun observeMerchantKinds(): Flow<List<com.xemmy.mmbank.domain.model.MerchantKindMapping>>
 }

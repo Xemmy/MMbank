@@ -125,6 +125,9 @@ interface MerchantKindDao {
     @Query("SELECT * FROM merchant_kind_mappings")
     suspend fun getAll(): List<MerchantKindMappingEntity>
 
+    @Query("SELECT * FROM merchant_kind_mappings ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<MerchantKindMappingEntity>>
+
     @Query("DELETE FROM merchant_kind_mappings WHERE merchantPattern = :merchant COLLATE NOCASE")
     suspend fun deleteByMerchant(merchant: String): Int
 

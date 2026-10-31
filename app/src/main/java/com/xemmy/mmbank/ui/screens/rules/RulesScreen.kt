@@ -45,9 +45,18 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Learned merchant rules as (merchant, what it maps to) pairs, for display. */
+data class LearnedRules(
+    val kinds: List<Pair<String, String>> = emptyList(),
+    val accounts: List<Pair<String, String>> = emptyList(),
+) {
+    val isEmpty: Boolean get() = kinds.isEmpty() && accounts.isEmpty()
+}
 
 /** Name prefix every AI-generated candidate rule carries; see [AiSelfHealingRuleGenerator.PENDING_RULE_PREFIX]. */
 private val SUGGESTED_NAME_PREFIX = "${AiSelfHealingRuleGenerator.PENDING_RULE_PREFIX}."
@@ -66,6 +75,42 @@ class RulesViewModel(private val container: AppContainer) : ViewModel() {
         .map { txs -> txs.mapNotNull { it.rawMessage } }
         .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * What the app learned from the user's corrections, so they can see and
+     * undo it: merchant -> kind ("Remember for this merchant") and merchant ->
+     * account (assigning a transaction to an account).
+     */
+    val learned: StateFlow<LearnedRules> = combine(
+        container.ledgerRepository.observeMerchantKinds(),
+        container.merchantAccountRepository.observeMappings(),
+        container.accountRepository.observeActiveReal(),
+    ) { kinds, accounts, accountList ->
+        val names = accountList.associate { it.id to it.name }
+        LearnedRules(
+            kinds = kinds.map { it.merchantPattern to it.kind.label },
+            accounts = accounts.map { it.merchantPattern to (names[it.accountId] ?: "an archived account") },
+        )
+    }
+        .catch { e ->
+            container.recordError("RulesViewModel.learned", e)
+            emit(LearnedRules())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LearnedRules())
+
+    fun forgetKind(merchant: String) {
+        viewModelScope.launch {
+            runCatching { container.ledgerRepository.forgetMerchantKind(merchant) }
+                .onFailure { container.recordError("RulesViewModel.forgetKind", it) }
+        }
+    }
+
+    fun forgetAccount(merchant: String) {
+        viewModelScope.launch {
+            runCatching { container.merchantAccountRepository.forget(merchant) }
+                .onFailure { container.recordError("RulesViewModel.forgetAccount", it) }
+        }
+    }
 
     fun toggleEnabled(rule: ParsingRule) {
         viewModelScope.launch {
@@ -106,6 +151,7 @@ fun RulesScreen(
     viewModel: RulesViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val rules by viewModel.rules.collectAsStateWithLifecycle()
+    val learned by viewModel.learned.collectAsStateWithLifecycle()
     val suggested = rules.filter { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
     val custom = rules.filterNot { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
 
@@ -190,7 +236,41 @@ fun RulesScreen(
                     }
                 }
             }
+            if (!learned.isEmpty) {
+                item {
+                    Text(
+                        "Learned from your corrections",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
+                item {
+                    Text(
+                        "New transactions from these merchants are classified and filed automatically. " +
+                            "Forgetting one stops that; past transactions stay as they are.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                items(learned.kinds, key = { "kind_${it.first}" }) { (merchant, kind) ->
+                    LearnedRuleRow(merchant, "is a $kind", onForget = { viewModel.forgetKind(merchant) })
+                }
+                items(learned.accounts, key = { "account_${it.first}" }) { (merchant, account) ->
+                    LearnedRuleRow(merchant, "files under $account", onForget = { viewModel.forgetAccount(merchant) })
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun LearnedRuleRow(merchant: String, meaning: String, onForget: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(merchant, style = MaterialTheme.typography.bodyMedium)
+            Text(meaning, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        TextButton(onClick = onForget) { Text("Forget") }
     }
 }
 

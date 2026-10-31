@@ -70,6 +70,8 @@ data class ActivityFilters(
     val maxAmount: BigDecimal? = null,
     val source: TransactionSource? = null,
     val analyticsStatus: AnalyticsStatusFilter? = null,
+    /** Only rows of this kind -- e.g. every card payment, every refund. Null = any. */
+    val kind: com.xemmy.mmbank.domain.model.TransactionKind? = null,
 ) {
     /** True when anything beyond the default (show-everything) is set. */
     val active: Boolean
@@ -194,6 +196,7 @@ object TransactionFilterEngine {
         if (f.minAmount != null && tx.amount < f.minAmount) return false
         if (f.maxAmount != null && tx.amount > f.maxAmount) return false
         if (f.source != null && tx.source != f.source) return false
+        if (f.kind != null && tx.kind != f.kind) return false
         when (f.analyticsStatus) {
             AnalyticsStatusFilter.INCLUDED_ONLY -> if (tx.excludeFromStats) return false
             AnalyticsStatusFilter.EXCLUDED_ONLY -> if (!tx.excludeFromStats) return false

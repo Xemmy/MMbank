@@ -3520,3 +3520,52 @@ Verified on run 41177467632 (commit 92644da, which contains Phases 16.1–16.4):
 Run 41176466032, for the first push of 16.1, failed at `compileDebugUnitTestKotlin`.
 The new dashboard tests had been appended after the file's last class. That was
 fixed in ab9cdbf.
+
+## Phase 16.5 — Proving the upgrade, and making the automation visible
+
+Version 0.50.0 (versionCode 76). No schema change.
+
+### Why
+
+Migrations had never been executed anywhere before reaching a device: CI only
+proved the entities compiled. Phase 16 added three of them, one of which
+rewrites every transaction. Separately, the app now learns types and accounts
+from corrections, but there was nowhere to see or undo what it had learned,
+and no way to list "every card payment" or "every refund".
+
+### What changed
+
+- **`MigrationSqlTest`** executes v25 → v28 on real SQLite (`sqlite-jdbc`,
+  test-only):
+  - A *fresh* v28 database is built from the schema JSON Room's compiler
+    exports during the same build (`app/schemas/.../28.json`).
+  - A v25 database is built from that same DDL with the 26–28 columns and
+    table removed. The test asserts each removal took effect.
+  - After migrating, every touched table must match the fresh install in
+    columns (name, type, NOT NULL, primary key), indices (name, unique,
+    columns) and the NOCASE collation. This is what Room validates when it
+    opens the database on a device.
+  - The data checks seed eleven legacy rows: card-payment legs, a savings
+    transfer, a balance adjustment, Tabby refund/charge adjustments, a
+    user-hidden row, cashback, salary and a plain purchase. Each must land on
+    the kind `TransactionKindDetector.fromLegacy` defines, with the user's own
+    exclusion kept.
+  - Accounts must survive with the new fields unset.
+  - To make this possible, the migration statements moved into
+    `MigrationSql`, a plain object. The Room `Migration`s run exactly those
+    lists.
+- **Activity "Kind" filter**, in both filter-bar layouts (a chip menu, and a
+  "What it is" section in More filters), backed by `ActivityFilters.kind`.
+- **"Learned from your corrections"** on the Rules screen lists every
+  merchant → type and merchant → account rule, each with **Forget**. Backed by
+  the new `LedgerRepository.observeMerchantKinds`.
+
+### Tests
+
+- `MigrationSqlTest`: schema equivalence, the backfill table, and accounts
+  surviving the upgrade.
+- `TransactionFilterEngineTest`: the kind filter.
+
+### CI verification
+
+Pending — to be amended once the job log is read.

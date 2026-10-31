@@ -54,6 +54,7 @@ internal fun TransactionFilterBar(
     onSourceFilter: (TransactionSource?) -> Unit,
     onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
     onClear: () -> Unit,
+    onKindFilter: (com.xemmy.mmbank.domain.model.TransactionKind?) -> Unit = {},
 ) {
     val f = state.filters
     var timeMenuOpen by remember { mutableStateOf(false) }
@@ -212,6 +213,7 @@ internal fun TransactionFilterBar(
             onAmountRange = onAmountRange,
             onSourceFilter = onSourceFilter,
             onAnalyticsStatus = onAnalyticsStatus,
+            onKindFilter = onKindFilter,
             onClearAll = onClear,
             onDismiss = { moreFiltersOpen = false },
         )

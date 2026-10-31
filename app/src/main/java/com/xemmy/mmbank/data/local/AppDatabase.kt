@@ -732,44 +732,12 @@ abstract class AppDatabase : RoomDatabase() {
          *
          * `parsing_rules.assignKind` lets a custom rule pin the kind of what it
          * matches.
+         *
+         * The statements live in [MigrationSql.MIGRATION_25_26_SQL] so MigrationSqlTest can
+         * execute them against real SQLite (likewise for 26->27 and 27->28).
          */
         val MIGRATION_25_26 = object : Migration(25, 26) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE transactions ADD COLUMN kind TEXT NOT NULL DEFAULT 'SPEND'")
-                db.execSQL("ALTER TABLE transactions ADD COLUMN kindUserSet INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE parsing_rules ADD COLUMN assignKind TEXT")
-
-                db.execSQL("UPDATE transactions SET kind = 'INCOME' WHERE direction = 'CREDIT'")
-                db.execSQL("UPDATE transactions SET kind = 'CASHBACK' WHERE category = 'CASHBACK_EARNED' AND direction = 'CREDIT'")
-                // Linked legs and card-payment credits. A leg on a credit card,
-                // or whose partner is, is a card payment; anything else linked
-                // is a plain transfer between the user's own accounts.
-                db.execSQL(
-                    """
-                    UPDATE transactions SET excludeFromStats = 0, kind = CASE
-                        WHEN matchedRuleName LIKE 'builtin.en.transfer.%'
-                            OR accountId IN (SELECT id FROM accounts WHERE type = 'CREDIT_CARD')
-                            OR linkedTransactionId IN (
-                                SELECT t.id FROM transactions t
-                                JOIN accounts a ON a.id = t.accountId
-                                WHERE a.type = 'CREDIT_CARD'
-                            )
-                        THEN 'CARD_PAYMENT' ELSE 'TRANSFER' END
-                    WHERE linkedTransactionId IS NOT NULL OR matchedRuleName LIKE 'builtin.en.transfer.%'
-                    """.trimIndent(),
-                )
-                db.execSQL("UPDATE transactions SET excludeFromStats = 0, kind = 'ADJUSTMENT' WHERE merchant = 'Balance adjustment'")
-                // Tabby partial refunds lower spending now instead of vanishing
-                // from it; an "increased by" extra charge is ordinary spending.
-                db.execSQL(
-                    "UPDATE transactions SET excludeFromStats = 0, kind = 'REFUND' " +
-                        "WHERE matchedRuleName = 'builtin.en.adjust.decrease' AND direction = 'CREDIT'"
-                )
-                db.execSQL(
-                    "UPDATE transactions SET excludeFromStats = 0, kind = 'SPEND' " +
-                        "WHERE matchedRuleName = 'builtin.en.adjust.increase' AND direction = 'DEBIT'"
-                )
-            }
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_25_26_SQL.forEach(db::execSQL)
         }
 
         /**
@@ -782,22 +750,7 @@ abstract class AppDatabase : RoomDatabase() {
          * table from the entity and rejects a schema that disagrees.
          */
         val MIGRATION_26_27 = object : Migration(26, 27) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `merchant_kind_mappings` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `merchantPattern` TEXT NOT NULL COLLATE NOCASE,
-                        `kind` TEXT NOT NULL,
-                        `createdAt` INTEGER NOT NULL
-                    )
-                    """.trimIndent(),
-                )
-                db.execSQL(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS index_merchant_kind_mappings_merchantPattern " +
-                        "ON merchant_kind_mappings(merchantPattern)"
-                )
-            }
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_26_27_SQL.forEach(db::execSQL)
         }
 
         /**
@@ -806,10 +759,7 @@ abstract class AppDatabase : RoomDatabase() {
          * a message quoting any of them files under the right account.
          */
         val MIGRATION_27_28 = object : Migration(27, 28) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE accounts ADD COLUMN creditLimit TEXT")
-                db.execSQL("ALTER TABLE accounts ADD COLUMN cardEndings TEXT")
-            }
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_27_28_SQL.forEach(db::execSQL)
         }
 
         /**

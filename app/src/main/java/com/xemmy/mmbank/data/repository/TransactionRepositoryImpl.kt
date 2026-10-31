@@ -359,6 +359,9 @@ class TransactionRepositoryImpl(
     override suspend fun forgetMerchantKind(merchant: String): Int =
         database.merchantKindDao().deleteByMerchant(merchant.trim())
 
+    override fun observeMerchantKinds(): Flow<List<com.xemmy.mmbank.domain.model.MerchantKindMapping>> =
+        database.merchantKindDao().observeAll().map { rows -> rows.map { it.toDomain() } }
+
     override suspend fun update(transaction: Transaction) =
         dao.update(transaction.toEntity())
 
