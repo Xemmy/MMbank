@@ -3620,4 +3620,9 @@ the Android build, where it passes (run 41178449993).
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41179681450 (commit 8919fa2):
+- "Run unit tests" passed. The test report grew to 157 files with the new
+  `MoneyPipelineScenarioTest` page; `MigrationSqlTest` ran with Room's schema
+  and passed.
+- Build APK: success.
+- Final Status: success.
