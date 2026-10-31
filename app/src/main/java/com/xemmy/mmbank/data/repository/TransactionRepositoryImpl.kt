@@ -329,6 +329,9 @@ class TransactionRepositoryImpl(
                     dao.update(partner.copy(linkedTransactionId = null, kind = standaloneKind(partner, accountTypes)))
                     updated = updated.copy(linkedTransactionId = null)
                 }
+            } else if (row.linkedTransactionId != null) {
+                // The other side no longer exists (deleted, or never restored): a link to nothing helps no one.
+                updated = updated.copy(linkedTransactionId = null)
             }
             dao.update(updated)
             if (newKind.isInternalMove && updated.linkedTransactionId == null) tryLinkTransfer(updated)

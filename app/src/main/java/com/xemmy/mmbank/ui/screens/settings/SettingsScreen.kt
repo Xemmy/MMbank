@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CurrencyBitcoin
@@ -885,6 +886,13 @@ fun SettingsScreen(
                     title = "Backup & restore",
                     subtitle = "Encrypted export and import",
                     onClick = { onOpen("settings_backup") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.VerifiedUser,
+                    title = "Integrity check",
+                    subtitle = "Compare your books with your bank's balances",
+                    onClick = { onOpen("integrity_check") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(

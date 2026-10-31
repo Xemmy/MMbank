@@ -3675,4 +3675,86 @@ mistake it for the amount (`BuiltInRules.kt`).
 
 ### CI verification
 
+Verified on run 41197720203 (commit 6418d3e): `compileDebugUnitTestKotlin` and
+`testDebugUnitTest` finished BUILD SUCCESSFUL with no failures, including
+`MigrationSqlTest` against the exported v29 schema.
+
+
+## Phase 17.2 — The integrity check
+
+Version 0.52.0 (versionCode 79). No schema change.
+
+### Why
+
+MMbank is a single-entry ledger, so nothing proved the books were complete. With
+the bank's own balance now kept (Phase 17.1), the app can compare itself with
+the bank and say where, by how much and in which direction it disagrees.
+
+### What changed
+
+- **`IntegrityChecker`** (pure) reports, per account, whether the books match the
+  bank, plus structural problems.
+  - **Balance drift.** The latest bank-stated balance is compared with the
+    balance the app computes *as of that message* (opening balance plus every
+    row up to its time).
+    - Comparing at the same instant means later transactions can't cause a
+      false alarm.
+    - A balance adjustment dated at that instant clears the drift.
+    - Tolerance is one cent.
+    - Drift is "bank minus app": positive means money in may be missing,
+      negative means money out may be missing.
+  - **Credit cards.** The printed figure is credit still available, so owed =
+    `creditLimit − available`, compared with the app's owed amount (a card in
+    credit owes nothing). Without a limit the card can't be checked and an info
+    hint says so. A plain "balance" on a card is ambiguous and ignored. A debit
+    card's "card balance" counts as the account balance.
+  - **Guards.** Accounts holding other-currency rows can't be reconciled
+    (balances add at face value). Snapshots older than the retention cutoff are
+    skipped, because pruned rows are folded into the opening balance.
+  - **Structural checks:**
+    - Transfers and card payments the app classified itself that never found
+      their other side after 72 h. One the user classified is theirs to vouch
+      for.
+    - Broken links: the partner is missing, doesn't link back, is on the same
+      account, or has a different amount in the same currency. Cross-currency
+      pairs are legitimate and not flagged.
+    - Rows in no account.
+    - Rows in another currency than their account.
+    - Card setup hints: no limit, or no payment due day.
+  - Issues are ordered problems, then warnings, then hints.
+- **`IntegrityWording`** (pure, formatters injected) writes the sentences, so
+  they are tested rather than living in a composable.
+- **Screen:** Settings → Integrity check (also reached from a card on Accounts
+  while anything needs a look). Actions reuse existing paths:
+  - *Record the difference* writes a balance adjustment dated at the bank's
+    statement.
+  - *It's correct* vouches for a move.
+  - *It's an ordinary one* and *Unlink* re-type the row, which releases any
+    link.
+  - *Assign accounts* and *Open accounts* link to the existing screens.
+- **Accounts:** each account shows "Matches your bank ✓ (date)" or "Differs from
+  your bank by X (as of date)".
+- **Fix:** `setKind` now also drops a link to a partner that no longer exists.
+  Previously that left a dangling link.
+
+### Tests
+
+- `IntegrityCheckerTest` (28): matching books; missing deposit and missing
+  purchase; as-of comparison; latest statement only; adjustment clears the
+  drift; rounding; unchecked accounts; mixed currency; retention cutoff; card
+  owed maths, card in credit, no limit, ambiguous plain balance, due-day hint;
+  debit card; unpaired (flagged, too recent, user-vouched); healthy and
+  cross-currency pairs; each broken-link reason reported once; unassigned;
+  archived accounts; ordering.
+- `IntegrityWordingTest`: the drift, unpaired, broken-link, count and setup
+  sentences.
+- `MoneyPipelineScenarioTest` (extended): the October of real-format messages
+  now carries real balances. A clean month reconciles on both accounts, with
+  only the two account-less Tabby rows flagged. Dropping the salary message
+  shows a drift of exactly 15,000. Dropping a card purchase shows exactly
+  68.00. Recording the missing deposit at the bank's time clears it.
+- Locally, the 798 pure domain tests pass.
+
+### CI verification
+
 Pending — to be amended once the job log is read.

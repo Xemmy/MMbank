@@ -51,6 +51,7 @@ import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.auth.LockScreen
+import com.xemmy.mmbank.ui.screens.integrity.IntegrityScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatScreen
@@ -312,6 +313,13 @@ private fun AppNavHost(
         composable("review_transactions") {
             ReviewTransactionsScreen(onBack = { navController.popBackStack() })
         }
+        composable("integrity_check") {
+            IntegrityScreen(
+                onBack = { navController.popBackStack() },
+                onOpenAccounts = { navController.navigate("accounts") },
+                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+            )
+        }
         composable("insights") {
             InsightsScreen(
                 onOpenRewards = { navController.navigate("cashback") },
@@ -327,7 +335,10 @@ private fun AppNavHost(
         }
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
         composable("accounts") {
-            AccountsScreen(onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) })
+            AccountsScreen(
+                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+                onOpenIntegrity = { navController.navigate("integrity_check") },
+            )
         }
         composable("cashback") { CashbackScreen() }
         composable("subscriptions") {

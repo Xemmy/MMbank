@@ -13,6 +13,8 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BuiltInRules
 import com.xemmy.mmbank.domain.parser.TransactionParser
 import com.xemmy.mmbank.domain.report.MonthlyReportBuilder
+import com.xemmy.mmbank.domain.ledger.IntegrityChecker.Status
+import com.xemmy.mmbank.domain.ledger.IntegrityChecker.Type
 import com.xemmy.mmbank.domain.usecase.TransferMatcher
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -116,6 +118,8 @@ class MoneyPipelineScenarioTest {
             timestampMillis = message.timestampMillis,
             category = parsed.category,
             kind = kind,
+            reportedBalance = parsed.reportedBalance,
+            reportedBalanceKind = parsed.reportedBalanceKind,
         )
         ledger += tx
         link(tx)
@@ -145,12 +149,12 @@ class MoneyPipelineScenarioTest {
         capture("Dear Customer, AED 15000.00 was credited to your account *963. Your available account balance is AED 25000.00", day = 1)
         capture(
             "Trx. of AED68.00 on your card ending *876 at MCDONALDS-54176, UAE is Approved. " +
-                "Avl. card bal is 17296.72. Trx Date: 03/10/26 13:35",
+                "Avl. card bal is 16332.00. Trx Date: 03/10/26 13:35",
             day = 3,
         )
         capture(
             "Trx. of AED275.18 on your card ending *876 at ADNOC SEIH SIDARA 723, UAE is Approved. " +
-                "Avl. card bal is 17021.54. Trx Date: 04/10/26 13:23",
+                "Avl. card bal is 16056.82. Trx Date: 04/10/26 13:23",
             day = 4,
         )
         capture("Dear Customer, AED 3600.00 was debited from your account *963. Your available account balance is AED 21400.00", day = 12)
@@ -173,7 +177,7 @@ class MoneyPipelineScenarioTest {
             "Your CAREEM RIDE purchase was decreased by AED 5.58",
             day = 16, sender = "com.tabby.customer", title = "Transaction adjusted",
         )
-        capture("Dear Customer, AED 500.00 was debited from your account *963 for ATM cash withdrawal.", day = 17)
+        capture("Dear Customer, AED 500.00 was debited from your account *963 for ATM cash withdrawal. Your available account balance is AED 18900.00", day = 17)
         capture(
             "You earned AED 2.23! You got cashback with Tabby+. Your cashback will be processed after next statement is paid.",
             day = 18, sender = "com.tabby.customer",
@@ -256,5 +260,63 @@ class MoneyPipelineScenarioTest {
         assertEquals(0, BigDecimal("837.60").compareTo(report.spent))
         assertEquals(0, BigDecimal("15000").compareTo(report.income))
         assertNull(report.topMerchants.firstOrNull { it.name.contains("3600") })
+    }
+
+    // ---- the integrity check, on the same month -------------------------
+
+    private fun integrity(txs: List<Transaction> = ledger.toList()) =
+        IntegrityChecker.check(accounts, txs, nowMillis = at(31))
+
+    @Test
+    fun `a clean month reconciles with every balance the bank printed`() {
+        runMonth()
+        val report = integrity()
+        // The bank's own figures agree with the books to the fils...
+        assertEquals(Status.MATCHES, report.reconciliations.getValue(1).status)
+        assertEquals(Status.MATCHES, report.reconciliations.getValue(2).status)
+        assertEquals(Status.NO_BANK_BALANCE, report.reconciliations.getValue(3).status)
+        // ...and the only thing to flag is the two Tabby rows that carried no account.
+        assertEquals(listOf(Type.UNASSIGNED), report.issues.map { it.type })
+        assertEquals(2, report.issues.single().count)
+    }
+
+    @Test
+    fun `a missed salary message shows up as exactly the salary`() {
+        runMonth()
+        val salary = ledger.first { it.amount.compareTo(BigDecimal("15000")) == 0 }
+        val drift = integrity(ledger - salary).issues.single { it.type == Type.BALANCE_DRIFT }
+        assertEquals(1L, drift.accountId)
+        // The bank has 15,000 more than the books explain: a deposit is missing.
+        assertEquals(0, BigDecimal("15000").compareTo(drift.amount))
+    }
+
+    @Test
+    fun `a missed card purchase shows up as exactly that purchase`() {
+        runMonth()
+        val purchase = ledger.first { it.amount.compareTo(BigDecimal("68.00")) == 0 }
+        val drift = integrity(ledger - purchase).issues.single { it.type == Type.BALANCE_DRIFT }
+        assertEquals(2L, drift.accountId)
+        // The bank shows 68 more owed than the books: a purchase is missing.
+        assertEquals(0, BigDecimal("-68.00").compareTo(drift.amount))
+    }
+
+    @Test
+    fun `recording the missing deposit at the bank's time clears the drift`() {
+        runMonth()
+        val salary = ledger.first { it.amount.compareTo(BigDecimal("15000")) == 0 }
+        val without = ledger - salary
+        val drift = integrity(without).issues.single { it.type == Type.BALANCE_DRIFT }
+        val fix = Transaction(
+            id = nextId++,
+            accountId = drift.accountId,
+            amount = drift.amount!!.abs(),
+            currencyCode = "AED",
+            direction = com.xemmy.mmbank.domain.model.TransactionDirection.CREDIT,
+            source = TransactionSource.MANUAL,
+            timestampMillis = drift.asOfMillis!!,
+            kind = TransactionKind.ADJUSTMENT,
+            kindUserSet = true,
+        )
+        assertEquals(emptyList<Type>(), integrity(without + fix).issues.map { it.type }.filter { it == Type.BALANCE_DRIFT })
     }
 }

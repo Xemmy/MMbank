@@ -97,6 +97,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
+import com.xemmy.mmbank.domain.ledger.IntegrityChecker
 import com.xemmy.mmbank.domain.account.CreditCardStatusCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -129,6 +131,8 @@ data class AccountsUiState(
     val unassigned: UnassignedTotal = UnassignedTotal(),
     /** Retired accounts, with what's left on them -- see [AccountsViewModel.archive]. */
     val archived: List<AccountWithBalance> = emptyList(),
+    /** Books vs the bank's own printed balances; see [IntegrityChecker]. */
+    val integrity: IntegrityChecker.Report = IntegrityChecker.Report(emptyList(), emptyMap()),
 )
 
 class AccountsViewModel(private val container: AppContainer) : ViewModel() {
@@ -145,7 +149,16 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         val net = AccountBalanceCalculator.netByAccount(entries)
         val cards = CardPaymentReminders.build(accounts, transactions, entries, LocalDate.now())
             .associate { it.accountId to it.status }
+        val now = System.currentTimeMillis()
+        val retentionMonths = container.preferences.transactionRetentionMonths
+        val integrity = IntegrityChecker.check(
+            accounts = accounts,
+            transactions = transactions,
+            nowMillis = now,
+            retentionCutoffMillis = if (retentionMonths > 0) TransactionRetentionPlanner.cutoffMillis(now, retentionMonths) else null,
+        )
         AccountsUiState(
+            integrity = integrity,
             rows = accounts.map { account ->
                 AccountWithBalance(
                     account = account,
@@ -265,6 +278,7 @@ internal fun buildBalanceAdjustment(
 @Composable
 fun AccountsScreen(
     onOpenUnassigned: () -> Unit = {},
+    onOpenIntegrity: () -> Unit = {},
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -315,6 +329,11 @@ fun AccountsScreen(
                     )
                 }
             }
+            if (state.integrity.actionableCount > 0) {
+                item(key = "integrity_summary") {
+                    IntegritySummaryCard(count = state.integrity.actionableCount, onClick = onOpenIntegrity)
+                }
+            }
             if (!state.unassigned.isEmpty) {
                 item(key = "unassigned_total") {
                     UnassignedCard(
@@ -327,6 +346,7 @@ fun AccountsScreen(
             items(rows, key = { it.account.id }) { row ->
                 AccountCard(
                     row = row,
+                    reconciliation = state.integrity.reconciliations[row.account.id],
                     hidden = hidden,
                     onEdit = { editing = row.account },
                     onAdjust = { adjusting = row },
@@ -378,6 +398,7 @@ fun AccountsScreen(
 @Composable
 private fun AccountCard(
     row: AccountWithBalance,
+    reconciliation: IntegrityChecker.Reconciliation?,
     hidden: Boolean,
     onEdit: () -> Unit,
     onAdjust: () -> Unit,
@@ -454,6 +475,8 @@ private fun AccountCard(
                     style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
                 )
             }
+
+            reconciliation?.let { BankCheckLine(it, a.currencyCode, hidden) }
 
             row.card?.let { CardStatusBlock(it, a.currencyCode, hidden) }
 
@@ -578,6 +601,59 @@ private fun CardStatusBlock(card: CreditCardStatusCalculator.CardStatus, currenc
 
 private fun LocalDate.asShortDate(): String =
     "${dayOfMonth} ${month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())}"
+
+/**
+ * One line on an account card: does the app's balance agree with the one the
+ * bank last printed? Silent when the bank has never reported one.
+ */
+@Composable
+private fun BankCheckLine(rec: IntegrityChecker.Reconciliation, currency: String, hidden: Boolean) {
+    val asOf = rec.asOfMillis?.asDate()
+    when (rec.status) {
+        IntegrityChecker.Status.MATCHES -> Text(
+            "Matches your bank ✓ (${asOf.orEmpty()})",
+            style = MaterialTheme.typography.labelSmall,
+            color = ObsidianTokens.textMeta,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        IntegrityChecker.Status.DIFFERS -> Text(
+            "Differs from your bank by " +
+                (rec.drift?.abs()?.asMoneyOrMask(currency, hidden) ?: "") +
+                (asOf?.let { " (as of $it)" }.orEmpty()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        IntegrityChecker.Status.NO_BANK_BALANCE, IntegrityChecker.Status.CANNOT_CHECK -> Unit
+    }
+}
+
+/** Entry to the integrity screen, shown only while something needs a look. */
+@Composable
+private fun IntegritySummaryCard(count: Int, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f), shape)
+            .clickable(onClick = onClick),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                if (count == 1) "1 thing to check against your bank" else "$count things to check against your bank",
+                style = MaterialTheme.typography.titleSmall,
+                color = ObsidianTokens.textPrimary,
+            )
+            Text(
+                "Tap to see what doesn't add up",
+                style = MaterialTheme.typography.labelSmall,
+                color = ObsidianTokens.textMeta,
+            )
+        }
+    }
+}
 
 /** One retired account, with what's left on it and a way back. */
 @Composable
