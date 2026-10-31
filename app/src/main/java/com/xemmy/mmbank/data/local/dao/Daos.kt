@@ -377,6 +377,16 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getById(id: Long): TransactionEntity?
 
+    /**
+     * Real rows a learned merchant -> kind rule may re-classify: never one
+     * the user classified by hand, never a reconciled transfer leg.
+     */
+    @Query(
+        "SELECT * FROM transactions WHERE kindUserSet = 0 AND linkedTransactionId IS NULL " +
+            "AND merchant IS NOT NULL AND isDemo = 0"
+    )
+    suspend fun getAutoClassifiedWithMerchant(): List<TransactionEntity>
+
     // --- Backup support ---
 
     // Backups carry only real rows — demo data must never leak into an export.

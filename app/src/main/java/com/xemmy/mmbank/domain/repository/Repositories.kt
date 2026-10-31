@@ -312,3 +312,41 @@ interface MerchantAccountRepository {
     /** Drops the rule for [merchant]; already-assigned transactions stay put. */
     suspend fun forget(merchant: String): Int
 }
+
+/**
+ * What a transaction *is*, as opposed to its fields: kinds, learned kinds and
+ * manual transfers (see [com.xemmy.mmbank.domain.model.TransactionKind]).
+ *
+ * Its own interface, implemented by the same class as [TransactionRepository]
+ * (they share the transfer-linking logic), so the three hand-written
+ * [TransactionRepository] test fakes don't each pay for these members.
+ */
+interface LedgerRepository {
+
+    /**
+     * Saves both sides of a transfer or card payment the user entered by
+     * hand, linked as one pair, in one database transaction. Returns how many
+     * legs were written (1 when one side is outside the tracked accounts).
+     */
+    suspend fun recordTransfer(draft: com.xemmy.mmbank.domain.ledger.TransferLegs.Draft): Int
+
+    /**
+     * Re-classifies one transaction (marking it user-set, so automation never
+     * overrides it again). Moving a linked leg out of transfer/card payment
+     * releases its partner; moving an unlinked one in tries to find its
+     * other leg. With [rememberForMerchant], the merchant -> kind rule is
+     * stored and applied to that merchant's other automatically-classified
+     * rows; returns how many of those were changed.
+     */
+    suspend fun setKind(
+        transactionId: Long,
+        kind: com.xemmy.mmbank.domain.model.TransactionKind,
+        rememberForMerchant: Boolean,
+    ): Int
+
+    /** The kind learned for [merchant] (exact, then normalized key), or null. */
+    suspend fun findKindForMerchant(merchant: String): com.xemmy.mmbank.domain.model.TransactionKind?
+
+    /** Drops the learned kind for [merchant]; past rows keep their kind. */
+    suspend fun forgetMerchantKind(merchant: String): Int
+}

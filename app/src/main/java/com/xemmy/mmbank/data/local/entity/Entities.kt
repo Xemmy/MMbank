@@ -208,6 +208,22 @@ data class MerchantAccountMappingEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/**
+ * A learned merchant -> transaction-kind rule; see
+ * [com.xemmy.mmbank.domain.model.MerchantKindMapping]. Unique on the
+ * case-insensitive merchant, so re-teaching a merchant replaces its rule.
+ */
+@Entity(
+    tableName = "merchant_kind_mappings",
+    indices = [Index(value = ["merchantPattern"], unique = true)],
+)
+data class MerchantKindMappingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(collate = ColumnInfo.NOCASE) val merchantPattern: String,
+    val kind: TransactionKind,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "parsing_rules")
 data class ParsingRuleEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -466,6 +482,14 @@ fun MerchantAccountMappingEntity.toDomain() = MerchantAccountMapping(
 
 fun MerchantAccountMapping.toEntity() = MerchantAccountMappingEntity(
     id, merchantPattern, accountId, createdAt,
+)
+
+fun MerchantKindMappingEntity.toDomain() = com.xemmy.mmbank.domain.model.MerchantKindMapping(
+    id, merchantPattern, kind, createdAt,
+)
+
+fun com.xemmy.mmbank.domain.model.MerchantKindMapping.toEntity() = MerchantKindMappingEntity(
+    id, merchantPattern, kind, createdAt,
 )
 
 fun ParsingRuleEntity.toDomain() = ParsingRule(

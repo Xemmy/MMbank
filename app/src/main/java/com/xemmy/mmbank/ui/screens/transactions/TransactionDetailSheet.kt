@@ -12,6 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.xemmy.mmbank.domain.model.TransactionKind
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -75,6 +81,8 @@ fun TransactionDetailSheet(
     onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
     onMerchantClick: (String) -> Unit = {},
+    /** Re-classifies the row; the flag asks to remember the kind for its merchant. Null hides the picker. */
+    onKindChange: ((TransactionKind, Boolean) -> Unit)? = null,
     designMode: DesignMode = LocalDesignMode.current,
 ) {
     AlertDialog(
@@ -148,6 +156,13 @@ fun TransactionDetailSheet(
                     assignedCategory?.let { "${it.icon}  ${it.name}" } ?: "🏷️  Uncategorized",
                 )
                 DetailRow("Account", accountName ?: "Unassigned")
+                DetailRow(
+                    "Type",
+                    transaction.kind.label + if (transaction.linkedTransactionId != null) " · linked" else "",
+                )
+                if (onKindChange != null) {
+                    KindPicker(transaction, onKindChange)
+                }
                 DetailRow("Date & time", transaction.timestampMillis.asDateTime())
                 (bankName ?: transaction.sender)?.let { DetailRow("Sender", it) }
                 DetailRow("Source", sourceLabel(transaction.source))
@@ -191,6 +206,46 @@ fun TransactionDetailSheet(
             }
         },
     )
+}
+
+/**
+ * Re-classify in place: "this isn't spending, it's a card payment". With a
+ * merchant, the change is remembered for it by default -- the correction the
+ * user is making is almost always about the merchant, not the one row.
+ */
+@Composable
+private fun KindPicker(transaction: Transaction, onKindChange: (TransactionKind, Boolean) -> Unit) {
+    val merchant = transaction.merchant?.trim()?.takeIf { it.isNotEmpty() }
+    var rememberForMerchant by remember(transaction.id) { mutableStateOf(merchant != null) }
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            editorKindsFor(transaction.kind)
+                // A one-sided kind on the wrong side would be coerced away anyway.
+                .filter { it.fixedDirection == null || it.fixedDirection == transaction.direction }
+                .forEach { kind ->
+                    ObsidianChip(
+                        selected = transaction.kind == kind,
+                        onClick = { if (kind != transaction.kind) onKindChange(kind, rememberForMerchant && merchant != null) },
+                        label = { Text(kind.label) },
+                    )
+                }
+        }
+        if (merchant != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = rememberForMerchant, onCheckedChange = { rememberForMerchant = it })
+                Text(
+                    "Remember for $merchant",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ObsidianTokens.textMeta,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
 }
 
 @Composable

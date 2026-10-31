@@ -31,6 +31,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.CapturedMessage
@@ -63,6 +64,8 @@ class RuleEditorViewModel(
     var sampleText by mutableStateOf("")
     /** Account matched transactions are pinned to; null = detect from the message. */
     var assignAccountId by mutableStateOf<Long?>(null)
+    /** Kind matched transactions get; null = classify automatically. */
+    var assignKind by mutableStateOf<TransactionKind?>(null)
     var accounts by mutableStateOf<List<Account>>(emptyList())
         private set
     var loaded by mutableStateOf(false)
@@ -83,6 +86,7 @@ class RuleEditorViewModel(
                     priorityText = rule.priority.toString()
                     sampleText = rule.sampleText.orEmpty()
                     assignAccountId = rule.assignAccountId
+                    assignKind = rule.assignKind
                 }
             }
             loaded = true
@@ -121,6 +125,7 @@ class RuleEditorViewModel(
             priority = priorityText.toIntOrNull() ?: 100,
             sampleText = sampleText.takeIf { it.isNotBlank() },
             assignAccountId = assignAccountId,
+            assignKind = assignKind,
         )
     }
 
@@ -239,6 +244,36 @@ fun RuleEditorScreen(
                         },
                     )
                 }
+            }
+        }
+
+        // Default kind: e.g. a rule written for the bank's "card payment"
+        // message marks every match as a card payment, so it never counts as
+        // spending. Wins over the automatic classification.
+        var kindMenuOpen by remember { mutableStateOf(false) }
+        Box {
+            OutlinedButton(onClick = { kindMenuOpen = true }) {
+                Text("Matches are: " + (viewModel.assignKind?.label ?: "detect automatically"))
+            }
+            DropdownMenu(expanded = kindMenuOpen, onDismissRequest = { kindMenuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Detect automatically (default)") },
+                    onClick = {
+                        kindMenuOpen = false
+                        viewModel.assignKind = null
+                    },
+                )
+                TransactionKind.entries
+                    .filter { it.fixedDirection == null || it.fixedDirection == viewModel.direction }
+                    .forEach { kind ->
+                        DropdownMenuItem(
+                            text = { Text(kind.label) },
+                            onClick = {
+                                kindMenuOpen = false
+                                viewModel.assignKind = kind
+                            },
+                        )
+                    }
             }
         }
 

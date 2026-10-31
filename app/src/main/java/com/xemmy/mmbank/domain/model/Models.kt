@@ -51,6 +51,17 @@ enum class TransactionKind(val label: String) {
     /** True for kinds that move money between the user's own accounts. */
     val isInternalMove: Boolean get() = this == TRANSFER || this == CARD_PAYMENT
 
+    /**
+     * The only direction this kind can have, or null for kinds that go either
+     * way (each leg of a transfer or card payment, a correction up or down).
+     */
+    val fixedDirection: TransactionDirection?
+        get() = when (this) {
+            SPEND, ATM -> TransactionDirection.DEBIT
+            INCOME, REFUND, CASHBACK -> TransactionDirection.CREDIT
+            TRANSFER, CARD_PAYMENT, ADJUSTMENT -> null
+        }
+
     companion object {
         /** The kind a plain, unclassified transaction in [direction] is. */
         fun defaultFor(direction: TransactionDirection): TransactionKind =
@@ -306,6 +317,19 @@ data class ParsingRule(
      * keeps the automatic classification.
      */
     val assignKind: TransactionKind? = null,
+)
+
+/**
+ * A learned merchant -> kind rule, written when the user re-classifies a
+ * transaction with "remember for this merchant" (see
+ * [com.xemmy.mmbank.domain.ledger.MerchantKindMatcher]). [merchantPattern]
+ * holds the raw merchant; the normalized key is recomputed at match time.
+ */
+data class MerchantKindMapping(
+    val id: Long = 0,
+    val merchantPattern: String,
+    val kind: TransactionKind,
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 /** User-defined friendly name for a transaction sender (SMS short code or app package). */

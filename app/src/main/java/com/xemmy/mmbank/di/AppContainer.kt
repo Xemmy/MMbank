@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.xemmy.mmbank.domain.repository.LedgerRepository
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
 import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.ledger.LedgerMath
@@ -306,7 +307,8 @@ class AppContainer(context: Context) {
             .create(ForexApi::class.java)
     }
 
-    val transactionRepository: TransactionRepository by lazy {
+    /** One instance behind both [transactionRepository] and [ledgerRepository]: they share transfer linking. */
+    private val transactionRepositoryImpl: TransactionRepositoryImpl by lazy {
         TransactionRepositoryImpl(
             database = database,
             dao = database.transactionDao(),
@@ -321,6 +323,8 @@ class AppContainer(context: Context) {
             },
         )
     }
+    val transactionRepository: TransactionRepository get() = transactionRepositoryImpl
+    val ledgerRepository: LedgerRepository get() = transactionRepositoryImpl
     val accountRepository: AccountRepository by lazy {
         AccountRepositoryImpl(database.accountDao(), database.parsingRuleDao(), demoModeEnabled)
     }

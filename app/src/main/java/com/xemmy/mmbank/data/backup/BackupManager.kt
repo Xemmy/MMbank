@@ -7,6 +7,7 @@ import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
+import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -170,6 +171,9 @@ data class BackupPayload(
      * 6 = adds [BackupTransaction.kind]/[BackupTransaction.kindUserSet] and
      * [BackupRule.assignKind]. No gate: an older row's kind is derived on
      * restore (see [BackupTransaction.toEntity]).
+     *
+     * 7 = adds [merchantKindMappings], the learned merchant -> kind rules.
+     * Gated like the account rules: a pre-v7 backup never held them.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -185,6 +189,16 @@ data class BackupPayload(
     val merchantCategoryMappings: List<BackupMerchantMapping> = emptyList(),
     val ignoredMessagePatterns: List<BackupIgnoredMessagePattern> = emptyList(),
     val merchantAccountMappings: List<BackupMerchantAccountMapping> = emptyList(),
+    val merchantKindMappings: List<BackupMerchantKindMapping> = emptyList(),
+)
+
+/** A learned merchant -> kind rule; see [BackupPayload.formatVersion] 7. */
+@Serializable
+data class BackupMerchantKindMapping(
+    val id: Long,
+    val merchantPattern: String,
+    val kind: String,
+    val createdAt: Long,
 )
 
 /** A learned merchant -> account rule; see [BackupPayload.formatVersion] 5. */
@@ -222,7 +236,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 6,
+            formatVersion = 7,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -235,6 +249,7 @@ class BackupManager(
             merchantCategoryMappings = database.merchantCategoryDao().getAll().map { it.toBackup() },
             ignoredMessagePatterns = database.ignoredMessagePatternDao().getAll().map { it.toBackup() },
             merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
+            merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
         )
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
@@ -295,6 +310,8 @@ class BackupManager(
         val hasIgnoreList = payload.formatVersion >= 4
         // And again for the learned merchant -> account rules.
         val hasAccountMappings = payload.formatVersion >= 5
+        // And for the learned merchant -> kind rules.
+        val hasKindMappings = payload.formatVersion >= 7
         database.withTransaction {
             database.transactionDao().clearAll()
             database.accountDao().clearAll()
@@ -343,6 +360,13 @@ class BackupManager(
                 database.merchantAccountDao().clearAll()
                 database.merchantAccountDao().insertAll(
                     payload.merchantAccountMappings.map { it.toEntity() }
+                )
+            }
+
+            if (hasKindMappings) {
+                database.merchantKindDao().clearAll()
+                database.merchantKindDao().insertAll(
+                    payload.merchantKindMappings.mapNotNull { it.toEntity() }
                 )
             }
         }
@@ -560,6 +584,24 @@ internal fun BackupMerchantAccountMapping.toEntity() = MerchantAccountMappingEnt
     accountId = accountId,
     createdAt = createdAt,
 )
+
+internal fun MerchantKindMappingEntity.toBackup() = BackupMerchantKindMapping(
+    id = id,
+    merchantPattern = merchantPattern,
+    kind = kind.name,
+    createdAt = createdAt,
+)
+
+/** Null for a kind this build doesn't know (a backup from a newer build): that rule is skipped. */
+internal fun BackupMerchantKindMapping.toEntity(): MerchantKindMappingEntity? =
+    TransactionKind.entries.firstOrNull { it.name == kind }?.let { known ->
+        MerchantKindMappingEntity(
+            id = id,
+            merchantPattern = merchantPattern,
+            kind = known,
+            createdAt = createdAt,
+        )
+    }
 
 internal fun MerchantCategoryMappingEntity.toBackup() = BackupMerchantMapping(
     id = id,

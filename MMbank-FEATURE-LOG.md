@@ -3259,3 +3259,76 @@ backup lands on the same totals as upgrading in place.
 ### CI verification
 
 Pending — to be amended once the job log is read.
+
+## Phase 16.2 — Say what it is: manual transfers, a type picker, and kinds that are learned
+
+Version 0.47.0 (versionCode 73). Schema v26 -> v27.
+
+### Why
+
+Phase 16.1 gave every row a kind but left the user no way to set one. A
+transfer between two of the user's own accounts still had to be typed in as
+two unrelated rows, each with the exclusion switch flipped by hand. A
+bank-specific "card payment" message the detector didn't know stayed
+"spending" until it was corrected, and it had to be corrected again every
+month.
+
+### What changed
+
+- **Type picker in the add/edit dialog.** Spent · Received · Refund ·
+  Transfer · Card payment · Cash withdrawal replace the old Spent/Received
+  toggle.
+  - The direction now follows from the kind (`TransactionKind.fixedDirection`).
+  - A one-line hint says how the choice counts, for example "Money back —
+    lowers spending, not income".
+- **Manual transfers and card payments.** Choosing Transfer or Card payment
+  in *add* mode swaps the account picker for **From** and **To** pickers.
+  - Either side can be "Outside / not tracked".
+  - When the currencies differ, an **Amount received** field appears.
+  - Picking a credit card as the destination switches the type to Card
+    payment.
+  - `LedgerRepository.recordTransfer` writes both legs and links them in one
+    Room transaction. The legs come from the pure `TransferLegs.build`.
+- **Re-classify from the detail sheet.** Tapping a transaction shows its
+  type, plus "· linked" for a reconciled leg, and a row of type chips.
+  - "Remember for {merchant}" is on by default.
+  - `LedgerRepository.setKind` marks the row as user-set.
+  - Moving a linked leg out of transfer/card payment releases its partner,
+    which is re-detected. Moving an unlinked row in looks for its other leg.
+    Transfer ↔ card payment keeps both legs consistent.
+  - With "remember", a merchant → kind rule is stored (new
+    `merchant_kind_mappings` table, matched by `MerchantKindMatcher`: exact,
+    then normalized key). It is applied to that merchant's other rows that
+    were classified automatically, never to a user-set row or a linked leg.
+    It is also fed to `TransactionKindDetector` as `learnedKind` at capture
+    time.
+- **Rules can pin a type:** "Matches are: …" in the rule editor
+  (`ParsingRule.assignKind`).
+- **Activity rows** add the kind to the bank line whenever it isn't a plain
+  spend/receive, and show transfers, card payments and corrections in a
+  neutral colour instead of red/green.
+- `LedgerRepository` is a separate interface implemented by
+  `TransactionRepositoryImpl`, which shares the transfer-linking code. The
+  three `TransactionRepository` test fakes are untouched.
+- Backups move to format v7 and carry the learned kind rules. Restoring a
+  pre-v7 backup leaves this device's rules alone, and a rule with a kind this
+  build doesn't know is skipped.
+
+### Tests
+
+- `TransferLegsTest`: leg shape and descriptions; card payment detection;
+  cross-currency; a single leg for an outside side; notes; validation.
+- `MerchantKindMatcherTest`: exact, normalized key, misses.
+- `EditorKindsTest`: offered kinds, rare kinds kept, fixed directions, hints.
+- `EntityMappersTest` and `BackupMappersTest`: the kind rule round-trips,
+  unknown kinds are skipped, and a pre-v7 payload decodes.
+
+### Deferred
+
+- `MIGRATION_26_27` and the new DAO queries are not executed in CI. Room's
+  compile-time schema check is the only automated evidence.
+- There is no screen yet that lists every learned kind rule.
+
+### CI verification
+
+Pending — to be amended once the job log is read.

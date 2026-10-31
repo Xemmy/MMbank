@@ -8,6 +8,7 @@ import androidx.room.Update
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
+import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -114,6 +115,28 @@ data class UnassignedMerchantRow(val id: Long, val merchant: String)
  * [MerchantCategoryDao]'s pending/confirmed split: there is no AI path
  * proposing accounts, so every row here exists because the user assigned one.
  */
+@Dao
+interface MerchantKindDao {
+
+    /** REPLACE on the NOCASE unique merchant index: re-teaching updates the rule. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: MerchantKindMappingEntity): Long
+
+    @Query("SELECT * FROM merchant_kind_mappings")
+    suspend fun getAll(): List<MerchantKindMappingEntity>
+
+    @Query("DELETE FROM merchant_kind_mappings WHERE merchantPattern = :merchant COLLATE NOCASE")
+    suspend fun deleteByMerchant(merchant: String): Int
+
+    // --- Backup support ---
+
+    @Query("DELETE FROM merchant_kind_mappings")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<MerchantKindMappingEntity>)
+}
+
 @Dao
 interface MerchantAccountDao {
 

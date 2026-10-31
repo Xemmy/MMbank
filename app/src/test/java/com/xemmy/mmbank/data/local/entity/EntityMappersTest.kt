@@ -709,4 +709,17 @@ class EntityMappersTest {
         assertEquals(TransactionKind.CARD_PAYMENT, rule.toEntity().assignKind)
         assertNull(rule.copy(assignKind = null).toEntity().assignKind)
     }
+
+    @Test
+    fun `merchant kind mapping round-trips both directions`() {
+        val mapping = com.xemmy.mmbank.domain.model.MerchantKindMapping(
+            id = 4,
+            merchantPattern = "ADCB CC PAYMENT",
+            kind = TransactionKind.CARD_PAYMENT,
+            createdAt = 1_700_000_000_000,
+        )
+        assertEquals(mapping, mapping.toEntity().toDomain())
+        val entity = mapping.toEntity()
+        assertEquals(entity, entity.toDomain().toEntity())
+    }
 }

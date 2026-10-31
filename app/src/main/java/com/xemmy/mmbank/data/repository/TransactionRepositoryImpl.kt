@@ -7,7 +7,13 @@ import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
+import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.ledger.TransferLegs
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.parser.MerchantAccountLearner
+import com.xemmy.mmbank.domain.repository.LedgerRepository
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
@@ -57,7 +63,7 @@ class TransactionRepositoryImpl(
      * ingest pipeline's own result.
      */
     private val onTransactionRecorded: (Transaction) -> Unit = {},
-) : TransactionRepository {
+) : TransactionRepository, LedgerRepository {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeTransactions(): Flow<List<Transaction>> =
@@ -171,6 +177,7 @@ class TransactionRepositoryImpl(
                     accountType = accountType,
                     category = parsed.category,
                     ruleKind = parsed.kindOverride,
+                    learnedKind = parsed.merchant?.let { findKindForMerchant(it) },
                 ),
             )
 
@@ -245,6 +252,24 @@ class TransactionRepositoryImpl(
         dao.linkAsTransfer(match.id, inserted.id, kind, SpendingCategory.TRANSFERS)
     }
 
+    /** Re-detects [row]'s kind as if it stood alone (a kind the user set is kept). */
+    private suspend fun standaloneKind(row: TransactionEntity, accountTypes: Map<Long, AccountType>): TransactionKind =
+        if (row.kindUserSet) {
+            row.kind
+        } else {
+            TransactionKindDetector.detect(
+                TransactionKindDetector.Input(
+                    direction = row.direction,
+                    matchedRuleName = row.matchedRuleName,
+                    rawMessage = row.rawMessage,
+                    merchant = row.merchant,
+                    accountType = row.accountId?.let { accountTypes[it] },
+                    category = row.category,
+                    learnedKind = row.merchant?.let { findKindForMerchant(it) },
+                ),
+            )
+        }
+
     private suspend fun accountTypes(): Map<Long, AccountType> =
         database.accountDao().getActive().associate { it.id to it.type }
 
@@ -261,21 +286,7 @@ class TransactionRepositoryImpl(
         if (partners.isNotEmpty()) {
             val accountTypes = accountTypes()
             partners.forEach { partner ->
-                val kind = if (partner.kindUserSet) {
-                    partner.kind
-                } else {
-                    TransactionKindDetector.detect(
-                        TransactionKindDetector.Input(
-                            direction = partner.direction,
-                            matchedRuleName = partner.matchedRuleName,
-                            rawMessage = partner.rawMessage,
-                            merchant = partner.merchant,
-                            accountType = partner.accountId?.let { accountTypes[it] },
-                            category = partner.category,
-                        ),
-                    )
-                }
-                dao.update(partner.copy(linkedTransactionId = null, kind = kind))
+                dao.update(partner.copy(linkedTransactionId = null, kind = standaloneKind(partner, accountTypes)))
             }
         }
         deleted
@@ -283,6 +294,69 @@ class TransactionRepositoryImpl(
 
     override suspend fun recordManual(transaction: Transaction): Long =
         dao.insert(transaction.toEntity())
+
+    // --- LedgerRepository ---
+
+    override suspend fun recordTransfer(draft: TransferLegs.Draft): Int = database.withTransaction {
+        val (out, inn) = TransferLegs.build(draft, label = MANUAL_TRANSFER_LABEL)
+        val outId = out?.let { dao.insert(it.toEntity()) }
+        val inId = inn?.let { dao.insert(it.toEntity()) }
+        if (outId != null && inId != null) {
+            val kind = TransferLegs.kindFor(draft)
+            dao.linkAsTransfer(outId, inId, kind, SpendingCategory.TRANSFERS)
+            dao.linkAsTransfer(inId, outId, kind, SpendingCategory.TRANSFERS)
+        }
+        listOfNotNull(outId, inId).size
+    }
+
+    override suspend fun setKind(transactionId: Long, kind: TransactionKind, rememberForMerchant: Boolean): Int =
+        database.withTransaction {
+            val row = dao.getById(transactionId) ?: return@withTransaction 0
+            val accountTypes = accountTypes()
+            val newKind = TransactionKindDetector.coerce(kind, row.direction)
+            var updated = row.copy(kind = newKind, kindUserSet = true)
+
+            val partner = row.linkedTransactionId?.let { dao.getById(it) }
+            if (partner != null) {
+                if (newKind.isInternalMove) {
+                    // Transfer <-> card payment: keep the pair consistent.
+                    if (!partner.kindUserSet) dao.update(partner.copy(kind = newKind))
+                } else {
+                    // No longer one side of a move: release the other side.
+                    dao.update(partner.copy(linkedTransactionId = null, kind = standaloneKind(partner, accountTypes)))
+                    updated = updated.copy(linkedTransactionId = null)
+                }
+            }
+            dao.update(updated)
+            if (newKind.isInternalMove && updated.linkedTransactionId == null) tryLinkTransfer(updated)
+
+            val merchant = row.merchant?.trim()?.takeIf { it.isNotEmpty() }
+            if (!rememberForMerchant || merchant == null) return@withTransaction 0
+            database.merchantKindDao().upsert(
+                MerchantKindMappingEntity(merchantPattern = merchant, kind = newKind),
+            )
+            val candidates = dao.getAutoClassifiedWithMerchant().filter { it.id != row.id }
+            val ids = MerchantAccountLearner.idsToBackfill(
+                candidates.map { MerchantAccountLearner.Candidate(it.id, it.merchant.orEmpty()) },
+                merchant,
+            ).toSet()
+            var changed = 0
+            candidates.filter { it.id in ids }.forEach { other ->
+                val coerced = TransactionKindDetector.coerce(newKind, other.direction)
+                if (coerced != other.kind) {
+                    dao.update(other.copy(kind = coerced))
+                    if (coerced.isInternalMove) tryLinkTransfer(other.copy(kind = coerced))
+                    changed++
+                }
+            }
+            changed
+        }
+
+    override suspend fun findKindForMerchant(merchant: String): TransactionKind? =
+        MerchantKindMatcher.match(merchant, database.merchantKindDao().getAll().map { it.toDomain() })
+
+    override suspend fun forgetMerchantKind(merchant: String): Int =
+        database.merchantKindDao().deleteByMerchant(merchant.trim())
 
     override suspend fun update(transaction: Transaction) =
         dao.update(transaction.toEntity())
@@ -371,5 +445,8 @@ class TransactionRepositoryImpl(
     companion object {
         /** ±2 minutes, per the dedup strategy. */
         const val DEDUP_WINDOW_MILLIS: Long = 2 * 60 * 1000
+
+        /** matchedRuleName on both legs of a transfer the user entered by hand. */
+        const val MANUAL_TRANSFER_LABEL = "Manual transfer"
     }
 }

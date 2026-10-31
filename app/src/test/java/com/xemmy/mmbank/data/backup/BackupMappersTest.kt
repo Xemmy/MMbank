@@ -5,6 +5,7 @@ import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
+import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.domain.model.AccountType
@@ -238,6 +239,34 @@ class BackupMappersTest {
         assertEquals(TransactionKind.INCOME, hidden.kind)
         assertTrue(hidden.excludeFromStats)
         assertFalse(hidden.kindUserSet)
+    }
+
+    @Test
+    fun `a learned merchant kind rule survives the backup round trip`() {
+        val rule = MerchantKindMappingEntity(
+            id = 3,
+            merchantPattern = "ADCB CC PAYMENT",
+            kind = TransactionKind.CARD_PAYMENT,
+            createdAt = 1_700_000_000_000,
+        )
+        assertEquals(rule, rule.toBackup().toEntity())
+        val encoded = json.encodeToString(BackupMerchantKindMapping.serializer(), rule.toBackup())
+        assertEquals(rule, json.decodeFromString(BackupMerchantKindMapping.serializer(), encoded).toEntity())
+    }
+
+    @Test
+    fun `a learned kind rule from a newer build is skipped, not crashed on`() {
+        assertNull(BackupMerchantKindMapping(1, "X", "KIND_FROM_THE_FUTURE", 0).toEntity())
+    }
+
+    @Test
+    fun `a pre-v7 payload decodes with no learned kind rules`() {
+        val payload = json.decodeFromString(
+            BackupPayload.serializer(),
+            """{"formatVersion":6,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"",
+               "accounts":[],"transactions":[],"rules":[],"senderLabels":[]}""",
+        )
+        assertTrue(payload.merchantKindMappings.isEmpty())
     }
 
     @Test

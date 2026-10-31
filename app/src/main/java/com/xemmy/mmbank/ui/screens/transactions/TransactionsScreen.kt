@@ -131,6 +131,8 @@ import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.ledger.TransferLegs
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
@@ -627,6 +629,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
+        kind: TransactionKind = TransactionKind.defaultFor(direction),
     ) = safeWrite("addManual") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.recordManual(
@@ -643,8 +646,26 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 spendingCategory = resolveLegacySpendingCategory(categoryId),
                 matchedRuleName = MANUAL_ENTRY_LABEL,
                 excludeFromStats = excludeFromStats,
+                // The user picked it, so automation never second-guesses it.
+                kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(kind, direction),
+                kindUserSet = true,
             )
         )
+    }
+
+    /** Saves both sides of a transfer/card payment the user typed in, as one linked pair. */
+    fun addTransfer(draft: TransferLegs.Draft) = safeWrite("addTransfer") {
+        draft.person?.let(container.preferences::addPerson)
+        container.ledgerRepository.recordTransfer(draft)
+    }
+
+    /**
+     * Re-classifies a transaction (spend / refund / transfer / card payment...).
+     * With [remember], the merchant's other automatically-classified rows
+     * follow, and future captures from it arrive with this kind.
+     */
+    fun setKind(transaction: Transaction, kind: TransactionKind, remember: Boolean) = safeWrite("setKind") {
+        container.ledgerRepository.setKind(transaction.id, kind, remember)
     }
 
     /** Saves edits to an existing transaction, preserving its untouched fields. */
@@ -659,6 +680,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
+        kind: TransactionKind = original.kind,
     ) = safeWrite("updateTransaction") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.update(
@@ -678,6 +700,9 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(original.kind, direction),
             )
         )
+        // A new kind goes through the ledger so transfer links are made or
+        // released consistently.
+        if (kind != original.kind) container.ledgerRepository.setKind(original.id, kind, rememberForMerchant = false)
     }
 
     fun setSenderLabel(sender: String, label: String) =
@@ -970,8 +995,12 @@ fun TransactionsScreen(
             onAiParse = viewModel::parseWithAi,
             onCreateCategory = viewModel::createCategory,
             onDismiss = { addOpen = false },
-            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats ->
-                viewModel.addManual(amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats)
+            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
+                viewModel.addManual(amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
+                addOpen = false
+            },
+            onSaveTransfer = { draft ->
+                viewModel.addTransfer(draft)
                 addOpen = false
             },
         )
@@ -986,8 +1015,8 @@ fun TransactionsScreen(
             defaultCurrency = state.defaultCurrency,
             onCreateCategory = viewModel::createCategory,
             onDismiss = { editing = null },
-            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats ->
-                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats)
+            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
+                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
                 editing = null
             },
         )
@@ -1043,6 +1072,10 @@ fun TransactionsScreen(
             onMerchantClick = { merchant ->
                 selectedTransaction = null
                 onOpenMerchant(merchant)
+            },
+            onKindChange = { kind, remember ->
+                viewModel.setKind(tx, kind, remember)
+                selectedTransaction = null
             },
         )
     }
@@ -1332,7 +1365,7 @@ private fun CompactFilterBar(
  * [FilterBarChip].
  */
 @Composable
-private fun ObsidianChip(
+internal fun ObsidianChip(
     selected: Boolean,
     onClick: () -> Unit,
     label: @Composable () -> Unit,
@@ -2023,6 +2056,12 @@ private fun TransactionCard(
                             append(" · ••")
                             append(it)
                         }
+                        // Say what it is whenever it isn't a plain spend/receive,
+                        // so a card payment or refund reads as one at a glance.
+                        if (tx.kind != TransactionKind.defaultFor(tx.direction)) {
+                            append(" · ")
+                            append(tx.kind.label)
+                        }
                     }
                     Text(
                         bankLine,
@@ -2043,10 +2082,16 @@ private fun TransactionCard(
                 )
                 AmountText(
                     display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-                    color = when (amountTone(tx.amount, tx.direction)) {
-                        AmountTone.NEGATIVE -> amountNegativeColor
-                        AmountTone.POSITIVE -> amountPositiveColor
-                        AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
+                    // A transfer, card payment or correction is neither money
+                    // spent nor received: shown neutral, not red/green.
+                    color = if (LedgerMath.effect(tx) == LedgerMath.Effect.NONE && !tx.excludeFromStats) {
+                        ObsidianTokens.textPrimary
+                    } else {
+                        when (amountTone(tx.amount, tx.direction)) {
+                            AmountTone.NEGATIVE -> amountNegativeColor
+                            AmountTone.POSITIVE -> amountPositiveColor
+                            AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
+                        }
                     },
                     style = androidx.compose.ui.text.TextStyle(
                         fontSize = 16.sp,
@@ -2294,13 +2339,26 @@ private fun TransactionEditorDialog(
         categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
+        kind: TransactionKind,
     ) -> Unit,
+    /** Add mode only: saves a transfer/card payment as two linked legs. */
+    onSaveTransfer: ((TransferLegs.Draft) -> Unit)? = null,
 ) {
     val zone = java.time.ZoneId.systemDefault()
     val isEdit = existing != null
     var amount by remember { mutableStateOf(existing?.amount?.stripTrailingZeros()?.toPlainString() ?: "") }
     var currency by remember { mutableStateOf(existing?.currencyCode ?: defaultCurrency) }
-    var direction by remember { mutableStateOf(existing?.direction ?: TransactionDirection.DEBIT) }
+    var kind by remember { mutableStateOf(existing?.kind ?: TransactionKind.SPEND) }
+    // Only consulted for a kind that goes either way (an edited transfer leg
+    // or correction keeps the side it was on); everything else follows the kind.
+    val direction = kind.fixedDirection ?: existing?.direction ?: TransactionDirection.DEBIT
+    // Adding a transfer/card payment means two accounts and two legs.
+    val transferMode = !isEdit && onSaveTransfer != null && kind.isInternalMove
+    var fromAccountId by remember { mutableStateOf<Long?>(null) }
+    var toAccountId by remember { mutableStateOf<Long?>(null) }
+    var toAmount by remember { mutableStateOf("") }
+    var fromMenuOpen by remember { mutableStateOf(false) }
+    var toMenuOpen by remember { mutableStateOf(false) }
     var merchant by remember { mutableStateOf(existing?.merchant.orEmpty()) }
     var accountId by remember { mutableStateOf(existing?.accountId) }
     var person by remember { mutableStateOf(existing?.person) }
@@ -2322,8 +2380,33 @@ private fun TransactionEditorDialog(
 
     val amountValue = amount.replace(",", "").toBigDecimalOrNull()
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
+    val fromAccount = accounts.firstOrNull { it.id == fromAccountId }
+    val toAccount = accounts.firstOrNull { it.id == toAccountId }
+    // A second amount only when the money changes currency on the way.
+    val crossCurrency = transferMode && fromAccount != null && toAccount != null &&
+        !fromAccount.currencyCode.equals(toAccount.currencyCode, ignoreCase = true)
+    val toAmountValue = toAmount.replace(",", "").toBigDecimalOrNull()
+    fun endpoint(account: Account?) = account?.let {
+        TransferLegs.Endpoint(it.id, it.name, it.type, it.currencyCode)
+    }
+    val transferDraft = if (transferMode && amountValue != null && date != null) {
+        TransferLegs.Draft(
+            from = endpoint(fromAccount),
+            to = endpoint(toAccount),
+            amount = amountValue,
+            toAmount = if (crossCurrency) toAmountValue else null,
+            timestampMillis = 0,
+            note = merchant,
+            person = person,
+        )
+    } else {
+        null
+    }
+    val transferError = transferDraft?.let(TransferLegs::validate)
+        ?: if (crossCurrency && toAmountValue == null) "Enter the amount received" else null
     val valid = amountValue != null && amountValue.signum() > 0 &&
-        currency.trim().length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && date != null
+        currency.trim().length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && date != null &&
+        (!transferMode || (transferDraft != null && transferError == null))
     val accountName = accounts.firstOrNull { it.id == accountId }?.name
     // Same merchant-keyword guess the capture pipeline uses, bridged onto its
     // same-named dynamic category (see CategoryMigrationMapping) so "Auto"
@@ -2383,7 +2466,7 @@ private fun TransactionEditorDialog(
                                         amount = fill.amount.stripTrailingZeros().toPlainString()
                                         currency = fill.currency
                                         merchant = fill.merchant.orEmpty()
-                                        direction = fill.direction
+                                        kind = TransactionKind.defaultFor(fill.direction)
                                     } else {
                                         parseError = "Couldn't read a transaction. Check the AI server in Settings."
                                     }
@@ -2400,16 +2483,26 @@ private fun TransactionEditorDialog(
                     }
                     HorizontalDivider(color = ObsidianTokens.hairlineDialog)
                 }
-                // Debit / credit picker: drives the sign in every balance sum.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TransactionDirection.entries.forEach { entry ->
+                // What it is: decides the sign in balances AND how it counts in
+                // Spent/Received (a refund lowers spending, a transfer or card
+                // payment counts in neither). See LedgerMath.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                    editorKindsFor(existing?.kind).forEach { entry ->
                         ObsidianChip(
-                            selected = direction == entry,
-                            onClick = { direction = entry },
-                            label = { Text(if (entry == TransactionDirection.DEBIT) "Spent" else "Received") },
+                            selected = kind == entry,
+                            onClick = { kind = entry },
+                            label = { Text(entry.label) },
                         )
                     }
                 }
+                Text(
+                    kindHint(kind, transferMode),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ObsidianTokens.textMeta,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = amount,
@@ -2451,33 +2544,76 @@ private fun TransactionEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                // Account picker — same target the capture pipeline assigns to.
-                // A glowing brand dot previews the row's edge glow before saving.
-                Box {
-                    val accountTone = GlowTones.forAccountOrigin(
-                        accountName,
-                        accounts.firstOrNull { it.id == accountId }?.bankName,
-                    ) ?: GlowTone.SYSTEM_SLATE
-                    OutlinedButton(onClick = { accountMenuOpen = true }) {
-                        Box(
-                            Modifier
-                                .size(7.dp)
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(GlowPalette.color(accountTone)),
+                if (transferMode) {
+                    TransferAccountPicker(
+                        label = "From",
+                        accounts = accounts,
+                        selectedId = fromAccountId,
+                        open = fromMenuOpen,
+                        onOpenChange = { fromMenuOpen = it },
+                        onSelect = { picked ->
+                            fromAccountId = picked?.id
+                            picked?.let { currency = it.currencyCode }
+                        },
+                    )
+                    TransferAccountPicker(
+                        label = "To",
+                        accounts = accounts,
+                        selectedId = toAccountId,
+                        open = toMenuOpen,
+                        onOpenChange = { toMenuOpen = it },
+                        onSelect = { picked ->
+                            toAccountId = picked?.id
+                            // Paying onto a card reads as a card payment.
+                            if (picked?.type == com.xemmy.mmbank.domain.model.AccountType.CREDIT_CARD) {
+                                kind = TransactionKind.CARD_PAYMENT
+                            }
+                            if (fromAccountId == null) picked?.let { currency = it.currencyCode }
+                        },
+                    )
+                    if (crossCurrency) {
+                        OutlinedTextField(
+                            value = toAmount,
+                            onValueChange = { toAmount = it },
+                            label = { MetaLabel("Amount received (${toAccount?.currencyCode})") },
+                            singleLine = true,
+                            isError = toAmount.isNotBlank() && toAmountValue == null,
+                            colors = glassFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Account: " + (accountName ?: "Unassigned"))
                     }
-                    DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Unassigned") },
-                            onClick = { accountMenuOpen = false; accountId = null },
-                        )
-                        accounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text(account.name) },
-                                onClick = { accountMenuOpen = false; accountId = account.id },
+                    transferError?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    // Account picker — same target the capture pipeline assigns to.
+                    // A glowing brand dot previews the row's edge glow before saving.
+                    Box {
+                        val accountTone = GlowTones.forAccountOrigin(
+                            accountName,
+                            accounts.firstOrNull { it.id == accountId }?.bankName,
+                        ) ?: GlowTone.SYSTEM_SLATE
+                        OutlinedButton(onClick = { accountMenuOpen = true }) {
+                            Box(
+                                Modifier
+                                    .size(7.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(GlowPalette.color(accountTone)),
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Account: " + (accountName ?: "Unassigned"))
+                        }
+                        DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Unassigned") },
+                                onClick = { accountMenuOpen = false; accountId = null },
+                            )
+                            accounts.forEach { account ->
+                                DropdownMenuItem(
+                                    text = { Text(account.name) },
+                                    onClick = { accountMenuOpen = false; accountId = account.id },
+                                )
+                            }
                         }
                     }
                 }
@@ -2574,20 +2710,25 @@ private fun TransactionEditorDialog(
                             ?.let { java.time.Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalTime() }
                             ?: java.time.LocalTime.now()
                         val timestamp = parsedDate.atTime(timeOfDay).atZone(zone).toInstant().toEpochMilli()
-                        onSave(
-                            value,
-                            currency.trim().uppercase(),
-                            direction,
-                            merchant.trim().takeIf { it.isNotBlank() },
-                            accountId,
-                            person,
-                            effectiveCategoryId,
-                            timestamp,
-                            excludeFromStats,
-                        )
+                        if (transferMode && transferDraft != null && onSaveTransfer != null) {
+                            onSaveTransfer(transferDraft.copy(timestampMillis = timestamp))
+                        } else {
+                            onSave(
+                                value,
+                                currency.trim().uppercase(),
+                                direction,
+                                merchant.trim().takeIf { it.isNotBlank() },
+                                accountId,
+                                person,
+                                effectiveCategoryId,
+                                timestamp,
+                                excludeFromStats,
+                                kind,
+                            )
+                        }
                     }
                 },
-            ) { Text(if (isEdit) "Save changes" else "Add transaction") }
+            ) { Text(if (isEdit) "Save changes" else if (transferMode) "Add ${kind.label.lowercase()}" else "Add transaction") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -2606,6 +2747,64 @@ private fun TransactionEditorDialog(
                 }
             },
         )
+    }
+}
+
+/** The kinds offered when adding/editing by hand, plus [current] when it's one of the rarer ones. */
+internal fun editorKindsFor(current: TransactionKind?): List<TransactionKind> {
+    val base = listOf(
+        TransactionKind.SPEND,
+        TransactionKind.INCOME,
+        TransactionKind.REFUND,
+        TransactionKind.TRANSFER,
+        TransactionKind.CARD_PAYMENT,
+        TransactionKind.ATM,
+    )
+    return if (current == null || current in base) base else base + current
+}
+
+/** One line under the kind chips saying how the choice counts. */
+internal fun kindHint(kind: TransactionKind, transferMode: Boolean): String = when (kind) {
+    TransactionKind.SPEND -> "Counts as spending"
+    TransactionKind.ATM -> "Cash taken out — counts as spending"
+    TransactionKind.INCOME -> "Counts as money received"
+    TransactionKind.REFUND -> "Money back — lowers spending, not income"
+    TransactionKind.TRANSFER ->
+        if (transferMode) "Between your accounts — saved as two linked sides, not spending"
+        else "Between your accounts — not spending or income"
+    TransactionKind.CARD_PAYMENT ->
+        if (transferMode) "Paying a card off — saved as two linked sides; purchases already counted"
+        else "Paying a card off — purchases on the card already counted"
+    TransactionKind.CASHBACK -> "Rewards — shown on Cashback, not in totals"
+    TransactionKind.ADJUSTMENT -> "Balance correction — not in totals"
+}
+
+@Composable
+private fun TransferAccountPicker(
+    label: String,
+    accounts: List<Account>,
+    selectedId: Long?,
+    open: Boolean,
+    onOpenChange: (Boolean) -> Unit,
+    onSelect: (Account?) -> Unit,
+) {
+    val selected = accounts.firstOrNull { it.id == selectedId }
+    Box {
+        OutlinedButton(onClick = { onOpenChange(true) }, modifier = Modifier.fillMaxWidth()) {
+            Text("$label: " + (selected?.let { "${it.name} · ${it.currencyCode}" } ?: "Outside / not tracked"))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { onOpenChange(false) }) {
+            DropdownMenuItem(
+                text = { Text("Outside / not tracked") },
+                onClick = { onOpenChange(false); onSelect(null) },
+            )
+            accounts.forEach { account ->
+                DropdownMenuItem(
+                    text = { Text("${account.name} · ${account.currencyCode}") },
+                    onClick = { onOpenChange(false); onSelect(account) },
+                )
+            }
+        }
     }
 }
 

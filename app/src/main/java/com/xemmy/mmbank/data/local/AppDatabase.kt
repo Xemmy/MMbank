@@ -8,6 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.xemmy.mmbank.data.local.dao.MerchantAccountDao
+import com.xemmy.mmbank.data.local.dao.MerchantKindDao
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
 import com.xemmy.mmbank.data.local.dao.BillDao
@@ -25,6 +26,7 @@ import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
+import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
@@ -57,6 +59,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         CategoryEntity::class,
         MerchantCategoryMappingEntity::class,
         MerchantAccountMappingEntity::class,
+        MerchantKindMappingEntity::class,
         SubscriptionEntity::class,
         SavingsGoalEntity::class,
         BillEntity::class,
@@ -67,7 +70,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExpenseSplitEntity::class,
         IgnoredMessagePatternEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -84,6 +87,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun merchantCategoryDao(): MerchantCategoryDao
 
     abstract fun merchantAccountDao(): MerchantAccountDao
+    abstract fun merchantKindDao(): MerchantKindDao
     abstract fun subscriptionDao(): SubscriptionDao
     abstract fun savingsGoalDao(): SavingsGoalDao
     abstract fun billDao(): BillDao
@@ -769,6 +773,34 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * v26 -> v27: learned merchant -> transaction-kind rules, written when
+         * the user re-classifies a transaction with "remember for this
+         * merchant" (see [com.xemmy.mmbank.domain.ledger.MerchantKindMatcher]).
+         *
+         * `merchantPattern` is `COLLATE NOCASE` to match the entity's
+         * `@ColumnInfo(collate = NOCASE)` -- Room builds a fresh install's
+         * table from the entity and rejects a schema that disagrees.
+         */
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `merchant_kind_mappings` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `merchantPattern` TEXT NOT NULL COLLATE NOCASE,
+                        `kind` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_merchant_kind_mappings_merchantPattern " +
+                        "ON merchant_kind_mappings(merchantPattern)"
+                )
+            }
+        }
+
+        /**
          * [factory] swaps in the SQLCipher open helper (see AppContainer);
          * null opens plaintext — the pre-encryption format, kept as the
          * fallback so a failed encryption migration never bricks the app.
@@ -783,7 +815,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
-                    MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26,
+                    MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
