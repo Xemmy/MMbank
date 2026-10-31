@@ -3757,4 +3757,6 @@ the bank and say where, by how much and in which direction it disagrees.
 
 ### CI verification
 
-Pending — to be amended once the job log is read.
+Verified on run 41198108391 (commit 8ad9ad7): `compileDebugUnitTestKotlin` and
+`testDebugUnitTest` finished BUILD SUCCESSFUL with no failures (the test report
+grew to 160 files). Build APK: success. Final Status: success.
