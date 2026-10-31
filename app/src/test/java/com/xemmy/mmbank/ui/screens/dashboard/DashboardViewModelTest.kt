@@ -272,6 +272,40 @@ class DashboardViewModelTest {
         assertEquals("Big Mart", biggest.merchant)
         assertEquals(300.0, biggest.amount, 1e-9)
     }
+
+    private fun kindTx(amount: String, kind: TransactionKind, direction: TransactionDirection, categoryId: Long? = null) =
+        tx(amount, direction, categoryId = categoryId).copy(kind = kind)
+
+    @Test
+    fun `a card payment is counted neither as spend nor income`() {
+        val transactions = listOf(
+            kindTx("200.00", TransactionKind.SPEND, TransactionDirection.DEBIT, categoryId = groceries.id),
+            kindTx("3600.00", TransactionKind.CARD_PAYMENT, TransactionDirection.DEBIT),
+            kindTx("3600.00", TransactionKind.CARD_PAYMENT, TransactionDirection.CREDIT),
+        )
+        val result = stats(transactions, includeExcluded = false)
+        assertEquals(200.0, result.periodSpend, 1e-9)
+        assertEquals(0.0, result.periodIncome, 1e-9)
+    }
+
+    @Test
+    fun `a refund lowers spend in its category instead of counting as income`() {
+        val transactions = listOf(
+            kindTx("200.00", TransactionKind.SPEND, TransactionDirection.DEBIT, categoryId = groceries.id),
+            kindTx("50.00", TransactionKind.REFUND, TransactionDirection.CREDIT, categoryId = groceries.id),
+        )
+        val result = stats(transactions, includeExcluded = false)
+        assertEquals(150.0, result.periodSpend, 1e-9)
+        assertEquals(0.0, result.periodIncome, 1e-9)
+        assertEquals(150.0, result.categorySpends.first { it.category == groceries }.amount, 1e-9)
+        assertEquals(150.0, result.monthly.last().spend, 1e-9)
+    }
+
+    @Test
+    fun `an ATM withdrawal counts as spend`() {
+        val transactions = listOf(kindTx("500.00", TransactionKind.ATM, TransactionDirection.DEBIT))
+        assertEquals(500.0, stats(transactions, includeExcluded = false).periodSpend, 1e-9)
+    }
 }
 
 /**
@@ -783,39 +817,5 @@ class DashboardColorLongFromHexTest {
     @Test
     fun `a malformed hex falls back to the neutral grey`() {
         assertEquals(0xFF6C757DL, colorLongFromHex("not-a-color"))
-    }
-
-    private fun kindTx(amount: String, kind: TransactionKind, direction: TransactionDirection, categoryId: Long? = null) =
-        tx(amount, direction, categoryId = categoryId).copy(kind = kind)
-
-    @Test
-    fun `a card payment is counted neither as spend nor income`() {
-        val transactions = listOf(
-            kindTx("200.00", TransactionKind.SPEND, TransactionDirection.DEBIT, categoryId = groceries.id),
-            kindTx("3600.00", TransactionKind.CARD_PAYMENT, TransactionDirection.DEBIT),
-            kindTx("3600.00", TransactionKind.CARD_PAYMENT, TransactionDirection.CREDIT),
-        )
-        val result = stats(transactions, includeExcluded = false)
-        assertEquals(200.0, result.periodSpend, 1e-9)
-        assertEquals(0.0, result.periodIncome, 1e-9)
-    }
-
-    @Test
-    fun `a refund lowers spend in its category instead of counting as income`() {
-        val transactions = listOf(
-            kindTx("200.00", TransactionKind.SPEND, TransactionDirection.DEBIT, categoryId = groceries.id),
-            kindTx("50.00", TransactionKind.REFUND, TransactionDirection.CREDIT, categoryId = groceries.id),
-        )
-        val result = stats(transactions, includeExcluded = false)
-        assertEquals(150.0, result.periodSpend, 1e-9)
-        assertEquals(0.0, result.periodIncome, 1e-9)
-        assertEquals(150.0, result.categorySpends.first { it.category == groceries }.amount, 1e-9)
-        assertEquals(150.0, result.monthly.last().spend, 1e-9)
-    }
-
-    @Test
-    fun `an ATM withdrawal counts as spend`() {
-        val transactions = listOf(kindTx("500.00", TransactionKind.ATM, TransactionDirection.DEBIT))
-        assertEquals(500.0, stats(transactions, includeExcluded = false).periodSpend, 1e-9)
     }
 }
