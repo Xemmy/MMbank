@@ -3,6 +3,7 @@ package com.xemmy.mmbank.domain.parser
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 
 /** A parsing rule with its regexes compiled, ready for matching. */
 data class CompiledRule(
@@ -19,6 +20,8 @@ data class CompiledRule(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     /** Account matched transactions are assigned to; null = detect from the message. */
     val assignAccountId: Long? = null,
+    /** Kind matched transactions get; null = automatic (see [ParsingRule.assignKind]). */
+    val assignKind: TransactionKind? = null,
     /**
      * Plain-text phrases checked with case-insensitive containment against the
      * normalized message. When one matches, the message binds to this rule's
@@ -56,6 +59,7 @@ object RuleCompiler {
             defaultCurrency = rule.defaultCurrency?.takeIf { it.isNotBlank() }?.uppercase(),
             priority = rule.priority,
             assignAccountId = rule.assignAccountId,
+            assignKind = rule.assignKind,
         )
     }
 

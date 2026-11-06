@@ -70,6 +70,8 @@ data class ActivityFilters(
     val maxAmount: BigDecimal? = null,
     val source: TransactionSource? = null,
     val analyticsStatus: AnalyticsStatusFilter? = null,
+    /** Only rows of this kind -- e.g. every card payment, every refund. Null = any. */
+    val kind: com.xemmy.mmbank.domain.model.TransactionKind? = null,
 ) {
     /** True when anything beyond the default (show-everything) is set. */
     val active: Boolean
@@ -111,6 +113,22 @@ object TransactionFilterEngine {
     fun activeAccount(filter: AccountFilter, accounts: List<Account>): Account? =
         (filter as? AccountFilter.Specific)?.let { spec -> accounts.firstOrNull { it.id == spec.id } }
 
+    /**
+     * How many independent secondary-filter categories (person, triage,
+     * amount, source, kind, analytics status) are active — drives the "More
+     * filters" badge count in the single-row filter bar.
+     */
+    fun activeSecondaryFilterCount(filters: ActivityFilters): Int {
+        var count = 0
+        if (filters.person != PersonFilter.Any) count++
+        if (filters.triageOnly) count++
+        if (filters.minAmount != null || filters.maxAmount != null) count++
+        if (filters.source != null) count++
+        if (filters.kind != null) count++
+        if (filters.analyticsStatus != null) count++
+        return count
+    }
+
     /** Resolves a date filter to a concrete window; null = unbounded (All). */
     fun resolveDateWindow(
         range: DateRangeFilter,
@@ -148,10 +166,12 @@ object TransactionFilterEngine {
 
     /**
      * "Inbox Zero" triage: rows still needing a human look — uncategorized
-     * captures plus system-generated balance corrections.
+     * captures plus system-generated balance corrections. Uses the dynamic
+     * [Transaction.categoryId] (post category-unification, the actual source
+     * of truth) rather than the frozen [SpendingCategory] enum.
      */
     fun needsTriage(tx: Transaction): Boolean =
-        tx.spendingCategory == SpendingCategory.UNCATEGORIZED ||
+        tx.categoryId == null ||
             tx.matchedRuleName == BALANCE_ADJUSTMENT_RULE_NAME
 
     private fun matches(
@@ -177,6 +197,7 @@ object TransactionFilterEngine {
         if (f.minAmount != null && tx.amount < f.minAmount) return false
         if (f.maxAmount != null && tx.amount > f.maxAmount) return false
         if (f.source != null && tx.source != f.source) return false
+        if (f.kind != null && tx.kind != f.kind) return false
         when (f.analyticsStatus) {
             AnalyticsStatusFilter.INCLUDED_ONLY -> if (tx.excludeFromStats) return false
             AnalyticsStatusFilter.EXCLUDED_ONLY -> if (!tx.excludeFromStats) return false

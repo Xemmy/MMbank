@@ -18,16 +18,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CurrencyBitcoin
@@ -36,23 +42,34 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,30 +81,66 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.data.ai.AiCallLogStore
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.ai.AiEndpointNormalizer
+import com.xemmy.mmbank.domain.ai.AiProviderMode
+import com.xemmy.mmbank.domain.ai.AiResponseParser
+import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
+import com.xemmy.mmbank.domain.ai.LoopbackGuard
+import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.FilterBarLayout
+import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.displayName
+import com.xemmy.mmbank.ui.util.asMoney
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+
+/** Obviously-fake sample used by the "Send test message" button -- never persisted, only logged. */
+private const val TEST_AI_MESSAGE = "TEST MESSAGE — You spent AED 42.00 at Test Merchant. Your available balance is now AED 958.00."
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
+    // Activity tab Premium hero card's budget consumption bar. <= 0 (or blank)
+    // means no budget is set; the input mirrors aiDailyRequestLimitInput's
+    // "type freely, Save commits" shape rather than saving on every keystroke.
+    var monthlySpendBudgetInput by mutableStateOf(
+        container.preferences.monthlySpendBudget.takeIf { it > 0.0 }?.toString().orEmpty()
+    )
+    var subscriptionRemindersEnabled by mutableStateOf(container.preferences.subscriptionRemindersEnabled)
+        private set
+    var billRemindersEnabled by mutableStateOf(container.preferences.billRemindersEnabled)
+        private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
         private set
     var excludeCryptoFromTotal by mutableStateOf(container.preferences.excludeCryptoFromTotal)
+        private set
+    var hideCreditCardBalance by mutableStateOf(container.preferences.hideCreditCardBalance)
+        private set
+    var excludeCreditCardFromTotal by mutableStateOf(container.preferences.excludeCreditCardFromTotal)
         private set
     var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
         private set
@@ -95,6 +148,51 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
+    var transactionRetentionMonths by mutableStateOf(container.preferences.transactionRetentionMonths)
+        private set
+
+    // Classic vs Premium: a reactive flow (not a mutableStateOf snapshot) since
+    // the root theme wrapper, the AI-parsing indicator and the transaction
+    // detail dialog all need to see a toggle here live, not just this screen.
+    val designMode: StateFlow<DesignMode> = container.designMode
+    fun setDesignMode(mode: DesignMode) = container.setDesignMode(mode)
+
+    // Ambient background style: a reactive flow (not a mutableStateOf snapshot)
+    // since the root app scaffold applies it live the instant it's changed here.
+    val backgroundStyle: StateFlow<BackgroundStyle> = container.backgroundPreset
+    fun setBackgroundStyle(style: BackgroundStyle) = container.setBackgroundPreset(style)
+
+    // Activity tab filter bar layout: only that one screen reads it, so a
+    // plain re-read (not a reactive AppContainer flow like designMode above).
+    var filterBarLayout by mutableStateOf(container.preferences.filterBarLayout)
+        private set
+    fun updateFilterBarLayout(layout: FilterBarLayout) {
+        container.preferences.filterBarLayout = layout
+        filterBarLayout = layout
+    }
+
+    // --- Gate-2 AI parsing: local (loopback-only, e.g. Off Grid) or an explicit online provider ---
+    var aiParsingEnabled by mutableStateOf(container.preferences.aiParsingEnabled)
+        private set
+    var aiProviderMode by mutableStateOf(container.preferences.aiProviderMode)
+        private set
+    var aiDailyRequestLimit by mutableStateOf(container.preferences.aiDailyRequestLimit)
+        private set
+    var aiDailyRequestLimitInput by mutableStateOf(container.preferences.aiDailyRequestLimit.toString())
+    var aiEndpointUrl by mutableStateOf(container.preferences.aiEndpointUrl)
+    var aiModelName by mutableStateOf(container.preferences.aiModelName)
+    var aiApiKeyInput by mutableStateOf(container.credentialStore.aiApiKey.orEmpty())
+    var aiTestStatus by mutableStateOf<String?>(null)
+        private set
+    var aiTesting by mutableStateOf(false)
+        private set
+    var aiTestMessageStatus by mutableStateOf<String?>(null)
+        private set
+    var sendingTestAiMessage by mutableStateOf(false)
+        private set
+    var aiRequestsUsedToday by mutableStateOf(container.aiRequestsUsedToday())
+        private set
+
     var apiKeyInput by mutableStateOf("")
     var secretKeyInput by mutableStateOf("")
     var hasBinanceKeys by mutableStateOf(container.credentialStore.hasBinanceCredentials)
@@ -115,18 +213,45 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     private var transactionPersons: List<String> = emptyList()
 
+    /**
+     * Transaction count per person (keys normalized by [PersonCounts]) -- drives
+     * the reassign-on-delete prompt. Compose state, not a plain field, so a
+     * dialog reading it re-renders when the ledger emits.
+     */
+    private var personCounts by mutableStateOf<Map<String, Int>>(emptyMap())
+
+    /**
+     * False until the ledger's first emission. Until then a count of zero means
+     * "not loaded yet", not "nobody uses this name" -- see [personDeleteNeedsPrompt].
+     */
+    private var personCountsLoaded by mutableStateOf(false)
+
     init {
         viewModelScope.launch {
             container.transactionRepository.observeTransactions()
                 .catch { emit(emptyList()) }
                 .collect { txs ->
-                    transactionPersons = txs.mapNotNull { it.person?.trim() }
+                    val names = txs.map { it.person }
+                    transactionPersons = names.mapNotNull { it?.trim() }
                         .filter { it.isNotEmpty() }
-                        .distinctBy { it.lowercase() }
+                        .distinctBy { PersonCounts.key(it) }
+                    personCounts = PersonCounts.countByName(names)
+                    personCountsLoaded = true
                     recomputeUnlisted()
                 }
         }
     }
+
+    fun transactionCountForPerson(name: String): Int = PersonCounts.countFor(personCounts, name)
+
+    /**
+     * Whether removing [name] must go through the reassign picker rather than
+     * deleting outright. Errs toward prompting while counts are still loading:
+     * a stale zero would otherwise strip the person off transactions silently,
+     * which is exactly what the picker exists to prevent.
+     */
+    fun personDeleteNeedsPrompt(name: String): Boolean =
+        !personCountsLoaded || transactionCountForPerson(name) > 0
 
     private fun recomputeUnlisted() {
         unlistedPersons = transactionPersons
@@ -183,17 +308,36 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Strips [name] off every transaction (they become unassigned). */
-    fun clearPersonFromTransactions(name: String) {
+    /**
+     * Removes [name] from the saved list and, if [reassignTo] is given,
+     * moves every transaction carrying [name] onto it; otherwise those
+     * transactions become unassigned. Also used for the plain "clear from
+     * transactions" case by passing a null [reassignTo].
+     */
+    fun deletePersonAndReassign(name: String, reassignTo: String?) {
         if (busy) return
+        val target = reassignTo?.trim()?.takeIf { it.isNotEmpty() }
         viewModelScope.launch {
             busy = true
-            runCatching { container.transactionRepository.renamePerson(name, null) }
-                .onSuccess { statusMessage = "Removed $name from all transactions" }
-                .onFailure {
-                    container.recordError("SettingsViewModel.clearPerson", it)
-                    statusMessage = "Failed: ${it.message}"
+            runCatching {
+                container.transactionRepository.renamePerson(name, target)
+                container.preferences.persons = container.preferences.persons - name
+                if (container.preferences.defaultPerson == name) {
+                    container.preferences.defaultPerson = target
+                    defaultPerson = target.orEmpty()
                 }
+                persons = container.preferences.persons
+                recomputeUnlisted()
+            }.onSuccess {
+                statusMessage = if (target != null) {
+                    "Moved $name's transactions to $target"
+                } else {
+                    "Removed $name from all transactions"
+                }
+            }.onFailure {
+                container.recordError("SettingsViewModel.deletePerson", it)
+                statusMessage = "Failed: ${it.message}"
+            }
             busy = false
         }
     }
@@ -219,6 +363,55 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Blank input clears the budget (the hero card then shows the total with no consumption bar). */
+    fun saveMonthlySpendBudget() {
+        val trimmed = monthlySpendBudgetInput.trim()
+        if (trimmed.isEmpty()) {
+            container.preferences.monthlySpendBudget = 0.0
+            statusMessage = "Monthly budget cleared"
+            return
+        }
+        val amount = trimmed.toDoubleOrNull()
+        if (amount == null || amount <= 0.0) {
+            monthlySpendBudgetInput =
+                container.preferences.monthlySpendBudget.takeIf { it > 0.0 }?.toString().orEmpty()
+            statusMessage = "Budget must be a positive amount"
+            return
+        }
+        container.preferences.monthlySpendBudget = amount
+        statusMessage = "Monthly budget set to ${amount.asMoney(defaultCurrency)}"
+    }
+
+    /**
+     * Schedules or cancels one of the app's periodic work items. Off by
+     * default -- see [com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker]
+     * for why this is opt-in rather than always on.
+     */
+    fun updateSubscriptionReminders(enabled: Boolean) {
+        container.setSubscriptionRemindersEnabled(enabled)
+        subscriptionRemindersEnabled = enabled
+        statusMessage = if (enabled) {
+            "Renewal reminders on — checked once a day."
+        } else {
+            "Renewal reminders off."
+        }
+    }
+
+    /**
+     * Schedules or cancels one of the app's periodic work items, independent
+     * of [updateSubscriptionReminders] -- see
+     * [com.xemmy.mmbank.data.bills.BillReminderWorker].
+     */
+    fun updateBillReminders(enabled: Boolean) {
+        container.setBillRemindersEnabled(enabled)
+        billRemindersEnabled = enabled
+        statusMessage = if (enabled) {
+            "Bill reminders on — checked once a day."
+        } else {
+            "Bill reminders off."
+        }
+    }
+
     fun updateHideZeroBalances(hide: Boolean) {
         container.preferences.hideZeroBalances = hide
         hideZeroBalances = hide
@@ -234,6 +427,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         excludeCryptoFromTotal = exclude
     }
 
+    fun updateHideCreditCardBalance(hide: Boolean) {
+        container.preferences.hideCreditCardBalance = hide
+        hideCreditCardBalance = hide
+    }
+
+    fun updateExcludeCreditCardFromTotal(exclude: Boolean) {
+        container.preferences.excludeCreditCardFromTotal = exclude
+        excludeCreditCardFromTotal = exclude
+    }
+
     /** Call only after the enabling auth prompt has succeeded (the UI enforces that). */
     fun updateAppLockEnabled(enabled: Boolean) {
         container.setAppLockEnabled(enabled)
@@ -243,6 +446,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateAppLockTimeout(minutes: Int) {
         container.setAppLockTimeoutMinutes(minutes)
         appLockTimeoutMinutes = minutes
+    }
+
+    /** `0` means "keep everything forever" -- turns the retention prune off and cancels its schedule. */
+    fun updateTransactionRetentionMonths(months: Int) {
+        container.setTransactionRetentionMonths(months)
+        transactionRetentionMonths = months
+        statusMessage = if (months <= 0) {
+            "Transaction history kept forever."
+        } else {
+            "Old, unremarkable transactions older than ${transactionRetentionLabel(months)} will be pruned weekly."
+        }
     }
 
     /**
@@ -259,6 +473,130 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** Re-snapshots the Demo mode flag (separate VM instances per nav destination). */
     fun refreshDemoState() {
         demoModeEnabled = container.preferences.demoModeEnabled
+    }
+
+    // --- AI parsing settings (local loopback, or an explicit online provider) ---
+
+    fun updateAiParsingEnabled(enabled: Boolean) {
+        container.preferences.aiParsingEnabled = enabled
+        aiParsingEnabled = enabled
+    }
+
+    /**
+     * Switching modes clears any Test-connection status from the other mode
+     * (a stale "Connected" from Local shouldn't linger once Online is picked,
+     * or vice versa) but never touches the saved endpoint/model/key fields.
+     */
+    fun updateAiProviderMode(mode: AiProviderMode) {
+        container.preferences.aiProviderMode = mode
+        aiProviderMode = mode
+        aiTestStatus = null
+    }
+
+    /**
+     * Persists the daily cap on automatic Gate-2 escalations (background
+     * parsing only -- manual "Parse with AI" and the test buttons below stay
+     * uncapped). Invalid/blank input is ignored, leaving the field showing
+     * the last saved value rather than silently zeroing the limit.
+     */
+    fun saveAiDailyRequestLimit() {
+        val limit = aiDailyRequestLimitInput.toIntOrNull()
+        if (limit == null || limit < 1) {
+            aiDailyRequestLimitInput = aiDailyRequestLimit.toString()
+            return
+        }
+        container.preferences.aiDailyRequestLimit = limit
+        aiDailyRequestLimit = container.preferences.aiDailyRequestLimit
+        aiDailyRequestLimitInput = aiDailyRequestLimit.toString()
+    }
+
+    /** Persists the endpoint + model fields (mode-appropriate validation happens at call time by the engine). */
+    fun saveAiEndpoint() {
+        // Normalize at save time (not request time) so the corrected URL is
+        // visible in the field: completes base URLs to /chat/completions and
+        // rewrites Google's native Gemini path -- which rejects Bearer auth
+        // with a bare 401 -- to Google's OpenAI-compatibility endpoint.
+        val normalized = AiEndpointNormalizer.normalize(aiEndpointUrl)
+        val corrected = normalized != aiEndpointUrl.trim().trimEnd('/')
+        container.preferences.aiEndpointUrl = normalized
+        container.preferences.aiModelName = aiModelName.trim()
+        aiEndpointUrl = container.preferences.aiEndpointUrl
+        aiModelName = container.preferences.aiModelName
+        aiTestStatus = if (corrected) "Saved — endpoint completed to $normalized" else "Saved"
+    }
+
+    /** Persists the online-provider API key, encrypted (SecureCredentialStore), never in plain prefs. */
+    fun saveAiApiKey() {
+        container.credentialStore.aiApiKey = aiApiKeyInput.trim()
+        aiApiKeyInput = container.credentialStore.aiApiKey.orEmpty()
+        aiTestStatus = "Saved"
+    }
+
+    fun clearAiApiKey() {
+        container.credentialStore.clearAiApiKey()
+        aiApiKeyInput = ""
+    }
+
+    /** Re-snapshots AI settings (separate VM instances per nav destination). */
+    fun refreshAiState() {
+        aiParsingEnabled = container.preferences.aiParsingEnabled
+        aiProviderMode = container.preferences.aiProviderMode
+        aiDailyRequestLimit = container.preferences.aiDailyRequestLimit
+        aiDailyRequestLimitInput = aiDailyRequestLimit.toString()
+        aiRequestsUsedToday = container.aiRequestsUsedToday()
+        aiEndpointUrl = container.preferences.aiEndpointUrl
+        aiModelName = container.preferences.aiModelName
+        aiApiKeyInput = container.credentialStore.aiApiKey.orEmpty()
+    }
+
+    /** Saves the current fields (+ key, if online), then probes the configured server and reports the result. */
+    fun testAiConnection() {
+        if (aiTesting) return
+        saveAiEndpoint()
+        if (aiProviderMode == AiProviderMode.ONLINE) saveAiApiKey()
+        viewModelScope.launch {
+            aiTesting = true
+            aiTestStatus = "Testing…"
+            aiTestStatus = container.localAiManager.testConnection().fold(
+                onSuccess = { "Connected — AI server is reachable" },
+                onFailure = { "Failed: ${it.message ?: "unreachable"}" },
+            )
+            aiTesting = false
+        }
+    }
+
+    /**
+     * Sends a canned, obviously-fake bank message through the real configured
+     * engine (local or online) and its logging wrapper, so the request/response
+     * log below can be exercised without waiting for a genuine unparsed
+     * notification. Ignores the enabled flag, like [testAiConnection] --
+     * lets a provider be tried before AI parsing is switched on. Deliberately
+     * calls the engine directly rather than routing through the Gate-2
+     * self-healing hook: this must only ever produce a log entry, never a
+     * pending rule or a ledger write.
+     */
+    fun sendTestAiMessage() {
+        if (sendingTestAiMessage) return
+        saveAiEndpoint()
+        if (aiProviderMode == AiProviderMode.ONLINE) saveAiApiKey()
+        viewModelScope.launch {
+            sendingTestAiMessage = true
+            aiTestMessageStatus = "Sending…"
+            val prompt = AiTransactionPrompt.build(TEST_AI_MESSAGE)
+            aiTestMessageStatus = container.localAiManager.testGenerate(prompt).fold(
+                onSuccess = { raw ->
+                    val parsed = AiResponseParser.parse(raw, container.preferences.defaultCurrency)
+                    if (parsed?.transactionIntent == true) {
+                        "Test sent — parsed ${parsed.currency ?: ""} ${parsed.amount ?: ""} at " +
+                            "${parsed.merchant ?: "?"}. See the log below."
+                    } else {
+                        "Test sent — response logged below, but it didn't parse as a transaction."
+                    }
+                },
+                onFailure = { "Test failed: ${it.message ?: "unknown error"}" },
+            )
+            sendingTestAiMessage = false
+        }
     }
 
     /**
@@ -432,12 +770,15 @@ fun SettingsScreen(
     val context = LocalContext.current
     var captureOk by remember { mutableStateOf(true) }
     var crashRecorded by remember { mutableStateOf(false) }
+    val designMode by viewModel.designMode.collectAsStateWithLifecycle()
+    val backgroundStyle by viewModel.backgroundStyle.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
         crashRecorded = Diagnostics.readCrash(context) != null
         viewModel.refreshAppLockState()
         viewModel.refreshDemoState()
+        viewModel.refreshAiState()
         onPauseOrDispose { }
     }
 
@@ -452,13 +793,22 @@ fun SettingsScreen(
 
         MenuSectionLabel("Capture")
         Card(Modifier.fillMaxWidth()) {
-            MenuRow(
-                icon = Icons.Filled.NotificationsActive,
-                title = "Capture & permissions",
-                subtitle = if (captureOk) "All channels enabled" else "Action needed",
-                subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
-                onClick = { onOpen("settings_capture") },
-            )
+            Column {
+                MenuRow(
+                    icon = Icons.Filled.NotificationsActive,
+                    title = "Capture & permissions",
+                    subtitle = if (captureOk) "All channels enabled" else "Action needed",
+                    subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
+                    onClick = { onOpen("settings_capture") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.ContentPaste,
+                    title = "Import & ignore messages",
+                    subtitle = "Paste a backlog to import — or an example to stop capturing",
+                    onClick = { onOpen("settings_import") },
+                )
+            }
         }
 
         MenuSectionLabel("General")
@@ -474,6 +824,13 @@ fun SettingsScreen(
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
+                    icon = Icons.Filled.PieChart,
+                    title = "Categories & People",
+                    subtitle = "Manage categories and saved people — add, edit, delete",
+                    onClick = { onOpen("settings_categories_people") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
                     icon = Icons.Filled.CurrencyBitcoin,
                     title = "Binance",
                     subtitle = if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
@@ -485,6 +842,27 @@ fun SettingsScreen(
                     title = "Parsing rules",
                     subtitle = "Teach the app new bank message formats",
                     onClick = { onOpen("rules") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.AutoAwesome,
+                    title = "Local AI parsing",
+                    subtitle = if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
+                    onClick = { onOpen("settings_ai") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Palette,
+                    title = "Design",
+                    subtitle = if (designMode == DesignMode.PREMIUM) "Premium · AGSL indicator + springier motion" else "Classic",
+                    onClick = { onOpen("settings_design") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.Palette,
+                    title = "Appearance & Backgrounds",
+                    subtitle = backgroundStyle.displayName,
+                    onClick = { onOpen("settings_appearance") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
@@ -508,6 +886,13 @@ fun SettingsScreen(
                     title = "Backup & restore",
                     subtitle = "Encrypted export and import",
                     onClick = { onOpen("settings_backup") },
+                )
+                HorizontalDivider(Modifier.padding(start = 56.dp))
+                MenuRow(
+                    icon = Icons.Filled.VerifiedUser,
+                    title = "Integrity check",
+                    subtitle = "Compare your books with your bank's balances",
+                    onClick = { onOpen("integrity_check") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
@@ -600,7 +985,7 @@ private fun MenuRow(
 
 /** Shared subpage chrome: back arrow + title, then scrollable content. */
 @Composable
-private fun SettingsSubpage(
+fun SettingsSubpage(
     title: String,
     onBack: () -> Unit,
     content: @Composable () -> Unit,
@@ -619,6 +1004,70 @@ private fun SettingsSubpage(
             Text(title, style = MaterialTheme.typography.titleLarge)
         }
         content()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Categories & People — one organized home for both, tabbed so
+// neither crowds the other. Categories reuses CategoriesTabContent (also
+// reached via Insights > Categories / the Category budgets card's "Manage"
+// button, which route to the same "categories" destination); People is the
+// list previously buried inside Preferences, moved here as its own tab.
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoriesAndPeopleScreen(
+    onBack: () -> Unit,
+    initialTab: Int = 0,
+    categoriesViewModel: CategoriesViewModel = viewModel(factory = AppViewModelProvider.Factory),
+    settingsViewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    var tab by remember { mutableStateOf(initialTab) }
+    var creatingNewCategory by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Categories & People") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            // Only Categories has a create action; People adds inline via its own text field.
+            if (tab == 0) {
+                FloatingActionButton(onClick = { creatingNewCategory = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "New category")
+                }
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Categories") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("People") })
+            }
+            when (tab) {
+                0 -> CategoriesTabContent(
+                    creatingNew = creatingNewCategory,
+                    onCreatingNewChange = { creatingNewCategory = it },
+                    viewModel = categoriesViewModel,
+                )
+                else -> Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    PeopleSection(settingsViewModel)
+                }
+            }
+        }
     }
 }
 
@@ -743,6 +1192,19 @@ fun PreferencesSettingsScreen(
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
+                value = viewModel.monthlySpendBudgetInput,
+                onValueChange = { viewModel.monthlySpendBudgetInput = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Monthly spend budget") },
+                supportingText = { Text("Drives the Activity tab's Premium hero card. Leave blank for no budget.") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = viewModel::saveMonthlySpendBudget) { Text("Save") }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
                 value = viewModel.defaultPerson,
                 onValueChange = { viewModel.defaultPerson = it },
                 label = { Text("Default person for new transactions") },
@@ -769,6 +1231,46 @@ fun PreferencesSettingsScreen(
             Switch(
                 checked = viewModel.hideZeroBalances,
                 onCheckedChange = viewModel::updateHideZeroBalances,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Subscription renewal reminders", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Notifies you a few days before a detected subscription renews. Checks once a " +
+                        "day on-device with no network use, and stays off unless you want it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.subscriptionRemindersEnabled,
+                onCheckedChange = viewModel::updateSubscriptionReminders,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Bill due-date reminders", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Notifies you a few days before a manually tracked bill is due. Checks once a " +
+                        "day on-device with no network use, and stays off unless you want it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.billRemindersEnabled,
+                onCheckedChange = viewModel::updateBillReminders,
             )
         }
 
@@ -811,11 +1313,48 @@ fun PreferencesSettingsScreen(
             )
         }
 
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide credit card balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Removes credit card accounts from the Dashboard's Accounts list entirely.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideCreditCardBalance,
+                onCheckedChange = viewModel::updateHideCreditCardBalance,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Exclude credit card from total balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Net worth on the Dashboard and Insights won't count credit card balances. " +
+                        "Independent of the toggle above — credit cards can stay visible while excluded, or vice versa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.excludeCreditCardFromTotal,
+                onCheckedChange = viewModel::updateExcludeCreditCardFromTotal,
+            )
+        }
+
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
             Text("Refresh Forex rates now")
         }
-
-        PeopleSection(viewModel)
 
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
@@ -913,6 +1452,291 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
                     label = { Text(appLockTimeoutLabel(minutes)) },
                 )
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: AI parsing (Gate 2 — local loopback-only server, or an online provider)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun AiSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshAiState()
+        onPauseOrDispose { }
+    }
+    val isLocal = viewModel.aiProviderMode == AiProviderMode.LOCAL
+    val loopbackValid = LoopbackGuard.isLoopbackUrl(viewModel.aiEndpointUrl.trim())
+    val endpointValid = if (isLocal) loopbackValid else viewModel.aiEndpointUrl.isNotBlank()
+
+    val context = LocalContext.current
+    var aiLogText by remember { mutableStateOf<String?>(null) }
+    var aiLogCount by remember { mutableStateOf(0) }
+    var aiLogRefreshKey by remember { mutableStateOf(0) }
+    LifecycleResumeEffect(aiLogRefreshKey) {
+        aiLogText = AiCallLogStore.readLog(context)
+        aiLogCount = AiCallLogStore.callCount(context)
+        onPauseOrDispose { }
+    }
+    // Every change to the test-message status (including the final result) means
+    // a request just completed, so re-read the log to show the new entry
+    // without waiting for the screen to pause/resume.
+    LaunchedEffect(viewModel.aiTestMessageStatus) {
+        if (viewModel.aiTestMessageStatus != null) {
+            aiLogText = AiCallLogStore.readLog(context)
+            aiLogCount = AiCallLogStore.callCount(context)
+        }
+    }
+
+    SettingsSubpage(title = "AI parsing", onBack = onBack) {
+        Text(
+            "When the built-in rules can't read a bank message, MMbank can ask an AI to extract the " +
+                "transaction. AI suggestions never write to the ledger directly — they appear as disabled " +
+                "rules you approve under Parsing rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Use AI parsing", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Off by default. Runs only on messages the built-in rules miss.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.aiParsingEnabled,
+                onCheckedChange = viewModel::updateAiParsingEnabled,
+            )
+        }
+
+        OutlinedTextField(
+            value = viewModel.aiDailyRequestLimitInput,
+            onValueChange = { viewModel.aiDailyRequestLimitInput = it.filter(Char::isDigit) },
+            label = { Text("Daily automatic-parsing limit") },
+            supportingText = {
+                Text(
+                    "Used today: ${viewModel.aiRequestsUsedToday} / ${viewModel.aiDailyRequestLimit}. " +
+                        "Caps background parsing only — manual \"Parse with AI\" and the test button below " +
+                        "are never limited.",
+                )
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = viewModel::saveAiDailyRequestLimit) { Text("Save limit") }
+        }
+
+        Text("Provider", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = isLocal,
+                onClick = { viewModel.updateAiProviderMode(AiProviderMode.LOCAL) },
+                label = { Text("On-device (local)") },
+            )
+            FilterChip(
+                selected = !isLocal,
+                onClick = { viewModel.updateAiProviderMode(AiProviderMode.ONLINE) },
+                label = { Text("Online (cloud API)") },
+            )
+        }
+
+        if (isLocal) {
+            Text(
+                "On-device only: MMbank calls a local AI app (e.g. Off Grid) running on this phone. " +
+                    "It only ever reaches a loopback address — never the internet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "⚠ Sends message text to a third party: the raw bank/payment notification is sent over " +
+                    "the internet to whatever endpoint you configure below. Only enable this if you trust " +
+                    "that provider with your financial data.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+
+        OutlinedTextField(
+            value = viewModel.aiEndpointUrl,
+            onValueChange = { viewModel.aiEndpointUrl = it },
+            label = { Text("Server endpoint") },
+            supportingText = {
+                Text(
+                    if (isLocal) {
+                        if (loopbackValid) {
+                            "On-device only: 127.0.0.1 or localhost, e.g. http://127.0.0.1:11434/v1/chat/completions"
+                        } else {
+                            "Not a loopback address — only 127.0.0.1 / localhost is allowed for the on-device mode."
+                        }
+                    } else {
+                        "OpenAI-compatible /v1/chat/completions URL, e.g. https://api.openai.com/v1/chat/completions"
+                    },
+                )
+            },
+            isError = !endpointValid,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = viewModel.aiModelName,
+            onValueChange = { viewModel.aiModelName = it },
+            label = { Text(if (isLocal) "Model (optional)" else "Model") },
+            supportingText = {
+                Text(
+                    if (isLocal) {
+                        "Leave blank to use the server's currently loaded model."
+                    } else {
+                        "Required by most cloud providers, e.g. gpt-4o-mini."
+                    },
+                )
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (!isLocal) {
+            OutlinedTextField(
+                value = viewModel.aiApiKeyInput,
+                onValueChange = { viewModel.aiApiKeyInput = it },
+                label = { Text("API key") },
+                supportingText = { Text("Stored encrypted on this device (Android Keystore), sent only to the endpoint above.") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = viewModel::saveAiApiKey) { Text("Save key") }
+                TextButton(onClick = viewModel::clearAiApiKey) { Text("Clear", color = MaterialTheme.colorScheme.error) }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = viewModel::saveAiEndpoint) { Text("Save") }
+            OutlinedButton(onClick = viewModel::testAiConnection, enabled = !viewModel.aiTesting) {
+                Text(if (viewModel.aiTesting) "Testing…" else "Test connection")
+            }
+        }
+
+        viewModel.aiTestStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text("Request log", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "$aiLogCount AI request${if (aiLogCount == 1) "" else "s"} made on this device so far.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = viewModel::sendTestAiMessage,
+                enabled = !viewModel.sendingTestAiMessage,
+            ) {
+                Text(if (viewModel.sendingTestAiMessage) "Sending…" else "Send test message")
+            }
+        }
+        Text(
+            "Sends an obviously-fake sample transaction to the configured engine so you can see a " +
+                "request appear below without waiting for a real one. Never written to the ledger or rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        viewModel.aiTestMessageStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        val logText = aiLogText
+        if (logText.isNullOrBlank()) {
+            Text(
+                "No requests logged yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            DiagnosticsLogCard(
+                title = "Recent requests (newest first)",
+                text = logText,
+                onClear = {
+                    AiCallLogStore.clearLog(context)
+                    aiLogRefreshKey++
+                },
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Design (Classic vs Premium)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun DesignSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    val designMode by viewModel.designMode.collectAsStateWithLifecycle()
+    SettingsSubpage(title = "Design", onBack = onBack) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Premium design", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "A GPU-shader AI-parsing indicator and a springier transaction detail dialog, " +
+                        "on top of the same Material 3 theme. Falls back to the plain Classic look " +
+                        "on anything that can't render an effect.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = designMode == DesignMode.PREMIUM,
+                onCheckedChange = { checked ->
+                    viewModel.setDesignMode(if (checked) DesignMode.PREMIUM else DesignMode.CLASSIC)
+                },
+            )
+        }
+
+        HorizontalDivider()
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Single-row filter bar", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Time, Type, and Account collapse into one scrollable row of dropdown chips on the " +
+                        "Activity tab, with the rest tucked behind a More filters dialog. Off reverts to the " +
+                        "classic filter chips wrapped across multiple lines.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.filterBarLayout == FilterBarLayout.SINGLE_ROW,
+                onCheckedChange = { checked ->
+                    viewModel.updateFilterBarLayout(if (checked) FilterBarLayout.SINGLE_ROW else FilterBarLayout.CLASSIC)
+                },
+            )
         }
     }
 }
@@ -1017,13 +1841,23 @@ val APP_LOCK_TIMEOUT_OPTIONS_MIN = listOf(1, 2, 5, 15, 60, 360, 720)
 fun appLockTimeoutLabel(minutes: Int): String =
     if (minutes >= 60 && minutes % 60 == 0) "${minutes / 60} hr" else "$minutes min"
 
+/** Retention window choices, in months. `0` means "keep everything forever". */
+val TRANSACTION_RETENTION_OPTIONS_MONTHS = listOf(0, 6, 12, 24, 36)
+
+/** "Forever" / "6 mo" / "1 yr" / "3 yr" — whole-year multiples render in years, else months. */
+fun transactionRetentionLabel(months: Int): String = when {
+    months <= 0 -> "Forever"
+    months % 12 == 0 -> "${months / 12} yr"
+    else -> "$months mo"
+}
+
 /** Editable saved-people list: add, rename (updates every transaction), remove. */
 @Composable
 private fun PeopleSection(viewModel: SettingsViewModel) {
     var newPerson by remember { mutableStateOf("") }
     var renaming by remember { mutableStateOf<String?>(null) }
+    var confirmingDelete by remember { mutableStateOf<String?>(null) }
 
-    Text("People", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
     Text(
         "This list feeds the person menu on transactions and is included in backups. " +
             "Renaming updates every transaction that carries the old name.",
@@ -1052,7 +1886,13 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.removePersonFromList(person) }) {
+                        IconButton(onClick = {
+                            if (viewModel.personDeleteNeedsPrompt(person)) {
+                                confirmingDelete = person
+                            } else {
+                                viewModel.removePersonFromList(person)
+                            }
+                        }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Remove $person",
@@ -1127,7 +1967,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.clearPersonFromTransactions(person) }) {
+                        IconButton(onClick = { confirmingDelete = person }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Clear $person from all transactions",
@@ -1169,6 +2009,92 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
+    }
+
+    confirmingDelete?.let { person ->
+        val count = viewModel.transactionCountForPerson(person)
+        val otherPersons = PersonCounts.reassignTargets(viewModel.persons, viewModel.unlistedPersons, person)
+        PersonReassignDialog(
+            person = person,
+            count = count,
+            otherPersons = otherPersons,
+            onDismiss = { confirmingDelete = null },
+            onConfirm = { reassignTo ->
+                viewModel.deletePersonAndReassign(person, reassignTo)
+                confirmingDelete = null
+            },
+        )
+    }
+}
+
+/**
+ * Shown instead of an instant remove when the person being deleted still has
+ * transactions on them -- picks where those transactions land (another
+ * person, or unassigned) instead of silently orphaning them.
+ */
+@Composable
+private fun PersonReassignDialog(
+    person: String,
+    count: Int,
+    otherPersons: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (String?) -> Unit,
+) {
+    var selected by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove “$person”?") },
+        text = {
+            Column {
+                if (count > 0) {
+                    Text(
+                        "$count transaction${if (count == 1) "" else "s"} " +
+                            "${if (count == 1) "is" else "are"} assigned to this person. " +
+                            "Choose where to move ${if (count == 1) "it" else "them"}:",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        PersonReassignOptionRow(
+                            label = "Leave unassigned",
+                            selected = selected == null,
+                            onClick = { selected = null },
+                        )
+                    }
+                    items(otherPersons) { other ->
+                        PersonReassignOptionRow(
+                            label = other,
+                            selected = selected == other,
+                            onClick = { selected = other },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) { Text("Remove") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PersonReassignOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1239,6 +2165,8 @@ fun BackupSettingsScreen(
 ) {
     SettingsSubpage(title = "Backup & restore", onBack = onBack) {
         BackupSection(viewModel)
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        RetentionSection(viewModel)
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
         }
@@ -1348,6 +2276,34 @@ private fun BackupSection(viewModel: SettingsViewModel) {
         },
         enabled = !viewModel.busy,
     ) { Text("Export CSV") }
+}
+
+/**
+ * Opt-in weekly prune of old, unremarkable transaction history (see
+ * [com.xemmy.mmbank.data.retention.TransactionRetentionWorker]). Placed next
+ * to backups since both are about how much history the ledger carries.
+ * Off by default -- picking "Forever" cancels the schedule entirely.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RetentionSection(viewModel: SettingsViewModel) {
+    Text("Transaction history", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    Text(
+        "Prunes old debits automatically, weekly, on-device. Income, unusually large " +
+            "amounts, and anything inside the window below are always kept, regardless " +
+            "of age. Back up first if you want to keep everything.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TRANSACTION_RETENTION_OPTIONS_MONTHS.forEach { months ->
+            FilterChip(
+                selected = viewModel.transactionRetentionMonths == months,
+                onClick = { viewModel.updateTransactionRetentionMonths(months) },
+                label = { Text(transactionRetentionLabel(months)) },
+            )
+        }
+    }
 }
 
 /**

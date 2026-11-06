@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext (http://) is permitted ONLY to loopback, for the Gate-2 local AI
+    server (Off Grid / Ollama / LM Studio running on this device). Every other
+    destination keeps the platform default (cleartext denied), so Binance and
+    Forex stay HTTPS-only. This is the OS-level half of the loopback-only
+    guarantee; LoopbackGuard enforces the same boundary in code.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

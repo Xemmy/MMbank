@@ -31,11 +31,20 @@ object BuiltInRules {
     // "T". Mirrors the \b guard the priority-8 af rules already rely on.
     private const val CUR = "(?<currency>$CUR_BODY)(?![A-Za-z])"
 
-    private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
+    // The ungrouped (no thousands separator) alternative is capped at 9 digits
+    // and fenced with (?<!\d)/(?!\d) so it can only ever match a WHOLE
+    // standalone digit run, never a truncated prefix/suffix/substring of a
+    // longer one -- without both fences, a 16-digit order/tracking number
+    // sitting near a bare keyword rule (e.g. "We received your order
+    // 7840200018688161!") gets grabbed as a multi-trillion "amount" instead
+    // of being rejected outright. No real personal-finance amount is ever a
+    // 10+ digit integer with no thousands separator, so this only ever
+    // rejects non-money digit runs, never a real amount.
+    private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|(?<!\\d)\\d{1,9}(?:\\.\\d+)?)(?!\\d)"
 
     // Same shape as AMT but non-capturing, for amounts that must NOT become
     // the transaction amount (e.g. the cashback figure after a purchase).
-    private const val AMT_NC = "(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
+    private const val AMT_NC = "(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|(?<!\\d)\\d{1,9}(?:\\.\\d+)?)(?!\\d)"
 
     // Merchant capture stops at punctuation and at "*" so a trailing "*617"
     // account marker is left for ACCTAIL rather than swallowed into the name.
@@ -55,9 +64,15 @@ object BuiltInRules {
      * tries to find a number first and only falls back to matching nothing, so
      * it captures "*617", "account *963" (English) and "حساب(ك) رقم XXX810001"
      * (Arabic) when present, and stays out of the way otherwise.
+     *
+     * "[.:]?" after رقم tolerates templates that punctuate every field label
+     * (e.g. "...على حسابك رقم. XXX810001 والرصيد...") -- without it the stray
+     * period sits between رقم and the digits and the whole optional group
+     * quietly matches nothing, dropping the account silently while direction
+     * and amount still parse fine off the "Dr."/"Cr." keyword.
      */
     private const val ACCTAIL =
-        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,9}))?"
+        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم[.:]?\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,9}))?"
 
     private const val KW_DEBIT_EN =
         "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase)|dr)\\b"
@@ -69,7 +84,13 @@ object BuiltInRules {
     private const val KW_CREDIT_AR =
         "(?:تم\\s+)?(?:إيداع|استلام|إضافة)|تحويل\\s+وارد|حوالة\\s+واردة|دائن|راتب"
 
-    // Arabic account markers for the transfer rules below.
+    // Arabic account markers for the transfer rules below. Deliberately NOT
+    // given ACCTAIL's "[.:]?" punctuation tolerance: transfer.in/out infer
+    // CREDIT/DEBIT purely from إلى/على vs. من with no Dr./Cr. cross-check, so
+    // loosening this would let them hijack a Dr.-tagged debit message whose
+    // "على حسابك رقم." happens to use على for an unrelated reason, stealing
+    // the match from the keyword rules below (which read Dr./Cr. correctly)
+    // at a higher priority.
     private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})"
 
     private fun rule(
@@ -162,6 +183,27 @@ object BuiltInRules {
             "Your\\s+(?<merchant>[^.,;\\n*]{2,40}?)\\s+(?:purchase|transaction|order|payment)\\s+was\\s+increased\\s+by\\s+$CUR\\s?$AMT$ACCTAIL",
             TransactionDirection.DEBIT,
             20,
+        ),
+
+        // --- Credit-card statement payment landing on the card (priority 15) ---
+        // "Dear Customer, your payment of AED3600.00 on 7/20/2026 for card
+        // ending with *876 has been credited. Thank you" -- the funding side
+        // ("AED 3600.00 was debited from your account *963") is an ordinary
+        // debit and parses fine on its own, but this credit side contains
+        // "payment of" (a DEBIT keyword) before its actual direction word
+        // ("credited") appears, and "credited" isn't one of
+        // GenericExtractors' direction-override words -- so without this
+        // rule it's misclassified as a second, bogus debit of the same
+        // amount. Priority 15 outranks the generic priority-10 "payment of"
+        // debit rule so this specific, more-informative shape wins the
+        // match outright. IngestCapturedMessageUseCase tags anything matched
+        // here as excludeFromStats + SpendingCategory.TRANSFERS, and
+        // TransferMatcher then looks for the matching debit leg to link.
+        rule(
+            "builtin.en.transfer.card-payment-credit",
+            "payment\\s+of\\s+$CUR\\s?$AMT.{0,20}?\\bfor\\s+card\\s+ending\\b$ACCTAIL.{0,30}?\\bcredited\\b",
+            TransactionDirection.CREDIT,
+            15,
         ),
 
         // --- Tabby cashback-earned notifications (priority 10) ---

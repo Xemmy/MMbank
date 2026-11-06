@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -116,6 +117,24 @@ class TransactionParserTest {
     fun `ignores non-financial messages`() {
         assertNull(parser.parse(sms("Your OTP code is 482913. Do not share it.")))
         assertNull(parser.parse(sms("Hey, are we still meeting at 5?", sender = "+123456")))
+    }
+
+    @Test
+    fun `order confirmation with a long order-id number is not mistaken for a transaction - regression`() {
+        // Regression: "received" is a KW_CREDIT_EN keyword, and the priority-0
+        // bare-fallback rule (no currency required) used to grab the 16-digit
+        // order id as if it were a multi-trillion amount. AMT's ungrouped
+        // alternative is now capped at 9 digits and fenced so it can only
+        // match a WHOLE standalone digit run, never a truncated slice of a
+        // longer one -- so this correctly falls through to no match at all.
+        val result = parser.parse(
+            sms(
+                "Great News 🎉 We received your order 7840200018688161! It's being prepared " +
+                    "with care and we'll let you know as soon as it's on the way. Thanks for shopping with us!",
+                sender = "ASWAT",
+            )
+        )
+        assertNull(result)
     }
 
     @Test
@@ -278,6 +297,25 @@ class TransactionParserTest {
         assertEquals(BigDecimal("1880.39"), r!!.amount)
         assertEquals("AED", r.currencyCode)
         assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("XXX810001", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `arabic Dr message with period after account label still extracts account`() {
+        // Regression: this bank's template punctuates every field label
+        // ("رقم:", "مبلغ:") but uses a period before the account digits
+        // ("حسابك رقم. XXX810001"). ACCTAIL's "حساب رقم\s*" required
+        // whitespace right before the digits, so the stray period made the
+        // whole optional account group silently match nothing -- direction
+        // and amount still came out right off "Dr.", only the account was
+        // dropped.
+        val r = parser.parse(
+            sms("تم بنجاح إنجاز المعاملة رقم: Dr. مبلغ: AED 5500.00 على حسابك رقم. XXX810001 والرصيد المتاح هو AED 35994.95.")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("5500.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, r.direction)
         assertEquals("XXX810001", r.accountNumberSuffix)
     }
 
@@ -450,6 +488,48 @@ class TransactionParserTest {
         assertEquals("AED", r.currencyCode)
         assertEquals(TransactionDirection.DEBIT, r.direction)
         assertEquals("NOON", r.merchant)
+    }
+
+    // --- Credit-card statement payment landing on the card ---
+
+    @Test
+    fun `card payment credited message parses as a credit, not a bogus debit`() {
+        // "payment of" alone is a DEBIT keyword and "credited" isn't one of
+        // GenericExtractors' direction-override words, so without the
+        // dedicated builtin.en.transfer rule this mis-parses as a second
+        // debit of the same amount as the real funding-account debit.
+        val r = parser.parse(
+            sms("Dear Customer, your payment of AED3600.00 on 7/20/2026 for card ending with *876 has been credited. Thank you")
+        )
+        assertNotNull(r)
+        assertEquals(BigDecimal("3600.00"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+        assertEquals(TransactionDirection.CREDIT, r.direction)
+        assertEquals("builtin.en.transfer.card-payment-credit", r.matchedRuleName)
+        assertEquals("876", r.accountNumberSuffix)
+    }
+
+    @Test
+    fun `the funding-account debit side of a card payment still parses as an ordinary debit`() {
+        // Regression guard: the new transfer rule must not affect this
+        // message's parsing -- it's an everyday debit, indistinguishable
+        // from any other, and TransferMatcher (not the parser) is what
+        // later recognizes it belongs with the credit above.
+        val r = parser.parse(
+            sms("Dear Customer, AED 3600.00 was debited from your account *963. Your available account balance is AED 5529.95")
+        )
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertEquals("963", r.accountNumberSuffix)
+        assertTrue(r.matchedRuleName.startsWith("builtin.en.debit."))
+    }
+
+    @Test
+    fun `an ordinary payment-of purchase is not mistaken for a card-payment credit`() {
+        val r = parser.parse(sms("Payment of AED 250.00 at CARREFOUR was made from your account *617"))
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertNotEquals("builtin.en.transfer.card-payment-credit", r.matchedRuleName)
     }
 
     // --- Kah-ching (KAST) purchases with a trailing cashback line ---

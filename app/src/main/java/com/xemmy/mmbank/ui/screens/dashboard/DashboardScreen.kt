@@ -12,15 +12,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,17 +50,31 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
+import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.AccountCarousel
+import com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
+import com.xemmy.mmbank.ui.util.asMoneyWholeOrMask
 import com.xemmy.mmbank.ui.util.asQuantity
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Home: net worth, account balances, crypto and recent activity. Stats, the
@@ -60,11 +82,18 @@ import com.xemmy.mmbank.ui.util.asQuantity
  */
 @Composable
 fun DashboardScreen(
+    onOpenReview: () -> Unit = {},
+    onOpenUnassigned: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
+    val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
+    val pendingReviewCount by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
+    val cardsDue by viewModel.cardsDue.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
+    var showManageAccounts by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -74,6 +103,7 @@ fun DashboardScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
+        DashboardHeader()
         // This single LazyColumn hosts several separate items() blocks (accounts,
         // crypto, recent transactions). Compose requires keys to be unique
         // across the WHOLE list, not just within one items() call — Account
@@ -86,12 +116,25 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
+            if (pendingReviewCount > 0) {
+                item(key = "review_badge") {
+                    ReviewBadgeCard(count = pendingReviewCount, onClick = onOpenReview)
+                }
+            }
+
+            weeklyDigest?.let { digest ->
+                item(key = "weekly_digest") {
+                    WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
+                }
+            }
+
+            item(key = "net_worth") {
                 NetWorthCard(
                     netWorth = state.netWorthInBase,
                     currency = state.baseCurrency,
                     approximate = state.hasUnconvertedAmounts,
                     cryptoExcluded = state.cryptoExcludedFromTotal,
+                    creditCardExcluded = state.creditCardExcludedFromTotal,
                     refreshing = state.refreshing,
                     hidden = hidden,
                     onToggleHide = viewModel::toggleHideBalances,
@@ -99,30 +142,47 @@ fun DashboardScreen(
                 )
             }
 
-            if (state.accounts.isNotEmpty()) {
-                item { SectionTitle("Accounts") }
-                items(state.accounts, key = { "account_${it.account.id}" }) { row ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Row(
-                            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(row.account.name, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    row.account.type.name.replace('_', ' ').lowercase()
-                                        .replaceFirstChar { it.uppercase() },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            AmountText(
-                                display = row.balance.asMoneyOrMask(row.account.currencyCode, hidden),
-                                color = if (row.balance < 0) LedgerColors.debit else MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        }
-                    }
+            financialHealth.metrics?.let { metrics ->
+                item(key = "financial_health") {
+                    FinancialHealthCard(metrics, financialHealth.cashFlow, state.baseCurrency, hidden)
+                }
+            }
+
+            item(key = "account_carousel") {
+                AccountCarousel(
+                    accounts = state.accounts,
+                    selectedAccountId = state.selectedAccountId,
+                    hidden = hidden,
+                    allAccountsTotal = state.fiatTotalInBase,
+                    baseCurrency = state.baseCurrency,
+                    onSelectAccount = viewModel::selectAccount,
+                    onManageAccounts = { showManageAccounts = true },
+                )
+            }
+
+            if (cardsDue.isNotEmpty()) {
+                item(key = "cards_due") { CardsDueCard(cardsDue, hidden) }
+            }
+
+            // Money in no account is in no balance above -- say so rather than
+            // letting it silently vanish from the net worth figure.
+            if (!state.unassigned.isEmpty) {
+                item(key = "unassigned_total") {
+                    UnassignedRow(
+                        unassigned = state.unassigned,
+                        hidden = hidden,
+                        onClick = onOpenUnassigned,
+                    )
+                }
+            }
+
+            state.selectedAccountId?.let { accountId ->
+                val accountName = state.accounts.firstOrNull { it.account.id == accountId }?.account?.name
+                item(key = "account_filter_chip") {
+                    AccountFilterChip(
+                        label = accountName ?: "Account",
+                        onClear = { viewModel.selectAccount(null) },
+                    )
                 }
             }
 
@@ -155,6 +215,172 @@ fun DashboardScreen(
         }
         SnackbarHost(snackbar)
     }
+
+    if (showManageAccounts) {
+        ManageAccountsBottomSheet(
+            accounts = state.manageableAccounts,
+            hidden = hidden,
+            onRename = viewModel::renameAccount,
+            onToggleVisibility = viewModel::toggleAccountVisibility,
+            onDismiss = { showManageAccounts = false },
+        )
+    }
+}
+
+/** Card payments due within a week or overdue, most urgent first. */
+@Composable
+private fun CardsDueCard(cards: List<CardPaymentReminders.CardReminder>, hidden: Boolean) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Cards due", style = MaterialTheme.typography.titleSmall)
+        cards.forEach { card ->
+            val days = card.status.daysUntilDue ?: return@forEach
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${card.accountName} · ${CardPaymentReminders.whenText(days)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (days < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    card.status.amountDue.asMoneyOrMask(card.currencyCode, hidden),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+/** Dashboard header: screen title. Ambient background style now lives in Settings > Appearance. */
+@Composable
+private fun DashboardHeader() {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Home", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+    }
+}
+
+/** Compact "filtered by [label]" chip above the feed, with an X to clear the carousel's account selection. */
+@Composable
+private fun AccountFilterChip(label: String, onClear: () -> Unit) {
+    AssistChip(
+        onClick = onClear,
+        label = { Text("Filtered: $label") },
+        trailingIcon = {
+            Icon(Icons.Filled.Close, contentDescription = "Clear filter", modifier = Modifier.size(16.dp))
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ),
+    )
+}
+
+/** "N items to review" entry point into the High-Detail Review Transactions screen; hidden by the caller when count is 0. */
+@Composable
+private fun ReviewBadgeCard(count: Int, onClick: () -> Unit) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Text(
+                "$count ${if (count == 1) "item" else "items"} to review",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    }
+}
+
+/**
+ * "N transactions aren't in any account" -- money that is in the ledger but in
+ * no balance, so it is missing from the net worth above with nothing to
+ * explain the gap. Tapping opens Activity already filtered to those rows.
+ *
+ * Shaped like [ReviewBadgeCard]: both are "here is a pile of things needing
+ * your attention, tap to go fix them".
+ */
+@Composable
+private fun UnassignedRow(
+    unassigned: UnassignedTotal,
+    hidden: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.HelpOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Text(
+                    if (unassigned.entryCount == 1) {
+                        "1 transaction isn't in any account"
+                    } else {
+                        "${unassigned.entryCount} transactions aren't in any account"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    unassigned.totalsByCurrency.entries.joinToString("  ") { (code, total) ->
+                        total.asMoneyOrMask(code, hidden)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable
@@ -163,6 +389,7 @@ private fun NetWorthCard(
     currency: String,
     approximate: Boolean,
     cryptoExcluded: Boolean,
+    creditCardExcluded: Boolean,
     refreshing: Boolean,
     hidden: Boolean,
     onToggleHide: () -> Unit,
@@ -195,6 +422,13 @@ private fun NetWorthCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                if (creditCardExcluded && !hidden) {
+                    Text(
+                        "Credit card excluded from total — change in Settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             IconButton(onClick = onToggleHide) {
                 Icon(
@@ -211,6 +445,115 @@ private fun NetWorthCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * "AI Weekly Digest" hero card at the top of the Dashboard: a plain-English
+ * read of this week's spend vs last week's plus the single biggest expense —
+ * e.g. "Spent 12% less this week ($320 vs $365). Top spend: $85 at Target."
+ */
+@Composable
+private fun WeeklyDigestCard(
+    digest: AiWeeklyDigestGenerator.WeeklyDigest,
+    currency: String,
+    hidden: Boolean,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("This week", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    weeklyDigestText(digest, currency, hidden),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+/** Renders a [AiWeeklyDigestGenerator.WeeklyDigest] into plain English, same split as [SmartInsight]'s formatting. */
+private fun weeklyDigestText(digest: AiWeeklyDigestGenerator.WeeklyDigest, currency: String, hidden: Boolean): String {
+    val trend = digest.percentChange?.let { change ->
+        val direction = if (change > 0) "more" else "less"
+        "Spent ${abs(change).roundToInt()}% $direction this week " +
+            "(${digest.thisWeekSpend.asMoneyOrMask(currency, hidden)} vs ${digest.lastWeekSpend.asMoneyOrMask(currency, hidden)})"
+    } ?: "Spent ${digest.thisWeekSpend.asMoneyOrMask(currency, hidden)} this week"
+    val top = digest.topSpend?.let { top ->
+        " Top spend: ${top.amount.asMoneyOrMask(currency, hidden)} at ${top.merchant}."
+    } ?: ""
+    return "$trend.$top"
+}
+
+/**
+ * Financial Health Summary Card: this month's savings rate, cash runway and
+ * net cash flow (see [FinancialHealthEngine]), plus a "safe to spend until
+ * payday" cash-flow forecast (see [CashFlowForecaster]) when a payday can be
+ * determined.
+ */
+@Composable
+private fun FinancialHealthCard(
+    metrics: FinancialHealthMetrics,
+    cashFlow: CashFlowForecaster.SafeToSpendResult?,
+    currency: String,
+    hidden: Boolean,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Financial health", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                HealthMetricTile(
+                    label = "Savings rate",
+                    value = "${metrics.savingsRatePercent.roundToInt()}%",
+                    valueColor = if (metrics.savingsRatePercent >= 0) LedgerColors.credit else LedgerColors.debit,
+                )
+                HealthMetricTile(
+                    label = "Cash runway",
+                    value = metrics.cashRunwayMonths?.let { "${it.roundToInt()} mo" } ?: "—",
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                )
+                HealthMetricTile(
+                    label = "Net cash flow",
+                    value = metrics.netCashFlow.asMoneyWholeOrMask(currency, hidden),
+                    valueColor = if (metrics.netCashFlow >= 0) LedgerColors.credit else LedgerColors.debit,
+                )
+            }
+            if (cashFlow != null) {
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(10.dp))
+                val paydayLabel = Instant.ofEpochMilli(cashFlow.nextPaydayMillis).atZone(ZoneId.systemDefault())
+                    .toLocalDate().format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
+                Text(
+                    "Safe to spend until payday ($paydayLabel, ${cashFlow.daysUntilPayday}d): " +
+                        "${cashFlow.safeToSpend.toDouble().asMoneyOrMask(currency, hidden)} " +
+                        "(${cashFlow.dailyAllowance.toDouble().asMoneyOrMask(currency, hidden)}/day)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthMetricTile(label: String, value: String, valueColor: androidx.compose.ui.graphics.Color) {
+    Column {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(2.dp))
+        AmountText(display = value, color = valueColor, style = MaterialTheme.typography.titleMedium)
     }
 }
 

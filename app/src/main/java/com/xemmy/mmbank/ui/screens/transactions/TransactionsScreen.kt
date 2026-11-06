@@ -32,7 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Category as CategoryIcon
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
@@ -40,13 +40,18 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DropdownMenu
@@ -67,13 +72,19 @@ import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,10 +96,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +113,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.AccountFilter
 import com.xemmy.mmbank.domain.filter.ActivityFilters
@@ -109,18 +123,34 @@ import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
+import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.ExchangeRate
+import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.ledger.TransferLegs
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.ai.AiResponseParser
+import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
+import com.xemmy.mmbank.domain.parser.GenericExtractors
+import com.xemmy.mmbank.domain.parser.IgnoreKeywordSuggester
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
+import com.xemmy.mmbank.domain.usecase.FieldUpdate
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.AiParsingIndicator
+import com.xemmy.mmbank.ui.components.CategoryEditorDialog
+import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
 import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
+import com.xemmy.mmbank.ui.theme.LocalDesignMode
 import com.xemmy.mmbank.ui.theme.MetaLabel
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
@@ -131,6 +161,7 @@ import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MAX_LENGTH
 import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MIN_LENGTH
+import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.asDateTime
 import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.dayPillLabel
@@ -140,6 +171,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -161,6 +194,10 @@ data class TransactionsUiState(
     val isInBulkMode: Boolean = false,
     /** Ids currently checked while in bulk mode. */
     val selectedTransactionIds: Set<Long> = emptySet(),
+    /** Single-row (Premium) vs Classic wrapped-chip filter bar; see Settings > Design. */
+    val filterBarLayout: FilterBarLayout = FilterBarLayout.SINGLE_ROW,
+    /** Dynamic categories, for the row/bulk-bar category chip and picker. */
+    val categories: List<Category> = emptyList(),
 )
 
 /** Bulk-mode selection is UI-only state, layered onto the Room-backed pipeline below. */
@@ -173,6 +210,102 @@ private data class BulkModeState(
 internal fun toggleSelection(current: Set<Long>, id: Long): Set<Long> =
     if (id in current) current - id else current + id
 
+/** Editor field values extracted by the local AI from a pasted message. */
+data class AiEditorFill(
+    val amount: java.math.BigDecimal,
+    val currency: String,
+    val merchant: String?,
+    val direction: TransactionDirection,
+)
+
+/**
+ * [TransactionsViewModel.spendSummaryState]: the currently filtered feed's
+ * total spend, total received and net (Time/Type/Account chips plus any
+ * secondary filter — see [TransactionsUiState.transactions]), and how much
+ * of the monthly budget threshold
+ * ([com.xemmy.mmbank.data.prefs.AppPreferences.monthlySpendBudget]) the
+ * spend consumes. Premium-only; see [HeroSpendSummaryCard].
+ */
+data class SpendSummaryState(
+    val totalSpent: Double = 0.0,
+    val totalReceived: Double = 0.0,
+    /** [totalReceived] minus [totalSpent] for the currently filtered feed; can be negative. */
+    val netAmount: Double = 0.0,
+    val currencyCode: String = "USD",
+    /** Monthly budget threshold from Settings; <= 0 means none is set. */
+    val budgetAmount: Double = 0.0,
+    val hasBudget: Boolean = false,
+    /** 0 when [hasBudget] is false. Can exceed 100 when over budget. */
+    val budgetConsumedPercent: Double = 0.0,
+)
+
+/**
+ * Sums the DEBIT and CREDIT amounts of every already-filtered [transactions]
+ * row into [baseCurrency] using the latest Forex [rates] — the same FX
+ * handling as [com.xemmy.mmbank.ui.screens.dashboard.computeDashboardStats].
+ * A row whose currency has no rate to [baseCurrency] is skipped, same as the
+ * Dashboard. Pure and top-level so it's JVM-testable off the main thread.
+ */
+internal fun computeSpendSummary(
+    transactions: List<Transaction>,
+    rates: List<ExchangeRate>,
+    baseCurrency: String,
+    monthlyBudget: Double,
+): SpendSummaryState {
+    val ratesFromBase = rates
+        .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+        .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+    // The same definition every other total uses (see LedgerMath): this card
+    // used to sum raw debits/credits, so card payments, transfers and balance
+    // corrections inflated Spent/Received here and nowhere else.
+    fun inBase(tx: Transaction) = CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase)
+    val totalSpent = LedgerMath.netSpend(transactions, value = ::inBase)
+    val totalReceived = LedgerMath.income(transactions, value = ::inBase)
+    val hasBudget = monthlyBudget > 0.0
+    return SpendSummaryState(
+        totalSpent = totalSpent,
+        totalReceived = totalReceived,
+        netAmount = totalReceived - totalSpent,
+        currencyCode = baseCurrency,
+        budgetAmount = monthlyBudget,
+        hasBudget = hasBudget,
+        budgetConsumedPercent = if (hasBudget) totalSpent / monthlyBudget * 100.0 else 0.0,
+    )
+}
+
+/** Entry point into [UncategorizedQueueScreen] -- shown only while there's something to review. */
+@Composable
+private fun UncategorizedBanner(count: Int, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.CategoryIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                if (count == 1) "1 transaction needs a category" else "$count transactions need a category",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Review",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+    }
+}
+
 class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val filters = MutableStateFlow(ActivityFilters())
@@ -183,7 +316,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         container.accountRepository.observeActive(),
         container.senderLabelRepository.observeLabels(),
         filters,
-    ) { transactions, accounts, senderLabels, f ->
+        container.categoryRepository.observeAll(),
+    ) { transactions, accounts, senderLabels, f, categories ->
         // All predicate logic lives in the pure-Kotlin engine so it's JVM-testable.
         val visible = TransactionFilterEngine.filter(
             transactions = transactions,
@@ -208,12 +342,62 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             knownPersons = persons,
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
+            filterBarLayout = container.preferences.filterBarLayout,
+            categories = categories,
         )
     }.combine(bulkMode) { base, bulk ->
         base.copy(isInBulkMode = bulk.isInBulkMode, selectedTransactionIds = bulk.selectedIds)
     }.recoverAndRetry("TransactionsViewModel", container) {
         TransactionsUiState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TransactionsUiState())
+
+    /**
+     * Premium hero card's total spend + budget consumption for the currently
+     * filtered feed (see [computeSpendSummary]). Riding [uiState] means it
+     * reflects every active filter, not just Time/Type/Account.
+     */
+    val spendSummaryState: StateFlow<SpendSummaryState> = combine(
+        uiState,
+        container.ratesRepository.observeRates(),
+    ) { state, rates ->
+        computeSpendSummary(
+            transactions = state.transactions,
+            rates = rates,
+            baseCurrency = container.preferences.defaultCurrency,
+            monthlyBudget = container.preferences.monthlySpendBudget,
+        )
+    }.recoverAndRetry("TransactionsViewModel.spendSummary", container) {
+        SpendSummaryState()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpendSummaryState())
+
+    /** How many real transactions still need a dynamic category -- drives the Uncategorized queue entry point. */
+    val uncategorizedCount: StateFlow<Int> = container.transactionRepository.observeUncategorized()
+        .map { it.size }
+        .recoverAndRetry("TransactionsViewModel.uncategorizedCount", container) { 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Manual "Parse with AI" is offered only when the feature is on + a valid loopback endpoint is set. */
+    val aiParsingConfigured: Boolean get() = container.localAiManager.isConfigured()
+
+    /**
+     * Runs the local (loopback-only) AI over a pasted message and maps the
+     * result to editor fields. Returns null when the feature is off/unreachable
+     * or the text isn't a transaction — the caller then leaves the form as-is.
+     * Direction (absent from the AI's JSON keyset) is inferred with the same
+     * shared parser vocabulary the self-healing path uses.
+     */
+    suspend fun parseWithAi(raw: String): AiEditorFill? {
+        if (raw.isBlank()) return null
+        val engine = container.localAiManager.engine()
+        if (!engine.isReady) return null
+        val generated = engine.generate(AiTransactionPrompt.build(raw)).getOrNull() ?: return null
+        val parsed = AiResponseParser.parse(generated, container.preferences.defaultCurrency) ?: return null
+        if (!parsed.transactionIntent) return null
+        val amount = parsed.amount ?: return null
+        val currency = parsed.currency ?: return null
+        val direction = GenericExtractors.detectDirectionOverride(raw) ?: TransactionDirection.DEBIT
+        return AiEditorFill(amount, currency, parsed.merchant, direction)
+    }
 
     fun setDateRange(range: DateRangeFilter) { filters.value = filters.value.copy(dateRange = range) }
     fun setQuery(query: String) { filters.value = filters.value.copy(query = query) }
@@ -227,6 +411,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         filters.value = filters.value.copy(minAmount = min, maxAmount = max)
     }
     fun setSourceFilter(source: TransactionSource?) { filters.value = filters.value.copy(source = source) }
+    fun setKindFilter(kind: TransactionKind?) {
+        filters.value = filters.value.copy(kind = kind)
+    }
+
     fun setAnalyticsStatus(status: AnalyticsStatusFilter?) {
         filters.value = filters.value.copy(analyticsStatus = status)
     }
@@ -246,13 +434,50 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         bulkMode.value = bulkMode.value.copy(selectedIds = ids.toSet())
     }
 
-    fun bulkSetCategory(category: SpendingCategory) = safeWrite("bulkSetCategory") {
-        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(spendingCategory = category))
+    fun bulkSetCategoryId(categoryId: Long?) = safeWrite("bulkSetCategoryId") {
+        container.bulkUpdateTransactions(
+            bulkMode.value.selectedIds.toList(),
+            BulkTransactionPatch(categoryId = FieldUpdate.Set(categoryId)),
+        )
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkCreateAndAssignCategory(
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ) = safeWrite("bulkCreateAndAssignCategory") {
+        val categoryId = container.categoryRepository.save(
+            Category(
+                name = name,
+                icon = icon,
+                colorHex = colorHex,
+                isCustom = true,
+                monthlyCap = monthlyCap,
+                parentCategoryId = parentCategoryId,
+            )
+        )
+        container.bulkUpdateTransactions(
+            bulkMode.value.selectedIds.toList(),
+            BulkTransactionPatch(categoryId = FieldUpdate.Set(categoryId)),
+        )
         bulkMode.value = BulkModeState()
     }
 
     fun bulkSetExcludeFromStats(excluded: Boolean) = safeWrite("bulkSetExcludeFromStats") {
         container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(excludeFromStats = excluded))
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkAssignAccount(accountId: Long?) = safeWrite("bulkAssignAccount") {
+        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(accountId = FieldUpdate.Set(accountId)))
+        bulkMode.value = BulkModeState()
+    }
+
+    fun bulkSetPerson(person: String?) = safeWrite("bulkSetPerson") {
+        container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(person = FieldUpdate.Set(person)))
         bulkMode.value = BulkModeState()
     }
 
@@ -268,8 +493,33 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun assignAccount(transactionId: Long, accountId: Long?) =
-        safeWrite("assignAccount") { container.transactionRepository.assignAccount(transactionId, accountId) }
+    /**
+     * Files one transaction under an account, and remembers that this merchant
+     * belongs there.
+     *
+     * Before this, assigning an account taught the app nothing: a merchant
+     * whose messages carry no card number the app can match stayed unassigned
+     * forever, however many times you fixed it -- and an unassigned transaction
+     * sits in no balance at all.
+     *
+     * Clearing the account ([accountId] null) deliberately teaches nothing:
+     * "not this one" is not a rule. Bulk assignment does not learn either -- a
+     * multi-select spanning several merchants is the worst possible thing to
+     * infer one rule from.
+     *
+     * The rule is reversible from the merchant's own screen ("Forget"), which
+     * matters more here than for categories: a wrong account silently moves
+     * money between balances.
+     */
+    fun assignAccount(transaction: Transaction, accountId: Long?) =
+        safeWrite("assignAccount") {
+            container.transactionRepository.assignAccount(transaction.id, accountId)
+            if (accountId != null) {
+                transaction.merchant?.takeIf { it.isNotBlank() }?.let {
+                    container.merchantAccountRepository.learnMapping(it, accountId)
+                }
+            }
+        }
 
     fun setPerson(transactionId: Long, person: String?) =
         safeWrite("setPerson") {
@@ -278,11 +528,124 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             container.transactionRepository.setPerson(transactionId, person)
         }
 
-    fun setCategory(transactionId: Long, category: SpendingCategory) =
-        safeWrite("setCategory") { container.transactionRepository.setSpendingCategory(transactionId, category) }
+    /** Swipe-to-flag: quick toggle of the analytics-exclusion flag without opening the edit dialog. */
+    fun toggleExcludeFromStats(transaction: Transaction) =
+        safeWrite("toggleExcludeFromStats") {
+            container.transactionRepository.update(transaction.copy(excludeFromStats = !transaction.excludeFromStats))
+        }
+
+    /**
+     * Picks a category for one transaction from the Activity feed, and -- this
+     * is the part that used to be missing -- remembers it.
+     *
+     * The Review queue (`ReviewViewModel.learnCategory`), the Uncategorized
+     * queue and the Merchant screen all already taught the app from a
+     * correction. This path, the one people actually use day to day, only set
+     * the row and forgot, so the same merchant arrived uncategorized forever.
+     *
+     * [CategoryRepository.learnMapping] backfills only rows whose category is
+     * still unset, so a category picked deliberately somewhere else is never
+     * overwritten by this.
+     *
+     * Bulk mode deliberately does NOT call this: a multi-select spanning
+     * several merchants is the worst possible thing to learn one rule from.
+     */
+    fun setCategoryId(transaction: Transaction, categoryId: Long?) =
+        safeWrite("setCategoryId") {
+            container.transactionRepository.setCategory(transaction.id, categoryId)
+            learnCategory(transaction, categoryId)
+        }
+
+    fun createAndAssignCategory(
+        transaction: Transaction,
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ) = safeWrite("createAndAssignCategory") {
+        val categoryId = container.categoryRepository.save(
+            Category(
+                name = name,
+                icon = icon,
+                colorHex = colorHex,
+                isCustom = true,
+                monthlyCap = monthlyCap,
+                parentCategoryId = parentCategoryId,
+            )
+        )
+        container.transactionRepository.setCategory(transaction.id, categoryId)
+        learnCategory(transaction, categoryId)
+    }
+
+    /**
+     * Teaches merchant -> category from a manual correction. Clearing a
+     * category ([categoryId] null) teaches nothing: "not this" is not a rule.
+     */
+    private suspend fun learnCategory(transaction: Transaction, categoryId: Long?) {
+        if (categoryId == null) return
+        val merchant = transaction.merchant?.takeIf { it.isNotBlank() } ?: return
+        container.categoryRepository.learnMapping(merchant, categoryId)
+    }
 
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
+
+    /** Deletes [tx] and mutes messages shaped like its original text. */
+    fun deleteAndIgnoreSimilar(tx: Transaction) = safeWrite("deleteAndIgnoreSimilar") {
+        tx.rawMessage?.let { container.ignoredMessageRepository.add(it, System.currentTimeMillis()) }
+        container.transactionRepository.delete(tx.id)
+    }
+
+    /** Deletes [tx] and mutes every future message containing [keyword]. */
+    fun deleteAndIgnoreKeyword(tx: Transaction, keyword: String) = safeWrite("deleteAndIgnoreKeyword") {
+        container.ignoredKeywordRepository.add(keyword, System.currentTimeMillis())
+        container.transactionRepository.delete(tx.id)
+    }
+
+    /** Bulk variant of [deleteAndIgnoreSimilar]: mutes the template of every selected message. */
+    fun bulkDeleteAndIgnoreSimilar() = safeWrite("bulkDeleteAndIgnoreSimilar") {
+        val ids = bulkMode.value.selectedIds
+        val now = System.currentTimeMillis()
+        container.transactionRepository.observeTransactions().first()
+            .filter { it.id in ids }
+            .forEach { tx -> tx.rawMessage?.let { container.ignoredMessageRepository.add(it, now) } }
+        container.bulkUpdateTransactions.delete(ids.toList())
+        bulkMode.value = BulkModeState()
+    }
+
+    /** Persists a brand-new dynamic category and returns it (id included) -- for the editor's "+ New" chip. */
+    suspend fun createCategory(
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ): Category {
+        val category = Category(
+            name = name,
+            icon = icon,
+            colorHex = colorHex,
+            isCustom = true,
+            monthlyCap = monthlyCap,
+            parentCategoryId = parentCategoryId,
+        )
+        val id = container.categoryRepository.save(category)
+        return category.copy(id = id)
+    }
+
+    /**
+     * Keeps the legacy [SpendingCategory] field consistent for a manually
+     * entered/edited transaction: reverses [categoryId] onto its dynamic
+     * category's name, then that name back onto an enum value via
+     * [CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM]. A custom category
+     * (no seeded-name match) or no category at all falls back to
+     * UNCATEGORIZED, same as an ordinary uncategorized capture.
+     */
+    private fun resolveLegacySpendingCategory(categoryId: Long?): SpendingCategory {
+        val name = categoryId?.let { id -> uiState.value.categories.firstOrNull { it.id == id }?.name }
+        return name?.let { CategoryMigrationMapping.CATEGORY_NAME_TO_ENUM[it] } ?: SpendingCategory.UNCATEGORIZED
+    }
 
     /** Adds a transaction the user typed in by hand (a missed/uncaptured one). */
     fun addManual(
@@ -292,9 +655,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         merchant: String?,
         accountId: Long?,
         person: String?,
-        spendingCategory: SpendingCategory,
+        categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
+        kind: TransactionKind = TransactionKind.defaultFor(direction),
     ) = safeWrite("addManual") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.recordManual(
@@ -307,11 +671,30 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 timestampMillis = timestampMillis,
                 accountId = accountId,
                 person = person,
-                spendingCategory = spendingCategory,
+                categoryId = categoryId,
+                spendingCategory = resolveLegacySpendingCategory(categoryId),
                 matchedRuleName = MANUAL_ENTRY_LABEL,
                 excludeFromStats = excludeFromStats,
+                // The user picked it, so automation never second-guesses it.
+                kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(kind, direction),
+                kindUserSet = true,
             )
         )
+    }
+
+    /** Saves both sides of a transfer/card payment the user typed in, as one linked pair. */
+    fun addTransfer(draft: TransferLegs.Draft) = safeWrite("addTransfer") {
+        draft.person?.let(container.preferences::addPerson)
+        container.ledgerRepository.recordTransfer(draft)
+    }
+
+    /**
+     * Re-classifies a transaction (spend / refund / transfer / card payment...).
+     * With [remember], the merchant's other automatically-classified rows
+     * follow, and future captures from it arrive with this kind.
+     */
+    fun setKind(transaction: Transaction, kind: TransactionKind, remember: Boolean) = safeWrite("setKind") {
+        container.ledgerRepository.setKind(transaction.id, kind, remember)
     }
 
     /** Saves edits to an existing transaction, preserving its untouched fields. */
@@ -323,9 +706,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         merchant: String?,
         accountId: Long?,
         person: String?,
-        spendingCategory: SpendingCategory,
+        categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
+        kind: TransactionKind = original.kind,
     ) = safeWrite("updateTransaction") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.update(
@@ -336,11 +720,18 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 merchant = merchant?.trim()?.takeIf { it.isNotBlank() },
                 accountId = accountId,
                 person = person,
-                spendingCategory = spendingCategory,
+                categoryId = categoryId,
+                spendingCategory = resolveLegacySpendingCategory(categoryId),
                 timestampMillis = timestampMillis,
                 excludeFromStats = excludeFromStats,
+                // Flipping Spent <-> Received must not leave a one-sided kind
+                // on the wrong side (a "spend" credit would count as spending).
+                kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(original.kind, direction),
             )
         )
+        // A new kind goes through the ledger so transfer links are made or
+        // released consistently.
+        if (kind != original.kind) container.ledgerRepository.setKind(original.id, kind, rememberForMerchant = false)
     }
 
     fun setSenderLabel(sender: String, label: String) =
@@ -356,15 +747,40 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
+    /**
+     * Optional deep-link filter from the nav route. "unassigned" opens the
+     * screen already showing only transactions that belong to no account --
+     * what the Home and Accounts screens' "not in any account" card links to.
+     */
+    initialAccountFilter: String = "",
+    onOpenUncategorizedQueue: () -> Unit = {},
+    onOpenMerchant: (String) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
+    // Keyed on the arg so re-navigating with it re-applies the filter, while a
+    // recomposition (or the user clearing the filter) does not fight the user.
+    LaunchedEffect(initialAccountFilter) {
+        if (initialAccountFilter == "unassigned") {
+            viewModel.setAccountFilter(AccountFilter.Unassigned)
+        }
+    }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
+    val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var deleteTarget by remember { mutableStateOf<Transaction?>(null) }
+    // Dynamic-category picker target: set by either an end-to-start swipe (see
+    // SwipeToActionBox) or tapping a row's category chip, cleared once a
+    // category is picked/created or the picker is dismissed.
+    var categoryPickerFor by remember { mutableStateOf<Transaction?>(null) }
+    // Bulk-mode's own category picker -- applies to every selected id at once,
+    // so it's a plain flag rather than a per-transaction target.
+    var bulkCategoryPickerOpen by remember { mutableStateOf(false) }
 
     // Brand accent for a specific-account filter, reusing the same GlowTone
     // mapping every row already uses for its own origin glow — one source of
@@ -398,7 +814,27 @@ fun TransactionsScreen(
         }
     }
 
+    // Standard Material 3 collapse behavior for the Premium hero card, kept
+    // separate from the filter header's own hand-rolled FilterBarCollapse
+    // above. Attached as the OUTER nestedScroll (on the Scaffold, below) so it
+    // gets first claim on upward scroll: the hero collapses away completely
+    // before any leftover delta reaches feedScrollConnection to compact the
+    // filter header, and expands back in the reverse order on scroll down.
+    val heroScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val heroVisible = LocalDesignMode.current == DesignMode.PREMIUM && !state.isInBulkMode
+    // The hero card stops measuring (and so stops updating heightOffsetLimit)
+    // whenever it's not shown -- Classic, or bulk mode temporarily hiding it.
+    // Without this, a mid-collapse offset from before it disappeared would
+    // silently keep eating scroll deltas meant for the list underneath.
+    LaunchedEffect(heroVisible) {
+        if (!heroVisible) {
+            heroScrollBehavior.state.heightOffsetLimit = 0f
+            heroScrollBehavior.state.heightOffset = 0f
+        }
+    }
+
     Scaffold(
+        modifier = Modifier.nestedScroll(heroScrollBehavior.nestedScrollConnection),
         floatingActionButton = {
             FloatingActionButton(onClick = { addOpen = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add transaction")
@@ -415,10 +851,15 @@ fun TransactionsScreen(
             if (state.isInBulkMode) {
                 BulkModeBar(
                     selectedCount = state.selectedTransactionIds.size,
+                    accounts = state.accounts,
+                    knownPersons = state.knownPersons,
                     onSelectAll = { viewModel.selectAll(state.transactions.map { it.id }) },
-                    onCategorize = { category -> viewModel.bulkSetCategory(category) },
+                    onCategorize = { bulkCategoryPickerOpen = true },
+                    onAssignAccount = { accountId -> viewModel.bulkAssignAccount(accountId) },
+                    onAssignPerson = { person -> viewModel.bulkSetPerson(person) },
                     onExclude = { viewModel.bulkSetExcludeFromStats(true) },
                     onDelete = { viewModel.bulkDelete() },
+                    onDeleteIgnoreSimilar = { viewModel.bulkDeleteAndIgnoreSimilar() },
                     onClose = { viewModel.exitBulkMode() },
                 )
             } else {
@@ -431,6 +872,28 @@ fun TransactionsScreen(
                         collapseFraction = 0f
                     },
                 )
+                if (uncategorizedCount > 0) {
+                    UncategorizedBanner(count = uncategorizedCount, onClick = onOpenUncategorizedQueue)
+                }
+                // Premium-only hero spend summary, directly above the filter bar.
+                if (heroVisible) {
+                    Box(
+                        Modifier
+                            .clipToBounds()
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                heroScrollBehavior.state.heightOffsetLimit = -placeable.height.toFloat()
+                                val heroFraction = heroScrollBehavior.state.collapsedFraction
+                                val visibleHeight = (placeable.height * (1f - heroFraction)).roundToInt()
+                                layout(placeable.width, visibleHeight) {
+                                    placeable.placeRelative(0, visibleHeight - placeable.height)
+                                }
+                            }
+                            .graphicsLayer { alpha = 1f - heroScrollBehavior.state.collapsedFraction },
+                    ) {
+                        HeroSpendSummaryCard(state = spendSummary)
+                    }
+                }
                 Box(
                     Modifier
                         .clipToBounds()
@@ -444,19 +907,36 @@ fun TransactionsScreen(
                         }
                         .graphicsLayer { alpha = 1f - collapseFraction },
                 ) {
-                    ActivityFilterBar(
-                        state = state,
-                        onQuery = viewModel::setQuery,
-                        onDateRange = viewModel::setDateRange,
-                        onDirectionFilter = viewModel::setDirectionFilter,
-                        onAccountFilter = viewModel::setAccountFilter,
-                        onPersonFilter = viewModel::setPersonFilter,
-                        onTriageOnly = viewModel::setTriageOnly,
-                        onAmountRange = viewModel::setAmountRange,
-                        onSourceFilter = viewModel::setSourceFilter,
-                        onAnalyticsStatus = viewModel::setAnalyticsStatus,
-                        onClear = viewModel::clearFilters,
-                    )
+                    when (state.filterBarLayout) {
+                        FilterBarLayout.SINGLE_ROW -> TransactionFilterBar(
+                            state = state,
+                            onQuery = viewModel::setQuery,
+                            onDateRange = viewModel::setDateRange,
+                            onDirectionFilter = viewModel::setDirectionFilter,
+                            onAccountFilter = viewModel::setAccountFilter,
+                            onPersonFilter = viewModel::setPersonFilter,
+                            onTriageOnly = viewModel::setTriageOnly,
+                            onAmountRange = viewModel::setAmountRange,
+                            onSourceFilter = viewModel::setSourceFilter,
+                            onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                            onClear = viewModel::clearFilters,
+                            onKindFilter = viewModel::setKindFilter,
+                        )
+                        FilterBarLayout.CLASSIC -> ActivityFilterBar(
+                            state = state,
+                            onQuery = viewModel::setQuery,
+                            onDateRange = viewModel::setDateRange,
+                            onDirectionFilter = viewModel::setDirectionFilter,
+                            onAccountFilter = viewModel::setAccountFilter,
+                            onPersonFilter = viewModel::setPersonFilter,
+                            onTriageOnly = viewModel::setTriageOnly,
+                            onAmountRange = viewModel::setAmountRange,
+                            onSourceFilter = viewModel::setSourceFilter,
+                            onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                            onClear = viewModel::clearFilters,
+                            onKindFilter = viewModel::setKindFilter,
+                        )
+                    }
                 }
             }
 
@@ -494,25 +974,32 @@ fun TransactionsScreen(
                         }
                         items(dayTransactions, key = { it.id }) { tx ->
                             Column {
-                                TransactionCard(
-                                    tx = tx,
-                                    accounts = state.accounts,
-                                    knownPersons = state.knownPersons,
-                                    bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
-                                    accountFilterTint = activeAccountGlow,
-                                    isInBulkMode = state.isInBulkMode,
-                                    isSelected = tx.id in state.selectedTransactionIds,
-                                    onAssignAccount = { accountId -> viewModel.assignAccount(tx.id, accountId) },
-                                    onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
-                                    onAssignCategory = { category -> viewModel.setCategory(tx.id, category) },
-                                    onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
-                                    onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                                    onEdit = { editing = tx },
-                                    onDelete = { viewModel.delete(tx.id) },
-                                    onCardClick = { selectedTransaction = tx },
-                                    onLongPress = { viewModel.enterBulkMode(tx.id) },
-                                    onToggleSelected = { viewModel.toggleSelected(tx.id) },
-                                )
+                                SwipeToActionBox(
+                                    enabled = !state.isInBulkMode,
+                                    onFlag = { viewModel.toggleExcludeFromStats(tx) },
+                                    onCategorize = { categoryPickerFor = tx },
+                                ) {
+                                    TransactionCard(
+                                        tx = tx,
+                                        accounts = state.accounts,
+                                        knownPersons = state.knownPersons,
+                                        categories = state.categories,
+                                        bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+                                        accountFilterTint = activeAccountGlow,
+                                        isInBulkMode = state.isInBulkMode,
+                                        isSelected = tx.id in state.selectedTransactionIds,
+                                        onAssignAccount = { accountId -> viewModel.assignAccount(tx, accountId) },
+                                        onAssignPerson = { person -> viewModel.setPerson(tx.id, person) },
+                                        onOpenCategoryPicker = { categoryPickerFor = tx },
+                                        onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
+                                        onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
+                                        onEdit = { editing = tx },
+                                        onDelete = { deleteTarget = tx },
+                                        onCardClick = { selectedTransaction = tx },
+                                        onLongPress = { viewModel.enterBulkMode(tx.id) },
+                                        onToggleSelected = { viewModel.toggleSelected(tx.id) },
+                                    )
+                                }
                                 // White base, not DividerDefaults: the theme's divider
                                 // gray at 10% alpha would vanish on the obsidian canvas.
                                 HorizontalDivider(
@@ -535,10 +1022,18 @@ fun TransactionsScreen(
             existing = null,
             accounts = state.accounts,
             knownPersons = state.knownPersons,
+            categories = state.categories,
             defaultCurrency = state.defaultCurrency,
+            aiEnabled = viewModel.aiParsingConfigured,
+            onAiParse = viewModel::parseWithAi,
+            onCreateCategory = viewModel::createCategory,
             onDismiss = { addOpen = false },
-            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
-                viewModel.addManual(amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
+            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
+                viewModel.addManual(amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
+                addOpen = false
+            },
+            onSaveTransfer = { draft ->
+                viewModel.addTransfer(draft)
                 addOpen = false
             },
         )
@@ -549,12 +1044,58 @@ fun TransactionsScreen(
             existing = tx,
             accounts = state.accounts,
             knownPersons = state.knownPersons,
+            categories = state.categories,
             defaultCurrency = state.defaultCurrency,
+            onCreateCategory = viewModel::createCategory,
             onDismiss = { editing = null },
-            onSave = { amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats ->
-                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, category, timestamp, excludeFromStats)
+            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
+                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
                 editing = null
             },
+        )
+    }
+
+    categoryPickerFor?.let { tx ->
+        CategoryPickerBottomSheet(
+            categories = state.categories,
+            currency = state.defaultCurrency,
+            onSelect = { category ->
+                viewModel.setCategoryId(tx, category.id)
+                categoryPickerFor = null
+            },
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.createAndAssignCategory(tx, name, colorHex, icon, cap, parentId)
+                categoryPickerFor = null
+            },
+            onDismiss = { categoryPickerFor = null },
+        )
+    }
+
+    if (bulkCategoryPickerOpen) {
+        CategoryPickerBottomSheet(
+            categories = state.categories,
+            currency = state.defaultCurrency,
+            onSelect = { category ->
+                viewModel.bulkSetCategoryId(category.id)
+                bulkCategoryPickerOpen = false
+            },
+            onCreateNew = { name, colorHex, icon, cap, parentId ->
+                viewModel.bulkCreateAndAssignCategory(name, colorHex, icon, cap, parentId)
+                bulkCategoryPickerOpen = false
+            },
+            onDismiss = { bulkCategoryPickerOpen = false },
+        )
+    }
+
+    deleteTarget?.let { tx ->
+        DeleteWithIgnoreDialog(
+            title = "Delete this transaction?",
+            rawMessage = tx.rawMessage,
+            merchant = tx.merchant,
+            onDelete = { deleteTarget = null; viewModel.delete(tx.id) },
+            onDeleteIgnoreSimilar = { deleteTarget = null; viewModel.deleteAndIgnoreSimilar(tx) },
+            onDeleteIgnoreKeyword = { kw -> deleteTarget = null; viewModel.deleteAndIgnoreKeyword(tx, kw) },
+            onDismiss = { deleteTarget = null },
         )
     }
 
@@ -563,15 +1104,24 @@ fun TransactionsScreen(
             transaction = tx,
             accountName = state.accounts.firstOrNull { it.id == tx.accountId }?.name,
             bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
+            categories = state.categories,
             onEditClick = {
                 selectedTransaction = null
                 editing = tx
             },
             onDeleteClick = {
-                viewModel.delete(tx.id)
+                deleteTarget = tx
                 selectedTransaction = null
             },
             onDismiss = { selectedTransaction = null },
+            onMerchantClick = { merchant ->
+                selectedTransaction = null
+                onOpenMerchant(merchant)
+            },
+            onKindChange = { kind, remember ->
+                viewModel.setKind(tx, kind, remember)
+                selectedTransaction = null
+            },
         )
     }
 }
@@ -603,21 +1153,95 @@ private fun DayPill(day: LocalDate, today: LocalDate) {
 }
 
 /**
+ * Tactile micro-interaction: wraps a transaction row in a two-way swipe.
+ * Swiping start-to-end toggles the analytics-exclusion "flag"; swiping
+ * end-to-start opens a quick category picker. Neither direction actually
+ * dismisses the row -- [confirmValueChange] always returns false so the card
+ * snaps back after firing its action, mirroring a Gmail-style "swipe to
+ * archive without removing from view" interaction rather than a real delete.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToActionBox(
+    enabled: Boolean,
+    onFlag: () -> Unit,
+    onCategorize: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    val haptic = LocalHapticFeedback.current
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onFlag()
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onCategorize()
+                }
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            false
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = { SwipeActionBackground(dismissState.dismissDirection) },
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun SwipeActionBackground(direction: SwipeToDismissBoxValue) {
+    val (background, icon, alignment) = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd ->
+            Triple(ObsidianTokens.debit.copy(alpha = 0.28f), Icons.Filled.Flag, Alignment.CenterStart)
+        SwipeToDismissBoxValue.EndToStart ->
+            Triple(ObsidianTokens.credit.copy(alpha = 0.28f), Icons.Filled.Label, Alignment.CenterEnd)
+        SwipeToDismissBoxValue.Settled -> Triple(Color.Transparent, null, Alignment.Center)
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(background, RoundedCornerShape(ObsidianTokens.rowRadius))
+            .padding(horizontal = 22.dp),
+        contentAlignment = alignment,
+    ) {
+        icon?.let { Icon(it, contentDescription = null, tint = Color.White) }
+    }
+}
+
+/**
  * Contextual bar shown in place of the filter header while the Transactions
- * screen is in bulk-edit mode: selection count, Select All, and the three
- * bulk actions (Categorize / Exclude / Delete), plus a close button to drop
- * back to the normal filter header.
+ * screen is in bulk-edit mode: selection count, Select All, and the bulk
+ * actions (Categorize / Account / Person, plus Exclude / Delete tucked into
+ * a "More" overflow), plus a close button to drop back to the normal filter
+ * header.
  */
 @Composable
 private fun BulkModeBar(
     selectedCount: Int,
+    accounts: List<Account>,
+    knownPersons: List<String>,
     onSelectAll: () -> Unit,
-    onCategorize: (SpendingCategory) -> Unit,
+    onCategorize: () -> Unit,
+    onAssignAccount: (Long?) -> Unit,
+    onAssignPerson: (String?) -> Unit,
     onExclude: () -> Unit,
     onDelete: () -> Unit,
+    onDeleteIgnoreSimilar: () -> Unit,
     onClose: () -> Unit,
 ) {
-    var categoryMenuOpen by remember { mutableStateOf(false) }
+    var accountMenuOpen by remember { mutableStateOf(false) }
+    var personMenuOpen by remember { mutableStateOf(false) }
+    var newPersonOpen by remember { mutableStateOf(false) }
+    var moreMenuOpen by remember { mutableStateOf(false) }
     var deleteConfirmOpen by remember { mutableStateOf(false) }
     val hasSelection = selectedCount > 0
     Surface(color = ObsidianTokens.canvas, modifier = Modifier.fillMaxWidth()) {
@@ -632,43 +1256,88 @@ private fun BulkModeBar(
                 "$selectedCount selected",
                 style = MaterialTheme.typography.labelLarge,
                 color = ObsidianTokens.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onSelectAll) {
                 Icon(Icons.Filled.DoneAll, contentDescription = "Select all")
             }
+            IconButton(onClick = onCategorize, enabled = hasSelection) {
+                Icon(Icons.Filled.CategoryIcon, contentDescription = "Categorize selected")
+            }
             Box {
-                IconButton(onClick = { categoryMenuOpen = true }, enabled = hasSelection) {
-                    Icon(Icons.Filled.Category, contentDescription = "Categorize selected")
+                IconButton(onClick = { accountMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.AccountBalanceWallet, contentDescription = "Assign account to selected")
                 }
-                DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                    SpendingCategory.entries.forEach { category ->
+                DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Unassigned") },
+                        onClick = { accountMenuOpen = false; onAssignAccount(null) },
+                    )
+                    accounts.forEach { account ->
                         DropdownMenuItem(
-                            text = { Text("${category.emoji} ${category.label}") },
-                            onClick = { categoryMenuOpen = false; onCategorize(category) },
+                            text = { Text(account.name) },
+                            onClick = { accountMenuOpen = false; onAssignAccount(account.id) },
                         )
                     }
                 }
             }
-            IconButton(onClick = onExclude, enabled = hasSelection) {
-                Icon(Icons.Filled.VisibilityOff, contentDescription = "Exclude selected from analytics")
+            Box {
+                IconButton(onClick = { personMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.Person, contentDescription = "Assign person to selected")
+                }
+                DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Nobody") },
+                        onClick = { personMenuOpen = false; onAssignPerson(null) },
+                    )
+                    knownPersons.forEach { person ->
+                        DropdownMenuItem(
+                            text = { Text(person) },
+                            onClick = { personMenuOpen = false; onAssignPerson(person) },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("New person…") },
+                        onClick = { personMenuOpen = false; newPersonOpen = true },
+                    )
+                }
             }
-            IconButton(onClick = { deleteConfirmOpen = true }, enabled = hasSelection) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+            Box {
+                IconButton(onClick = { moreMenuOpen = true }, enabled = hasSelection) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More bulk actions")
+                }
+                DropdownMenu(expanded = moreMenuOpen, onDismissRequest = { moreMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Exclude from analytics") },
+                        onClick = { moreMenuOpen = false; onExclude() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = { moreMenuOpen = false; deleteConfirmOpen = true },
+                    )
+                }
             }
         }
     }
+    if (newPersonOpen) {
+        NewPersonDialog(
+            onDismiss = { newPersonOpen = false },
+            onSave = { person -> newPersonOpen = false; onAssignPerson(person) },
+        )
+    }
     if (deleteConfirmOpen) {
-        AlertDialog(
-            onDismissRequest = { deleteConfirmOpen = false },
-            title = { Text("Delete $selectedCount transaction${if (selectedCount == 1) "" else "s"}?") },
-            text = { Text("This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = { deleteConfirmOpen = false; onDelete() }) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteConfirmOpen = false }) { Text("Cancel") }
-            },
+        DeleteWithIgnoreDialog(
+            title = "Delete $selectedCount transaction${if (selectedCount == 1) "" else "s"}?",
+            // Bulk can't know which messages are captured, so the option is
+            // always offered; manual entries simply have no text to mute.
+            rawMessage = "bulk",
+            merchant = null,
+            onDelete = { deleteConfirmOpen = false; onDelete() },
+            onDeleteIgnoreSimilar = { deleteConfirmOpen = false; onDeleteIgnoreSimilar() },
+            onDeleteIgnoreKeyword = null,
+            onDismiss = { deleteConfirmOpen = false },
         )
     }
 }
@@ -742,7 +1411,7 @@ private fun CompactFilterBar(
  * [FilterBarChip].
  */
 @Composable
-private fun ObsidianChip(
+internal fun ObsidianChip(
     selected: Boolean,
     onClick: () -> Unit,
     label: @Composable () -> Unit,
@@ -772,7 +1441,7 @@ private fun ObsidianChip(
  * Material's chip defaults.
  */
 @Composable
-private fun FilterBarChip(
+internal fun FilterBarChip(
     selected: Boolean,
     onClick: () -> Unit,
     label: String,
@@ -813,7 +1482,7 @@ private fun FilterBarChip(
  * reads a clear step below the primary [FilterBarChip]s.
  */
 @Composable
-private fun SecondaryActionChip(
+internal fun SecondaryActionChip(
     selected: Boolean,
     onClick: () -> Unit,
     label: String,
@@ -851,7 +1520,7 @@ private fun SecondaryActionChip(
  * can't be reduced without clipping.
  */
 @Composable
-private fun CompactSearchField(
+internal fun CompactSearchField(
     query: String,
     onQuery: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -917,7 +1586,7 @@ private fun CompactSearchField(
 
 /** Glass field colors (spec 5.3): surfaceGlass fill, hairline/focus border — shared by every OutlinedTextField in the glass dialogs. */
 @Composable
-private fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
+internal fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedContainerColor = ObsidianTokens.surfaceGlass,
     focusedContainerColor = ObsidianTokens.surfaceGlass,
     unfocusedBorderColor = ObsidianTokens.hairline,
@@ -945,8 +1614,10 @@ private fun ActivityFilterBar(
     onSourceFilter: (TransactionSource?) -> Unit,
     onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
     onClear: () -> Unit,
+    onKindFilter: (TransactionKind?) -> Unit = {},
 ) {
     val f = state.filters
+    var kindMenuOpen by remember { mutableStateOf(false) }
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
     var sourceMenuOpen by remember { mutableStateOf(false) }
@@ -1138,6 +1809,27 @@ private fun ActivityFilterBar(
                 }
             }
 
+            // What it is: spend, refund, card payment, transfer...
+            Box {
+                SecondaryActionChip(
+                    selected = f.kind != null,
+                    onClick = { kindMenuOpen = true },
+                    label = f.kind?.label ?: "Kind",
+                )
+                DropdownMenu(expanded = kindMenuOpen, onDismissRequest = { kindMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Any kind") },
+                        onClick = { kindMenuOpen = false; onKindFilter(null) },
+                    )
+                    TransactionKind.entries.forEach { kind ->
+                        DropdownMenuItem(
+                            text = { Text(kind.label) },
+                            onClick = { kindMenuOpen = false; onKindFilter(kind) },
+                        )
+                    }
+                }
+            }
+
             // Analytics status (the Phase 1 excludeFromStats flag).
             Box {
                 SecondaryActionChip(
@@ -1207,14 +1899,15 @@ internal fun sourceLabel(source: TransactionSource): String = when (source) {
     TransactionSource.SMS -> "SMS"
     TransactionSource.PUSH_NOTIFICATION -> "Notification"
     TransactionSource.BINANCE_SYNC -> "Binance sync"
+    TransactionSource.PASTED -> "Pasted"
 }
 
-private val chipDateFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")
+internal val chipDateFormat = java.time.format.DateTimeFormatter.ofPattern("d MMM")
 
 /** Twin-calendar picker for an arbitrary inclusive Start→End window. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CustomDateRangeDialog(
+internal fun CustomDateRangeDialog(
     initial: DateRangeFilter.Custom?,
     onDismiss: () -> Unit,
     onSelect: (java.time.LocalDate, java.time.LocalDate) -> Unit,
@@ -1254,7 +1947,7 @@ private fun CustomDateRangeDialog(
 
 /** Min/max amount bounds; either side may be left blank for an open threshold. */
 @Composable
-private fun AmountRangeDialog(
+internal fun AmountRangeDialog(
     currentMin: java.math.BigDecimal?,
     currentMax: java.math.BigDecimal?,
     onDismiss: () -> Unit,
@@ -1336,6 +2029,7 @@ private fun TransactionCard(
     tx: Transaction,
     accounts: List<Account>,
     knownPersons: List<String>,
+    categories: List<Category>,
     bankName: String?,
     /** Brand accent from the active account filter, or null for the default hairline. */
     accountFilterTint: Color? = null,
@@ -1345,7 +2039,7 @@ private fun TransactionCard(
     isSelected: Boolean = false,
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
-    onAssignCategory: (SpendingCategory) -> Unit,
+    onOpenCategoryPicker: () -> Unit,
     onRenameSender: (String) -> Unit,
     onResetSender: () -> Unit,
     onEdit: () -> Unit,
@@ -1359,7 +2053,6 @@ private fun TransactionCard(
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
-    var categoryMenuOpen by remember { mutableStateOf(false) }
     var newPersonOpen by remember { mutableStateOf(false) }
     var renameOpen by remember { mutableStateOf(false) }
     val accountName = accounts.firstOrNull { it.id == tx.accountId }?.name
@@ -1432,6 +2125,12 @@ private fun TransactionCard(
                             append(" · ••")
                             append(it)
                         }
+                        // Say what it is whenever it isn't a plain spend/receive,
+                        // so a card payment or refund reads as one at a glance.
+                        if (tx.kind != TransactionKind.defaultFor(tx.direction)) {
+                            append(" · ")
+                            append(tx.kind.label)
+                        }
                     }
                     Text(
                         bankLine,
@@ -1452,10 +2151,16 @@ private fun TransactionCard(
                 )
                 AmountText(
                     display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-                    color = when (amountTone(tx.amount, tx.direction)) {
-                        AmountTone.NEGATIVE -> amountNegativeColor
-                        AmountTone.POSITIVE -> amountPositiveColor
-                        AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
+                    // A transfer, card payment or correction is neither money
+                    // spent nor received: shown neutral, not red/green.
+                    color = if (LedgerMath.effect(tx) == LedgerMath.Effect.NONE && !tx.excludeFromStats) {
+                        ObsidianTokens.textPrimary
+                    } else {
+                        when (amountTone(tx.amount, tx.direction)) {
+                            AmountTone.NEGATIVE -> amountNegativeColor
+                            AmountTone.POSITIVE -> amountPositiveColor
+                            AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
+                        }
                     },
                     style = androidx.compose.ui.text.TextStyle(
                         fontSize = 16.sp,
@@ -1543,19 +2248,15 @@ private fun TransactionCard(
                             DropdownMenuItem(text = { Text("New person…") }, onClick = { personMenuOpen = false; newPersonOpen = true })
                         }
                     }
-                    Box {
-                        MetaChip(
-                            text = tx.spendingCategory.label,
-                            active = tx.spendingCategory != SpendingCategory.UNCATEGORIZED,
-                            emoji = tx.spendingCategory.emoji,
-                            onClick = { categoryMenuOpen = true },
-                        )
-                        DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                            SpendingCategory.entries.forEach { category ->
-                                DropdownMenuItem(text = { Text("${category.emoji}  ${category.label}") }, onClick = { categoryMenuOpen = false; onAssignCategory(category) })
-                            }
-                        }
+                    val assignedCategory = remember(tx.categoryId, categories) {
+                        categories.firstOrNull { it.id == tx.categoryId }
                     }
+                    MetaChip(
+                        text = assignedCategory?.name ?: "Category",
+                        active = assignedCategory != null,
+                        emoji = assignedCategory?.icon ?: "🏷️",
+                        onClick = onOpenCategoryPicker,
+                    )
                 }
                 IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
                     Icon(
@@ -1685,7 +2386,17 @@ private fun TransactionEditorDialog(
     existing: Transaction?,
     accounts: List<Account>,
     knownPersons: List<String>,
+    categories: List<Category>,
     defaultCurrency: String,
+    aiEnabled: Boolean = false,
+    onAiParse: (suspend (String) -> AiEditorFill?)? = null,
+    onCreateCategory: suspend (
+        name: String,
+        colorHex: String,
+        icon: String,
+        monthlyCap: java.math.BigDecimal?,
+        parentCategoryId: Long?,
+    ) -> Category,
     onDismiss: () -> Unit,
     onSave: (
         amount: java.math.BigDecimal,
@@ -1694,22 +2405,37 @@ private fun TransactionEditorDialog(
         merchant: String?,
         accountId: Long?,
         person: String?,
-        spendingCategory: SpendingCategory,
+        categoryId: Long?,
         timestampMillis: Long,
         excludeFromStats: Boolean,
+        kind: TransactionKind,
     ) -> Unit,
+    /** Add mode only: saves a transfer/card payment as two linked legs. */
+    onSaveTransfer: ((TransferLegs.Draft) -> Unit)? = null,
 ) {
     val zone = java.time.ZoneId.systemDefault()
     val isEdit = existing != null
     var amount by remember { mutableStateOf(existing?.amount?.stripTrailingZeros()?.toPlainString() ?: "") }
     var currency by remember { mutableStateOf(existing?.currencyCode ?: defaultCurrency) }
-    var direction by remember { mutableStateOf(existing?.direction ?: TransactionDirection.DEBIT) }
+    var kind by remember { mutableStateOf(existing?.kind ?: TransactionKind.SPEND) }
+    // Only consulted for a kind that goes either way (an edited transfer leg
+    // or correction keeps the side it was on); everything else follows the kind.
+    val direction = kind.fixedDirection ?: existing?.direction ?: TransactionDirection.DEBIT
+    // Adding a transfer/card payment means two accounts and two legs.
+    val transferMode = !isEdit && onSaveTransfer != null && kind.isInternalMove
+    var fromAccountId by remember { mutableStateOf<Long?>(null) }
+    var toAccountId by remember { mutableStateOf<Long?>(null) }
+    var toAmount by remember { mutableStateOf("") }
+    var fromMenuOpen by remember { mutableStateOf(false) }
+    var toMenuOpen by remember { mutableStateOf(false) }
     var merchant by remember { mutableStateOf(existing?.merchant.orEmpty()) }
     var accountId by remember { mutableStateOf(existing?.accountId) }
     var person by remember { mutableStateOf(existing?.person) }
     // null = follow the merchant-derived suggestion; a value = explicit choice.
     // Editing starts from the row's saved category so it never silently changes.
-    var categoryOverride by remember { mutableStateOf(existing?.spendingCategory) }
+    var categoryIdOverride by remember { mutableStateOf(existing?.categoryId) }
+    var creatingCategory by remember { mutableStateOf(false) }
+    val categoryScope = rememberCoroutineScope()
     var excludeFromStats by remember { mutableStateOf(existing?.excludeFromStats ?: false) }
     var dateIso by remember {
         mutableStateOf(
@@ -1723,13 +2449,43 @@ private fun TransactionEditorDialog(
 
     val amountValue = amount.replace(",", "").toBigDecimalOrNull()
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
-    val valid = amountValue != null && amountValue.signum() > 0 &&
-        currency.trim().length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && date != null
-    val accountName = accounts.firstOrNull { it.id == accountId }?.name
-    val suggestedCategory = remember(merchant) {
-        MerchantCategorizer.categorize(merchant.takeIf { it.isNotBlank() })
+    val fromAccount = accounts.firstOrNull { it.id == fromAccountId }
+    val toAccount = accounts.firstOrNull { it.id == toAccountId }
+    // A second amount only when the money changes currency on the way.
+    val crossCurrency = transferMode && fromAccount != null && toAccount != null &&
+        !fromAccount.currencyCode.equals(toAccount.currencyCode, ignoreCase = true)
+    val toAmountValue = toAmount.replace(",", "").toBigDecimalOrNull()
+    fun endpoint(account: Account?) = account?.let {
+        TransferLegs.Endpoint(it.id, it.name, it.type, it.currencyCode)
     }
-    val effectiveCategory = categoryOverride ?: suggestedCategory
+    val transferDraft = if (transferMode && amountValue != null && date != null) {
+        TransferLegs.Draft(
+            from = endpoint(fromAccount),
+            to = endpoint(toAccount),
+            amount = amountValue,
+            toAmount = if (crossCurrency) toAmountValue else null,
+            timestampMillis = 0,
+            note = merchant,
+            person = person,
+        )
+    } else {
+        null
+    }
+    val transferError = transferDraft?.let(TransferLegs::validate)
+        ?: if (crossCurrency && toAmountValue == null) "Enter the amount received" else null
+    val valid = amountValue != null && amountValue.signum() > 0 &&
+        currency.trim().length in CURRENCY_CODE_MIN_LENGTH..CURRENCY_CODE_MAX_LENGTH && date != null &&
+        (!transferMode || (transferDraft != null && transferError == null))
+    val accountName = accounts.firstOrNull { it.id == accountId }?.name
+    // Same merchant-keyword guess the capture pipeline uses, bridged onto its
+    // same-named dynamic category (see CategoryMigrationMapping) so "Auto"
+    // previews a real, selectable category rather than a bare enum label.
+    val suggestedCategory = remember(merchant, categories) {
+        val enumGuess = MerchantCategorizer.categorize(merchant.takeIf { it.isNotBlank() })
+        val name = CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME[enumGuess]
+        categories.firstOrNull { it.name.equals(name, ignoreCase = true) }
+    }
+    val effectiveCategoryId = categoryIdOverride ?: suggestedCategory?.id
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1746,16 +2502,76 @@ private fun TransactionEditorDialog(
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                // Debit / credit picker: drives the sign in every balance sum.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TransactionDirection.entries.forEach { entry ->
+                // Manual "Parse with AI" (add mode only): paste a bank message
+                // the built-in rules missed and let the local (loopback-only) AI
+                // fill amount/currency/merchant/direction. Only shown when the
+                // feature is configured; failures leave the form untouched.
+                if (!isEdit && aiEnabled && onAiParse != null) {
+                    val aiParse = onAiParse
+                    val aiScope = rememberCoroutineScope()
+                    var rawMessage by remember { mutableStateOf("") }
+                    var parsing by remember { mutableStateOf(false) }
+                    var parseError by remember { mutableStateOf<String?>(null) }
+                    OutlinedTextField(
+                        value = rawMessage,
+                        onValueChange = { rawMessage = it },
+                        label = { MetaLabel("Paste bank message") },
+                        minLines = 2,
+                        colors = glassFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            enabled = rawMessage.isNotBlank() && !parsing,
+                            onClick = {
+                                parsing = true
+                                parseError = null
+                                aiScope.launch {
+                                    val fill = aiParse(rawMessage)
+                                    if (fill != null) {
+                                        amount = fill.amount.stripTrailingZeros().toPlainString()
+                                        currency = fill.currency
+                                        merchant = fill.merchant.orEmpty()
+                                        kind = TransactionKind.defaultFor(fill.direction)
+                                    } else {
+                                        parseError = "Couldn't read a transaction. Check the AI server in Settings."
+                                    }
+                                    parsing = false
+                                }
+                            },
+                        ) { Text(if (parsing) "Parsing…" else "Parse with AI") }
+                        if (parsing) {
+                            AiParsingIndicator(modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    parseError?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                }
+                // What it is: decides the sign in balances AND how it counts in
+                // Spent/Received (a refund lowers spending, a transfer or card
+                // payment counts in neither). See LedgerMath.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                    editorKindsFor(existing?.kind).forEach { entry ->
                         ObsidianChip(
-                            selected = direction == entry,
-                            onClick = { direction = entry },
-                            label = { Text(if (entry == TransactionDirection.DEBIT) "Spent" else "Received") },
+                            selected = kind == entry,
+                            onClick = { kind = entry },
+                            label = { Text(entry.label) },
                         )
                     }
                 }
+                Text(
+                    kindHint(kind, transferMode),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ObsidianTokens.textMeta,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = amount,
@@ -1797,33 +2613,76 @@ private fun TransactionEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                // Account picker — same target the capture pipeline assigns to.
-                // A glowing brand dot previews the row's edge glow before saving.
-                Box {
-                    val accountTone = GlowTones.forAccountOrigin(
-                        accountName,
-                        accounts.firstOrNull { it.id == accountId }?.bankName,
-                    ) ?: GlowTone.SYSTEM_SLATE
-                    OutlinedButton(onClick = { accountMenuOpen = true }) {
-                        Box(
-                            Modifier
-                                .size(7.dp)
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(GlowPalette.color(accountTone)),
+                if (transferMode) {
+                    TransferAccountPicker(
+                        label = "From",
+                        accounts = accounts,
+                        selectedId = fromAccountId,
+                        open = fromMenuOpen,
+                        onOpenChange = { fromMenuOpen = it },
+                        onSelect = { picked ->
+                            fromAccountId = picked?.id
+                            picked?.let { currency = it.currencyCode }
+                        },
+                    )
+                    TransferAccountPicker(
+                        label = "To",
+                        accounts = accounts,
+                        selectedId = toAccountId,
+                        open = toMenuOpen,
+                        onOpenChange = { toMenuOpen = it },
+                        onSelect = { picked ->
+                            toAccountId = picked?.id
+                            // Paying onto a card reads as a card payment.
+                            if (picked?.type == com.xemmy.mmbank.domain.model.AccountType.CREDIT_CARD) {
+                                kind = TransactionKind.CARD_PAYMENT
+                            }
+                            if (fromAccountId == null) picked?.let { currency = it.currencyCode }
+                        },
+                    )
+                    if (crossCurrency) {
+                        OutlinedTextField(
+                            value = toAmount,
+                            onValueChange = { toAmount = it },
+                            label = { MetaLabel("Amount received (${toAccount?.currencyCode})") },
+                            singleLine = true,
+                            isError = toAmount.isNotBlank() && toAmountValue == null,
+                            colors = glassFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Account: " + (accountName ?: "Unassigned"))
                     }
-                    DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Unassigned") },
-                            onClick = { accountMenuOpen = false; accountId = null },
-                        )
-                        accounts.forEach { account ->
-                            DropdownMenuItem(
-                                text = { Text(account.name) },
-                                onClick = { accountMenuOpen = false; accountId = account.id },
+                    transferError?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    // Account picker — same target the capture pipeline assigns to.
+                    // A glowing brand dot previews the row's edge glow before saving.
+                    Box {
+                        val accountTone = GlowTones.forAccountOrigin(
+                            accountName,
+                            accounts.firstOrNull { it.id == accountId }?.bankName,
+                        ) ?: GlowTone.SYSTEM_SLATE
+                        OutlinedButton(onClick = { accountMenuOpen = true }) {
+                            Box(
+                                Modifier
+                                    .size(7.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(GlowPalette.color(accountTone)),
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Account: " + (accountName ?: "Unassigned"))
+                        }
+                        DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Unassigned") },
+                                onClick = { accountMenuOpen = false; accountId = null },
+                            )
+                            accounts.forEach { account ->
+                                DropdownMenuItem(
+                                    text = { Text(account.name) },
+                                    onClick = { accountMenuOpen = false; accountId = account.id },
+                                )
+                            }
                         }
                     }
                 }
@@ -1847,8 +2706,9 @@ private fun TransactionEditorDialog(
                 }
 
                 // Category chip row — defaults to the merchant-derived guess
-                // ("Auto"), overridable. Mirrors the auto-categorization done on
-                // capture. Active chip reads teal (spec 5.3).
+                // ("Auto"), overridable, plus a trailing "+ New" chip opening
+                // the shared create form. Mirrors the auto-categorization done
+                // on capture. Active chip reads teal (spec 5.3).
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     MetaLabel("Category")
                     Row(
@@ -1856,17 +2716,26 @@ private fun TransactionEditorDialog(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         ObsidianChip(
-                            selected = categoryOverride == null,
-                            onClick = { categoryOverride = null },
-                            label = { Text("Auto · ${suggestedCategory.emoji} ${suggestedCategory.label}") },
+                            selected = categoryIdOverride == null,
+                            onClick = { categoryIdOverride = null },
+                            label = {
+                                Text(
+                                    suggestedCategory?.let { "Auto · ${it.icon} ${it.name}" } ?: "Auto · Uncategorized",
+                                )
+                            },
                         )
-                        SpendingCategory.entries.forEach { category ->
+                        categories.forEach { category ->
                             ObsidianChip(
-                                selected = categoryOverride == category,
-                                onClick = { categoryOverride = category },
-                                label = { Text("${category.emoji} ${category.label}") },
+                                selected = categoryIdOverride == category.id,
+                                onClick = { categoryIdOverride = category.id },
+                                label = { Text("${category.icon} ${category.name}") },
                             )
                         }
+                        ObsidianChip(
+                            selected = false,
+                            onClick = { creatingCategory = true },
+                            label = { Text("+ New") },
+                        )
                     }
                 }
 
@@ -1910,23 +2779,102 @@ private fun TransactionEditorDialog(
                             ?.let { java.time.Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalTime() }
                             ?: java.time.LocalTime.now()
                         val timestamp = parsedDate.atTime(timeOfDay).atZone(zone).toInstant().toEpochMilli()
-                        onSave(
-                            value,
-                            currency.trim().uppercase(),
-                            direction,
-                            merchant.trim().takeIf { it.isNotBlank() },
-                            accountId,
-                            person,
-                            effectiveCategory,
-                            timestamp,
-                            excludeFromStats,
-                        )
+                        if (transferMode && transferDraft != null && onSaveTransfer != null) {
+                            onSaveTransfer(transferDraft.copy(timestampMillis = timestamp))
+                        } else {
+                            onSave(
+                                value,
+                                currency.trim().uppercase(),
+                                direction,
+                                merchant.trim().takeIf { it.isNotBlank() },
+                                accountId,
+                                person,
+                                effectiveCategoryId,
+                                timestamp,
+                                excludeFromStats,
+                                kind,
+                            )
+                        }
                     }
                 },
-            ) { Text(if (isEdit) "Save changes" else "Add transaction") }
+            ) { Text(if (isEdit) "Save changes" else if (transferMode) "Add ${kind.label.lowercase()}" else "Add transaction") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+
+    if (creatingCategory) {
+        CategoryEditorDialog(
+            initial = null,
+            currency = currency.trim().ifBlank { defaultCurrency },
+            allCategories = categories,
+            onDismiss = { creatingCategory = false },
+            onSave = { name, icon, colorHex, cap, parentId ->
+                categoryScope.launch {
+                    val created = onCreateCategory(name, colorHex, icon, cap, parentId)
+                    categoryIdOverride = created.id
+                    creatingCategory = false
+                }
+            },
+        )
+    }
+}
+
+/** The kinds offered when adding/editing by hand, plus [current] when it's one of the rarer ones. */
+internal fun editorKindsFor(current: TransactionKind?): List<TransactionKind> {
+    val base = listOf(
+        TransactionKind.SPEND,
+        TransactionKind.INCOME,
+        TransactionKind.REFUND,
+        TransactionKind.TRANSFER,
+        TransactionKind.CARD_PAYMENT,
+        TransactionKind.ATM,
+    )
+    return if (current == null || current in base) base else base + current
+}
+
+/** One line under the kind chips saying how the choice counts. */
+internal fun kindHint(kind: TransactionKind, transferMode: Boolean): String = when (kind) {
+    TransactionKind.SPEND -> "Counts as spending"
+    TransactionKind.ATM -> "Cash taken out — counts as spending"
+    TransactionKind.INCOME -> "Counts as money received"
+    TransactionKind.REFUND -> "Money back — lowers spending, not income"
+    TransactionKind.TRANSFER ->
+        if (transferMode) "Between your accounts — saved as two linked sides, not spending"
+        else "Between your accounts — not spending or income"
+    TransactionKind.CARD_PAYMENT ->
+        if (transferMode) "Paying a card off — saved as two linked sides; purchases already counted"
+        else "Paying a card off — purchases on the card already counted"
+    TransactionKind.CASHBACK -> "Rewards — shown on Cashback, not in totals"
+    TransactionKind.ADJUSTMENT -> "Balance correction — not in totals"
+}
+
+@Composable
+private fun TransferAccountPicker(
+    label: String,
+    accounts: List<Account>,
+    selectedId: Long?,
+    open: Boolean,
+    onOpenChange: (Boolean) -> Unit,
+    onSelect: (Account?) -> Unit,
+) {
+    val selected = accounts.firstOrNull { it.id == selectedId }
+    Box {
+        OutlinedButton(onClick = { onOpenChange(true) }, modifier = Modifier.fillMaxWidth()) {
+            Text("$label: " + (selected?.let { "${it.name} · ${it.currencyCode}" } ?: "Outside / not tracked"))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { onOpenChange(false) }) {
+            DropdownMenuItem(
+                text = { Text("Outside / not tracked") },
+                onClick = { onOpenChange(false); onSelect(null) },
+            )
+            accounts.forEach { account ->
+                DropdownMenuItem(
+                    text = { Text("${account.name} · ${account.currencyCode}") },
+                    onClick = { onOpenChange(false); onSelect(account) },
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1960,5 +2908,72 @@ private fun RenameSenderDialog(
             TextButton(enabled = label.isNotBlank(), onClick = { onSave(label.trim()) }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onReset) { Text("Reset to default") } },
+    )
+}
+
+/**
+ * Delete confirmation that doubles as "this message was wrong": besides a
+ * plain delete it can also mute future look-alikes ([onDeleteIgnoreSimilar])
+ * or any message containing a phrase ([onDeleteIgnoreKeyword]). The ignore
+ * options only show for captured messages, i.e. when [rawMessage] is present;
+ * pass null for [onDeleteIgnoreKeyword] (bulk) to hide the keyword option.
+ */
+@Composable
+internal fun DeleteWithIgnoreDialog(
+    title: String,
+    rawMessage: String?,
+    merchant: String?,
+    onDelete: () -> Unit,
+    onDeleteIgnoreSimilar: () -> Unit,
+    onDeleteIgnoreKeyword: ((String) -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    var keywordMode by remember { mutableStateOf(false) }
+    var keyword by remember(rawMessage, merchant) {
+        mutableStateOf(IgnoreKeywordSuggester.suggest(rawMessage, merchant))
+    }
+    val canIgnore = !rawMessage.isNullOrBlank()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This can't be undone.")
+                if (canIgnore) {
+                    Text(
+                        "Captured wrongly? You can also stop similar messages from being captured again.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (keywordMode && onDeleteIgnoreKeyword != null) {
+                    OutlinedTextField(
+                        value = keyword,
+                        onValueChange = { keyword = it },
+                        label = { Text("Ignore messages containing") },
+                        supportingText = { Text("Must appear in this message (3+ characters)") },
+                        singleLine = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (canIgnore) {
+                    if (keywordMode && onDeleteIgnoreKeyword != null) {
+                        TextButton(
+                            enabled = IgnoreKeywordSuggester.isValid(keyword, rawMessage),
+                            onClick = { onDeleteIgnoreKeyword(keyword.trim()) },
+                        ) { Text("Delete & ignore \"${keyword.trim()}\"") }
+                    } else {
+                        TextButton(onClick = onDeleteIgnoreSimilar) { Text("Delete & ignore similar") }
+                        if (onDeleteIgnoreKeyword != null) {
+                            TextButton(onClick = { keywordMode = true }) { Text("Delete & ignore containing…") }
+                        }
+                    }
+                }
+                TextButton(onClick = onDelete) { Text("Delete only") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

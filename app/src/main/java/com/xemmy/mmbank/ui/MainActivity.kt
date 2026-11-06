@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
@@ -20,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Column
@@ -45,39 +48,67 @@ import androidx.compose.foundation.layout.Box
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.auth.LockScreen
+import com.xemmy.mmbank.ui.screens.integrity.IntegrityScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
+import com.xemmy.mmbank.ui.screens.copilot.CopilotChatScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
+import com.xemmy.mmbank.ui.screens.report.MonthlyReportScreen
+import com.xemmy.mmbank.ui.screens.bills.BillsScreen
+import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
 import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
+import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailScreen
+import com.xemmy.mmbank.ui.screens.analytics.AnalyticsScreen
+import com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
+import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsScreen
+import com.xemmy.mmbank.ui.screens.settings.AiSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.AppearanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.CategoriesAndPeopleScreen
 import com.xemmy.mmbank.ui.screens.settings.DemoSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.DesignSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
+import com.xemmy.mmbank.ui.screens.settings.ImportMessagesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SecuritySettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
+import com.xemmy.mmbank.ui.screens.splits.GroupDetailScreen
+import com.xemmy.mmbank.ui.screens.splits.SplitsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
+import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
+import com.xemmy.mmbank.ui.theme.ambientBackground
 import kotlinx.coroutines.delay
 
 // FragmentActivity (not ComponentActivity) because BiometricPrompt requires
 // a fragment host; it is a ComponentActivity subclass, so setContent and the
 // rest of the Compose wiring are unaffected.
 class MainActivity : FragmentActivity() {
+
+    companion object {
+        /** Set by the Daily Budget Glance widget's shortcut button — see DailyBudgetWidget.kt. */
+        const val EXTRA_OPEN_UNCATEGORIZED = "open_uncategorized"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as MMBankApp).container
         val biometricAuth = BiometricAuthManagerImpl(this)
+        val openUncategorizedQueue = intent?.getBooleanExtra(EXTRA_OPEN_UNCATEGORIZED, false) == true
         setContent {
-            MMbankTheme {
+            val designMode by container.designMode.collectAsStateWithLifecycle()
+            MMbankTheme(designMode = designMode) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
+                val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
                 Box {
-                    MMbankApp()
+                    MMbankApp(openUncategorizedQueue = openUncategorizedQueue, backgroundStyle = backgroundStyle)
                     // Opaque gate over (not instead of) the app so navigation
                     // and screen state survive a lock/unlock round-trip.
                     if (locked) {
@@ -112,13 +143,20 @@ private data class TopLevelDestination(
     val childRoutePrefixes: List<String> = emptyList(),
 )
 
+/** Activity, pre-filtered to transactions that belong to no account. */
+private const val UNASSIGNED_ACTIVITY_ROUTE = "transactions?accountFilter=unassigned"
+
 // Five destinations, Material 3's sweet spot. Rules lives under Settings and
 // Rewards under the Dashboard tab, so neither crowds the bar.
 private val topLevelDestinations = listOf(
     TopLevelDestination("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
     TopLevelDestination(
+        // The Activity route carries an optional accountFilter arg, so the
+        // current route reads as "transactions?accountFilter={...}" when
+        // deep-linked -- the prefix is what keeps the tab highlighted.
         "transactions", "Activity",
         Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong,
+        childRoutePrefixes = listOf("transactions"),
     ),
     TopLevelDestination(
         "insights", "Dashboard", Icons.Filled.Insights, Icons.Outlined.Insights,
@@ -135,7 +173,7 @@ private val topLevelDestinations = listOf(
 )
 
 @Composable
-fun MMbankApp() {
+fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: BackgroundStyle = BackgroundStyle.MINIMAL_SLATE) {
     val context = LocalContext.current
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -156,7 +194,14 @@ fun MMbankApp() {
         Diagnostics.clearCrashStreak(context)
     }
 
+    // Daily Budget widget's "Review uncategorized" shortcut (see MainActivity.EXTRA_OPEN_UNCATEGORIZED).
+    LaunchedEffect(openUncategorizedQueue) {
+        if (openUncategorizedQueue) navController.navigate("uncategorized_queue")
+    }
+
     Scaffold(
+        modifier = Modifier.fillMaxSize().ambientBackground(backgroundStyle),
+        containerColor = Color.Transparent,
         bottomBar = {
             NavigationBar {
                 topLevelDestinations.forEach { dest ->
@@ -185,6 +230,14 @@ fun MMbankApp() {
                                 maxLines = 1,
                             )
                         },
+                        // Pinned explicitly (Material3 1.4 changed the selected-label
+                        // default to secondary) so the bottom bar's look is unaffected
+                        // by the Compose BOM bump, in both Classic and Premium.
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
                     )
                 }
             }
@@ -229,13 +282,96 @@ private fun AppNavHost(
         startDestination = startDestination,
         modifier = modifier,
     ) {
-        composable("home") { DashboardScreen() }
-        composable("transactions") { TransactionsScreen() }
-        composable("insights") {
-            InsightsScreen(onOpenRewards = { navController.navigate("cashback") })
+        composable("home") {
+            DashboardScreen(
+                onOpenReview = { navController.navigate("review_transactions") },
+                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+            )
         }
-        composable("accounts") { AccountsScreen() }
+        // The optional arg lets Home and Accounts deep-link straight into the
+        // "Unassigned" account filter the Activity tab already has. Query args
+        // are optional, so the bottom bar's plain navigate("transactions")
+        // still matches this route.
+        composable(
+            route = "transactions?accountFilter={accountFilter}",
+            arguments = listOf(
+                navArgument("accountFilter") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { entry ->
+            TransactionsScreen(
+                initialAccountFilter = entry.arguments?.getString("accountFilter").orEmpty(),
+                onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") },
+                onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
+            )
+        }
+        composable("uncategorized_queue") {
+            UncategorizedQueueScreen(onBack = { navController.popBackStack() })
+        }
+        composable("review_transactions") {
+            ReviewTransactionsScreen(onBack = { navController.popBackStack() })
+        }
+        composable("integrity_check") {
+            IntegrityScreen(
+                onBack = { navController.popBackStack() },
+                onOpenAccounts = { navController.navigate("accounts") },
+                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+            )
+        }
+        composable("insights") {
+            InsightsScreen(
+                onOpenRewards = { navController.navigate("cashback") },
+                onOpenSubscriptions = { navController.navigate("subscriptions") },
+                onOpenAnalytics = { navController.navigate("analytics") },
+                onOpenGoals = { navController.navigate("goals") },
+                onOpenBudgets = { navController.navigate("categories") },
+                onOpenReport = { navController.navigate("monthly_report") },
+                onOpenCopilot = { navController.navigate("copilot") },
+                onOpenBills = { navController.navigate("bills") },
+                onOpenSplits = { navController.navigate("splits") },
+            )
+        }
+        composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
+        composable("accounts") {
+            AccountsScreen(
+                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+                onOpenIntegrity = { navController.navigate("integrity_check") },
+            )
+        }
         composable("cashback") { CashbackScreen() }
+        composable("subscriptions") {
+            SubscriptionsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
+            )
+        }
+        composable("goals") { GoalsScreen(onBack = { navController.popBackStack() }) }
+        composable("bills") { BillsScreen(onBack = { navController.popBackStack() }) }
+        composable("splits") {
+            SplitsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenGroup = { groupId -> navController.navigate("splits_group/$groupId") },
+            )
+        }
+        composable(
+            route = "splits_group/{groupId}",
+            arguments = listOf(navArgument("groupId") { type = NavType.LongType }),
+        ) {
+            GroupDetailScreen(onBack = { navController.popBackStack() })
+        }
+        composable("categories") {
+            CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)
+        }
+        composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
+        composable(
+            route = "merchant_detail/{merchant}",
+            arguments = listOf(navArgument("merchant") { type = NavType.StringType }),
+        ) {
+            MerchantDetailScreen(onBack = { navController.popBackStack() })
+        }
+        composable("copilot") { CopilotChatScreen(onBack = { navController.popBackStack() }) }
         composable("rules") {
             RulesScreen(
                 onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },
@@ -252,11 +388,18 @@ private fun AppNavHost(
             SettingsScreen(onOpen = { route -> navController.navigate(route) })
         }
         composable("settings_capture") { CaptureSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_import") { ImportMessagesSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_prefs") { PreferencesSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_categories_people") {
+            CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)
+        }
         composable("settings_binance") { BinanceSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_backup") { BackupSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_security") { SecuritySettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_ai") { AiSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_design") { DesignSettingsScreen(onBack = { navController.popBackStack() }) }
+        composable("settings_appearance") { AppearanceSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_demo") { DemoSettingsScreen(onBack = { navController.popBackStack() }) }
     }
 }

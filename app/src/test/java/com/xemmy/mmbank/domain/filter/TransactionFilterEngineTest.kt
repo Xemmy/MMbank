@@ -42,6 +42,7 @@ class TransactionFilterEngineTest {
         direction: TransactionDirection = TransactionDirection.DEBIT,
         accountId: Long? = null,
         category: SpendingCategory = SpendingCategory.GROCERIES,
+        categoryId: Long? = null,
         source: TransactionSource = TransactionSource.SMS,
         excluded: Boolean = false,
         merchant: String? = null,
@@ -59,6 +60,7 @@ class TransactionFilterEngineTest {
         timestampMillis = date.atTime(timeOfDayHour, 0).atZone(zone).toInstant().toEpochMilli(),
         matchedRuleName = matchedRuleName,
         spendingCategory = category,
+        categoryId = categoryId,
         person = person,
         excludeFromStats = excluded,
     )
@@ -227,6 +229,25 @@ class TransactionFilterEngineTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `kind filter isolates card payments, refunds and the rest`() {
+        val spend = tx()
+        val cardPayment = tx().copy(kind = com.xemmy.mmbank.domain.model.TransactionKind.CARD_PAYMENT)
+        val refund = tx(direction = TransactionDirection.CREDIT)
+            .copy(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)
+        val all = listOf(spend, cardPayment, refund)
+        assertEquals(
+            listOf(cardPayment.id),
+            filter(all, ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.CARD_PAYMENT)).map { it.id },
+        )
+        assertEquals(
+            listOf(refund.id),
+            filter(all, ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)).map { it.id },
+        )
+        assertEquals(3, filter(all, ActivityFilters()).size)
+        assertTrue(ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.SPEND).active)
+    }
+
+    @Test
     fun `source filter isolates each capture source`() {
         val manual = tx(source = TransactionSource.MANUAL)
         val sms = tx(source = TransactionSource.SMS)
@@ -269,12 +290,12 @@ class TransactionFilterEngineTest {
 
     @Test
     fun `triage keeps uncategorized rows and balance adjustments, drops the rest`() {
-        val uncategorized = tx(category = SpendingCategory.UNCATEGORIZED)
+        val uncategorized = tx(categoryId = null)
         val adjustment = tx(
-            category = SpendingCategory.OTHER,
+            categoryId = 1L,
             matchedRuleName = BALANCE_ADJUSTMENT_RULE_NAME,
         )
-        val done = tx(category = SpendingCategory.DINING)
+        val done = tx(categoryId = 1L)
         val visible = filter(listOf(uncategorized, adjustment, done), ActivityFilters(triageOnly = true))
         assertEquals(setOf(uncategorized.id, adjustment.id), visible.map { it.id }.toSet())
     }
@@ -285,7 +306,7 @@ class TransactionFilterEngineTest {
         // triage predicate keys on. If either side drifts, this fails.
         val adjustment = buildBalanceAdjustment(
             account = tabby,
-            computedBalance = 100.0,
+            computedBalance = BigDecimal("100.00"),
             targetBalance = BigDecimal("250.00"),
         )
         assertTrue(TransactionFilterEngine.needsTriage(adjustment!!))
@@ -367,5 +388,55 @@ class TransactionFilterEngineTest {
         assertTrue(ActivityFilters(maxAmount = BigDecimal.TEN).active)
         assertTrue(ActivityFilters(source = TransactionSource.MANUAL).active)
         assertTrue(ActivityFilters(analyticsStatus = AnalyticsStatusFilter.EXCLUDED_ONLY).active)
+    }
+
+    @Test
+    fun `active secondary filter count - zero when nothing beyond time-type-account is set`() {
+        assertEquals(0, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters()))
+        // Date range and direction aren't "secondary" -- they get their own chips.
+        assertEquals(
+            0,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(dateRange = DateRangeFilter.Past7Days, direction = TransactionDirection.DEBIT)
+            ),
+        )
+    }
+
+    @Test
+    fun `active secondary filter count - counts each dimension once, min and max amount as one`() {
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(person = PersonFilter.Unassigned)),
+        )
+        assertEquals(1, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(triageOnly = true)))
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(minAmount = BigDecimal.ONE)),
+        )
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(minAmount = BigDecimal.ONE, maxAmount = BigDecimal.TEN)
+            ),
+        )
+        assertEquals(
+            1,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)
+            ),
+        )
+        assertEquals(
+            6,
+            TransactionFilterEngine.activeSecondaryFilterCount(
+                ActivityFilters(
+                    person = PersonFilter.Specific("Ahmed"),
+                    triageOnly = true,
+                    minAmount = BigDecimal.ONE,
+                    source = TransactionSource.MANUAL,
+                    kind = com.xemmy.mmbank.domain.model.TransactionKind.CARD_PAYMENT,
+                    analyticsStatus = AnalyticsStatusFilter.EXCLUDED_ONLY,
+                )
+            ),
+        )
     }
 }

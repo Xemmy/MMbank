@@ -44,11 +44,22 @@ class TransactionParser(
         rules.withIndex().filter { it.value.signatures.isNotEmpty() }
 
     fun parse(message: CapturedMessage): ParsedTransaction? {
-        val text = TextNormalizer.normalize(
-            listOfNotNull(message.title, message.body)
-                .filter { it.isNotBlank() }
-                .joinToString(" ")
-        )
+        val parsed = parseCore(message) ?: return null
+        // The balance the bank printed alongside the transaction. Added after
+        // the amount is settled and independent of every rule, so it can only
+        // add information, never change what was parsed.
+        val balance = BalanceExtractor.extract(normalizedText(message), parsed.currencyCode) ?: return parsed
+        return parsed.copy(reportedBalance = balance.value, reportedBalanceKind = balance.kind)
+    }
+
+    private fun normalizedText(message: CapturedMessage): String = TextNormalizer.normalize(
+        listOfNotNull(message.title, message.body)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+    )
+
+    private fun parseCore(message: CapturedMessage): ParsedTransaction? {
+        val text = normalizedText(message)
         if (text.isBlank()) return null
 
         routeBySignature(message, text)?.let { return it }
@@ -107,6 +118,7 @@ class TransactionParser(
                 accountNumberSuffix = accountNumberSuffix,
                 category = rule.category,
                 assignAccountId = rule.assignAccountId,
+                kindOverride = rule.assignKind,
             )
         }
 
@@ -201,6 +213,7 @@ class TransactionParser(
             accountNumberSuffix = GenericExtractors.extractAccountSuffix(text),
             category = winner.rule.category,
             assignAccountId = winner.rule.assignAccountId,
+            kindOverride = winner.rule.assignKind,
         )
     }
 

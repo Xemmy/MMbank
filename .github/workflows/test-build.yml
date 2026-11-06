@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   lint-and-unit-tests:
     name: Lint & Unit Tests
@@ -64,9 +67,16 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      # packages: '' is load-bearing. Without it the action runs
+      # `sdkmanager tools` by default, and Google has removed the obsolete
+      # `tools` package from the SDK repository -- so the step dies with
+      # "Warning: Failed to find package 'tools'" before a single Gradle task
+      # runs, taking the whole gating build with it. The runner image already
+      # ships the SDK, so skipping the default install costs nothing.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
+          packages: ''
           api-levels: '35'
           ndk-version: '26.1.10909125'
 
@@ -172,6 +182,28 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      # Merges to main get a durable, non-expiring download link -- the
+      # 7-day artifact above is for quick access to in-progress claude/**
+      # builds, not for something you'd want to sideload weeks later.
+      - name: Extract version for release
+        id: version
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          echo "tag=v$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: MMbank ${{ steps.version.outputs.tag }} (build ${{ steps.version.outputs.code }})
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload build logs
         if: always()

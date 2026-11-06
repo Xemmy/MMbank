@@ -2,8 +2,6 @@
 Android personal-finance app. Kotlin, Jetpack Compose, Room, MVVM.
 
 ## Environment — CRITICAL
-- NO Android SDK in this sandbox. Gradle downloads are blocked (403).
-  NEVER run gradle build/test/run locally.
 - Verification happens ONLY via GitHub Actions
   (.github/workflows/test-build.yml) after pushing to the remote branch.
 - Workflow: write code + pure-JVM unit tests -> push -> read CI results.
@@ -34,6 +32,11 @@ alone.**
   Any field added to one must be added to all three, with a mapper
   round-trip unit test.
 - Every new piece of logic gets a pure-JVM unit test in the same commit.
+- Bump the app version on every functional update: `versionCode`/`versionName`
+  in app/build.gradle.kts. Increment `versionCode` by 1 each time; move
+  `versionName` by patch for fixes (0.3.0 -> 0.3.1), minor for new features
+  (0.3.1 -> 0.4.0). Do it in the same commit as the change. Pure test/docs/CI
+  edits with no APK-behavior change don't need one.
 - MMbank-PHASED-UPGRADE-PLAN.md (Phases 0-6) is complete — see
   MMbank-HANDOVER.md for that state. Further work proceeds directly per user
   request, not phase-gated; the conventions on this page still apply to it.

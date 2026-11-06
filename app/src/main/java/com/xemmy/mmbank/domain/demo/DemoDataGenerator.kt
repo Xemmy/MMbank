@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.demo
 
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
@@ -42,9 +43,15 @@ object DemoDataGenerator {
         val rules: List<ParsingRuleEntity>,
         private val pending: List<PendingTransaction>,
     ) {
-        /** Resolves each demo transaction's temp account key to the real inserted row id. */
-        fun transactions(idByKey: Map<Int, Long>): List<TransactionEntity> =
-            pending.map { it.toEntity(idByKey.getValue(it.accountKey)) }
+        /**
+         * Resolves each demo transaction's temp account key to the real
+         * inserted row id, and its [SpendingCategory] to a dynamic category id
+         * (see [com.xemmy.mmbank.domain.model.CategoryMigrationMapping]) when
+         * the caller supplies one -- so demo mode showcases the unified
+         * Categories screen the same way real captured transactions do.
+         */
+        fun transactions(idByKey: Map<Int, Long>, categoryIdByEnum: Map<SpendingCategory, Long> = emptyMap()): List<TransactionEntity> =
+            pending.map { it.toEntity(idByKey.getValue(it.accountKey), categoryIdByEnum[it.spendingCategory]) }
     }
 
     internal data class PendingTransaction(
@@ -59,7 +66,7 @@ object DemoDataGenerator {
         val createdAt: Long,
         val person: String? = null,
     ) {
-        fun toEntity(accountId: Long) = TransactionEntity(
+        fun toEntity(accountId: Long, categoryId: Long? = null) = TransactionEntity(
             accountId = accountId,
             amount = amount,
             currencyCode = currencyCode,
@@ -70,8 +77,14 @@ object DemoDataGenerator {
             createdAt = createdAt,
             category = category,
             spendingCategory = spendingCategory,
+            categoryId = categoryId,
             person = person,
             isDemo = true,
+            kind = when {
+                category == TransactionCategory.CASHBACK_EARNED -> TransactionKind.CASHBACK
+                spendingCategory == SpendingCategory.TRANSFERS -> TransactionKind.TRANSFER
+                else -> TransactionKind.defaultFor(direction)
+            },
         )
     }
 

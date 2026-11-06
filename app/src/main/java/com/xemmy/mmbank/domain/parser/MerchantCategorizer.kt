@@ -65,6 +65,84 @@ object MerchantCategorizer {
         ),
     )
 
+    /**
+     * Brands shorter than this are never collapsed onto. "kfc", "nol", "rta",
+     * "osn", "vox", "ace" are real brands but also common letter runs, and a
+     * wrong merge is far worse than a missed one -- they still categorize fine.
+     */
+    internal const val MIN_BRAND_LENGTH = 4
+
+    /**
+     * The subset of [rules]' vocabulary that is a proper-noun BRAND, curated by
+     * hand.
+     *
+     * The keyword lists above are half brands ("carrefour", "adnoc") and half
+     * generic category words ("mart", "store", "mall", "coop", "parking",
+     * "hotel", "cafe"). Both are fine for guessing a *category* -- a place with
+     * "store" in its name probably is shopping. Neither is fine for collapsing
+     * two merchant names onto one identity, which is what
+     * [MerchantNormalizer] uses this for: collapsing on "store" would file
+     * every unrelated shop in the ledger under one merchant.
+     *
+     * Entries that are also common substrings of unrelated venue names are
+     * deliberately absent -- see [MerchantNormalizer.COLLAPSE_BLOCKLIST] for
+     * the ones that had to be excluded explicitly rather than simply not
+     * listed ("emirates" is an airline AND a mall AND a bank).
+     *
+     * Names containing a dot ("apple.com", "booking.com") are also absent: the
+     * normalizer splits on punctuation, so such a token could never match.
+     */
+    private val BRAND_TOKEN_SET = setOf(
+        // Groceries
+        "carrefour", "lulu", "spinneys", "waitrose", "choithram", "union coop",
+        "west zone", "grandiose", "aswaaq", "nesto",
+        // Fuel
+        "adnoc", "enoc", "eppco", "emarat",
+        // Transport
+        "careem", "uber", "salik", "yango",
+        // Dining
+        "talabat", "deliveroo", "zomato", "noon food", "starbucks", "mcdonald",
+        "tim horton",
+        // Entertainment
+        "netflix", "spotify", "youtube", "itunes", "google play", "playstation",
+        "xbox", "disney", "shahid", "anghami", "twitch",
+        // Utilities
+        "dewa", "sewa", "addc", "fewa", "etisalat",
+        // Health
+        "medcare", "healthhub", "life pharmacy", "bin sina",
+        // Travel
+        "etihad", "flydubai", "air arabia", "airbnb", "agoda", "expedia", "wizz",
+        "qatar airways",
+        // Shopping
+        "amazon", "namshi", "sharaf dg", "ikea", "zara", "centrepoint", "shein",
+        "nike", "adidas", "jumbo",
+        // Transfers
+        "western union",
+    )
+
+    /**
+     * Brand tokens [MerchantNormalizer] may collapse a merchant key onto,
+     * longest first so "union coop" is tried before "coop" and "noon food"
+     * before "noon".
+     *
+     * Derived by filtering [rules] rather than duplicating it, so this can only
+     * ever contain vocabulary [categorize] also knows about -- and
+     * `MerchantCategorizerBrandsTest` fails if an entry in [BRAND_TOKEN_SET]
+     * stops matching anything, which is what would otherwise let a typo here
+     * silently shrink the list.
+     */
+    val BRAND_TOKENS: List<String> = rules
+        .flatMap { it.second }
+        .filter { it in BRAND_TOKEN_SET && it.length >= MIN_BRAND_LENGTH }
+        .distinct()
+        .sortedByDescending { it.length }
+
+    /** Everything [categorize] matches on, for cross-checking [BRAND_TOKEN_SET]. */
+    internal val keywordVocabulary: Set<String> = rules.flatMap { it.second }.toSet()
+
+    /** Curated brands, for the same cross-check. */
+    internal val curatedBrandTokens: Set<String> = BRAND_TOKEN_SET
+
     fun categorize(merchant: String?, rawText: String? = null): SpendingCategory {
         val haystack = buildString {
             merchant?.let { append(it).append(' ') }
