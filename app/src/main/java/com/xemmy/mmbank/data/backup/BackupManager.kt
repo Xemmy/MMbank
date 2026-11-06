@@ -5,6 +5,7 @@ import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
@@ -187,6 +188,9 @@ data class BackupPayload(
      *
      * 9 = adds [BackupTransaction.reportedBalance]/[BackupTransaction.reportedBalanceKind].
      * No gate: an older row simply has no bank-reported balance.
+     *
+     * 10 = adds [ignoredKeywords]. Gated like the ignore list: a pre-v10
+     * backup never held them, so restoring one must leave this device's alone.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -203,6 +207,7 @@ data class BackupPayload(
     val ignoredMessagePatterns: List<BackupIgnoredMessagePattern> = emptyList(),
     val merchantAccountMappings: List<BackupMerchantAccountMapping> = emptyList(),
     val merchantKindMappings: List<BackupMerchantKindMapping> = emptyList(),
+    val ignoredKeywords: List<BackupIgnoredKeyword> = emptyList(),
 )
 
 /** A learned merchant -> kind rule; see [BackupPayload.formatVersion] 7. */
@@ -220,6 +225,13 @@ data class BackupMerchantAccountMapping(
     val id: Long,
     val merchantPattern: String,
     val accountId: Long,
+    val createdAt: Long,
+)
+
+@Serializable
+data class BackupIgnoredKeyword(
+    val id: Long,
+    val keyword: String,
     val createdAt: Long,
 )
 
@@ -249,7 +261,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 9,
+            formatVersion = 10,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -263,6 +275,7 @@ class BackupManager(
             ignoredMessagePatterns = database.ignoredMessagePatternDao().getAll().map { it.toBackup() },
             merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
             merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
+            ignoredKeywords = database.ignoredKeywordDao().getAll().map { it.toBackup() },
         )
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
@@ -325,6 +338,7 @@ class BackupManager(
         val hasAccountMappings = payload.formatVersion >= 5
         // And for the learned merchant -> kind rules.
         val hasKindMappings = payload.formatVersion >= 7
+        val hasIgnoredKeywords = payload.formatVersion >= 10
         database.withTransaction {
             database.transactionDao().clearAll()
             database.accountDao().clearAll()
@@ -364,6 +378,11 @@ class BackupManager(
                 database.ignoredMessagePatternDao().insertAll(
                     payload.ignoredMessagePatterns.map { it.toEntity() }
                 )
+            }
+
+            if (hasIgnoredKeywords) {
+                database.ignoredKeywordDao().clearAll()
+                database.ignoredKeywordDao().insertAll(payload.ignoredKeywords.map { it.toEntity() })
             }
 
             if (hasAccountMappings) {
@@ -657,5 +676,17 @@ internal fun BackupIgnoredMessagePattern.toEntity() = IgnoredMessagePatternEntit
     id = id,
     fingerprint = fingerprint,
     sample = sample,
+    createdAt = createdAt,
+)
+
+internal fun IgnoredKeywordEntity.toBackup() = BackupIgnoredKeyword(
+    id = id,
+    keyword = keyword,
+    createdAt = createdAt,
+)
+
+internal fun BackupIgnoredKeyword.toEntity() = IgnoredKeywordEntity(
+    id = id,
+    keyword = keyword,
     createdAt = createdAt,
 )

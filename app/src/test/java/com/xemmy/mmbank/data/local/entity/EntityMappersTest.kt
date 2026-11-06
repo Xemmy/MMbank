@@ -10,6 +10,7 @@ import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExpenseSplit
 import com.xemmy.mmbank.domain.model.Friend
 import com.xemmy.mmbank.domain.model.GroupExpense
+import com.xemmy.mmbank.domain.model.IgnoredKeyword
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -669,6 +670,12 @@ class EntityMappersTest {
         // The verbatim sample is what the list shows and what fuzzy matching
         // re-reads, so it must survive untouched -- punctuation included.
         assertEquals("Enjoy 50% off at Noon this weekend!", roundTripped.sample)
+    }
+
+    @Test
+    fun `ignored keyword round-trip preserves every field`() {
+        val original = IgnoredKeyword(id = 4, keyword = "promo", createdAt = 1_700_000_000_000)
+        assertEquals(original, original.toEntity().toDomain())
     }
 
     @Test

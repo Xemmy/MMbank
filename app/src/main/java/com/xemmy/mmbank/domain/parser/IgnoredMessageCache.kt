@@ -1,6 +1,8 @@
 package com.xemmy.mmbank.domain.parser
 
+import com.xemmy.mmbank.domain.model.IgnoredKeyword
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
+import com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository
 import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,7 +25,13 @@ import kotlinx.coroutines.flow.stateIn
 class IgnoredMessageCache(
     repository: IgnoredMessageRepository,
     scope: CoroutineScope,
+    keywordRepository: IgnoredKeywordRepository? = null,
 ) {
+
+    private val keywords: StateFlow<List<IgnoredKeyword>?> =
+        (keywordRepository?.observeAll() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .catch { emit(emptyList()) }
+            .stateIn(scope, SharingStarted.Eagerly, null)
 
     private val patterns: StateFlow<List<IgnoredMessagePattern>?> = repository.observeAll()
         // A DB hiccup must never kill capture: an empty list just means
@@ -38,7 +46,14 @@ class IgnoredMessageCache(
      * equality, leaving the costlier token overlap
      * ([MessageSimilarity.isSimilar]) for the near-misses.
      */
-    suspend fun shouldIgnore(text: String): Boolean {
+    suspend fun shouldIgnore(text: String, title: String? = null): Boolean {
+        val words = keywords.filterNotNull().first()
+        if (words.isNotEmpty()) {
+            val terms = words.map { it.keyword }
+            if (KeywordMatcher.matches(text, terms) ||
+                (title != null && KeywordMatcher.matches(title, terms))
+            ) return true
+        }
         val stored = patterns.filterNotNull().first()
         if (stored.isEmpty()) return false
         val print = MessageSimilarity.fingerprint(text)

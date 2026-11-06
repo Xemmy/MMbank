@@ -148,6 +148,8 @@ private fun IgnoredTab(viewModel: ImportMessagesViewModel) {
         enabled = !viewModel.busy && viewModel.ignoreInput.isNotBlank(),
     ) { Text("Ignore messages like this") }
 
+    KeywordsSection(viewModel)
+
     if (ignored.isEmpty()) {
         Text(
             "Nothing is being ignored yet.",
@@ -180,6 +182,42 @@ private fun IgnoredTab(viewModel: ImportMessagesViewModel) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeywordsSection(viewModel: ImportMessagesViewModel) {
+    val keywords by viewModel.keywords.collectAsStateWithLifecycle()
+
+    Text(
+        "Or skip any message that contains a word or phrase.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+        value = viewModel.keywordInput,
+        onValueChange = { viewModel.keywordInput = it },
+        label = { Text("Keyword or phrase") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Button(
+        onClick = viewModel::addKeyword,
+        enabled = !viewModel.busy && viewModel.keywordInput.isNotBlank(),
+    ) { Text("Ignore messages containing this") }
+
+    keywords.forEach { item ->
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(item.keyword, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            IconButton(onClick = { viewModel.deleteKeyword(item.id) }, enabled = !viewModel.busy) {
+                Icon(Icons.Filled.Delete, contentDescription = "Stop ignoring keyword")
             }
         }
     }

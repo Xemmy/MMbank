@@ -60,4 +60,13 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalance TEXT",
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
+
+    /** v29 -> v30: the keyword ignore list. Purely additive: one new table. */
+    val MIGRATION_29_30_SQL: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS `ignored_keywords` (" +
+            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+            "`keyword` TEXT NOT NULL, " +
+            "`createdAt` INTEGER NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS index_ignored_keywords_keyword ON ignored_keywords(keyword)",
+    )
 }

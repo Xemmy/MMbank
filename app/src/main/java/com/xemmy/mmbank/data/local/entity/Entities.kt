@@ -91,6 +91,17 @@ data class IgnoredMessagePatternEntity(
     val createdAt: Long,
 )
 
+/** See [com.xemmy.mmbank.domain.model.IgnoredKeyword]. Unique on the lowercased keyword. */
+@Entity(
+    tableName = "ignored_keywords",
+    indices = [Index(value = ["keyword"], unique = true)],
+)
+data class IgnoredKeywordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val keyword: String,
+    val createdAt: Long,
+)
+
 @Entity(
     tableName = "transactions",
     foreignKeys = [
@@ -431,6 +442,18 @@ fun com.xemmy.mmbank.domain.model.IgnoredMessagePattern.toEntity() = IgnoredMess
     id = id,
     fingerprint = fingerprint,
     sample = sample,
+    createdAt = createdAt,
+)
+
+fun IgnoredKeywordEntity.toDomain() = com.xemmy.mmbank.domain.model.IgnoredKeyword(
+    id = id,
+    keyword = keyword,
+    createdAt = createdAt,
+)
+
+fun com.xemmy.mmbank.domain.model.IgnoredKeyword.toEntity() = IgnoredKeywordEntity(
+    id = id,
+    keyword = keyword,
     createdAt = createdAt,
 )
 

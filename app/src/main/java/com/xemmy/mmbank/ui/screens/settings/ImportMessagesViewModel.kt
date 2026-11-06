@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.model.IgnoredKeyword
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.parser.PastedMessageSplitter
 import com.xemmy.mmbank.domain.usecase.ImportPastedMessagesUseCase
@@ -27,6 +28,7 @@ class ImportMessagesViewModel(private val container: AppContainer) : ViewModel()
 
     var importInput by mutableStateOf("")
     var ignoreInput by mutableStateOf("")
+    var keywordInput by mutableStateOf("")
 
     var busy by mutableStateOf(false)
         private set
@@ -41,6 +43,44 @@ class ImportMessagesViewModel(private val container: AppContainer) : ViewModel()
     val ignored: StateFlow<List<IgnoredMessagePattern>> = container.ignoredMessageRepository
         .observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val keywords: StateFlow<List<IgnoredKeyword>> = container.ignoredKeywordRepository
+        .observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addKeyword() {
+        if (busy || keywordInput.isBlank()) return
+        viewModelScope.launch {
+            busy = true
+            runCatching {
+                container.ignoredKeywordRepository.add(keywordInput, System.currentTimeMillis())
+            }.onSuccess { stored ->
+                statusMessage = if (stored) {
+                    keywordInput = ""
+                    "Messages containing that will be skipped from now on"
+                } else {
+                    "Keywords need at least 3 characters"
+                }
+            }.onFailure {
+                container.recordError("ImportMessagesViewModel.addKeyword", it)
+                statusMessage = "Couldn't save: ${it.message}"
+            }
+            busy = false
+        }
+    }
+
+    fun deleteKeyword(id: Long) {
+        if (busy) return
+        viewModelScope.launch {
+            busy = true
+            runCatching { container.ignoredKeywordRepository.delete(id) }
+                .onFailure {
+                    container.recordError("ImportMessagesViewModel.deleteKeyword", it)
+                    statusMessage = "Couldn't remove: ${it.message}"
+                }
+            busy = false
+        }
+    }
 
     /** How many messages the current paste would import, so the button can say so. */
     val pendingCount: Int get() = PastedMessageSplitter.split(importInput).size

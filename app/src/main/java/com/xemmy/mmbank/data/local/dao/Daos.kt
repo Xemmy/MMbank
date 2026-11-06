@@ -13,6 +13,7 @@ import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
@@ -732,4 +733,29 @@ interface GroupExpenseDao {
 
     @Query("SELECT * FROM expense_splits")
     fun observeAllSplits(): Flow<List<ExpenseSplitEntity>>
+}
+
+@Dao
+interface IgnoredKeywordDao {
+
+    @Query("SELECT * FROM ignored_keywords ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<IgnoredKeywordEntity>>
+
+    /** REPLACE on the unique keyword: re-adding refreshes the row, never duplicates it. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: IgnoredKeywordEntity): Long
+
+    @Query("DELETE FROM ignored_keywords WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM ignored_keywords")
+    suspend fun getAll(): List<IgnoredKeywordEntity>
+
+    @Query("DELETE FROM ignored_keywords")
+    suspend fun clearAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<IgnoredKeywordEntity>)
 }

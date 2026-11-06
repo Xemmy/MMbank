@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.backup
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
@@ -323,6 +324,23 @@ class BackupMappersTest {
             pattern,
             json.decodeFromString(BackupIgnoredMessagePattern.serializer(), encoded).toEntity(),
         )
+    }
+
+    @Test
+    fun `an ignored keyword survives the backup round-trip`() {
+        val keyword = IgnoredKeywordEntity(id = 2, keyword = "promo", createdAt = 1_700_000_000_000)
+        assertEquals(keyword, keyword.toBackup().toEntity())
+        val encoded = json.encodeToString(BackupIgnoredKeyword.serializer(), keyword.toBackup())
+        assertEquals(keyword, json.decodeFromString(BackupIgnoredKeyword.serializer(), encoded).toEntity())
+    }
+
+    @Test
+    fun `a pre-v10 payload decodes with no ignored keywords`() {
+        val decoded = json.decodeFromString<BackupPayload>(
+            """{"formatVersion":9,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+               "accounts":[],"transactions":[],"rules":[],"senderLabels":[]}"""
+        )
+        assertEquals(emptyList<BackupIgnoredKeyword>(), decoded.ignoredKeywords)
     }
 
     @Test

@@ -33,6 +33,7 @@ import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.BillRepositoryImpl
 import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
 import com.xemmy.mmbank.data.repository.FriendRepositoryImpl
+import com.xemmy.mmbank.data.repository.IgnoredKeywordRepositoryImpl
 import com.xemmy.mmbank.data.repository.IgnoredMessageRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
@@ -58,6 +59,7 @@ import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.CategoryRepository
 import com.xemmy.mmbank.domain.repository.FriendRepository
+import com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository
 import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
@@ -347,6 +349,10 @@ class AppContainer(context: Context) {
     val senderLabelRepository: SenderLabelRepository by lazy {
         SenderLabelRepositoryImpl(database.senderLabelDao())
     }
+    val ignoredKeywordRepository: IgnoredKeywordRepository by lazy {
+        IgnoredKeywordRepositoryImpl(database.ignoredKeywordDao())
+    }
+
     val ignoredMessageRepository: IgnoredMessageRepository by lazy {
         IgnoredMessageRepositoryImpl(database.ignoredMessagePatternDao())
     }
@@ -402,7 +408,7 @@ class AppContainer(context: Context) {
     }
 
     private val ignoredMessageCache by lazy {
-        IgnoredMessageCache(ignoredMessageRepository, applicationScope)
+        IgnoredMessageCache(ignoredMessageRepository, applicationScope, ignoredKeywordRepository)
     }
 
     /**

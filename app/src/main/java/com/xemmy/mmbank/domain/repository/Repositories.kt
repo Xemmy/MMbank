@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.repository
 
+import com.xemmy.mmbank.domain.model.IgnoredKeyword
 import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AssetBalance
@@ -132,6 +133,22 @@ interface SenderLabelRepository {
     fun observeLabels(): Flow<Map<String, String>>
     suspend fun setLabel(sender: String, label: String)
     suspend fun clearLabel(sender: String)
+}
+
+/** The keywords capture must skip — see [IgnoredKeyword]. */
+interface IgnoredKeywordRepository {
+    fun observeAll(): Flow<List<IgnoredKeyword>>
+    /**
+     * Stores [keyword] (trimmed, lowercased). Returns false, storing nothing,
+     * when it is shorter than [MIN_LENGTH] characters: a one- or two-letter
+     * keyword would mute most real bank messages. Re-adding is a no-op.
+     */
+    suspend fun add(keyword: String, now: Long): Boolean
+    suspend fun delete(id: Long)
+
+    companion object {
+        const val MIN_LENGTH = 3
+    }
 }
 
 /** The message templates capture must skip — see [IgnoredMessagePattern]. */

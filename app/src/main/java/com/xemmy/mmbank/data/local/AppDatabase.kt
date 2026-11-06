@@ -16,6 +16,7 @@ import com.xemmy.mmbank.data.local.dao.CategoryDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.FriendDao
 import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
+import com.xemmy.mmbank.data.local.dao.IgnoredKeywordDao
 import com.xemmy.mmbank.data.local.dao.IgnoredMessagePatternDao
 import com.xemmy.mmbank.data.local.dao.MerchantCategoryDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
@@ -35,6 +36,7 @@ import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
@@ -69,8 +71,9 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         GroupExpenseEntity::class,
         ExpenseSplitEntity::class,
         IgnoredMessagePatternEntity::class,
+        IgnoredKeywordEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -95,6 +98,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun splitGroupDao(): SplitGroupDao
     abstract fun groupExpenseDao(): GroupExpenseDao
     abstract fun ignoredMessagePatternDao(): IgnoredMessagePatternDao
+    abstract fun ignoredKeywordDao(): IgnoredKeywordDao
 
     companion object {
         /**
@@ -774,6 +778,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_28_29_SQL.forEach(db::execSQL)
         }
 
+        /** v29 -> v30: the keyword ignore list (see [MigrationSql.MIGRATION_29_30_SQL]). */
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_29_30_SQL.forEach(db::execSQL)
+        }
+
         /**
          * [factory] swaps in the SQLCipher open helper (see AppContainer);
          * null opens plaintext — the pre-encryption format, kept as the
@@ -790,6 +799,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
+                    MIGRATION_29_30,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

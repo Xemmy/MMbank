@@ -101,6 +101,7 @@ class IngestCapturedMessageUseCaseTest {
     private fun useCase(
         onGate1Miss: (CapturedMessage) -> Unit = {},
         ignoredSamples: List<String> = emptyList(),
+        ignoredKeywords: List<String> = emptyList(),
     ): IngestCapturedMessageUseCase {
         // Unconfined scope: the cache's stateIn collects the fake flow synchronously.
         val scope = CoroutineScope(Dispatchers.Unconfined)
@@ -119,7 +120,16 @@ class IngestCapturedMessageUseCaseTest {
             transactionRepository = recorder,
             onGate1Miss = onGate1Miss,
             fallbackCurrencyProvider = { "USD" },
-            ignoredMessages = IgnoredMessageCache(FakeIgnoredMessageRepository(ignored), scope),
+            ignoredMessages = IgnoredMessageCache(
+                FakeIgnoredMessageRepository(ignored),
+                scope,
+                object : com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository {
+                    override fun observeAll(): Flow<List<com.xemmy.mmbank.domain.model.IgnoredKeyword>> =
+                        flowOf(ignoredKeywords.mapIndexed { i, w -> com.xemmy.mmbank.domain.model.IgnoredKeyword(i + 1L, w, 0L) })
+                    override suspend fun add(keyword: String, now: Long) = true
+                    override suspend fun delete(id: Long) = Unit
+                },
+            ),
         )
     }
 
@@ -354,6 +364,20 @@ class IngestCapturedMessageUseCaseTest {
         val result = uc.invoke(push("com.adcb.bank", "Your OTP is 112233. Valid for 9 minutes."))
         assertEquals(IngestResult.Ignored, result)
         assertNull(recorder.lastParsed)
+    }
+
+    @Test
+    fun `a message containing an ignored keyword never reaches the ledger`() = runBlocking {
+        val uc = useCase(ignoredKeywords = listOf("carrefour"))
+        assertEquals(IngestResult.Ignored, uc.invoke(push("com.adcb.bank", bankStyleBody)))
+        assertNull(recorder.lastParsed)
+    }
+
+    @Test
+    fun `an ignored keyword in the title alone also mutes the message`() = runBlocking {
+        val uc = useCase(ignoredKeywords = listOf("promo"))
+        val result = uc.invoke(push("com.adcb.bank", bankStyleBody, title = "Promo"))
+        assertEquals(IngestResult.Ignored, result)
     }
 
     @Test

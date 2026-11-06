@@ -73,7 +73,7 @@ class IngestCapturedMessageUseCase(
         // Deliberately after the digit check, not before it: a digit-free
         // message is already leaving as NoMatch, so muting it would change
         // nothing while costing every chat notification a fingerprint pass.
-        if (ignoredMessages?.shouldIgnore(message.body) == true) return IngestResult.Ignored
+        if (ignoredMessages?.shouldIgnore(message.body, message.title) == true) return IngestResult.Ignored
 
         val custom = customRules.enabledRules()
         val sender = message.sender

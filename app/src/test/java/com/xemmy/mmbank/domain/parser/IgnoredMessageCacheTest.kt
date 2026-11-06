@@ -1,6 +1,8 @@
 package com.xemmy.mmbank.domain.parser
 
+import com.xemmy.mmbank.domain.model.IgnoredKeyword
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
+import com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository
 import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +42,31 @@ class IgnoredMessageCacheTest {
     // Unconfined scope: the cache's stateIn collects the fake flow synchronously.
     private fun cache(repository: IgnoredMessageRepository = FakeRepository(flow)) =
         IgnoredMessageCache(repository, CoroutineScope(Dispatchers.Unconfined))
+
+    private class FakeKeywords(words: List<String>) : IgnoredKeywordRepository {
+        private val items = words.mapIndexed { i, w -> IgnoredKeyword(i + 1L, w, 0L) }
+        override fun observeAll(): Flow<List<IgnoredKeyword>> = MutableStateFlow(items)
+        override suspend fun add(keyword: String, now: Long) = true
+        override suspend fun delete(id: Long) = Unit
+    }
+
+    private fun keywordCache(vararg words: String) =
+        IgnoredMessageCache(FakeRepository(flow), CoroutineScope(Dispatchers.Unconfined), FakeKeywords(words.toList()))
+
+    @Test
+    fun `a keyword matches case-insensitively in the body`() = runBlocking {
+        assertTrue(keywordCache("promo").shouldIgnore("Special PROMO: spent AED 50 at Noon"))
+    }
+
+    @Test
+    fun `a keyword also matches in the title`() = runBlocking {
+        assertTrue(keywordCache("promo").shouldIgnore("AED 50 at Noon", title = "Promo alert"))
+    }
+
+    @Test
+    fun `a text without any keyword is not ignored`() = runBlocking {
+        assertFalse(keywordCache("promo").shouldIgnore("Spent AED 50 at Noon", title = "Card alert"))
+    }
 
     @Test
     fun `an empty list ignores nothing`() = runBlocking {

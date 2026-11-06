@@ -387,6 +387,18 @@ data class IgnoredMessagePattern(
 )
 
 /**
+ * A word or phrase the user muted: any captured message (title or body)
+ * containing [keyword], case-insensitively, is skipped. The coarser sibling of
+ * [IgnoredMessagePattern], for "anything mentioning X" rather than "this
+ * template". [keyword] is stored trimmed and lowercased.
+ */
+data class IgnoredKeyword(
+    val id: Long = 0,
+    val keyword: String,
+    val createdAt: Long,
+)
+
+/**
  * Bank account details extracted from pasted text by [com.xemmy.mmbank.domain.parser.BankDetailsParser].
  * Every field is optional; the importer fills in whatever it can recognise.
  */

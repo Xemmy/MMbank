@@ -5,6 +5,7 @@ import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.FriendDao
 import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
+import com.xemmy.mmbank.data.local.dao.IgnoredKeywordDao
 import com.xemmy.mmbank.data.local.dao.IgnoredMessagePatternDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
 import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
@@ -13,6 +14,7 @@ import com.xemmy.mmbank.data.local.dao.SplitGroupDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
+import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
@@ -27,6 +29,7 @@ import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ExpenseSplit
 import com.xemmy.mmbank.domain.model.Friend
 import com.xemmy.mmbank.domain.model.GroupExpense
+import com.xemmy.mmbank.domain.model.IgnoredKeyword
 import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
@@ -36,6 +39,7 @@ import com.xemmy.mmbank.domain.parser.MessageSimilarity
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
 import com.xemmy.mmbank.domain.repository.FriendRepository
+import com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository
 import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
@@ -140,6 +144,23 @@ class IgnoredMessageRepositoryImpl(
         dao.upsert(
             IgnoredMessagePatternEntity(fingerprint = fingerprint, sample = trimmed, createdAt = now),
         )
+        return true
+    }
+
+    override suspend fun delete(id: Long) = dao.deleteById(id)
+}
+
+class IgnoredKeywordRepositoryImpl(
+    private val dao: IgnoredKeywordDao,
+) : IgnoredKeywordRepository {
+
+    override fun observeAll(): Flow<List<IgnoredKeyword>> =
+        dao.observeAll().map { list -> list.map(IgnoredKeywordEntity::toDomain) }
+
+    override suspend fun add(keyword: String, now: Long): Boolean {
+        val normalized = keyword.trim().lowercase()
+        if (normalized.length < IgnoredKeywordRepository.MIN_LENGTH) return false
+        dao.upsert(IgnoredKeywordEntity(keyword = normalized, createdAt = now))
         return true
     }
 

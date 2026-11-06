@@ -137,6 +137,7 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.parser.GenericExtractors
+import com.xemmy.mmbank.domain.parser.IgnoreKeywordSuggester
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.domain.usecase.FieldUpdate
@@ -170,6 +171,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -589,6 +591,29 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     fun delete(transactionId: Long) =
         safeWrite("delete") { container.transactionRepository.delete(transactionId) }
 
+    /** Deletes [tx] and mutes messages shaped like its original text. */
+    fun deleteAndIgnoreSimilar(tx: Transaction) = safeWrite("deleteAndIgnoreSimilar") {
+        tx.rawMessage?.let { container.ignoredMessageRepository.add(it, System.currentTimeMillis()) }
+        container.transactionRepository.delete(tx.id)
+    }
+
+    /** Deletes [tx] and mutes every future message containing [keyword]. */
+    fun deleteAndIgnoreKeyword(tx: Transaction, keyword: String) = safeWrite("deleteAndIgnoreKeyword") {
+        container.ignoredKeywordRepository.add(keyword, System.currentTimeMillis())
+        container.transactionRepository.delete(tx.id)
+    }
+
+    /** Bulk variant of [deleteAndIgnoreSimilar]: mutes the template of every selected message. */
+    fun bulkDeleteAndIgnoreSimilar() = safeWrite("bulkDeleteAndIgnoreSimilar") {
+        val ids = bulkMode.value.selectedIds
+        val now = System.currentTimeMillis()
+        container.transactionRepository.observeTransactions().first()
+            .filter { it.id in ids }
+            .forEach { tx -> tx.rawMessage?.let { container.ignoredMessageRepository.add(it, now) } }
+        container.bulkUpdateTransactions.delete(ids.toList())
+        bulkMode.value = BulkModeState()
+    }
+
     /** Persists a brand-new dynamic category and returns it (id included) -- for the editor's "+ New" chip. */
     suspend fun createCategory(
         name: String,
@@ -748,6 +773,7 @@ fun TransactionsScreen(
     var addOpen by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
+    var deleteTarget by remember { mutableStateOf<Transaction?>(null) }
     // Dynamic-category picker target: set by either an end-to-start swipe (see
     // SwipeToActionBox) or tapping a row's category chip, cleared once a
     // category is picked/created or the picker is dismissed.
@@ -833,6 +859,7 @@ fun TransactionsScreen(
                     onAssignPerson = { person -> viewModel.bulkSetPerson(person) },
                     onExclude = { viewModel.bulkSetExcludeFromStats(true) },
                     onDelete = { viewModel.bulkDelete() },
+                    onDeleteIgnoreSimilar = { viewModel.bulkDeleteAndIgnoreSimilar() },
                     onClose = { viewModel.exitBulkMode() },
                 )
             } else {
@@ -967,7 +994,7 @@ fun TransactionsScreen(
                                         onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
                                         onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
                                         onEdit = { editing = tx },
-                                        onDelete = { viewModel.delete(tx.id) },
+                                        onDelete = { deleteTarget = tx },
                                         onCardClick = { selectedTransaction = tx },
                                         onLongPress = { viewModel.enterBulkMode(tx.id) },
                                         onToggleSelected = { viewModel.toggleSelected(tx.id) },
@@ -1060,6 +1087,18 @@ fun TransactionsScreen(
         )
     }
 
+    deleteTarget?.let { tx ->
+        DeleteWithIgnoreDialog(
+            title = "Delete this transaction?",
+            rawMessage = tx.rawMessage,
+            merchant = tx.merchant,
+            onDelete = { deleteTarget = null; viewModel.delete(tx.id) },
+            onDeleteIgnoreSimilar = { deleteTarget = null; viewModel.deleteAndIgnoreSimilar(tx) },
+            onDeleteIgnoreKeyword = { kw -> deleteTarget = null; viewModel.deleteAndIgnoreKeyword(tx, kw) },
+            onDismiss = { deleteTarget = null },
+        )
+    }
+
     selectedTransaction?.let { tx ->
         TransactionDetailSheet(
             transaction = tx,
@@ -1071,7 +1110,7 @@ fun TransactionsScreen(
                 editing = tx
             },
             onDeleteClick = {
-                viewModel.delete(tx.id)
+                deleteTarget = tx
                 selectedTransaction = null
             },
             onDismiss = { selectedTransaction = null },
@@ -1196,6 +1235,7 @@ private fun BulkModeBar(
     onAssignPerson: (String?) -> Unit,
     onExclude: () -> Unit,
     onDelete: () -> Unit,
+    onDeleteIgnoreSimilar: () -> Unit,
     onClose: () -> Unit,
 ) {
     var accountMenuOpen by remember { mutableStateOf(false) }
@@ -1288,16 +1328,16 @@ private fun BulkModeBar(
         )
     }
     if (deleteConfirmOpen) {
-        AlertDialog(
-            onDismissRequest = { deleteConfirmOpen = false },
-            title = { Text("Delete $selectedCount transaction${if (selectedCount == 1) "" else "s"}?") },
-            text = { Text("This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = { deleteConfirmOpen = false; onDelete() }) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteConfirmOpen = false }) { Text("Cancel") }
-            },
+        DeleteWithIgnoreDialog(
+            title = "Delete $selectedCount transaction${if (selectedCount == 1) "" else "s"}?",
+            // Bulk can't know which messages are captured, so the option is
+            // always offered; manual entries simply have no text to mute.
+            rawMessage = "bulk",
+            merchant = null,
+            onDelete = { deleteConfirmOpen = false; onDelete() },
+            onDeleteIgnoreSimilar = { deleteConfirmOpen = false; onDeleteIgnoreSimilar() },
+            onDeleteIgnoreKeyword = null,
+            onDismiss = { deleteConfirmOpen = false },
         )
     }
 }
@@ -2868,5 +2908,72 @@ private fun RenameSenderDialog(
             TextButton(enabled = label.isNotBlank(), onClick = { onSave(label.trim()) }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onReset) { Text("Reset to default") } },
+    )
+}
+
+/**
+ * Delete confirmation that doubles as "this message was wrong": besides a
+ * plain delete it can also mute future look-alikes ([onDeleteIgnoreSimilar])
+ * or any message containing a phrase ([onDeleteIgnoreKeyword]). The ignore
+ * options only show for captured messages, i.e. when [rawMessage] is present;
+ * pass null for [onDeleteIgnoreKeyword] (bulk) to hide the keyword option.
+ */
+@Composable
+internal fun DeleteWithIgnoreDialog(
+    title: String,
+    rawMessage: String?,
+    merchant: String?,
+    onDelete: () -> Unit,
+    onDeleteIgnoreSimilar: () -> Unit,
+    onDeleteIgnoreKeyword: ((String) -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    var keywordMode by remember { mutableStateOf(false) }
+    var keyword by remember(rawMessage, merchant) {
+        mutableStateOf(IgnoreKeywordSuggester.suggest(rawMessage, merchant))
+    }
+    val canIgnore = !rawMessage.isNullOrBlank()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This can't be undone.")
+                if (canIgnore) {
+                    Text(
+                        "Captured wrongly? You can also stop similar messages from being captured again.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (keywordMode && onDeleteIgnoreKeyword != null) {
+                    OutlinedTextField(
+                        value = keyword,
+                        onValueChange = { keyword = it },
+                        label = { Text("Ignore messages containing") },
+                        supportingText = { Text("Must appear in this message (3+ characters)") },
+                        singleLine = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                if (canIgnore) {
+                    if (keywordMode && onDeleteIgnoreKeyword != null) {
+                        TextButton(
+                            enabled = IgnoreKeywordSuggester.isValid(keyword, rawMessage),
+                            onClick = { onDeleteIgnoreKeyword(keyword.trim()) },
+                        ) { Text("Delete & ignore \"${keyword.trim()}\"") }
+                    } else {
+                        TextButton(onClick = onDeleteIgnoreSimilar) { Text("Delete & ignore similar") }
+                        if (onDeleteIgnoreKeyword != null) {
+                            TextButton(onClick = { keywordMode = true }) { Text("Delete & ignore containing…") }
+                        }
+                    }
+                }
+                TextButton(onClick = onDelete) { Text("Delete only") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
