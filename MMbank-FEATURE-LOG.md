@@ -3891,4 +3891,64 @@ category chip in both filter-bar layouts need a check on a phone.
 
 ### CI verification
 
+Run 42407814856 (commit be12ab6): "Run unit tests" ran for real (2 min 41 s,
+which compiles the app's main sources including the new Compose code) and
+passed; Build APK success (debug, and the non-gating release build); Final
+Status success.
+
+## Phase 18.2 — Unusual-charge radar, and reminders that can actually notify
+
+Version 0.55.0 (versionCode 82). No schema change. Backlog #39.
+
+### Why
+
+A charge far outside what a merchant usually costs you is the most useful
+thing a finance app can point out. Separately: the manifest declared
+`POST_NOTIFICATIONS` but nothing ever asked for it at runtime, so on Android
+13+ every opt-in reminder (bills, card payments, subscriptions, budgets) was
+silently dropped by its helper's permission check unless the user had granted
+it by hand.
+
+### What changed
+
+- **`SpendAnomalyDetector`** (pure). A purchase is unusual when, against at
+  least 5 earlier purchases at the same merchant (trimmed, case-insensitive,
+  as `findRealDebitsByMerchant` matches) in the same currency, it is at least
+  max(median + 4 × 1.4826 × MAD, 2 × median) **and** at least 20 above the
+  median. The baseline is the latest 50 purchases, so it follows price changes.
+  Refunds, transfers and excluded rows never form a baseline or get flagged.
+- **Smart insights** gain `UnusualCharge` ("Unusual: AED 74.00 at Careem is
+  3.1× your usual (about AED 24.00)"), in the charge's own currency. The two
+  strongest in the selected period are shown, never in the raw-ledger view.
+- **Transaction detail** shows "⚠ 3.1× your usual at Careem" on such a charge
+  (`TransactionsViewModel.anomalyFor`, one indexed merchant query via the new
+  `TransactionRepository.spendHistoryForMerchant`, defaulted so fakes compile).
+- **Opt-in notification** (Settings → Preferences → Unusual charge alerts, off
+  by default): `AppContainer.checkUnusualCharge` on the post-insert hook,
+  gated by `SpendAnomalyDetector.shouldAlert` — toggle on, SMS or push only
+  (never a pasted backlog or a manual entry), and fresh (within 48 h, 5 min of
+  clock skew allowed). Channel `unusual_charge`, ids 9500+; tapping opens the
+  app.
+- **Notification permission:** every alert toggle (subscriptions, bills,
+  unusual charges) now asks for `POST_NOTIFICATIONS` on Android 13+ when
+  switched on (`SmartAlertsSection.kt`: `rememberNotificationPermissionRequest`,
+  `AlertToggleRow`).
+
+### Tests
+
+`SpendAnomalyDetectorTest` (13): too little history, ordinary charge, the 2×
+rule with MAD 0, the absolute floor, a high-variance merchant, foreign-currency
+/ refund / transfer / excluded rows ignored, later rows and the charge itself
+left out of the baseline, case-insensitive merchants, refunds never flagged,
+scan ordering and cap, the alert gate, median. `DashboardViewModelTest`: the
+insight mapping, and the stats flagging a charge but never in the raw view.
+
+### Not covered by CI
+
+The permission prompt, the notification itself and the detail-sheet line need
+a phone. Whether the thresholds feel right on real data needs a few weeks of
+use.
+
+### CI verification
+
 Pending.

@@ -759,6 +759,46 @@ class DashboardSmartInsightsTest {
     }
 
     @Test
+    fun `unusual charges become insights in their own currency`() {
+        val charge = Transaction(
+            amount = BigDecimal("74"), currencyCode = "USD", direction = TransactionDirection.DEBIT,
+            merchant = "Careem", source = TransactionSource.SMS, timestampMillis = 0L,
+        )
+        val anomaly = com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector.Anomaly(
+            transaction = charge, merchant = "Careem", amount = BigDecimal("74"),
+            usual = BigDecimal("24.00"), ratio = 74.0 / 24.0, currencyCode = "USD",
+        )
+        val result = computeSmartInsights(0.0, 0.0, emptyList(), null, emptyList(), null, listOf(anomaly))
+        val unusual = result.filterIsInstance<SmartInsight.UnusualCharge>().single()
+        assertEquals("USD", unusual.currencyCode)
+        assertEquals(24.0, unusual.usual, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, unusual.tone)
+    }
+
+    @Test
+    fun `dashboard stats flag an unusual charge in the period, never in the raw ledger view`() {
+        val zone = ZoneId.of("UTC")
+        val thisMonth = YearMonth.of(2026, 11)
+        fun ride(amount: String, date: LocalDate) = Transaction(
+            amount = BigDecimal(amount), currencyCode = "AED", direction = TransactionDirection.DEBIT,
+            merchant = "Careem", source = TransactionSource.SMS,
+            timestampMillis = date.atStartOfDay(zone).plusHours(9).toInstant().toEpochMilli(),
+        )
+        val history = (1..5).map { ride("24", LocalDate.of(2026, 10, it * 3)) }
+        val spike = ride("100", LocalDate.of(2026, 11, 4))
+        val stats = computeDashboardStats(
+            transactions = history + spike, rates = emptyList(), baseCurrency = "AED",
+            categories = emptyList(), zone = zone, thisMonth = thisMonth,
+        )
+        assertEquals(1, stats.insights.filterIsInstance<SmartInsight.UnusualCharge>().size)
+        val raw = computeDashboardStats(
+            transactions = history + spike, rates = emptyList(), baseCurrency = "AED",
+            categories = emptyList(), includeExcluded = true, zone = zone, thisMonth = thisMonth,
+        )
+        assertTrue(raw.insights.none { it is SmartInsight.UnusualCharge })
+    }
+
+    @Test
     fun `biggest expense passes the merchant and amount through unchanged`() {
         val result = insights(biggestExpense = "Corner Store" to 42.0)
         val biggest = result.filterIsInstance<SmartInsight.BiggestExpense>().single()

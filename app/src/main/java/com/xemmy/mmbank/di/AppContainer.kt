@@ -50,6 +50,7 @@ import com.xemmy.mmbank.data.retention.TransactionRetentionWorker
 import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
+import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
@@ -86,6 +87,7 @@ import com.xemmy.mmbank.domain.usecase.ImportPastedMessagesUseCase
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
 import com.xemmy.mmbank.util.BudgetNotificationHelper
 import com.xemmy.mmbank.util.CategoryBudgetNotificationHelper
+import com.xemmy.mmbank.util.UnusualChargeNotificationHelper
 import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -322,6 +324,7 @@ class AppContainer(context: Context) {
                 checkDailyBudgetPacing(transaction)
                 checkCategoryBudget(transaction)
                 refreshSubscriptionForMerchant(transaction)
+                checkUnusualCharge(transaction)
             },
         )
     }
@@ -653,6 +656,26 @@ class AppContainer(context: Context) {
                 preferences.categoryBudgetAlerts = alerted.filterTo(mutableSetOf()) { it.contains(":$monthKey:") } + key
                 CategoryBudgetNotificationHelper.postCapAlert(appContext, status, transaction.currencyCode)
             }.onFailure { recordError("AppContainer.checkCategoryBudget", it) }
+        }
+    }
+
+    /**
+     * Opt-in "unusual charge" notification (see [SpendAnomalyDetector]):
+     * after a live capture lands, judges it against that merchant's own
+     * earlier purchases and notifies when it's far above the usual. Gated by
+     * [SpendAnomalyDetector.shouldAlert] -- toggle on, SMS/push only (never a
+     * pasted backlog or a manual entry), and fresh -- and scoped to one
+     * merchant via an indexed query. Fire-and-forget like the other hooks.
+     */
+    private fun checkUnusualCharge(transaction: Transaction) {
+        if (!SpendAnomalyDetector.shouldAlert(transaction, System.currentTimeMillis(), preferences.unusualChargeAlertsEnabled)) return
+        val merchant = transaction.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return
+        applicationScope.launch {
+            runCatching {
+                val history = transactionRepositoryImpl.spendHistoryForMerchant(merchant)
+                val anomaly = SpendAnomalyDetector.evaluate(transaction, history) ?: return@runCatching
+                UnusualChargeNotificationHelper.post(appContext, anomaly)
+            }.onFailure { recordError("AppContainer.checkUnusualCharge", it) }
         }
     }
 

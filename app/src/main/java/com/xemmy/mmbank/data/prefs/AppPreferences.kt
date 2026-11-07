@@ -325,6 +325,17 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_BILL_REMINDERS, value).apply()
 
     /**
+     * Opt-in phone notification when a freshly captured charge is far above
+     * what that merchant usually costs (see
+     * [com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector]). Off by
+     * default; the in-app Smart insight shows regardless. Plain boolean: only
+     * Settings writes it and only the capture-path hook reads it.
+     */
+    var unusualChargeAlertsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_UNUSUAL_CHARGE_ALERTS, false)
+        set(value) = prefs.edit().putBoolean(KEY_UNUSUAL_CHARGE_ALERTS, value).apply()
+
+    /**
      * Due dates already announced, as `"{billId}:{nextDueDateMillis}"` keys
      * (see [com.xemmy.mmbank.domain.intelligence.BillReminders.reminderKey]).
      * Pruned to live bills on each run.
@@ -379,6 +390,7 @@ class AppPreferences(context: Context) {
         const val KEY_LEDGER_KIND_BACKFILL_VERSION = "ledger_kind_backfill_version"
         const val KEY_CARD_REMINDERS_SENT = "card_reminders_sent"
         const val KEY_BILL_REMINDERS = "bill_reminders_enabled"
+        const val KEY_UNUSUAL_CHARGE_ALERTS = "unusual_charge_alerts_enabled"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }
 }

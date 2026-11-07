@@ -54,6 +54,14 @@ interface TransactionRepository {
 
     /** Id of the transaction already captured from this exact message text, if any. */
     suspend fun findIdByRawMessage(rawMessage: String): Long?
+
+    /**
+     * One merchant's real purchase history, oldest first (trimmed,
+     * case-insensitive match) -- the baseline
+     * [com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector] judges a
+     * charge against. Defaults to empty so test fakes needn't implement it.
+     */
+    suspend fun spendHistoryForMerchant(merchant: String): List<Transaction> = emptyList()
     /** Inserts a user-entered transaction (no dedup — a manual entry is intentional). */
     suspend fun recordManual(transaction: Transaction): Long
     /** Updates an existing transaction's editable fields (manual edit flow). */

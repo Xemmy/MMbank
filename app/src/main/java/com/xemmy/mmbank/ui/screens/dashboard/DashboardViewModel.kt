@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
+import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
@@ -108,6 +109,21 @@ sealed interface SmartInsight {
     /** The largest single expense transaction this period. */
     data class BiggestExpense(val merchant: String, val amount: Double) : SmartInsight {
         override val tone get() = InsightTone.NEUTRAL
+    }
+
+    /**
+     * A charge far above what this merchant usually costs (see
+     * [com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector]). Amounts are
+     * in the charge's own [currencyCode], not the base currency.
+     */
+    data class UnusualCharge(
+        val merchant: String,
+        val amount: Double,
+        val usual: Double,
+        val ratio: Double,
+        val currencyCode: String,
+    ) : SmartInsight {
+        override val tone get() = InsightTone.NEGATIVE
     }
 }
 
@@ -747,6 +763,7 @@ internal fun computeSmartInsights(
     previousPeriodSpend: Double?,
     previousCategorySpends: List<CategorySpend>,
     biggestExpense: Pair<String, Double>?,
+    unusualCharges: List<SpendAnomalyDetector.Anomaly> = emptyList(),
 ): List<SmartInsight> {
     val insights = mutableListOf<SmartInsight>()
     val net = periodIncome - periodSpend
@@ -795,6 +812,16 @@ internal fun computeSmartInsights(
 
     biggestExpense?.let { (merchant, amount) ->
         if (amount > 0.0) insights += SmartInsight.BiggestExpense(merchant, amount)
+    }
+
+    unusualCharges.forEach { a ->
+        insights += SmartInsight.UnusualCharge(
+            merchant = a.merchant,
+            amount = a.amount.toDouble(),
+            usual = a.usual.toDouble(),
+            ratio = a.ratio,
+            currencyCode = a.currencyCode,
+        )
     }
 
     return insights
@@ -918,6 +945,14 @@ internal fun computeDashboardStats(
             merchant to amount
         }
 
+    // Judged against full history, but only within a bounded period, and
+    // never in the raw-ledger view (which ignores kinds and exclusions).
+    val unusualCharges = if (raw || window == null) {
+        emptyList()
+    } else {
+        SpendAnomalyDetector.scan(transactions, window, zone, max = 2)
+    }
+
     val insights = computeSmartInsights(
         periodIncome = periodIncome,
         periodSpend = periodSpend,
@@ -925,6 +960,7 @@ internal fun computeDashboardStats(
         previousPeriodSpend = previousPeriodSpend,
         previousCategorySpends = previousCategorySpends,
         biggestExpense = biggestExpense,
+        unusualCharges = unusualCharges,
     )
 
     return DashboardStats(

@@ -231,6 +231,9 @@ class TransactionRepositoryImpl(
     override suspend fun findIdByRawMessage(rawMessage: String): Long? =
         dao.findByRawMessage(rawMessage)?.id
 
+    override suspend fun spendHistoryForMerchant(merchant: String): List<Transaction> =
+        dao.findRealDebitsByMerchant(merchant).map { it.toDomain() }
+
     /**
      * Reconciles the two legs of a transfer or card payment (see
      * [TransferMatcher]) right after inserting [inserted], inside the same

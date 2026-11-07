@@ -47,6 +47,7 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.LocalDesignMode
+import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.AmountText
@@ -83,6 +84,8 @@ fun TransactionDetailSheet(
     onMerchantClick: (String) -> Unit = {},
     /** Re-classifies the row; the flag asks to remember the kind for its merchant. Null hides the picker. */
     onKindChange: ((TransactionKind, Boolean) -> Unit)? = null,
+    /** Set when this charge is far above the merchant's usual (see [SpendAnomalyDetector]). */
+    anomaly: SpendAnomalyDetector.Anomaly? = null,
     designMode: DesignMode = LocalDesignMode.current,
 ) {
     AlertDialog(
@@ -150,6 +153,15 @@ fun TransactionDetailSheet(
                     }
                     .verticalScroll(rememberScrollState()),
             ) {
+                anomaly?.let { a ->
+                    Text(
+                        "⚠ ${String.format(java.util.Locale.US, "%.1f", a.ratio)}× your usual at ${a.merchant} " +
+                            "(usually about ${a.usual.asMoney(a.currencyCode)})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ObsidianTokens.debit,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
                 val assignedCategory = categories.firstOrNull { it.id == transaction.categoryId }
                 DetailRow(
                     "Category",

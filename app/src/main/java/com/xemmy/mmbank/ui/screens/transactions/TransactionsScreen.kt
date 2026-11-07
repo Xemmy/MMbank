@@ -83,6 +83,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -122,6 +123,7 @@ import com.xemmy.mmbank.domain.filter.AnalyticsStatusFilter
 import com.xemmy.mmbank.domain.filter.DateRangeFilter
 import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
+import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Category
@@ -418,6 +420,17 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setAnalyticsStatus(status: AnalyticsStatusFilter?) {
         filters.value = filters.value.copy(analyticsStatus = status)
+    }
+
+    /**
+     * Whether [tx] is far above its merchant's usual (null when not, or when
+     * there's too little history). One indexed merchant query.
+     */
+    suspend fun anomalyFor(tx: Transaction): SpendAnomalyDetector.Anomaly? {
+        val merchant = tx.merchant?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            SpendAnomalyDetector.evaluate(tx, container.transactionRepository.spendHistoryForMerchant(merchant))
+        }.getOrNull()
     }
 
     /** Category drill-down filter; null clears it. There's no picker -- it arrives via [applyDrillDown]. */
@@ -1130,7 +1143,9 @@ fun TransactionsScreen(
     }
 
     selectedTransaction?.let { tx ->
+        val anomaly by produceState<SpendAnomalyDetector.Anomaly?>(null, tx) { value = viewModel.anomalyFor(tx) }
         TransactionDetailSheet(
+            anomaly = anomaly,
             transaction = tx,
             accountName = state.accounts.firstOrNull { it.id == tx.accountId }?.name,
             bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),

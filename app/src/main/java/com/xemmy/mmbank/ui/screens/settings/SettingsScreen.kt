@@ -132,6 +132,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var billRemindersEnabled by mutableStateOf(container.preferences.billRemindersEnabled)
         private set
+
+    var unusualChargeAlertsEnabled by mutableStateOf(container.preferences.unusualChargeAlertsEnabled)
+        private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
@@ -410,6 +413,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             "Bill reminders off."
         }
+    }
+
+    /**
+     * Opt-in phone notification for unusual charges (see
+     * [com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector]). Checked
+     * on the capture path, so nothing is scheduled; the in-app insight shows
+     * either way.
+     */
+    fun updateUnusualChargeAlerts(enabled: Boolean) {
+        container.preferences.unusualChargeAlertsEnabled = enabled
+        unusualChargeAlertsEnabled = enabled
+        statusMessage = if (enabled) "Unusual charge alerts on." else "Unusual charge alerts off."
     }
 
     fun updateHideZeroBalances(hide: Boolean) {
@@ -1234,45 +1249,30 @@ fun PreferencesSettingsScreen(
             )
         }
 
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Subscription renewal reminders", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "Notifies you a few days before a detected subscription renews. Checks once a " +
-                        "day on-device with no network use, and stays off unless you want it.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = viewModel.subscriptionRemindersEnabled,
-                onCheckedChange = viewModel::updateSubscriptionReminders,
-            )
-        }
+        AlertToggleRow(
+            title = "Subscription renewal reminders",
+            description = "Notifies you a few days before a detected subscription renews. Checks once a " +
+                "day on-device with no network use, and stays off unless you want it.",
+            checked = viewModel.subscriptionRemindersEnabled,
+            onCheckedChange = viewModel::updateSubscriptionReminders,
+        )
 
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Bill due-date reminders", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "Notifies you a few days before a manually tracked bill is due. Checks once a " +
-                        "day on-device with no network use, and stays off unless you want it.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = viewModel.billRemindersEnabled,
-                onCheckedChange = viewModel::updateBillReminders,
-            )
-        }
+        AlertToggleRow(
+            title = "Bill due-date reminders",
+            description = "Notifies you a few days before a manually tracked bill is due. Checks once a " +
+                "day on-device with no network use, and stays off unless you want it.",
+            checked = viewModel.billRemindersEnabled,
+            onCheckedChange = viewModel::updateBillReminders,
+        )
+
+        AlertToggleRow(
+            title = "Unusual charge alerts",
+            description = "Notifies you when a new charge is far above what that merchant usually costs " +
+                "you (e.g. 3× your usual taxi fare). Unusual charges always show in Smart insights; " +
+                "this only adds a phone notification.",
+            checked = viewModel.unusualChargeAlertsEnabled,
+            onCheckedChange = viewModel::updateUnusualChargeAlerts,
+        )
 
         Row(
             Modifier.fillMaxWidth(),

@@ -447,6 +447,10 @@ private fun insightText(insight: SmartInsight, currency: String, hidden: Boolean
         "No income recorded this period — ${insight.spend.asMoneyOrMask(currency, hidden)} went out"
     is SmartInsight.BiggestExpense ->
         "Your biggest expense was ${insight.amount.asMoneyOrMask(currency, hidden)} at ${insight.merchant}"
+    is SmartInsight.UnusualCharge ->
+        "Unusual: ${insight.amount.asMoneyOrMask(insight.currencyCode, hidden)} at ${insight.merchant} is " +
+            "${String.format(java.util.Locale.US, "%.1f", insight.ratio)}× your usual " +
+            "(about ${insight.usual.asMoneyOrMask(insight.currencyCode, hidden)})"
 }
 
 /** Income / Spent / Net for the selected period as three stat tiles. */
