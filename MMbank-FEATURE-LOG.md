@@ -3760,3 +3760,64 @@ the bank and say where, by how much and in which direction it disagrees.
 Verified on run 41198108391 (commit 8ad9ad7): `compileDebugUnitTestKotlin` and
 `testDebugUnitTest` finished BUILD SUCCESSFUL with no failures (the test report
 grew to 160 files). Build APK: success. Final Status: success.
+
+## Phase 17.3 — Delete a wrong capture and stop it coming back
+
+Version 0.53.0 (versionCode 80). Schema v29 -> v30, backup format 10.
+(Entry back-filled in Phase 18.0; the commit is 4ec4139.)
+
+### What changed
+
+- **Keyword ignore list.** New `ignored_keywords` table (`MIGRATION_29_30`,
+  in `MigrationSql`). `IgnoredMessageCache.shouldIgnore` checks muted keywords
+  in the title and body (`KeywordMatcher`, case-insensitive) before the
+  template fingerprint and similarity checks.
+- **Activity delete dialog** (row, detail sheet and bulk mode) now offers
+  *Delete & ignore similar* (adds the message to the template ignore list) and
+  *Delete & ignore containing…*, prefilled by `IgnoreKeywordSuggester` (the
+  merchant when it appears verbatim, else the longest word of 4+ letters).
+- **Settings → Import & ignore messages** lists and deletes keywords.
+- **Backup format 10** carries the keyword list.
+
+### Tests
+
+`KeywordMatcherTest`, `IgnoreKeywordSuggesterTest`,
+`IgnoredKeywordRepositoryImplTest`, `IgnoredMessageCacheTest` and
+`IngestCapturedMessageUseCaseTest` additions, `MigrationSqlTest` at v30, mapper
+and backup round trips.
+
+### CI verification
+
+Run 42287447266 (commit 4ec4139): "Run unit tests" BUILD SUCCESSFUL; Build
+APK: success; Final Status: success.
+
+## Phase 18.0 — CI that fails when a test fails
+
+No version bump: CI and docs only.
+
+### Why
+
+The "Run unit tests" step had `continue-on-error: true`, so the workflow
+stayed green through failing tests and every phase had to be verified by
+reading the step log by hand. The log records this hiding a real assertion
+failure (Phase 3) and a real compile error (Phase 6). Backlog #69.
+
+### What changed
+
+- `test-build.yml`:
+  - "Run unit tests" no longer has `continue-on-error`.
+  - New **Summarize failing tests** step (`if: failure()`) parses the JUnit
+    XML and lists every failing `Class.method: message` in the log and the
+    run summary; a compile error is called out when no test case failed.
+  - The uploaded `unit-test-results` artifact now also carries the XML.
+  - `build-apk` runs `if: !cancelled()`, so a red commit's APK can still be
+    downloaded. The main-branch GitHub Release steps now require the unit
+    tests to have passed.
+  - `final-status` passes only when both the tests and the APK build passed,
+    and prints both results.
+- `CLAUDE.md` describes the new behavior: a green workflow now means tests
+  passed and the APK built.
+
+### CI verification
+
+Pending.
