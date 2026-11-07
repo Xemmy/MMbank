@@ -47,6 +47,12 @@ object FinancialCopilotQueryHandler {
         currencyCode: String,
         rangeLabel: String,
         zone: ZoneId = ZoneId.systemDefault(),
+        /**
+         * Category name for a row. Defaults to the legacy fixed enum label;
+         * the Copilot passes the user's own category (by `categoryId`), the
+         * same grouping every other screen shows.
+         */
+        categoryLabelOf: (Transaction) -> String = { it.spendingCategory.label },
     ): QueryContext {
         fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(zone).toLocalDate()
 
@@ -59,7 +65,7 @@ object FinancialCopilotQueryHandler {
         val expenses = LedgerMath.netSpend(debits) { toBase(it) }
 
         val byCategory = debits
-            .groupBy { it.spendingCategory.label }
+            .groupBy(categoryLabelOf)
             .mapValues { (_, txs) -> LedgerMath.netSpend(txs) { toBase(it) } }
             .filterValues { it > 0.0 }
             .toList()

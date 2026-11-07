@@ -116,6 +116,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.AccountFilter
+import com.xemmy.mmbank.domain.filter.ActivityDrillDown
 import com.xemmy.mmbank.domain.filter.ActivityFilters
 import com.xemmy.mmbank.domain.filter.AnalyticsStatusFilter
 import com.xemmy.mmbank.domain.filter.DateRangeFilter
@@ -417,6 +418,20 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setAnalyticsStatus(status: AnalyticsStatusFilter?) {
         filters.value = filters.value.copy(analyticsStatus = status)
+    }
+
+    /** Category drill-down filter; null clears it. There's no picker -- it arrives via [applyDrillDown]. */
+    fun setCategoryFilter(categoryIds: Set<Long>?) {
+        filters.value = filters.value.copy(categoryIds = categoryIds)
+    }
+
+    /**
+     * Replaces every filter with exactly [drill] (e.g. a Copilot answer's
+     * "See transactions"), so filters left over from earlier don't silently
+     * narrow what the answer was about.
+     */
+    fun applyDrillDown(drill: ActivityDrillDown) {
+        filters.value = drill.applyTo(ActivityFilters())
     }
     fun clearFilters() { filters.value = ActivityFilters() }
 
@@ -756,6 +771,8 @@ fun TransactionsScreen(
      * what the Home and Accounts screens' "not in any account" card links to.
      */
     initialAccountFilter: String = "",
+    /** Optional [ActivityDrillDown.encode]d filter set, e.g. from a Copilot answer. */
+    initialDrill: String = "",
     onOpenUncategorizedQueue: () -> Unit = {},
     onOpenMerchant: (String) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
@@ -766,6 +783,9 @@ fun TransactionsScreen(
         if (initialAccountFilter == "unassigned") {
             viewModel.setAccountFilter(AccountFilter.Unassigned)
         }
+    }
+    LaunchedEffect(initialDrill) {
+        ActivityDrillDown.parse(initialDrill)?.let(viewModel::applyDrillDown)
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
@@ -907,6 +927,7 @@ fun TransactionsScreen(
                         }
                         .graphicsLayer { alpha = 1f - collapseFraction },
                 ) {
+                    Column {
                     when (state.filterBarLayout) {
                         FilterBarLayout.SINGLE_ROW -> TransactionFilterBar(
                             state = state,
@@ -936,6 +957,15 @@ fun TransactionsScreen(
                             onClear = viewModel::clearFilters,
                             onKindFilter = viewModel::setKindFilter,
                         )
+                    }
+                    // The category filter has no picker in either bar, so it
+                    // is always shown here while active, with a way out.
+                    state.filters.categoryIds?.let { ids ->
+                        CategoryFilterRow(
+                            label = categoryFilterLabel(ids, state.categories),
+                            onClear = { viewModel.setCategoryFilter(null) },
+                        )
+                    }
                     }
                 }
             }
@@ -1440,6 +1470,30 @@ internal fun ObsidianChip(
  * active White@12%) but hand-rolled so height and padding aren't inflated by
  * Material's chip defaults.
  */
+/** "Dining" / "Food + 1 more" -- the parent first when a sub-category tree was selected. */
+internal fun categoryFilterLabel(ids: Set<Long>, categories: List<com.xemmy.mmbank.domain.model.Category>): String {
+    val chosen = categories.filter { it.id in ids }
+    if (chosen.isEmpty()) return "Selected categories"
+    val root = chosen.firstOrNull { c -> c.parentCategoryId == null || c.parentCategoryId !in ids } ?: chosen.first()
+    val others = chosen.size - 1
+    return if (others == 0) root.name else "${root.name} + $others more"
+}
+
+@Composable
+private fun CategoryFilterRow(label: String, onClear: () -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterBarChip(
+            selected = true,
+            onClick = onClear,
+            label = "Category: $label  ✕",
+            icon = Icons.Filled.CategoryIcon,
+        )
+    }
+}
+
 @Composable
 internal fun FilterBarChip(
     selected: Boolean,

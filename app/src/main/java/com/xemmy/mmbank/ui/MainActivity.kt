@@ -288,14 +288,19 @@ private fun AppNavHost(
                 onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
             )
         }
-        // The optional arg lets Home and Accounts deep-link straight into the
-        // "Unassigned" account filter the Activity tab already has. Query args
-        // are optional, so the bottom bar's plain navigate("transactions")
-        // still matches this route.
+        // The optional args let Home and Accounts deep-link straight into the
+        // "Unassigned" account filter, and a Copilot answer into exactly the
+        // rows it describes (an encoded ActivityDrillDown). Query args are
+        // optional and matched by name, so the bottom bar's plain
+        // navigate("transactions") still matches this route.
         composable(
-            route = "transactions?accountFilter={accountFilter}",
+            route = "transactions?accountFilter={accountFilter}&drill={drill}",
             arguments = listOf(
                 navArgument("accountFilter") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("drill") {
                     type = NavType.StringType
                     defaultValue = ""
                 },
@@ -303,6 +308,7 @@ private fun AppNavHost(
         ) { entry ->
             TransactionsScreen(
                 initialAccountFilter = entry.arguments?.getString("accountFilter").orEmpty(),
+                initialDrill = entry.arguments?.getString("drill").orEmpty(),
                 onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") },
                 onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
             )
@@ -371,7 +377,12 @@ private fun AppNavHost(
         ) {
             MerchantDetailScreen(onBack = { navController.popBackStack() })
         }
-        composable("copilot") { CopilotChatScreen(onBack = { navController.popBackStack() }) }
+        composable("copilot") {
+            CopilotChatScreen(
+                onBack = { navController.popBackStack() },
+                onOpenActivity = { drill -> navController.navigate("transactions?drill=${Uri.encode(drill)}") },
+            )
+        }
         composable("rules") {
             RulesScreen(
                 onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },

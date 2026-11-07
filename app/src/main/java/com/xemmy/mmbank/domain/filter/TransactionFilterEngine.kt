@@ -72,6 +72,13 @@ data class ActivityFilters(
     val analyticsStatus: AnalyticsStatusFilter? = null,
     /** Only rows of this kind -- e.g. every card payment, every refund. Null = any. */
     val kind: com.xemmy.mmbank.domain.model.TransactionKind? = null,
+    /**
+     * Only rows filed under one of these categories (a category plus its
+     * sub-categories). Null = any. Set by a drill-down, e.g. from a Copilot
+     * answer; there's no picker for it, so it shows as a removable row in
+     * More filters.
+     */
+    val categoryIds: Set<Long>? = null,
 ) {
     /** True when anything beyond the default (show-everything) is set. */
     val active: Boolean
@@ -115,11 +122,12 @@ object TransactionFilterEngine {
 
     /**
      * How many independent secondary-filter categories (person, triage,
-     * amount, source, kind, analytics status) are active — drives the "More
-     * filters" badge count in the single-row filter bar.
+     * amount, source, kind, analytics status, category) are active — drives
+     * the "More filters" badge count in the single-row filter bar.
      */
     fun activeSecondaryFilterCount(filters: ActivityFilters): Int {
         var count = 0
+        if (filters.categoryIds != null) count++
         if (filters.person != PersonFilter.Any) count++
         if (filters.triageOnly) count++
         if (filters.minAmount != null || filters.maxAmount != null) count++
@@ -198,6 +206,7 @@ object TransactionFilterEngine {
         if (f.maxAmount != null && tx.amount > f.maxAmount) return false
         if (f.source != null && tx.source != f.source) return false
         if (f.kind != null && tx.kind != f.kind) return false
+        if (f.categoryIds != null && tx.categoryId !in f.categoryIds) return false
         when (f.analyticsStatus) {
             AnalyticsStatusFilter.INCLUDED_ONLY -> if (tx.excludeFromStats) return false
             AnalyticsStatusFilter.EXCLUDED_ONLY -> if (!tx.excludeFromStats) return false

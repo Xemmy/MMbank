@@ -3820,4 +3820,75 @@ failure (Phase 3) and a real compile error (Phase 6). Backlog #69.
 
 ### CI verification
 
+Run 42406631967 (commit 719df4f): Lint & Unit Tests success
+(`testDebugUnitTest` restored FROM-CACHE: no source changed, and Gradle never
+caches a failed test task), "Summarize failing tests" skipped, Build APK
+success, release steps skipped (not `main`), Final Status success. The failure
+path was exercised locally: the summary script printed `Class.method: message`
+for a fabricated failing JUnit XML.
+
+## Phase 18.1 — Ask MMbank offline: the Copilot answers on the phone
+
+Version 0.54.0 (versionCode 81). No schema change. Backlog #31, #32 (and the
+category half of #37).
+
+### Why
+
+The Copilot refused to answer anything without a configured AI server, and
+even with one it only ever saw "this month". Yet the questions people
+actually ask ("how much on dining last month?", "biggest expense?", "compare
+with last month") are plain queries over numbers the app already has.
+
+### What changed
+
+- **`domain/intelligence/copilot/`** (all pure):
+  - `CopilotQueryParser` reads the question: intent (spend, income, top
+    categories, top merchants, biggest expense, compare, savings rate, count,
+    daily average), range (today, yesterday, this/last week, month or year,
+    "October", "oct 2025", "in 2024", "last N days/weeks/months"; weeks start
+    Monday; a month without a year is its latest past occurrence; bare "may"
+    is not a month) and subject. Subjects are the user's own categories
+    (including sub-categories; plurals, a few everyday synonyms like
+    "restaurants" for Dining, and one-letter typos) and merchants from their
+    own ledger. When both a category and a merchant are named, the longer
+    phrase wins; a merchant named after a question word ("Payment") can never
+    become the subject. It returns null rather than guess.
+  - `CopilotAnswerEngine` answers with `LedgerMath`, like every other screen:
+    transfers, card payments and excluded rows never count, refunds net off.
+    Rows with no exchange rate are named ("Not counted: 2 EUR transactions"),
+    not counted as zero. Month-to-date compares with the same days of last
+    month, not the whole month.
+  - `CopilotSuggestions` builds question chips from the user's top category
+    and merchant; every chip is verified to parse.
+  - `CopilotResponder` routes: on-phone answers always win (even with AI set
+    up); open questions go to the AI with numbers for the range they named;
+    without AI, a "here's what I can answer" reply.
+- **AI fallback context** (`FinancialCopilotQueryHandler.buildContext`) now
+  groups by the user's categories instead of the legacy fixed enum.
+- **Drill-down:** answers carry a "See transactions" button that opens
+  Activity filtered to exactly those rows. `ActivityDrillDown` encodes the
+  filter into one navigation argument (`transactions?drill=`), and
+  `ActivityFilters.categoryIds` is a new category filter. It has no picker, so
+  while active it shows as a "Category: X ✕" chip under the filter bar in both
+  layouts, and it counts toward the More filters badge.
+- **Copilot screen:** suggestion chips (on an empty chat and after a help
+  reply), an "Answered on this phone" tag, a softer note when AI isn't set up.
+  Heavy work runs on `Dispatchers.Default`.
+
+### Tests
+
+`CopilotQueryParserTest` (24: every intent, every range shape, Feb 29,
+month/year edge cases, subject precedence, typos, question-word merchants),
+`CopilotAnswerEngineTest` (16), `CopilotSuggestionsTest`,
+`CopilotResponderTest`, `ActivityDrillDownTest`,
+`TransactionFilterEngineCategoryTest`, `CategoryFilterLabelTest`. Locally, the
+pure domain suite (84 classes, 871 tests) passes.
+
+### Not covered by CI
+
+The chat UI and chips, the `drill` navigation argument at runtime, and the
+category chip in both filter-bar layouts need a check on a phone.
+
+### CI verification
+
 Pending.
