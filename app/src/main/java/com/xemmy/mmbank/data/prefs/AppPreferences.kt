@@ -335,6 +335,33 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_UNUSUAL_CHARGE_ALERTS, false)
         set(value) = prefs.edit().putBoolean(KEY_UNUSUAL_CHARGE_ALERTS, value).apply()
 
+    // --- Capture health (see domain/intelligence/CaptureHealthEvaluator) ---
+    // Plain values written by the capture services and read by Home's
+    // banner. 0 = never recorded.
+
+    /** Last time any notification reached the listener (throttled heartbeat). */
+    var captureLastEventAt: Long
+        get() = prefs.getLong(KEY_CAPTURE_LAST_EVENT, 0L)
+        set(value) = prefs.edit().putLong(KEY_CAPTURE_LAST_EVENT, value).apply()
+
+    var captureListenerConnectedAt: Long
+        get() = prefs.getLong(KEY_CAPTURE_CONNECTED, 0L)
+        set(value) = prefs.edit().putLong(KEY_CAPTURE_CONNECTED, value).apply()
+
+    var captureListenerDisconnectedAt: Long
+        get() = prefs.getLong(KEY_CAPTURE_DISCONNECTED, 0L)
+        set(value) = prefs.edit().putLong(KEY_CAPTURE_DISCONNECTED, value).apply()
+
+    /** Last time an SMS reached the receiver (any SMS, bank or not). */
+    var captureLastSmsAt: Long
+        get() = prefs.getLong(KEY_CAPTURE_LAST_SMS, 0L)
+        set(value) = prefs.edit().putLong(KEY_CAPTURE_LAST_SMS, value).apply()
+
+    /** Home's capture-health banner stays hidden until this time ("Snooze 24h"). */
+    var captureHealthSnoozedUntil: Long
+        get() = prefs.getLong(KEY_CAPTURE_SNOOZED_UNTIL, 0L)
+        set(value) = prefs.edit().putLong(KEY_CAPTURE_SNOOZED_UNTIL, value).apply()
+
     /**
      * Due dates already announced, as `"{billId}:{nextDueDateMillis}"` keys
      * (see [com.xemmy.mmbank.domain.intelligence.BillReminders.reminderKey]).
@@ -391,6 +418,11 @@ class AppPreferences(context: Context) {
         const val KEY_CARD_REMINDERS_SENT = "card_reminders_sent"
         const val KEY_BILL_REMINDERS = "bill_reminders_enabled"
         const val KEY_UNUSUAL_CHARGE_ALERTS = "unusual_charge_alerts_enabled"
+        const val KEY_CAPTURE_LAST_EVENT = "capture_last_event_at"
+        const val KEY_CAPTURE_CONNECTED = "capture_listener_connected_at"
+        const val KEY_CAPTURE_DISCONNECTED = "capture_listener_disconnected_at"
+        const val KEY_CAPTURE_LAST_SMS = "capture_last_sms_at"
+        const val KEY_CAPTURE_SNOOZED_UNTIL = "capture_health_snoozed_until"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }
 }

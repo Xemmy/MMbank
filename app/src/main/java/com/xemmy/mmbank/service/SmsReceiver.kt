@@ -40,6 +40,8 @@ class SmsReceiver : BroadcastReceiver() {
         )
 
         val container = (context.applicationContext as MMBankApp).container
+        // Any SMS at all proves the receiver still fires (capture health).
+        runCatching { container.preferences.captureLastSmsAt = System.currentTimeMillis() }
         val pendingResult = goAsync()
         scope.launch {
             try {

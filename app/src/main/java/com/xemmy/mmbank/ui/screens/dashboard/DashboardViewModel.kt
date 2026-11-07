@@ -9,6 +9,7 @@ import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
+import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
@@ -19,6 +20,7 @@ import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.model.WalletBalance
 import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
 import com.xemmy.mmbank.ui.util.CurrencyMath
@@ -31,10 +33,12 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -331,6 +335,51 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         selectedAccountId,
     ) { transactions, accountId -> filterAccountFeed(transactions, accountId, FEED_LIMIT) }
         .recoverAndRetry("DashboardViewModel.feed", container) { emptyList() }
+
+    /** Capture permissions as last checked on resume; null until Home has checked once. */
+    private val captureAccess = MutableStateFlow<CaptureAccessSnapshot?>(null)
+    private val captureSnoozedUntil = MutableStateFlow(container.preferences.captureHealthSnoozedUntil)
+
+    /**
+     * Whether capture is still working (see [CaptureHealthEvaluator]) --
+     * Home's banner. Null until permissions are known, and in demo mode.
+     * Re-evaluated on every resume ([refreshCaptureAccess]) because the
+     * listener heartbeat in preferences changes without notifying anyone.
+     */
+    val captureHealth: StateFlow<CaptureHealthEvaluator.Health?> = combine(
+        container.transactionRepository.observeTransactions(),
+        captureAccess,
+        captureSnoozedUntil,
+    ) { transactions, access, snoozedUntil ->
+        if (access == null || container.preferences.demoModeEnabled) {
+            null
+        } else {
+            val prefs = container.preferences
+            computeCaptureHealth(
+                transactions = transactions,
+                access = access,
+                lastListenerEventAt = prefs.captureLastEventAt,
+                listenerConnectedAt = prefs.captureListenerConnectedAt,
+                listenerDisconnectedAt = prefs.captureListenerDisconnectedAt,
+                snoozedUntil = snoozedUntil,
+                now = System.currentTimeMillis(),
+            )
+        }
+    }.flowOn(Dispatchers.Default)
+        .recoverAndRetry("DashboardViewModel.captureHealth", container) { null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Called on every resume with the current permission state. */
+    fun refreshCaptureAccess(notificationAccess: Boolean, sms: Boolean, batteryExempt: Boolean) {
+        captureAccess.value = CaptureAccessSnapshot(notificationAccess, sms, batteryExempt, System.currentTimeMillis())
+    }
+
+    /** "Snooze 24h" on the capture-health banner. */
+    fun snoozeCaptureHealth() {
+        val until = System.currentTimeMillis() + 24L * 60 * 60 * 1000
+        container.preferences.captureHealthSnoozedUntil = until
+        captureSnoozedUntil.value = until
+    }
 
     /**
      * "AI Weekly Digest" hero card: this week's spend vs last week's and the
@@ -975,6 +1024,46 @@ internal fun computeDashboardStats(
         insights = insights,
     )
 }
+
+/**
+ * The permissions the capture channels hold, as checked at [checkedAt].
+ * [checkedAt] makes every resume a new value, so the health re-evaluates.
+ */
+internal data class CaptureAccessSnapshot(
+    val notificationAccess: Boolean,
+    val sms: Boolean,
+    val batteryExempt: Boolean,
+    val checkedAt: Long,
+)
+
+/**
+ * Feeds [CaptureHealthEvaluator] from the ledger: only live captures (SMS and
+ * push) say anything about whether capture works -- a pasted backlog, a manual
+ * entry or a demo row never does.
+ */
+internal fun computeCaptureHealth(
+    transactions: List<Transaction>,
+    access: CaptureAccessSnapshot,
+    lastListenerEventAt: Long,
+    listenerConnectedAt: Long,
+    listenerDisconnectedAt: Long,
+    snoozedUntil: Long,
+    now: Long,
+): CaptureHealthEvaluator.Health = CaptureHealthEvaluator.evaluate(
+    CaptureHealthEvaluator.Inputs(
+        notificationAccess = access.notificationAccess,
+        smsPermission = access.sms,
+        batteryExempt = access.batteryExempt,
+        lastListenerEventAt = lastListenerEventAt,
+        listenerConnectedAt = listenerConnectedAt,
+        listenerDisconnectedAt = listenerDisconnectedAt,
+        capturedAt = transactions
+            .filter { !it.isDemo && (it.source == TransactionSource.SMS || it.source == TransactionSource.PUSH_NOTIFICATION) }
+            .map { it.createdAt },
+        snoozedUntil = snoozedUntil,
+        now = now,
+    ),
+)
 
 /** Account types counted as "liquid" for [computeFinancialHealth]'s cash-runway and safe-to-spend math. */
 private val LIQUID_ACCOUNT_TYPES = setOf(AccountType.CHECKING, AccountType.SAVINGS, AccountType.CASH)

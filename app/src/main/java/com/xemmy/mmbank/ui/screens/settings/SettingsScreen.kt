@@ -106,6 +106,7 @@ import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent
 import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
@@ -2413,13 +2414,8 @@ private fun PermissionCard(
 // Permission checks (also drive the root menu's status subtitles)
 // ---------------------------------------------------------------------------
 
-private fun isNotificationAccessGranted(context: Context): Boolean =
-    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+private fun isNotificationAccessGranted(context: Context): Boolean = CaptureAccess.notificationAccess(context)
 
-private fun isSmsGranted(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
-        PackageManager.PERMISSION_GRANTED
+private fun isSmsGranted(context: Context): Boolean = CaptureAccess.sms(context)
 
-private fun isBatteryExempt(context: Context): Boolean =
-    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-        .isIgnoringBatteryOptimizations(context.packageName)
+private fun isBatteryExempt(context: Context): Boolean = CaptureAccess.batteryExempt(context)

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.AssistChip
@@ -32,6 +33,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -45,13 +47,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
+import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
+import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
@@ -84,9 +90,22 @@ import kotlin.math.roundToInt
 fun DashboardScreen(
     onOpenReview: () -> Unit = {},
     onOpenUnassigned: () -> Unit = {},
+    /** Capture & permissions, where the capture-health banner's "Fix" leads. */
+    onOpenCaptureSettings: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val captureHealth by viewModel.captureHealth.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    // Permissions can change in system settings while we're away.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshCaptureAccess(
+            notificationAccess = CaptureAccess.notificationAccess(context),
+            sms = CaptureAccess.sms(context),
+            batteryExempt = CaptureAccess.batteryExempt(context),
+        )
+        onPauseOrDispose { }
+    }
     val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
     val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
     val pendingReviewCount by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
@@ -116,6 +135,16 @@ fun DashboardScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            captureHealth?.takeIf { it.showBanner }?.let { health ->
+                item(key = "capture_health") {
+                    CaptureHealthBanner(
+                        health = health,
+                        onFix = onOpenCaptureSettings,
+                        onSnooze = viewModel::snoozeCaptureHealth,
+                    )
+                }
+            }
+
             if (pendingReviewCount > 0) {
                 item(key = "review_badge") {
                     ReviewBadgeCard(count = pendingReviewCount, onClick = onOpenReview)
@@ -285,6 +314,54 @@ private fun AccountFilterChip(label: String, onClear: () -> Unit) {
 }
 
 /** "N items to review" entry point into the High-Detail Review Transactions screen; hidden by the caller when count is 0. */
+/**
+ * "Capture may have stopped" -- the app's main way of failing is silently,
+ * so this sits above everything else on Home (see [CaptureHealthEvaluator]).
+ */
+@Composable
+private fun CaptureHealthBanner(
+    health: CaptureHealthEvaluator.Health,
+    onFix: () -> Unit,
+    onSnooze: () -> Unit,
+) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Text(
+                    when (health.state) {
+                        CaptureHealthEvaluator.State.NO_ACCESS -> "Capture is off"
+                        CaptureHealthEvaluator.State.DISCONNECTED -> "Capture may have stopped"
+                        else -> "Unusually quiet"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(start = 10.dp),
+                )
+            }
+            Text(
+                health.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (health.state != CaptureHealthEvaluator.State.NO_ACCESS) {
+                    TextButton(onClick = onSnooze) { Text("Snooze 24h") }
+                }
+                TextButton(onClick = onFix) { Text("Fix") }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ReviewBadgeCard(count: Int, onClick: () -> Unit) {
     Card(

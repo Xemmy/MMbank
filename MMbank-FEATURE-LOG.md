@@ -3951,4 +3951,66 @@ use.
 
 ### CI verification
 
+Run 42408481472 (commit 8629b1c): "Run unit tests" passed (a real 2 min 36 s
+run, including the new `DashboardViewModelTest` cases); Build APK success;
+Final Status success.
+
+## Phase 18.3 — Capture-health guard: notice when capture stops
+
+Version 0.56.0 (versionCode 83). No schema change. Backlog #60.
+
+### Why
+
+MMbank fails silently. An OEM battery manager kills or unbinds the
+notification listener, or access gets revoked, and transactions simply stop
+arriving while every screen keeps looking fine. Every other feature depends on
+capture, so this protects all of them.
+
+### What changed
+
+- **`CaptureHealthEvaluator`** (pure) returns one verdict:
+  - `NO_ACCESS`: neither notification access nor the SMS permission. Shown
+    even when snoozed.
+  - `DISCONNECTED`: notification access is granted, but Android's last word
+    was "disconnected", or not one notification from any app has reached the
+    listener for 24 h. A heartbeat never recorded (fresh install, just
+    updated) is not evidence; one "in the future" means the clock moved back.
+  - `QUIET`: at least 5 live captures in the 90 days before the last one, and
+    the silence is longer than max(3 × the median gap, 72 h). A weekly
+    capturer isn't flagged after three days, and a very long silence still
+    counts.
+  - Otherwise `HEALTHY`. A battery-optimisation hint is added when MMbank
+    isn't exempt.
+- **Heartbeat:** `BankNotificationListener` records the time of any posted
+  notification before filtering (throttled to one write per 15 min), plus
+  `onListenerConnected` / `onListenerDisconnected`; on disconnect it calls
+  `requestRebind`. `SmsReceiver` records the last SMS. Five plain
+  `AppPreferences` longs; nothing in backup.
+- **Home banner** (top of Home): "Capture is off" / "Capture may have stopped"
+  / "Unusually quiet", with **Fix** (opens Capture & permissions) and
+  **Snooze 24h**. Permissions are re-checked on every resume. Only SMS and
+  push captures count; pasted, manual and demo rows never do. Hidden in demo
+  mode.
+- `util/CaptureAccess.kt` now holds the access checks that were private to
+  `SettingsScreen.kt`, so Home and Settings share them.
+- No background worker: the battery managers that kill the listener kill
+  WorkManager too.
+
+### Tests
+
+`CaptureHealthEvaluatorTest` (16): healthy, fresh install, no access beats
+everything and ignores snooze, SMS alone is enough, disconnect / reconnect,
+24 h listener silence, silence without notification access, quiet daily
+capturer, weekly capturer not flagged early, too little history, a very long
+silence, snooze expiry, clock moved back, the battery hint, the heartbeat
+throttle. `CaptureHealthGlueTest`: pasted, manual and demo rows never prove
+capture works.
+
+### Not covered by CI
+
+The listener callbacks, the heartbeat on a real phone and the banner need a
+device. To see it: revoke notification access and SMS, then open Home.
+
+### CI verification
+
 Pending.
