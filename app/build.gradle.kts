@@ -79,6 +79,13 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+// Room exports schemas/*.json as a side effect of KSP running, which Gradle's
+// build cache doesn't record. A cache hit would skip the export and leave
+// MigrationSqlTest without its schema file, so KSP is always re-run.
+tasks.matching { it.name.startsWith("ksp") && it.name.endsWith("Kotlin") }.configureEach {
+    outputs.cacheIf { false }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
