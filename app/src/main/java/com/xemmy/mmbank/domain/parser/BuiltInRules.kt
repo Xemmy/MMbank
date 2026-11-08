@@ -225,6 +225,22 @@ object BuiltInRules {
         rule("builtin.ar.credit.amt-cur", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
         rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
 
+        // --- Arabic card-use notification (priority 11) ---
+        // "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX7573 لإجراء معاملة بقيمة
+        //  AED70.00 بتاريخ 08/11/2026 في 10:50:47 لدى D535 STARBUCKS 3C ABU في DHABI-AE."
+        // "استخدام" is not in KW_DEBIT_AR, and the card ending is introduced by
+        // "بالرقم" rather than ACC_AR's "حساب … رقم", so no rule matched it. The
+        // currency is required here, so an OTP line such as "تم استخدام رمز 123456"
+        // can never be read as a payment.
+        rule(
+            "builtin.ar.debit.card-use",
+            "تم\\s+استخدام\\s+.{0,80}?(?:بالرقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})\\s+)?" +
+                "لإجراء\\s+معاملة\\s+بقيمة\\s+$CUR\\s?$AMT" +
+                "(?:.{0,80}?\\sلدى\\s+(?<merchant>[^.,;\\n*]{2,40}?)(?=\\s+في\\s|[.,;\\n*]|\\s*$))?",
+            TransactionDirection.DEBIT,
+            11,
+        ),
+
         // --- Arabic transfers: amount then "from/to account رقم …" (priority 12) ---
         // Tried before the generic keyword rules so the account number is
         // extracted instead of being swallowed by the Arabic merchant group.

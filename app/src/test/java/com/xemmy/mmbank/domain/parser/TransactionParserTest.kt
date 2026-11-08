@@ -98,6 +98,25 @@ class TransactionParserTest {
     }
 
     @Test
+    fun `parses arabic card-use notification with card ending and merchant as debit`() {
+        val body = "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX7573 لإجراء معاملة بقيمة AED70.00 " +
+            "بتاريخ 08/11/2026 في 10:50:47 لدى D535 STARBUCKS 3C ABU في DHABI-AE. الحد المتاح 7781.34 درهم"
+        val result = parser.parse(sms(body))
+        assertNotNull(result)
+        assertEquals(BigDecimal("70.00"), result!!.amount)
+        assertEquals("AED", result.currencyCode)
+        assertEquals(TransactionDirection.DEBIT, result.direction)
+        assertEquals("D535 STARBUCKS 3C ABU", result.merchant)
+        assertEquals("XX7573", result.accountNumberSuffix)
+        assertEquals("builtin.ar.debit.card-use", result.matchedRuleName)
+    }
+
+    @Test
+    fun `arabic otp notification is not read as a card payment`() {
+        assertNull(parser.parse(sms("تم استخدام رمز التحقق 123456 لتسجيل الدخول")))
+    }
+
+    @Test
     fun `parses arabic credit`() {
         val result = parser.parse(sms("تم إيداع مبلغ 5000 د.إ في حسابك"))
         assertNotNull(result)
