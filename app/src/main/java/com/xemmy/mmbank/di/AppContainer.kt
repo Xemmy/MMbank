@@ -50,7 +50,12 @@ import com.xemmy.mmbank.data.retention.TransactionRetentionWorker
 import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
+import com.xemmy.mmbank.data.digest.WeeklyDigestWorker
+import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
+import com.xemmy.mmbank.domain.intelligence.WhatChangedDigest
+import com.xemmy.mmbank.ui.util.CurrencyMath
+import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
@@ -80,6 +85,7 @@ import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
 import com.xemmy.mmbank.domain.parser.IgnoredMessageCache
 import com.xemmy.mmbank.domain.usecase.BulkUpdateTransactionsUseCase
@@ -100,6 +106,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
@@ -771,6 +778,79 @@ class AppContainer(context: Context) {
         runCatching {
             WorkManager.getInstance(appContext).cancelUniqueWork(BillReminderWorker.WORK_NAME)
         }.onFailure { recordError("AppContainer.cancelBillReminderWork", it) }
+    }
+
+    /**
+     * Turns the opt-in weekly "what changed" notification on or off (see
+     * [WeeklyDigestWorker]). Nothing is scheduled while it's off.
+     */
+    fun setWeeklyDigestEnabled(enabled: Boolean) {
+        preferences.weeklyDigestNotificationsEnabled = enabled
+        if (enabled) ensureWeeklyDigestWork() else cancelWeeklyDigestWork()
+    }
+
+    /**
+     * Re-arms the weekly digest if it's enabled. The worker checks daily and
+     * sends at most once per ISO week, so the notice lands within a day of a
+     * new week starting rather than drifting with the install date.
+     */
+    fun ensureWeeklyDigestWork() {
+        if (!preferences.weeklyDigestNotificationsEnabled) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                WeeklyDigestWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<WeeklyDigestWorker>(1, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureWeeklyDigestWork", it) }
+    }
+
+    private fun cancelWeeklyDigestWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(WeeklyDigestWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelWeeklyDigestWork", it) }
+    }
+
+    /**
+     * This week's [WhatChangedDigest] for the notification, from the real
+     * ledger -- including a "capture looks quiet" line, because the weekly
+     * digest is the only background check capture health gets (the battery
+     * managers that kill the listener kill other workers too).
+     */
+    suspend fun buildWeeklyDigest(): WhatChangedDigest.Digest? {
+        val transactions = transactionRepository.getAllReal()
+        val base = preferences.defaultCurrency
+        val ratesFromBase = ratesRepository.observeRates().first()
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+        val now = System.currentTimeMillis()
+        val health = CaptureHealthEvaluator.evaluate(
+            CaptureHealthEvaluator.Inputs(
+                notificationAccess = CaptureAccess.notificationAccess(appContext),
+                smsPermission = CaptureAccess.sms(appContext),
+                batteryExempt = CaptureAccess.batteryExempt(appContext),
+                lastListenerEventAt = preferences.captureLastEventAt,
+                listenerConnectedAt = preferences.captureListenerConnectedAt,
+                listenerDisconnectedAt = preferences.captureListenerDisconnectedAt,
+                capturedAt = transactions
+                    .filter { it.source == TransactionSource.SMS || it.source == TransactionSource.PUSH_NOTIFICATION }
+                    .map { it.createdAt },
+                snoozedUntil = 0L,
+                now = now,
+            ),
+        )
+        return WhatChangedDigest.build(
+            transactions = transactions,
+            categories = categoryRepository.observeAll().first(),
+            subscriptions = subscriptionRepository.observeActive().first(),
+            bills = billRepository.observeAll().first(),
+            cards = cardStatuses(),
+            toBase = { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase) },
+            baseCurrency = base,
+            today = LocalDate.now(),
+            nowMillis = now,
+            captureQuietDays = health.takeIf { it.state == CaptureHealthEvaluator.State.QUIET }?.quietDays,
+        )
     }
 
     /**

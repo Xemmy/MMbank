@@ -477,6 +477,7 @@ private fun PeriodTiles(state: DashboardUiState) {
         StatTile(
             "Spent", spend.asMoneyWholeOrMask(state.baseCurrency, hidden), ObsidianTokens.debit,
             Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = false),
+            caption = spendChangeCaption(state.stats.spendChangePercent, state.stats.previousLabel),
         )
         StatTile(
             "Net",
@@ -494,6 +495,7 @@ private fun StatTile(
     valueColor: Color,
     modifier: Modifier = Modifier,
     glow: GlowTone? = null,
+    caption: String? = null,
 ) {
     ObsidianCard(modifier) {
         Column(
@@ -513,8 +515,23 @@ private fun StatTile(
                 color = valueColor,
                 style = MaterialTheme.typography.titleSmall,
             )
+            caption?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
+}
+
+/** "↑18% vs this point last month"; null when there's nothing to compare with. */
+internal fun spendChangeCaption(percent: Double?, previousLabel: String?): String? {
+    if (percent == null || previousLabel == null) return null
+    val rounded = kotlin.math.abs(percent).roundToInt()
+    if (rounded == 0) return "≈ same $previousLabel"
+    return "${if (percent > 0) "↑" else "↓"}$rounded% $previousLabel"
 }
 
 /** Card row that opens the full cashback Rewards screen. */

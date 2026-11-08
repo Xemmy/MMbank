@@ -372,6 +372,20 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putString(KEY_DEBT_PLANNER_BUDGET, value).apply()
 
     /**
+     * Opt-in weekly "what changed" notification (see
+     * [com.xemmy.mmbank.data.digest.WeeklyDigestWorker]). Off by default;
+     * Home's weekly card shows the same digest regardless.
+     */
+    var weeklyDigestNotificationsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WEEKLY_DIGEST_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_WEEKLY_DIGEST_ENABLED, value).apply()
+
+    /** ISO week ("2026-W45") the weekly digest was last sent for, so a week is never sent twice. */
+    var weeklyDigestLastSentKey: String
+        get() = prefs.getString(KEY_WEEKLY_DIGEST_LAST_SENT, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_WEEKLY_DIGEST_LAST_SENT, value).apply()
+
+    /**
      * Due dates already announced, as `"{billId}:{nextDueDateMillis}"` keys
      * (see [com.xemmy.mmbank.domain.intelligence.BillReminders.reminderKey]).
      * Pruned to live bills on each run.
@@ -433,6 +447,8 @@ class AppPreferences(context: Context) {
         const val KEY_CAPTURE_LAST_SMS = "capture_last_sms_at"
         const val KEY_CAPTURE_SNOOZED_UNTIL = "capture_health_snoozed_until"
         const val KEY_DEBT_PLANNER_BUDGET = "debt_planner_budget"
+        const val KEY_WEEKLY_DIGEST_ENABLED = "weekly_digest_notifications_enabled"
+        const val KEY_WEEKLY_DIGEST_LAST_SENT = "weekly_digest_last_sent"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }
 }

@@ -121,6 +121,7 @@ import com.xemmy.mmbank.domain.filter.ActivityDrillDown
 import com.xemmy.mmbank.domain.filter.ActivityFilters
 import com.xemmy.mmbank.domain.filter.AnalyticsStatusFilter
 import com.xemmy.mmbank.domain.filter.DateRangeFilter
+import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.filter.TransactionFilterEngine
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
@@ -175,6 +176,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -240,6 +242,13 @@ data class SpendSummaryState(
     val hasBudget: Boolean = false,
     /** 0 when [hasBudget] is false. Can exceed 100 when over budget. */
     val budgetConsumedPercent: Double = 0.0,
+    /**
+     * Net spend under the same filters over the equal-length window just
+     * before this one; null when the date filter is unbounded ("All").
+     */
+    val previousSpent: Double? = null,
+    /** Length of that window in days. */
+    val comparisonDays: Int? = null,
 )
 
 /**
@@ -254,6 +263,9 @@ internal fun computeSpendSummary(
     rates: List<ExchangeRate>,
     baseCurrency: String,
     monthlyBudget: Double,
+    /** The same filters applied to the window just before; null when unbounded. */
+    previousTransactions: List<Transaction>? = null,
+    comparisonDays: Int? = null,
 ): SpendSummaryState {
     val ratesFromBase = rates
         .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
@@ -273,7 +285,18 @@ internal fun computeSpendSummary(
         budgetAmount = monthlyBudget,
         hasBudget = hasBudget,
         budgetConsumedPercent = if (hasBudget) totalSpent / monthlyBudget * 100.0 else 0.0,
+        previousSpent = previousTransactions?.let { LedgerMath.netSpend(it, value = ::inBase) },
+        comparisonDays = comparisonDays,
     )
+}
+
+/**
+ * The window of equal length just before [window] -- what the hero card
+ * compares the filtered feed against.
+ */
+internal fun priorWindow(window: DateWindow): DateWindow {
+    val days = java.time.temporal.ChronoUnit.DAYS.between(window.start, window.end) + 1
+    return DateWindow(window.start.minusDays(days), window.start.minusDays(1))
 }
 
 /** Entry point into [UncategorizedQueueScreen] -- shown only while there's something to review. */
@@ -362,14 +385,34 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     val spendSummaryState: StateFlow<SpendSummaryState> = combine(
         uiState,
         container.ratesRepository.observeRates(),
-    ) { state, rates ->
+        container.transactionRepository.observeTransactions(),
+    ) { state, rates, all ->
+        // A bounded date filter gets a "vs the days before" comparison: the
+        // same filters, shifted back one window.
+        val window = TransactionFilterEngine.resolveDateWindow(
+            state.filters.dateRange,
+            TransactionFilterEngine.activeAccount(state.filters.account, state.accounts),
+            java.time.LocalDate.now(),
+        )
+        val previous = window?.let(::priorWindow)
+        val previousRows = previous?.let { p ->
+            TransactionFilterEngine.filter(
+                transactions = all,
+                filters = state.filters.copy(dateRange = DateRangeFilter.Custom(p.start, p.end)),
+                accounts = state.accounts,
+                bankNameOf = { sender -> bankNameFor(sender, state.senderLabels) },
+            )
+        }
         computeSpendSummary(
             transactions = state.transactions,
             rates = rates,
             baseCurrency = container.preferences.defaultCurrency,
             monthlyBudget = container.preferences.monthlySpendBudget,
+            previousTransactions = previousRows,
+            comparisonDays = window?.let { (java.time.temporal.ChronoUnit.DAYS.between(it.start, it.end) + 1).toInt() },
         )
-    }.recoverAndRetry("TransactionsViewModel.spendSummary", container) {
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default)
+        .recoverAndRetry("TransactionsViewModel.spendSummary", container) {
         SpendSummaryState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpendSummaryState())
 

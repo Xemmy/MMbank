@@ -136,6 +136,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     var unusualChargeAlertsEnabled by mutableStateOf(container.preferences.unusualChargeAlertsEnabled)
         private set
+    var weeklyDigestEnabled by mutableStateOf(container.preferences.weeklyDigestNotificationsEnabled)
+        private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
@@ -426,6 +428,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.preferences.unusualChargeAlertsEnabled = enabled
         unusualChargeAlertsEnabled = enabled
         statusMessage = if (enabled) "Unusual charge alerts on." else "Unusual charge alerts off."
+    }
+
+    /** Schedules or cancels the weekly "what changed" notification (see [com.xemmy.mmbank.data.digest.WeeklyDigestWorker]). */
+    fun updateWeeklyDigest(enabled: Boolean) {
+        container.setWeeklyDigestEnabled(enabled)
+        weeklyDigestEnabled = enabled
+        statusMessage = if (enabled) "Weekly digest on: once a week, what changed." else "Weekly digest off."
     }
 
     fun updateHideZeroBalances(hide: Boolean) {
@@ -1273,6 +1282,15 @@ fun PreferencesSettingsScreen(
                 "this only adds a phone notification.",
             checked = viewModel.unusualChargeAlertsEnabled,
             onCheckedChange = viewModel::updateUnusualChargeAlerts,
+        )
+
+        AlertToggleRow(
+            title = "Weekly digest",
+            description = "Once a week, a notification with what you spent and what changed: caps " +
+                "crossed, unusual charges, payments due, new subscriptions, and a warning if capture " +
+                "has gone quiet. Home's \"This week\" card always shows it.",
+            checked = viewModel.weeklyDigestEnabled,
+            onCheckedChange = viewModel::updateWeeklyDigest,
         )
 
         Row(

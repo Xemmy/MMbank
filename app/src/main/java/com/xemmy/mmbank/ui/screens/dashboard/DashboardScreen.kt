@@ -55,7 +55,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
-import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
+import com.xemmy.mmbank.domain.intelligence.WhatChangedDigest
+import com.xemmy.mmbank.domain.intelligence.WhatChangedWording
 import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
@@ -79,7 +80,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -532,10 +532,16 @@ private fun NetWorthCard(
  */
 @Composable
 private fun WeeklyDigestCard(
-    digest: AiWeeklyDigestGenerator.WeeklyDigest,
+    digest: WhatChangedDigest.Digest,
     currency: String,
     hidden: Boolean,
 ) {
+    val wording = remember(currency, hidden) {
+        WhatChangedWording(
+            money = { it.asMoneyOrMask(currency, hidden) },
+            moneyIn = { amount, code -> amount.asMoneyOrMask(code, hidden) },
+        )
+    }
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(16.dp),
@@ -551,26 +557,18 @@ private fun WeeklyDigestCard(
             Column(Modifier.weight(1f)) {
                 Text("This week", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    weeklyDigestText(digest, currency, hidden),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Text(wording.headline(digest), style = MaterialTheme.typography.bodyMedium)
+                digest.items.forEach { item ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "• " + wording.item(item),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
-}
-
-/** Renders a [AiWeeklyDigestGenerator.WeeklyDigest] into plain English, same split as [SmartInsight]'s formatting. */
-private fun weeklyDigestText(digest: AiWeeklyDigestGenerator.WeeklyDigest, currency: String, hidden: Boolean): String {
-    val trend = digest.percentChange?.let { change ->
-        val direction = if (change > 0) "more" else "less"
-        "Spent ${abs(change).roundToInt()}% $direction this week " +
-            "(${digest.thisWeekSpend.asMoneyOrMask(currency, hidden)} vs ${digest.lastWeekSpend.asMoneyOrMask(currency, hidden)})"
-    } ?: "Spent ${digest.thisWeekSpend.asMoneyOrMask(currency, hidden)} this week"
-    val top = digest.topSpend?.let { top ->
-        " Top spend: ${top.amount.asMoneyOrMask(currency, hidden)} at ${top.merchant}."
-    } ?: ""
-    return "$trend.$top"
 }
 
 /**

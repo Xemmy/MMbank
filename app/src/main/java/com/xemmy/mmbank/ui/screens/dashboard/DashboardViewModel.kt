@@ -6,11 +6,11 @@ import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
-import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.account.BalanceHistory
 import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
+import com.xemmy.mmbank.domain.intelligence.WhatChangedDigest
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
@@ -20,6 +20,7 @@ import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.ledger.LedgerMath
+import com.xemmy.mmbank.domain.ledger.PeriodComparison
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.model.WalletBalance
@@ -146,6 +147,10 @@ data class DashboardStats(
     val periodIncome: Double = 0.0,
     val periodSpend: Double = 0.0,
     val insights: List<SmartInsight> = emptyList(),
+    /** Spend change against [previousLabel]'s window; null when that window had none. */
+    val spendChangePercent: Double? = null,
+    /** "vs this point last month" for the current month, else "vs previous period". */
+    val previousLabel: String? = null,
 )
 
 data class GoalState(
@@ -403,25 +408,52 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         captureSnoozedUntil.value = until
     }
 
+    private data class DigestSources(
+        val subscriptions: List<com.xemmy.mmbank.domain.model.Subscription>,
+        val bills: List<com.xemmy.mmbank.domain.model.Bill>,
+        val accounts: List<Account>,
+        val entries: List<AccountBalanceCalculator.LedgerEntry>,
+    )
+
+    private val digestSources = combine(
+        container.subscriptionRepository.observeActive(),
+        container.billRepository.observeAll(),
+        container.accountRepository.observeActive(),
+        container.transactionRepository.observeLedgerEntries(),
+    ) { subscriptions, bills, accounts, entries -> DigestSources(subscriptions, bills, accounts, entries) }
+
     /**
-     * "AI Weekly Digest" hero card: this week's spend vs last week's and the
-     * single biggest expense, via [AiWeeklyDigestGenerator]. Kept as its own
-     * flow (not folded into [statsFlow]) since it reads the whole ledger on a
-     * rolling 14-day window, independent of the Dashboard's own date filter.
+     * Home's "This week" card: spend against last week, plus what changed --
+     * caps crossed, unusual charges, payments due, new or repriced
+     * subscriptions, the category that jumped, and capture going quiet (see
+     * [WhatChangedDigest]). Its own flow, independent of the Dashboard tab's
+     * date filter, on a rolling 7-day window.
      */
-    val weeklyDigest: StateFlow<AiWeeklyDigestGenerator.WeeklyDigest?> = combine(
+    val weeklyDigest: StateFlow<WhatChangedDigest.Digest?> = combine(
         container.transactionRepository.observeTransactions(),
         container.ratesRepository.observeRates(),
-    ) { transactions, rates ->
+        container.categoryRepository.observeAll(),
+        digestSources,
+        captureHealth,
+    ) { transactions, rates, categories, sources, health ->
         val base = container.preferences.defaultCurrency
         val ratesFromBase = rates
             .filter { it.baseCode.equals(base, ignoreCase = true) }
             .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
-        AiWeeklyDigestGenerator.generate(
+        val today = LocalDate.now()
+        WhatChangedDigest.build(
             transactions = transactions,
+            categories = categories,
+            subscriptions = sources.subscriptions,
+            bills = sources.bills,
+            cards = CardPaymentReminders.build(sources.accounts, transactions, sources.entries, today),
             toBase = { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase) },
+            baseCurrency = base,
+            today = today,
+            captureQuietDays = health?.takeIf { it.state == CaptureHealthEvaluator.State.QUIET }?.quietDays,
         )
-    }.recoverAndRetry("DashboardViewModel.weeklyDigest", container) { null }
+    }.flowOn(Dispatchers.Default)
+        .recoverAndRetry("DashboardViewModel.weeklyDigest", container) { null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Badge count for the Home tab's "Review Transactions" entry point -- still-uncategorized real transactions. */
@@ -922,6 +954,7 @@ internal fun computeDashboardStats(
     zone: ZoneId = ZoneId.systemDefault(),
     thisMonth: YearMonth = YearMonth.now(zone),
     dateRange: DashboardDateRange = DashboardDateRange.ThisMonth,
+    today: LocalDate = LocalDate.now(zone),
 ): DashboardStats {
     // includeExcluded is the "show the whole ledger" view: plain debits vs
     // credits, kinds and the exclusion flag ignored (see LedgerMath.raw).
@@ -995,9 +1028,16 @@ internal fun computeDashboardStats(
     // "Previous period": the same number of days immediately before the
     // selected window, for period-over-period trend insights. Undefined
     // (null) when the selected range is unbounded (All time).
-    val previousWindow = window?.let { w ->
-        val days = ChronoUnit.DAYS.between(w.start, w.end) + 1
-        DateWindow(w.start.minusDays(days), w.start.minusDays(1))
+    // The current month is only partly over, so it compares with the same
+    // days of last month -- not the whole of it, which always read as "down".
+    val monthToDate = dateRange == DashboardDateRange.ThisMonth && thisMonth == YearMonth.from(today)
+    val previousWindow = if (monthToDate) {
+        PeriodComparison.previousMonthToDate(today)
+    } else {
+        window?.let { w ->
+            val days = ChronoUnit.DAYS.between(w.start, w.end) + 1
+            DateWindow(w.start.minusDays(days), w.start.minusDays(1))
+        }
     }
     val previousPeriodTx = previousWindow?.let { pw -> counted.filter { inWindow(it, pw) } }.orEmpty()
     val previousPeriodSpend = previousWindow?.let {
@@ -1044,6 +1084,12 @@ internal fun computeDashboardStats(
         periodIncome = periodIncome,
         periodSpend = periodSpend,
         insights = insights,
+        spendChangePercent = previousPeriodSpend?.takeIf { it > 0.0 }?.let { (periodSpend - it) / it * 100.0 },
+        previousLabel = when {
+            previousWindow == null -> null
+            monthToDate -> "vs this point last month"
+            else -> "vs previous period"
+        },
     )
 }
 

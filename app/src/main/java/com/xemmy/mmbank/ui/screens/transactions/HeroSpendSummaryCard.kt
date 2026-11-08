@@ -60,6 +60,9 @@ internal fun HeroSpendSummaryCard(
             fontWeight = FontWeight.SemiBold,
             fontSize = ObsidianTokens.titleFontSize,
         )
+        heroComparisonCaption(state.totalSpent, state.previousSpent, state.comparisonDays)?.let { caption ->
+            Text(caption, color = ObsidianTokens.textMeta, fontFamily = AppFonts.inter, fontSize = ObsidianTokens.metaFontSize)
+        }
         Spacer(Modifier.height(2.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -117,4 +120,19 @@ internal fun HeroSpendSummaryCard(
             )
         }
     }
+}
+
+/**
+ * "↑12% vs the 7 days before" under the hero card's Spent figure; null when
+ * there's nothing to compare with (unbounded filter, or no spend before).
+ */
+internal fun heroComparisonCaption(current: Double, previous: Double?, days: Int?): String? {
+    if (previous == null || days == null || previous <= 0.0) return null
+    val change = (current - previous) / previous * 100.0
+    val period = when (days) {
+        1 -> "the day before"
+        else -> "the $days days before"
+    }
+    val rounded = kotlin.math.abs(change).let { Math.round(it) }
+    return if (rounded == 0L) "≈ same as $period" else "${if (change > 0) "↑" else "↓"}$rounded% vs $period"
 }

@@ -4125,4 +4125,65 @@ The screen itself, and the Accounts entry card.
 
 ### CI verification
 
+Run 42450112332 (commit 869cb0a): unit tests passed (2 min 39 s); Build APK success, release APK built too; Final Status success.
+
+## Phase 18.6 — "What changed" this week, and fair comparisons
+
+Version 0.59.0 (versionCode 86). No schema change. Backlog #43, #38.
+
+### Why
+
+Home's weekly card said only "spent X% more than last week" and named the top
+expense. Everything worth knowing about a week was already computed somewhere
+in the app, but never brought together: a cap crossed, an unusual charge, a
+bill due, a new or repriced subscription, capture going quiet. Separately, the
+Dashboard's "This month" trend compared a partly-over month with the whole of
+last month, so early in a month it always read as a big drop.
+
+### What changed
+
+- **`WhatChangedDigest`** (pure): spend this week vs last week (now
+  `LedgerMath.netSpend`, so refunds count; the old generator counted purchases
+  only), plus up to 5 ranked items:
+  - capture looks quiet (from `CaptureHealthEvaluator`);
+  - a category over or near (80%) its monthly cap;
+  - unusual charges (from `SpendAnomalyDetector`);
+  - bills and card payments due within 7 days;
+  - a subscription seen for the first time (`occurrenceCount == 3`, the
+    radar's minimum) or whose price changed, charged this week;
+  - the category that jumped most against last week (at least 25%).
+- **`WhatChangedWording`** (pure, formatters injected) writes the sentences for
+  both Home and the notification.
+- **Home's "This week" card** shows the headline and the items. It replaces
+  `AiWeeklyDigestGenerator` on Home; that generator and its tests remain.
+- **Opt-in weekly notification** (Settings → Preferences → Weekly digest, off
+  by default): `WeeklyDigestWorker` checks daily and sends at most once per
+  ISO week (`weeklyDigestLastSentKey`), via `AppContainer.buildWeeklyDigest`.
+  The digest includes the capture-health check, so a quiet week reaches the
+  user even though there is no separate capture worker. Channel
+  `weekly_digest`, id 9600, low importance.
+- **`PeriodComparison`** (pure): month to date vs the same days of last
+  month (day 31 clamped to a shorter month, January vs December), and a
+  period vs the equal-length window before it.
+- **Dashboard tab:** the `SpendTrend` insight for "This month" now compares
+  with the same days of last month. The Spent tile shows "↑18% vs this point
+  last month" (or "vs previous period" for other ranges).
+- **Activity hero card:** with a bounded date filter, "↑12% vs the 7 days
+  before", using the same filters over the previous window.
+
+### Tests
+
+`WhatChangedDigestTest` (9), `WhatChangedWordingTest` (3),
+`PeriodComparisonTest` (6), `WeeklyDigestWorkerTest` (ISO week keys across a
+year end, the once-a-week gate), `HeroComparisonTest`,
+`SpendChangeCaptionTest`. Locally, the pure domain suite (92 classes, 939
+tests) passes.
+
+### Not covered by CI
+
+The notification, the worker schedule, the Home card's rendering, and the new
+captions.
+
+### CI verification
+
 Pending.
