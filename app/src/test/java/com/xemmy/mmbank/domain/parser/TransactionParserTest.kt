@@ -99,15 +99,15 @@ class TransactionParserTest {
 
     @Test
     fun `parses arabic card-use notification with card ending and merchant as debit`() {
-        val body = "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX7573 لإجراء معاملة بقيمة AED70.00 " +
-            "بتاريخ 08/11/2026 في 10:50:47 لدى D535 STARBUCKS 3C ABU في DHABI-AE. الحد المتاح 7781.34 درهم"
+        val body = "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX0000 لإجراء معاملة بقيمة AED12.34 " +
+            "بتاريخ 01/01/2026 في 00:00:00 لدى EXAMPLE CAFE في EXAMPLE CITY-AE. الحد المتاح 1000.00 درهم"
         val result = parser.parse(sms(body))
         assertNotNull(result)
-        assertEquals(BigDecimal("70.00"), result!!.amount)
+        assertEquals(BigDecimal("12.34"), result!!.amount)
         assertEquals("AED", result.currencyCode)
         assertEquals(TransactionDirection.DEBIT, result.direction)
-        assertEquals("D535 STARBUCKS 3C ABU", result.merchant)
-        assertEquals("XX7573", result.accountNumberSuffix)
+        assertEquals("EXAMPLE CAFE", result.merchant)
+        assertEquals("XX0000", result.accountNumberSuffix)
         assertEquals("builtin.ar.debit.card-use", result.matchedRuleName)
     }
 

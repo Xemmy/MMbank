@@ -226,8 +226,8 @@ object BuiltInRules {
         rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
 
         // --- Arabic card-use notification (priority 11) ---
-        // "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX7573 لإجراء معاملة بقيمة
-        //  AED70.00 بتاريخ 08/11/2026 في 10:50:47 لدى D535 STARBUCKS 3C ABU في DHABI-AE."
+        // "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX0000 لإجراء معاملة بقيمة
+        //  AED12.34 بتاريخ 01/01/2026 في 00:00:00 لدى EXAMPLE CAFE في EXAMPLE CITY-AE."
         // "استخدام" is not in KW_DEBIT_AR, and the card ending is introduced by
         // "بالرقم" rather than ACC_AR's "حساب … رقم", so no rule matched it. The
         // currency is required here, so an OTP line such as "تم استخدام رمز 123456"
