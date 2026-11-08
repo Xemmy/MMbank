@@ -4245,3 +4245,43 @@ The lock screen and PIN pad, BiometricPrompt alongside "Use app PIN", and
 ### CI verification
 
 Run 42451158435 (commit f22fe0e): unit tests passed (2 min 51 s); Build APK success, release APK built too; Final Status success.
+
+
+## Phase 18.8 — Capture log
+
+Version 0.62.0 (versionCode 89). No schema change.
+
+### Why
+
+When a bank notification or SMS produced nothing there was no way to tell why:
+the listener only wrote to logcat (and said nothing for unmatched or failed
+messages), and Settings → Diagnostics showed only crashes and recovered errors.
+
+### What changed
+
+- **`CaptureLogFormatter`** (pure): one entry per captured message with
+  time, channel (PUSH/SMS/LISTENER), sender, outcome (SAVED, DUPLICATE,
+  IGNORED, NO MATCH, ERROR) and a snippet. The snippet is whitespace-collapsed,
+  cut to 90 characters and run through `LogRedactor`. Digit-free no-matches are
+  not logged, so chat noise stays out. Newest first; the oldest entries are
+  trimmed at a line boundary once the file passes 60,000 characters.
+- **`Diagnostics`**: `recordCapture` / `readCaptureLog` / `clearCaptureLog`
+  over `capture_log.txt`, guarded by a lock; never throws.
+- **`BankNotificationListener` / `SmsReceiver`**: log each outcome, ingest
+  failures (also added to the recovered-errors log), and listener
+  connect/disconnect events.
+- **Settings → Diagnostics**: a "Capture log" card with Share and Clear.
+
+### Tests
+
+`CaptureLogFormatterTest` (5).
+
+### Not covered by CI
+
+File writes, the listener and receiver callbacks, and the Diagnostics card need
+a phone. Messages dropped before ingest (ongoing, blank, group-summary, the
+app's own) are deliberately not logged.
+
+### CI verification
+
+Pending.

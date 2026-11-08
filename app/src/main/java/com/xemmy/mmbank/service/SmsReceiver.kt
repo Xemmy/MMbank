@@ -6,7 +6,9 @@ import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.parser.CaptureLogFormatter
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
@@ -45,8 +47,17 @@ class SmsReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         scope.launch {
             try {
-                container.ingestCapturedMessage(message)
+                val result = container.ingestCapturedMessage(message)
+                val hasDigit = body.any { it.isDigit() }
+                CaptureLogFormatter.outcome(result, hasDigit)?.let {
+                    Diagnostics.recordCapture(context, CaptureLogFormatter.line("SMS", sender, null, body, it))
+                }
             } catch (t: Throwable) {
+                Diagnostics.recordCapture(
+                    context,
+                    CaptureLogFormatter.line("SMS", sender, null, body, "ERROR ${t.javaClass.simpleName}"),
+                )
+                Diagnostics.recordError(context, "SmsReceiver.ingest", t)
                 Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for SMS from $sender"), t)
             } finally {
                 pendingResult.finish()

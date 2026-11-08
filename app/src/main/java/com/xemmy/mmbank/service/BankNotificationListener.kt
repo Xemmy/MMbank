@@ -6,10 +6,12 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.parser.CaptureLogFormatter
 import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +67,9 @@ class BankNotificationListener : NotificationListenerService() {
         val container = (applicationContext as MMBankApp).container
         scope.launch {
             try {
-                when (val result = container.ingestCapturedMessage(message)) {
+                val result = container.ingestCapturedMessage(message)
+                logCapture(message, result)
+                when (result) {
                     is IngestResult.Inserted ->
                         Log.d(TAG, LogRedactor.redactSensitiveData("Captured tx #${result.transactionId} from ${sbn.packageName}"))
                     is IngestResult.Duplicate ->
@@ -76,12 +80,32 @@ class BankNotificationListener : NotificationListenerService() {
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for notification from ${sbn.packageName}"), t)
+                Diagnostics.recordCapture(
+                    applicationContext,
+                    CaptureLogFormatter.line("PUSH", message.sender, message.title, message.body, "ERROR ${t.javaClass.simpleName}"),
+                )
+                Diagnostics.recordError(applicationContext, "BankNotificationListener.ingest", t)
             }
         }
     }
 
+    private fun logCapture(message: CapturedMessage, result: IngestResult) {
+        val hasDigit = message.body.any { it.isDigit() } || message.title?.any { it.isDigit() } == true
+        val outcome = CaptureLogFormatter.outcome(result, hasDigit) ?: return
+        Diagnostics.recordCapture(
+            applicationContext,
+            CaptureLogFormatter.line("PUSH", message.sender, message.title, message.body, outcome),
+        )
+    }
+
+    private fun logEvent(text: String) = Diagnostics.recordCapture(
+        applicationContext,
+        CaptureLogFormatter.line("LISTENER", null, null, text, "EVENT"),
+    )
+
     override fun onListenerConnected() {
         super.onListenerConnected()
+        logEvent("Listener connected")
         runCatching {
             (applicationContext as MMBankApp).container.preferences.captureListenerConnectedAt = System.currentTimeMillis()
         }
@@ -94,6 +118,7 @@ class BankNotificationListener : NotificationListenerService() {
      */
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        logEvent("Listener disconnected by system; requesting rebind")
         runCatching {
             (applicationContext as MMBankApp).container.preferences.captureListenerDisconnectedAt = System.currentTimeMillis()
         }

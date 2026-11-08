@@ -2377,15 +2377,17 @@ private fun DiagnosticsSection() {
     val context = LocalContext.current
     var crashText by remember { mutableStateOf<String?>(null) }
     var errorsText by remember { mutableStateOf<String?>(null) }
+    var captureText by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
 
     LifecycleResumeEffect(refreshKey) {
         crashText = Diagnostics.readCrash(context)
         errorsText = Diagnostics.readErrors(context)
+        captureText = Diagnostics.readCaptureLog(context)
         onPauseOrDispose { }
     }
 
-    if (crashText == null && errorsText == null) {
+    if (crashText == null && errorsText == null && captureText == null) {
         Text(
             "Nothing recorded. If the app ever crashes or a screen fails to load, the details will appear here.",
             style = MaterialTheme.typography.bodySmall,
@@ -2398,6 +2400,16 @@ private fun DiagnosticsSection() {
             text = it,
             onClear = {
                 Diagnostics.clearCrash(context)
+                refreshKey++
+            },
+        )
+    }
+    captureText?.let {
+        DiagnosticsLogCard(
+            title = "Capture log (newest first: saved, duplicate, ignored, unmatched, failed)",
+            text = it,
+            onClear = {
+                Diagnostics.clearCaptureLog(context)
                 refreshKey++
             },
         )
