@@ -75,3 +75,61 @@ fun PacingArcGauge(
         }
     }
 }
+
+/** One sparkline vertex in canvas pixels. */
+internal data class SparkPoint(val x: Float, val y: Float)
+
+/**
+ * Maps [values] onto a [width] × [height] box for [Sparkline]: evenly spaced
+ * left to right, the smallest value at the bottom and the largest at the top,
+ * [inset] pixels clear of the top and bottom edges. A null value (no data for
+ * that slot) stays null so the line breaks there; a flat series sits on the
+ * middle line; a single value sits in the centre. Pure and JVM-testable.
+ */
+internal fun sparklinePoints(values: List<Double?>, width: Float, height: Float, inset: Float = 0f): List<SparkPoint?> {
+    val known = values.filterNotNull().filter { it.isFinite() }
+    if (known.isEmpty()) return values.map { null }
+    val min = known.min()
+    val max = known.max()
+    val usable = (height - 2 * inset).coerceAtLeast(0f)
+    val step = if (values.size > 1) width / (values.size - 1) else 0f
+    return values.mapIndexed { i, v ->
+        if (v == null || !v.isFinite()) return@mapIndexed null
+        val x = if (values.size > 1) i * step else width / 2f
+        val fraction = if (max == min) 0.5f else ((v - min) / (max - min)).toFloat()
+        SparkPoint(x, inset + (1f - fraction) * usable)
+    }
+}
+
+/**
+ * A minimal trend line -- no axes, no labels -- for a series such as month-end
+ * net worth. Gaps (null values) break the line; the latest point gets a dot.
+ */
+@Composable
+fun Sparkline(
+    values: List<Double?>,
+    modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color = ObsidianTokens.credit,
+    strokeWidth: Dp = 2.dp,
+) {
+    Canvas(modifier) {
+        val stroke = strokeWidth.toPx()
+        val points = sparklinePoints(values, size.width, size.height, inset = stroke * 2)
+        var previous: SparkPoint? = null
+        points.forEach { point ->
+            if (point != null && previous != null) {
+                drawLine(
+                    color = color,
+                    start = Offset(previous!!.x, previous!!.y),
+                    end = Offset(point.x, point.y),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+            }
+            previous = point
+        }
+        points.lastOrNull { it != null }?.let { last ->
+            drawCircle(color = color, radius = stroke * 1.8f, center = Offset(last.x, last.y))
+        }
+    }
+}

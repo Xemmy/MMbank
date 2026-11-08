@@ -9,6 +9,7 @@ import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.intelligence.AiWeeklyDigestGenerator
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
+import com.xemmy.mmbank.domain.account.BalanceHistory
 import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.model.Account
@@ -367,6 +368,27 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         }
     }.flowOn(Dispatchers.Default)
         .recoverAndRetry("DashboardViewModel.captureHealth", container) { null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Month-end net worth for the last 12 months, rebuilt from the ledger
+     * (see [computeNetWorthTrend]). Only the Dashboard tab collects it, so
+     * Home never pays for the replay; it runs off the main thread.
+     */
+    val netWorthTrend: StateFlow<NetWorthTrend?> = combine(
+        container.accountRepository.observeActive(),
+        container.transactionRepository.observeTransactions(),
+        container.ratesRepository.observeRates(),
+    ) { accounts, transactions, rates ->
+        computeNetWorthTrend(
+            accounts = accounts,
+            transactions = transactions,
+            rates = rates,
+            baseCurrency = container.preferences.defaultCurrency,
+            excludeCreditCardFromTotal = container.preferences.excludeCreditCardFromTotal,
+        )
+    }.flowOn(Dispatchers.Default)
+        .recoverAndRetry("DashboardViewModel.netWorthTrend", container) { null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Called on every resume with the current permission state. */
@@ -1023,6 +1045,76 @@ internal fun computeDashboardStats(
         periodSpend = periodSpend,
         insights = insights,
     )
+}
+
+/** Month-end fiat net worth, oldest first; see [computeNetWorthTrend]. */
+data class NetWorthTrend(
+    val months: List<YearMonth>,
+    /** Base-currency net worth at each month's end; null before the ledger's history starts. The last is now. */
+    val values: List<Double?>,
+    /** Some account had no exchange rate at some point, so totals read low. */
+    val approximate: Boolean,
+) {
+    val current: Double? get() = values.lastOrNull()
+
+    /** Change from [monthsBack] month-ends ago to now; null when either end is unknown. */
+    fun changeSince(monthsBack: Int): Double? {
+        val now = current ?: return null
+        val past = values.getOrNull(values.size - 1 - monthsBack) ?: return null
+        return now - past
+    }
+
+    /** At least two known points -- anything less isn't a trend. */
+    val hasTrend: Boolean get() = values.count { it != null } >= 2
+}
+
+/**
+ * Net worth at each of the last [months] month-ends, rebuilt by replaying the
+ * ledger ([BalanceHistory]) -- no snapshots needed. Mirrors Home's figure
+ * exactly: the same balances, the same [computeAccountsPresentation] total
+ * (honouring "exclude credit cards from total"), so the last point is the
+ * number on Home. Two deliberate simplifications, labelled on the card:
+ * every month is converted at today's rates, and live Binance crypto (which
+ * has no history) is left out. Months before the oldest kept transaction are
+ * null: with retention pruning on, earlier rows live only in the opening
+ * balance and can't be replayed.
+ *
+ * Pure and top-level so it's JVM-testable.
+ */
+internal fun computeNetWorthTrend(
+    accounts: List<Account>,
+    transactions: List<Transaction>,
+    rates: List<ExchangeRate>,
+    baseCurrency: String,
+    excludeCreditCardFromTotal: Boolean,
+    zone: ZoneId = ZoneId.systemDefault(),
+    thisMonth: YearMonth = YearMonth.now(zone),
+    months: Int = 12,
+): NetWorthTrend {
+    val ratesFromBase = rates
+        .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+        .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+    val start = BalanceHistory.historyStart(transactions, zone)
+    var approximate = false
+    val ends = BalanceHistory.monthEnds(thisMonth, months, zone)
+    val values = ends.map { (month, endMillis) ->
+        if (start == null || month < start) {
+            if (month != thisMonth) return@map null
+        }
+        val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis)
+        val rows = accounts.map { account ->
+            val balance = balances.getValue(account.id).toDouble()
+            AccountRow(account, balance, CurrencyMath.toBase(balance, account.currencyCode, baseCurrency, ratesFromBase))
+        }
+        val presentation = computeAccountsPresentation(
+            accountRows = rows,
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = excludeCreditCardFromTotal,
+        )
+        if (presentation.hasUnconvertedFiat) approximate = true
+        presentation.fiatTotalInBase
+    }
+    return NetWorthTrend(ends.map { it.first }, values, approximate)
 }
 
 /**

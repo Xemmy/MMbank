@@ -4013,4 +4013,58 @@ device. To see it: revoke notification access and SMS, then open Home.
 
 ### CI verification
 
+Run 42409117320 (commit 6869a6a): "Run unit tests" passed (a real 2 min 31 s
+run); Build APK success; Final Status success.
+
+## Phase 18.4 — Net worth over time, rebuilt from the ledger
+
+Version 0.57.0 (versionCode 84). No schema change. Backlog #34, #35.
+
+### Why
+
+Net worth was a single live number with no history. The backlog sketched a
+daily snapshot table, which would only start paying off months later. But
+balances are derived, never stored, so every past month-end can be rebuilt
+from the ledger today.
+
+### What changed
+
+- **`BalanceHistory`** (pure, `domain/account`): balances at any past moment
+  via `AccountBalanceCalculator`'s single formula (opening balance plus every
+  row up to that moment, excluded rows included), month-end instants (the
+  current month is "now, including future-dated rows" so it matches today
+  exactly), and where history starts (the oldest kept row).
+- **`computeNetWorthTrend`** (pure, `DashboardViewModel.kt`): the last 12
+  month-ends through `computeAccountsPresentation`, the same path as Home's
+  figure (honouring "exclude credit cards from total", archived accounts left
+  out), so the last point is Home's fiat total. Months before the oldest kept
+  row are null: with retention pruning on, earlier rows live only in opening
+  balances. Every month is converted at today's rates, and accounts with no
+  rate mark the trend approximate ("≈").
+- **`Sparkline`** in `CanvasCharts.kt`, with pure `sparklinePoints` geometry
+  (gaps break the line, flat series centred, negatives scale normally).
+- **Dashboard tab:** a "Net worth — 12 months" card with today's value, "▲/▼
+  vs 6 months ago · vs a year ago" (or "since <month>" for a shorter history)
+  and the sparkline. It respects hide-balances and is labelled "Rebuilt from
+  your ledger at today's exchange rates. Excludes Binance crypto." It only
+  appears with at least two known points. Only this tab collects the flow,
+  and the replay runs off the main thread.
+
+### Deferred
+
+A sparkline for the merchant screen's monthly trend. That screen already has
+a per-month bar chart.
+
+### Tests
+
+`BalanceHistoryTest` (7), `NetWorthTrendTest` (5: replayed month-ends, the
+last point equals Home's fiat total, card exclusion, approximate without a
+rate, empty ledger), `SparklineGeometryTest` (6).
+
+### Not covered by CI
+
+The card's rendering and how it reads on a real ledger.
+
+### CI verification
+
 Pending.

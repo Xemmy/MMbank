@@ -61,6 +61,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.DonutChart
+import com.xemmy.mmbank.ui.components.Sparkline
+import com.xemmy.mmbank.ui.screens.dashboard.NetWorthTrend
 import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetSummaryCard
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardDateRange
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
@@ -83,6 +85,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -108,6 +111,7 @@ fun InsightsScreen(
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val netWorthTrend by viewModel.netWorthTrend.collectAsStateWithLifecycle()
     val hasData = state.stats.monthly.any { it.income > 0.0 || it.spend > 0.0 }
 
     LazyColumn(
@@ -168,6 +172,10 @@ fun InsightsScreen(
 
         if (state.stats.insights.isNotEmpty()) {
             item(key = "insights_card") { SmartInsightsCard(state) }
+        }
+
+        netWorthTrend?.takeIf { it.hasTrend }?.let { trend ->
+            item(key = "net_worth_trend") { NetWorthTrendCard(trend, state.baseCurrency, state.hideBalances) }
         }
 
         item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
@@ -680,6 +688,63 @@ private fun GoalEditDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * Net worth at each of the last 12 month-ends, rebuilt from the ledger (see
+ * [com.xemmy.mmbank.ui.screens.dashboard.computeNetWorthTrend]): today's
+ * figure, how it moved, and a sparkline.
+ */
+@Composable
+private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Boolean) {
+    val current = trend.current ?: return
+    val sixMonths = trend.changeSince(6)
+    val twelveMonths = trend.changeSince(trend.values.size - 1)
+    val firstKnownIndex = trend.values.indexOfFirst { it != null }
+    val sinceStart = trend.values.getOrNull(firstKnownIndex)?.let { current - it }
+    val up = (sixMonths ?: sinceStart ?: 0.0) >= 0.0
+
+    fun delta(value: Double): String {
+        val sign = if (value >= 0) "▲" else "▼"
+        return "$sign ${kotlin.math.abs(value).asMoneyOrMask(currency, hidden)}"
+    }
+
+    ObsidianCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Net worth — 12 months", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                current.asMoneyOrMask(currency, hidden) + if (trend.approximate) " ≈" else "",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            val lines = buildList {
+                sixMonths?.let { add("${delta(it)} vs 6 months ago") }
+                twelveMonths?.let { add("${delta(it)} vs a year ago") }
+                if (sixMonths == null && twelveMonths == null && sinceStart != null) {
+                    add("${delta(sinceStart)} since ${trend.months[firstKnownIndex].month.getDisplayName(TextStyle.SHORT, Locale.US)}")
+                }
+            }
+            if (lines.isNotEmpty()) {
+                Text(
+                    lines.joinToString("  ·  "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (up) ObsidianTokens.credit else ObsidianTokens.debit,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Sparkline(
+                values = trend.values,
+                color = if (up) ObsidianTokens.credit else ObsidianTokens.debit,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Rebuilt from your ledger at today's exchange rates. Excludes Binance crypto.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /** Six months of income vs spend as paired columns, base-currency valued. */
