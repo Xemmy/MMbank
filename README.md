@@ -59,6 +59,36 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
 - **Amounts** are `BigDecimal`, persisted as normalized plain-decimal TEXT — exact for fiat and 8-decimal crypto alike.
 
+### Smart, and entirely on the phone (0.54–0.60)
+
+None of these needs an AI model, a network call or a new permission. Each
+notification is opt-in (Settings → Preferences, off by default); the in-app
+versions always show.
+
+- **Copilot answers offline**: "How much on dining last month?", "biggest
+  expense this year?", "compare with last month", "savings rate" — parsed and
+  answered from the ledger on the phone, with question chips from your own top
+  categories and merchants, and "See transactions" to open Activity filtered
+  to exactly those rows. Open-ended questions still go to the configured AI.
+- **Unusual-charge radar**: a charge far above what that merchant usually
+  costs you ("3.1× your usual at Careem") shows in Smart insights and on the
+  transaction, with an optional notification.
+- **Capture health**: Home warns when capture is off, the notification
+  listener has been disconnected, or nothing has arrived for much longer than
+  usual, with Fix and Snooze.
+- **Net worth over time**: 12 month-ends rebuilt from the ledger, with a
+  sparkline, on the Dashboard tab.
+- **Debt payoff planner** (Accounts): every card and loan that owes money,
+  Avalanche vs Snowball, when you'd be debt-free and what each costs in
+  interest.
+- **"This week" digest** on Home: spend vs last week plus what changed: caps
+  crossed, unusual charges, payments due, new or repriced subscriptions, and
+  capture going quiet. Optionally once a week as a notification. Headline
+  numbers compare fairly ("vs this point last month").
+- **App PIN and screenshot blocking** (Settings → Security): a PIN just for
+  MMbank, which works without a phone screen lock and slows guessing, and
+  `FLAG_SECURE` app-wide.
+
 ### Battery shape & false-positive guards
 
 The ingest path runs for *every* notification on the device, so it is built to

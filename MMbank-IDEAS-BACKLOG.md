@@ -5,6 +5,11 @@ committed to. Written against the tip of `claude/mmbank-local-ai-parsing-4cfi14`
 (`79c931e`, `versionCode = 68` / `versionName = "0.42.0"`, schema **v24**).
 Last updated: 2026-09-14.*
 
+> **Update, November 2026 (0.60.0):** the "Smart & offline" release
+> (`MMbank-FEATURE-LOG.md`, Phases 18.0–18.7) implemented #31, #32, #34, #35,
+> #38, #39, #43, #52, #60, #64, #65 and #69, and part of #37. Each is marked
+> **Done** under its heading. #3 is also covered now, by `MigrationSqlTest`.
+
 ## How to read this file
 
 `MMbank-PHASED-UPGRADE-PLAN.md` is finished and `MMbank-FEATURE-LOG.md` is the
@@ -398,6 +403,8 @@ returns, respecting the same daily budget.
 
 ### 31. Let the copilot answer without a model — **M**
 
+**Done** in Phase 18.1 (0.54.0): `CopilotQueryParser` + `CopilotAnswerEngine`.
+
 **Why.** `FinancialCopilotQueryHandler` builds a context (category totals,
 merchant totals) and then a *prompt* — so every question requires a working AI
 endpoint. But the top ten questions ("how much did I spend on dining last
@@ -409,6 +416,8 @@ falls through to the model for everything else. Fully JVM-testable, and makes
 the copilot useful on a device with no model configured.
 
 ### 32. Suggested-question chips in the copilot — **S**
+
+**Done** in Phase 18.1 (0.54.0): `CopilotSuggestions`, every chip verified to parse.
 
 **Why.** An empty chat box with no model configured is the app's weakest first
 impression. Chips generated from the user's own top categories/merchants both
@@ -429,6 +438,8 @@ full card digits.
 
 ### 34. A real line/sparkline chart primitive — **S**
 
+**Done** in Phase 18.4 (0.57.0): `Sparkline` + pure `sparklinePoints` in `CanvasCharts.kt`. Not yet used on the merchant screen.
+
 **Why.** The Phase 4 `Deferred` note says the merchant monthly trend is
 bars-per-month because `CanvasCharts.kt` contains only `PacingArcGauge` and
 introducing a chart primitive wasn't worth it for one screen. There are now
@@ -439,6 +450,8 @@ flow), which changes the arithmetic.
 tested at the path-geometry level (pure math, no Compose).
 
 ### 35. Net-worth history — **M**
+
+**Done** in Phase 18.4 (0.57.0), differently than sketched: history is *rebuilt* from the ledger (`BalanceHistory`), with no snapshot table.
 
 **Why.** Net worth is computed live from account balances plus Binance, so
 there is no "net worth over time" anywhere. `NetWorthAggregator` exists but has
@@ -459,6 +472,8 @@ markup test.
 
 ### 37. Category drill-down from every chart — **S**
 
+**Partly done** in Phase 18.1 (0.54.0): `ActivityFilters.categoryIds` + `ActivityDrillDown`, used by Copilot answers. The charts don't link yet.
+
 **Why.** The Dashboard's by-category breakdown and the Analytics donut are
 terminal: you see that Dining is 2,400 and can't get to the transactions.
 
@@ -467,11 +482,15 @@ filter bar already supports category, date range, account and person.
 
 ### 38. Month-over-month deltas on every headline number — **S**
 
+**Done** in Phase 18.6 (0.59.0): `PeriodComparison`; Spent tile and Activity hero card captions; month-to-date `SpendTrend`.
+
 **Why.** "Spent 4,210 this month" means nothing without "up 18% on August".
 `HeroSpendSummaryCard` just gained Received and Remaining alongside Spent
 (commit `79c931e`), so the card is already the right home for one more.
 
 ### 39. Anomaly detection on merchant spend — **M**
+
+**Done** in Phase 18.2 (0.55.0): `SpendAnomalyDetector` (median + MAD), insight, detail line, opt-in alert.
 
 **Why.** `MerchantProfiler` and `SubscriptionRadarEngine` already establish
 per-merchant baselines. A charge well outside a merchant's own distribution is
@@ -501,6 +520,8 @@ way a heatmap isn't.
 certainty than the input supports. Show a band derived from historical variance.
 
 ### 43. "What changed" digest — **S**
+
+**Done** in Phase 18.6 (0.59.0): `WhatChangedDigest` on Home, opt-in weekly notification.
 
 **Why.** `AiWeeklyDigestGenerator` exists. A deterministic sibling — new
 subscriptions detected, price changes, budgets crossed, unusual merchants — is
@@ -566,6 +587,8 @@ income rule (or round-up-every-purchase) makes goals fill continuously rather
 than in one lump.
 
 ### 52. Debt payoff planning — **M**
+
+**Done** in Phase 18.5 (0.58.0): `DebtPayoffSimulator`, `DebtCandidates`, the Debt planner screen.
 
 **Why.** `Account` already carries `outstandingBalance`,
 `nextInstallmentAmount`, `dueDayOfMonth`, `profitRatePa`, `maturityDateMillis`
@@ -659,6 +682,8 @@ blocks people.
 
 ### 60. Capture-health banner — **S**
 
+**Done** in Phase 18.3 (0.56.0): `CaptureHealthEvaluator`, listener heartbeat, Home banner.
+
 **Why.** The failure mode of this app is silent: notification access gets
 revoked by an OEM battery manager and capture just stops. Nothing notices.
 
@@ -689,11 +714,15 @@ widget shows one fixed thing. Even a size-aware layout would help.
 
 ### 64. PIN fallback for app lock — **S**
 
+**Done** in Phase 18.7 (0.60.0): app PIN (`PinHasher`, `PinAttemptLimiter`) on the lock screen.
+
 **Why.** `AppLockController` + `BiometricAuthManager` gate the app on
 biometrics. A device with a failed fingerprint sensor, or a user whose
 enrollment changes, is locked out of their own ledger with no second factor.
 
 ### 65. Screenshot blocking while locked or on sensitive screens — **S**
+
+**Done** in Phase 18.7 (0.60.0): app-wide `FLAG_SECURE` toggle in Security.
 
 **Why.** `hideBalances` exists as a reactive `StateFlow` on `AppContainer`
 precisely because balance privacy matters here. `FLAG_SECURE` on the lock
@@ -726,6 +755,8 @@ so you can't reconstruct why a correction was 340 rather than 34.
 ## Theme J — Engineering hygiene
 
 ### 69. Make CI actually fail on failing tests — **S**, highest hygiene value
+
+**Done** in Phase 18.0: failing tests fail the workflow; failures listed in the run summary.
 
 **Why.** `continue-on-error: true` on the "Run unit tests" step is the single
 most expensive line in the repo. The feature log documents it masking a real

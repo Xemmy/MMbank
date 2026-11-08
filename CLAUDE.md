@@ -23,7 +23,9 @@ by manual dispatch. Three jobs:
    GitHub Release — only if the unit tests passed. Also attempts
    `:app:assembleRelease` (continue-on-error, non-gating).
 3. **final-status** — fails the workflow unless BOTH the unit tests and the
-   APK build succeeded.
+   APK build succeeded. Skipped when the run is cancelled: a newer push to
+   the same ref cancels the running one (`cancel-in-progress`), so wait for a
+   push's run to finish before pushing again, or its result is lost.
 
 **Consequence: a green workflow means the unit tests passed AND the APK
 built.** Beyond MigrationSqlTest (migration SQL on real SQLite via
