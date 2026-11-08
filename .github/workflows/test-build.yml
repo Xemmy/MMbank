@@ -296,7 +296,9 @@ jobs:
     name: Final Status
     runs-on: ubuntu-latest
     needs: [ lint-and-unit-tests, build-apk ]
-    if: always()
+    # Not always(): a run superseded by a newer push (cancel-in-progress) is
+    # cancelled, and should read as cancelled rather than as a failure.
+    if: ${{ !cancelled() }}
 
     steps:
       - name: Check overall build status
