@@ -4186,4 +4186,62 @@ captions.
 
 ### CI verification
 
+Run 42450632258 (commit e99f878): unit tests passed (3 min 00 s); Build APK success, release APK built too; Final Status success.
+
+
+## Phase 18.7 — App PIN and screenshot blocking
+
+Version 0.60.0 (versionCode 87). No schema change. Backlog #64, #65.
+
+### Why
+
+The app lock already falls back to the phone's own PIN, through
+`BIOMETRIC_WEAK | DEVICE_CREDENTIAL`, but it still had three gaps:
+- a phone with no screen lock couldn't use the app lock at all;
+- there was no secret that belongs to MMbank alone;
+- if the screen lock was removed after the app lock was turned on, the
+  prompt could never succeed, and the user was locked out of their own ledger.
+
+Separately, balances showed up in screenshots and in the Recents thumbnail.
+
+### What changed
+
+- **`PinHasher`** (pure): PBKDF2-HMAC-SHA256 with a random 16-byte salt and
+  120,000 iterations, stored as `pbkdf2$iter$salt$hash` (Base64) in the
+  encrypted `SecureCredentialStore`. Verification is constant-time. A PIN is
+  4–8 ASCII digits. A malformed or tampered stored value never matches.
+- **`PinAttemptLimiter`** (pure): 5 free wrong tries, then 30 s doubling up to
+  15 min. A correct PIN resets it. The state is persisted, so a restart doesn't
+  clear it, and a lockout stretched by a clock moved backwards is clamped.
+- **`AppPinGate`** (pure): the lock screen's check (limiter first, then hash)
+  and `lockUsable`. `AppContainer.appLock` now treats the lock as off when
+  neither an app PIN nor a system authenticator exists, so it fails open
+  instead of stranding the user. The lock asks this on every touch, so both
+  answers are cached and re-read each time the app returns to the foreground
+  (a screen lock can only be removed outside the app) or the PIN changes.
+- **Lock screen:** a "Use app PIN" button opens a PIN pad, which shows a wrong
+  PIN or the wait time. On a phone with no screen lock or biometrics it opens
+  straight on the pad. The BiometricPrompt itself is unchanged (no negative
+  button, which the API forbids alongside `DEVICE_CREDENTIAL`).
+- **Settings → Security:**
+  - set, change (entered twice) or remove the app PIN. Removing it also turns
+    the lock off if nothing else could open it;
+  - the App lock switch is available with a PIN alone;
+  - **Block screenshots** applies `FLAG_SECURE` app-wide, before the first
+    frame and live when toggled, through a `secureScreen` StateFlow on
+    `AppContainer`. The home-screen widget isn't covered.
+
+### Tests
+
+`PinHasherTest` (6), `PinAttemptLimiterTest` (5), `AppPinGateTest` (6: right
+PIN resets, the sixth wrong try locks, a right PIN during lockout isn't
+checked, no stored PIN, fail-open, wait text).
+
+### Not covered by CI
+
+The lock screen and PIN pad, BiometricPrompt alongside "Use app PIN", and
+`FLAG_SECURE` in Recents and screenshots need a phone.
+
+### CI verification
+
 Pending.

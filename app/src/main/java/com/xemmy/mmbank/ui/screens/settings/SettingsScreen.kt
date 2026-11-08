@@ -138,6 +138,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var weeklyDigestEnabled by mutableStateOf(container.preferences.weeklyDigestNotificationsEnabled)
         private set
+    var hasAppPin by mutableStateOf(container.hasAppPin)
+        private set
+    var secureScreen by mutableStateOf(container.secureScreen.value)
+        private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
@@ -428,6 +432,29 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.preferences.unusualChargeAlertsEnabled = enabled
         unusualChargeAlertsEnabled = enabled
         statusMessage = if (enabled) "Unusual charge alerts on." else "Unusual charge alerts off."
+    }
+
+    /** Sets (or changes) the app PIN; hashing runs off the main thread. */
+    fun setAppPin(pin: String) {
+        viewModelScope.launch {
+            container.setAppPin(pin)
+            hasAppPin = true
+            statusMessage = "App PIN set."
+        }
+    }
+
+    /** Removes the app PIN; turns the lock off too if nothing else could open it. */
+    fun removeAppPin() {
+        container.removeAppPin()
+        hasAppPin = false
+        appLockEnabled = container.preferences.appLockEnabled
+        statusMessage = if (appLockEnabled) "App PIN removed." else "App PIN removed. App lock is off: this phone has no other way to unlock it."
+    }
+
+    fun updateSecureScreen(enabled: Boolean) {
+        container.setSecureScreen(enabled)
+        secureScreen = enabled
+        statusMessage = if (enabled) "Screenshots blocked." else "Screenshots allowed."
     }
 
     /** Schedules or cancels the weekly "what changed" notification (see [com.xemmy.mmbank.data.digest.WeeklyDigestWorker]). */
@@ -1392,6 +1419,13 @@ fun SecuritySettingsScreen(
 ) {
     SettingsSubpage(title = "Security", onBack = onBack) {
         AppLockSection(viewModel)
+        SecurityPinSection(
+            hasAppPin = viewModel.hasAppPin,
+            secureScreen = viewModel.secureScreen,
+            onSetPin = viewModel::setAppPin,
+            onRemovePin = viewModel::removeAppPin,
+            onSecureScreen = viewModel::updateSecureScreen,
+        )
     }
 }
 
@@ -1409,6 +1443,8 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
     val activity = context as? FragmentActivity
     val scope = rememberCoroutineScope()
     val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
+    // An app PIN can open the lock on its own (see AppPinGate.lockUsable).
+    val lockUsable = canAuthenticate || viewModel.hasAppPin
     var enabling by remember { mutableStateOf(false) }
 
     Row(
@@ -1419,11 +1455,13 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
         Column(Modifier.weight(1f)) {
             Text("App lock", style = MaterialTheme.typography.bodyLarge)
             Text(
-                if (canAuthenticate) {
-                    "Require your fingerprint, face, or device PIN once the app has " +
-                        "been closed or idle beyond the auto-lock time below."
-                } else {
-                    "Unavailable: set up a screen lock or enroll biometrics on this device first."
+                when {
+                    canAuthenticate ->
+                        "Require your fingerprint, face, or device PIN once the app has " +
+                            "been closed or idle beyond the auto-lock time below."
+                    viewModel.hasAppPin ->
+                        "Require your app PIN once the app has been closed or idle beyond the auto-lock time below."
+                    else -> "Unavailable: set an app PIN below, or a screen lock or biometrics on this device."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1431,10 +1469,13 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
         }
         Switch(
             checked = viewModel.appLockEnabled,
-            enabled = canAuthenticate && !enabling && activity != null,
+            enabled = lockUsable && !enabling && activity != null,
             onCheckedChange = { wantEnabled ->
                 if (!wantEnabled) {
                     viewModel.updateAppLockEnabled(false)
+                } else if (!canAuthenticate && viewModel.hasAppPin) {
+                    // No system prompt on this phone: the app PIN set below opens the lock.
+                    viewModel.updateAppLockEnabled(true)
                 } else if (activity != null) {
                     enabling = true
                     scope.launch {

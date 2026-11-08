@@ -380,6 +380,27 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_WEEKLY_DIGEST_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_WEEKLY_DIGEST_ENABLED, value).apply()
 
+    // --- App PIN attempts and screenshot blocking (Phase 18.7) ---
+
+    /** Wrong app-PIN tries since the last correct one (see [com.xemmy.mmbank.domain.auth.PinAttemptLimiter]). */
+    var pinFailedAttempts: Int
+        get() = prefs.getInt(KEY_PIN_FAILED_ATTEMPTS, 0)
+        set(value) = prefs.edit().putInt(KEY_PIN_FAILED_ATTEMPTS, value).apply()
+
+    /** No app-PIN tries are checked before this time. */
+    var pinLockedUntil: Long
+        get() = prefs.getLong(KEY_PIN_LOCKED_UNTIL, 0L)
+        set(value) = prefs.edit().putLong(KEY_PIN_LOCKED_UNTIL, value).apply()
+
+    /**
+     * "Block screenshots": `FLAG_SECURE` app-wide. Mirrored by
+     * [com.xemmy.mmbank.di.AppContainer.secureScreen], since MainActivity must
+     * react live while Settings changes it.
+     */
+    var secureScreenEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SECURE_SCREEN, false)
+        set(value) = prefs.edit().putBoolean(KEY_SECURE_SCREEN, value).apply()
+
     /** ISO week ("2026-W45") the weekly digest was last sent for, so a week is never sent twice. */
     var weeklyDigestLastSentKey: String
         get() = prefs.getString(KEY_WEEKLY_DIGEST_LAST_SENT, "").orEmpty()
@@ -449,6 +470,9 @@ class AppPreferences(context: Context) {
         const val KEY_DEBT_PLANNER_BUDGET = "debt_planner_budget"
         const val KEY_WEEKLY_DIGEST_ENABLED = "weekly_digest_notifications_enabled"
         const val KEY_WEEKLY_DIGEST_LAST_SENT = "weekly_digest_last_sent"
+        const val KEY_PIN_FAILED_ATTEMPTS = "pin_failed_attempts"
+        const val KEY_PIN_LOCKED_UNTIL = "pin_locked_until"
+        const val KEY_SECURE_SCREEN = "secure_screen_enabled"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }
 }

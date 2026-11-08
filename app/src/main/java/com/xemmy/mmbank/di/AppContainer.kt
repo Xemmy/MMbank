@@ -59,6 +59,11 @@ import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
+import com.xemmy.mmbank.domain.auth.AppPinGate
+import com.xemmy.mmbank.domain.auth.PinAttemptLimiter
+import com.xemmy.mmbank.domain.auth.PinCheck
+import com.xemmy.mmbank.domain.auth.PinHasher
+import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
 import com.xemmy.mmbank.domain.repository.MerchantAccountRepository
 import com.xemmy.mmbank.domain.repository.AccountRepository
@@ -103,6 +108,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.time.Instant
@@ -253,7 +259,12 @@ class AppContainer(context: Context) {
                 handler.postDelayed(runnable, delayMillis)
                 ({ handler.removeCallbacks(runnable) })
             }),
-            isEnabled = { preferences.appLockEnabled },
+            // Fails open: with neither an app PIN nor a system authenticator
+            // (e.g. the screen lock was removed after the lock was turned on)
+            // the lock could never be opened, so it stays off.
+            isEnabled = {
+                preferences.appLockEnabled && AppPinGate.lockUsable(appPinSet(), systemAuthAvailable())
+            },
             timeoutMillis = { preferences.appLockTimeoutMinutes * 60_000L },
             // Persisted so the idle grace window survives the process being
             // killed: a return within the timeout doesn't force a re-auth.
@@ -273,6 +284,76 @@ class AppContainer(context: Context) {
     fun setAppLockTimeoutMinutes(minutes: Int) {
         preferences.appLockTimeoutMinutes = minutes
         appLock.onSettingsChanged()   // re-arm the idle timer with the new duration
+    }
+
+    // --- App PIN (see AppPinGate) and screenshot blocking ---
+
+    val hasAppPin: Boolean get() = appPinSet()
+
+    // Both feed appLock's isEnabled, which runs on every touch
+    // (AppLockController.onUserInteraction), so they're cached: the PIN flag
+    // decrypts a pref and the authenticator check is a binder call. Cleared on
+    // every return to the foreground (a screen lock can only be removed
+    // outside the app) and whenever the PIN changes.
+    @Volatile private var cachedHasAppPin: Boolean? = null
+    @Volatile private var cachedSystemAuth: Boolean? = null
+
+    private fun appPinSet(): Boolean =
+        cachedHasAppPin ?: credentialStore.hasAppPin.also { cachedHasAppPin = it }
+
+    private fun systemAuthAvailable(): Boolean =
+        cachedSystemAuth ?: BiometricAuthManagerImpl.canAuthenticate(appContext).also { cachedSystemAuth = it }
+
+    /** Re-reads what can open the lock; called as the app comes to the foreground, before the lock decides. */
+    fun refreshLockAvailability() {
+        cachedHasAppPin = null
+        cachedSystemAuth = null
+    }
+
+    /** Stores the hash of a new app PIN (never the PIN) and clears any lockout. */
+    suspend fun setAppPin(pin: String) {
+        val hash = withContext(Dispatchers.Default) { PinHasher.hash(pin) }
+        credentialStore.appPinHash = hash
+        cachedHasAppPin = true
+        preferences.pinFailedAttempts = 0
+        preferences.pinLockedUntil = 0L
+        appLock.onSettingsChanged()
+    }
+
+    /**
+     * Removes the app PIN. If nothing else could open the lock (no
+     * biometrics, no screen lock), the lock is turned off too.
+     */
+    fun removeAppPin() {
+        credentialStore.appPinHash = null
+        cachedHasAppPin = false
+        cachedSystemAuth = null
+        if (preferences.appLockEnabled && !systemAuthAvailable()) {
+            setAppLockEnabled(false)
+        } else {
+            appLock.onSettingsChanged()
+        }
+    }
+
+    /** Checks a PIN typed on the lock screen, persisting the attempt limiter's state. */
+    suspend fun checkAppPin(pin: String): PinCheck {
+        val state = PinAttemptLimiter.State(preferences.pinFailedAttempts, preferences.pinLockedUntil)
+        val outcome = withContext(Dispatchers.Default) {
+            AppPinGate.check(pin, credentialStore.appPinHash, state, System.currentTimeMillis())
+        }
+        preferences.pinFailedAttempts = outcome.state.failedAttempts
+        preferences.pinLockedUntil = outcome.state.lockedUntil
+        return outcome.result
+    }
+
+    private val _secureScreen by lazy { MutableStateFlow(preferences.secureScreenEnabled) }
+
+    /** "Block screenshots" (`FLAG_SECURE`), reactive because MainActivity applies it live. */
+    val secureScreen: StateFlow<Boolean> by lazy { _secureScreen.asStateFlow() }
+
+    fun setSecureScreen(enabled: Boolean) {
+        preferences.secureScreenEnabled = enabled
+        _secureScreen.value = enabled
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.ui
 
 import android.net.Uri
+import android.view.WindowManager
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
@@ -103,8 +104,12 @@ class MainActivity : FragmentActivity() {
         val container = (application as MMBankApp).container
         val biometricAuth = BiometricAuthManagerImpl(this)
         val openUncategorizedQueue = intent?.getBooleanExtra(EXTRA_OPEN_UNCATEGORIZED, false) == true
+        // Before the first frame, so not even the first render can be captured.
+        applySecureScreen(container.secureScreen.value)
         setContent {
             val designMode by container.designMode.collectAsStateWithLifecycle()
+            val secureScreen by container.secureScreen.collectAsStateWithLifecycle()
+            LaunchedEffect(secureScreen) { applySecureScreen(secureScreen) }
             MMbankTheme(designMode = designMode) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
@@ -121,10 +126,25 @@ class MainActivity : FragmentActivity() {
                                 )
                             },
                             onUnlocked = { container.appLock.onUnlocked() },
+                            biometricAvailable = BiometricAuthManagerImpl.canAuthenticate(this@MainActivity),
+                            pinAvailable = container.hasAppPin,
+                            checkPin = { pin -> container.checkAppPin(pin) },
                         )
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * `FLAG_SECURE` app-wide while "Block screenshots" is on: no screenshots
+     * or screen recording, and a blank thumbnail in Recents.
+     */
+    private fun applySecureScreen(enabled: Boolean) {
+        if (enabled) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 

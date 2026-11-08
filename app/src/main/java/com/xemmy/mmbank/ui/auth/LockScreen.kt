@@ -12,6 +12,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import com.xemmy.mmbank.domain.auth.AppPinGate
+import com.xemmy.mmbank.domain.auth.PinCheck
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import kotlinx.coroutines.launch
@@ -41,9 +44,39 @@ fun LockScreen(
     /** Shows the biometric/device-credential prompt; true = authenticated. */
     authenticate: suspend () -> Boolean,
     onUnlocked: () -> Unit,
+    /** The device can show a biometric/screen-lock prompt at all. */
+    biometricAvailable: Boolean = true,
+    /** An app PIN is set (see [com.xemmy.mmbank.domain.auth.PinHasher]). */
+    pinAvailable: Boolean = false,
+    /** Checks an app PIN, applying the attempt limiter. */
+    checkPin: suspend (String) -> PinCheck = { PinCheck.Wrong(0L) },
 ) {
     val scope = rememberCoroutineScope()
     var prompting by remember { mutableStateOf(false) }
+    // Straight to the PIN pad when there's no system prompt to show.
+    var usePin by remember { mutableStateOf(pinAvailable && !biometricAvailable) }
+    var pinMessage by remember { mutableStateOf<String?>(null) }
+    var pinBusy by remember { mutableStateOf(false) }
+
+    fun submitPin(pin: String) {
+        if (pinBusy) return
+        pinBusy = true
+        scope.launch {
+            try {
+                when (val result = checkPin(pin)) {
+                    PinCheck.Ok -> onUnlocked()
+                    is PinCheck.Wrong -> pinMessage = if (result.lockedForMillis > 0L) {
+                        "Wrong PIN. ${AppPinGate.waitText(result.lockedForMillis)}."
+                    } else {
+                        "Wrong PIN"
+                    }
+                    is PinCheck.LockedOut -> pinMessage = AppPinGate.waitText(result.remainingMillis) + "."
+                }
+            } finally {
+                pinBusy = false
+            }
+        }
+    }
 
     fun tryUnlock() {
         if (prompting) return
@@ -57,7 +90,7 @@ fun LockScreen(
         }
     }
 
-    LaunchedEffect(Unit) { tryUnlock() }
+    LaunchedEffect(Unit) { if (!usePin && biometricAvailable) tryUnlock() }
 
     Column(
         modifier = Modifier
@@ -88,21 +121,40 @@ fun LockScreen(
             color = ObsidianTokens.textPrimary,
             modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
         )
-        Text(
-            "Unlock with your fingerprint, face, or device PIN.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = ObsidianTokens.textMeta,
-            modifier = Modifier.padding(bottom = 24.dp),
-        )
-        Button(
-            onClick = { tryUnlock() },
-            enabled = !prompting,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = ObsidianTokens.textPrimary,
-                contentColor = ObsidianTokens.canvas,
-            ),
-        ) {
-            Text("Unlock")
+        if (usePin) {
+            PinPad(
+                title = "Enter your app PIN",
+                message = pinMessage,
+                messageIsError = pinMessage != null,
+                enabled = !pinBusy,
+                onSubmit = ::submitPin,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            if (biometricAvailable) {
+                TextButton(onClick = { usePin = false; tryUnlock() }) {
+                    Text("Use fingerprint, face or device PIN")
+                }
+            }
+        } else {
+            Text(
+                "Unlock with your fingerprint, face, or device PIN.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = ObsidianTokens.textMeta,
+                modifier = Modifier.padding(bottom = 24.dp),
+            )
+            Button(
+                onClick = { tryUnlock() },
+                enabled = !prompting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ObsidianTokens.textPrimary,
+                    contentColor = ObsidianTokens.canvas,
+                ),
+            ) {
+                Text("Unlock")
+            }
+            if (pinAvailable) {
+                TextButton(onClick = { usePin = true }) { Text("Use app PIN") }
+            }
         }
     }
 }

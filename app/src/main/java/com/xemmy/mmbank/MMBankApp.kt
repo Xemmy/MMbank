@@ -32,7 +32,11 @@ class MMBankApp : Application() {
         // lock (ProcessLifecycleOwner, unlike Activity onStop, doesn't fire
         // on rotation or intra-app navigation).
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) = container.appLock.onAppForegrounded()
+            override fun onStart(owner: LifecycleOwner) {
+                // The screen lock may have changed while we were away.
+                container.refreshLockAvailability()
+                container.appLock.onAppForegrounded()
+            }
             override fun onStop(owner: LifecycleOwner) = container.appLock.onAppBackgrounded()
         })
     }
