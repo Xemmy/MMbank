@@ -363,6 +363,15 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putLong(KEY_CAPTURE_SNOOZED_UNTIL, value).apply()
 
     /**
+     * The debt planner's monthly budget, as typed (a plain decimal string so
+     * it round-trips exactly; blank = not set). Plain value: only the planner
+     * reads or writes it.
+     */
+    var debtPlannerBudget: String
+        get() = prefs.getString(KEY_DEBT_PLANNER_BUDGET, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_DEBT_PLANNER_BUDGET, value).apply()
+
+    /**
      * Due dates already announced, as `"{billId}:{nextDueDateMillis}"` keys
      * (see [com.xemmy.mmbank.domain.intelligence.BillReminders.reminderKey]).
      * Pruned to live bills on each run.
@@ -423,6 +432,7 @@ class AppPreferences(context: Context) {
         const val KEY_CAPTURE_DISCONNECTED = "capture_listener_disconnected_at"
         const val KEY_CAPTURE_LAST_SMS = "capture_last_sms_at"
         const val KEY_CAPTURE_SNOOZED_UNTIL = "capture_health_snoozed_until"
+        const val KEY_DEBT_PLANNER_BUDGET = "debt_planner_budget"
         const val KEY_BILL_REMINDERS_SENT = "bill_reminders_sent"
     }
 }

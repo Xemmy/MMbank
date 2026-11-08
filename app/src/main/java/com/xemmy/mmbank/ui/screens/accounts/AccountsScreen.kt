@@ -279,6 +279,7 @@ internal fun buildBalanceAdjustment(
 fun AccountsScreen(
     onOpenUnassigned: () -> Unit = {},
     onOpenIntegrity: () -> Unit = {},
+    onOpenDebtPlanner: () -> Unit = {},
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -332,6 +333,15 @@ fun AccountsScreen(
             if (state.integrity.actionableCount > 0) {
                 item(key = "integrity_summary") {
                     IntegritySummaryCard(count = state.integrity.actionableCount, onClick = onOpenIntegrity)
+                }
+            }
+            val owedDebts = rows.count { r ->
+                (r.account.type == AccountType.CREDIT_CARD || r.account.type == AccountType.LOAN) &&
+                    (r.balance.signum() < 0 || (r.account.outstandingBalance?.signum() ?: 0) > 0)
+            }
+            if (owedDebts > 0) {
+                item(key = "debt_planner") {
+                    DebtPlannerEntryCard(debts = owedDebts, onClick = onOpenDebtPlanner)
                 }
             }
             if (!state.unassigned.isEmpty) {
@@ -648,6 +658,33 @@ private fun IntegritySummaryCard(count: Int, onClick: () -> Unit) {
             )
             Text(
                 "Tap to see what doesn't add up",
+                style = MaterialTheme.typography.labelSmall,
+                color = ObsidianTokens.textMeta,
+            )
+        }
+    }
+}
+
+/** Entry to the debt payoff planner, shown while any card or loan owes money. */
+@Composable
+private fun DebtPlannerEntryCard(debts: Int, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(ObsidianTokens.surfaceGlass, shape)
+            .border(1.dp, ObsidianTokens.hairline, shape)
+            .clickable(onClick = onClick),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                "Plan paying off ${if (debts == 1) "your debt" else "your $debts debts"}",
+                style = MaterialTheme.typography.titleSmall,
+                color = ObsidianTokens.textPrimary,
+            )
+            Text(
+                "See when you'd be debt-free, and how much interest each strategy costs",
                 style = MaterialTheme.typography.labelSmall,
                 color = ObsidianTokens.textMeta,
             )

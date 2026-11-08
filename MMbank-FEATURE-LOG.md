@@ -4067,4 +4067,62 @@ The card's rendering and how it reads on a real ledger.
 
 ### CI verification
 
+Run 42449418642 (commits ce86c72 + 4da67f7): unit tests passed (3 min 08 s); Build APK success, release APK built too; Final Status success.
+
+## Phase 18.5 — Debt payoff planner
+
+Version 0.58.0 (versionCode 85). No schema change. Backlog #52.
+
+### Why
+
+`Account` already records what a payoff plan needs: `outstandingBalance`,
+`nextInstallmentAmount`, `profitRatePa`. But nothing used them beyond one
+account's early-settlement estimate. "When will I be debt-free, and which debt
+should I pay first?" is the question those fields exist to answer.
+
+### What changed
+
+- **`DebtPayoffSimulator`** (pure, exact `BigDecimal`) runs month by month.
+  Each month every open balance accrues APR/12 (rounded to the cent), every
+  minimum is paid, and the rest of the budget goes to the strategy's target.
+  A paid-off debt's minimum rolls into the extra.
+  - **Strategies:** Avalanche (highest rate first) or Snowball (smallest
+    balance first).
+  - **Outcomes:** paid off, budget below the minimums, never pays off (budget
+    ≤ the first month's interest), or the 600-month cap.
+- **`DebtCandidates`** (pure) turns every credit card or loan that owes money
+  into a debt. A card owes its negative balance; a loan uses its stated
+  outstanding balance, falling back to its negative balance. The rate comes
+  from `profitRatePa`. The minimum is `nextInstallmentAmount`, or an estimate
+  of max(5%, 100). Also `durationLabel` ("2 years 3 months").
+- **Debt planner screen** (`debt_planner`, under the Accounts tab):
+  - one card per debt, with the rate and monthly minimum editable (not saved
+    back to the account);
+  - a monthly budget, stored as a decimal string so it round-trips exactly.
+    It is prefilled with the minimums + 20% rounded up to 50, and shows what
+    the minimums add up to;
+  - both plans side by side: when you'd be debt-free, total interest, and the
+    payoff order, plus one line comparing them ("Avalanche saves AED 68.22 in
+    interest. Snowball clears Loan first, in month 3.");
+  - debts with no known rate are simulated at 0% and named; debts in a
+    currency with no exchange rate are left out and named.
+- **Accounts** shows a "Plan paying off your debts" card while any card or
+  loan owes money.
+
+### Tests
+
+`DebtPayoffSimulatorTest` (10): a hand-checked 12% amortisation (11 months,
+58.98 interest), 0% APR, Avalanche ≤ Snowball interest (250.73 vs 318.95),
+payoff order per strategy, budget below minimums, never pays off, the cap,
+nothing owed, a minimum above the balance, interest rounding.
+`DebtCandidatesTest` (4). `DebtPlannerStateTest` (7): both plans, overrides,
+unknown rate, unconvertible currency, no budget, the suggested budget, the
+comparison line.
+
+### Not covered by CI
+
+The screen itself, and the Accounts entry card.
+
+### CI verification
+
 Pending.

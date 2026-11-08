@@ -54,6 +54,7 @@ import com.xemmy.mmbank.ui.auth.LockScreen
 import com.xemmy.mmbank.ui.screens.integrity.IntegrityScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
+import com.xemmy.mmbank.ui.screens.accounts.DebtPlannerScreen
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatScreen
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardScreen
 import com.xemmy.mmbank.ui.screens.report.MonthlyReportScreen
@@ -165,6 +166,7 @@ private val topLevelDestinations = listOf(
     TopLevelDestination(
         "accounts", "Accounts",
         Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet,
+        childRoutePrefixes = listOf("debt_planner"),
     ),
     TopLevelDestination(
         "settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings,
@@ -345,8 +347,10 @@ private fun AppNavHost(
             AccountsScreen(
                 onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
                 onOpenIntegrity = { navController.navigate("integrity_check") },
+                onOpenDebtPlanner = { navController.navigate("debt_planner") },
             )
         }
+        composable("debt_planner") { DebtPlannerScreen(onBack = { navController.popBackStack() }) }
         composable("cashback") { CashbackScreen() }
         composable("subscriptions") {
             SubscriptionsScreen(
