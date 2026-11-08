@@ -4284,4 +4284,6 @@ app's own) are deliberately not logged.
 
 ### CI verification
 
-Pending.
+Runs 42477292487 (push) and 42477296378 (pull request), commit 505e006, attempt 2 of each: both succeeded (unit tests, Build APK, Final Status). The first attempts failed on Gradle download timeouts (Kotlin compiler jar, Gradle distribution) before compiling anything.
+
+The first re-run of the earlier commit c1e1121 exposed a real CI flaw: with `kspDebugKotlin` restored from the build cache, Room's schema export never ran and `MigrationSqlTest` couldn't find `30.json`. `app/build.gradle.kts` now marks the KSP tasks non-cacheable.
