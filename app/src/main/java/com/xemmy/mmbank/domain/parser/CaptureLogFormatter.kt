@@ -22,6 +22,7 @@ object CaptureLogFormatter {
     private val currencyBeforeDigits = Regex("$CURRENCY_TOKEN\\s?\\d", RegexOption.IGNORE_CASE)
     private val currencyAfterDigits = Regex("\\d\\s?$CURRENCY_TOKEN(?![A-Za-z])", RegexOption.IGNORE_CASE)
     private val standaloneDigitRun = Regex("(?<![\\d.,*])\\d{4,8}(?!\\d|[.,]\\d)")
+    private val afterMask = Regex("\\*\\s?$")
     private val endsWithCurrency = Regex("$CURRENCY_TOKEN\\s?$", RegexOption.IGNORE_CASE)
     private val startsWithCurrency = Regex("^\\s?$CURRENCY_TOKEN(?![A-Za-z])", RegexOption.IGNORE_CASE)
 
@@ -38,7 +39,7 @@ object CaptureLogFormatter {
         standaloneDigitRun.replace(text) { m ->
             val before = text.substring(0, m.range.first)
             val after = text.substring(m.range.last + 1)
-            if (endsWithCurrency.containsMatchIn(before) || startsWithCurrency.containsMatchIn(after)) {
+            if (afterMask.containsMatchIn(before) || endsWithCurrency.containsMatchIn(before) || startsWithCurrency.containsMatchIn(after)) {
                 m.value
             } else {
                 "*".repeat(m.value.length)
