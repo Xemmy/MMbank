@@ -4287,3 +4287,34 @@ app's own) are deliberately not logged.
 Runs 42477292487 (push) and 42477296378 (pull request), commit 505e006, attempt 2 of each: both succeeded (unit tests, Build APK, Final Status). The first attempts failed on Gradle download timeouts (Kotlin compiler jar, Gradle distribution) before compiling anything.
 
 The first re-run of the earlier commit c1e1121 exposed a real CI flaw: with `kspDebugKotlin` restored from the build cache, Room's schema export never ran and `MigrationSqlTest` couldn't find `30.json`. `app/build.gradle.kts` now marks the KSP tasks non-cacheable.
+
+
+## Phase 18.9 — Capture log privacy fix
+
+Version 0.62.1 (versionCode 90). No schema change.
+
+### Why
+
+Review of the capture log found it wrote a snippet of *any* digit-containing
+notification that parsed to no match, from every app. Chat messages and OTP codes
+(4-8 digits, which `LogRedactor` does not mask) were being stored in
+`capture_log.txt`. `readCaptureLog` / `clearCaptureLog` also ran outside the lock
+that guards writes.
+
+### What changed
+
+- `CaptureLogFormatter.looksFinancial`: a no-match is logged only when a number
+  sits next to a currency; this replaces the old "contains a digit" test in
+  `BankNotificationListener` and `SmsReceiver`.
+- `CaptureLogFormatter.line` masks standalone 4-8 digit runs (OTPs, PINs) unless
+  they are an amount beside a currency or already masked.
+- `Diagnostics.readCaptureLog` / `clearCaptureLog` now take the same lock as writes.
+
+### Tests
+
+Two new cases in `CaptureLogFormatterTest`; the digit-free no-match case still holds.
+
+### Not covered by CI
+
+The file locking and the listener/receiver wiring need a phone.
+

@@ -48,8 +48,7 @@ class SmsReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 val result = container.ingestCapturedMessage(message)
-                val hasDigit = body.any { it.isDigit() }
-                CaptureLogFormatter.outcome(result, hasDigit)?.let {
+                CaptureLogFormatter.outcome(result, CaptureLogFormatter.looksFinancial(body))?.let {
                     Diagnostics.recordCapture(context, CaptureLogFormatter.line("SMS", sender, null, body, it))
                 }
             } catch (t: Throwable) {

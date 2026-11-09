@@ -94,11 +94,12 @@ object Diagnostics {
         }
     }
 
-    fun readCaptureLog(context: Context): String? =
+    fun readCaptureLog(context: Context): String? = synchronized(captureLock) {
         captureFile(context).takeIf { it.exists() }?.readText()?.take(12_000)
+    }
 
     fun clearCaptureLog(context: Context) {
-        captureFile(context).delete()
+        synchronized(captureLock) { captureFile(context).delete() }
     }
 
     fun readCrash(context: Context): String? =

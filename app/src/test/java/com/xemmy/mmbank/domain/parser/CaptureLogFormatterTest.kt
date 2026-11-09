@@ -44,4 +44,19 @@ class CaptureLogFormatterTest {
         assertFalse(trimmed.contains("[01]"))
         assertTrue(trimmed.endsWith("\n"))
     }
+
+    @Test fun looksFinancialNeedsANumberNextToACurrency() {
+        assertTrue(CaptureLogFormatter.looksFinancial("Spent AED70.00 at shop"))
+        assertTrue(CaptureLogFormatter.looksFinancial("تم خصم 50 درهم"))
+        assertFalse(CaptureLogFormatter.looksFinancial("Your code is 482913"))
+        assertFalse(CaptureLogFormatter.looksFinancial("See you at 7"))
+    }
+
+    @Test fun lineMasksShortCodesButKeepsAmounts() {
+        val line = CaptureLogFormatter.line("PUSH", "app", null, "Code 482913 for AED 5000 and 1,250.50", "NO MATCH", 0L)
+        assertFalse(line.contains("482913"))
+        assertTrue(line.contains("******"))
+        assertTrue(line.contains("AED 5000"))
+        assertTrue(line.contains("1,250.50"))
+    }
 }

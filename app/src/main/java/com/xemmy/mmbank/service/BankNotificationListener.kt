@@ -90,8 +90,9 @@ class BankNotificationListener : NotificationListenerService() {
     }
 
     private fun logCapture(message: CapturedMessage, result: IngestResult) {
-        val hasDigit = message.body.any { it.isDigit() } || message.title?.any { it.isDigit() } == true
-        val outcome = CaptureLogFormatter.outcome(result, hasDigit) ?: return
+        val financial = CaptureLogFormatter.looksFinancial(message.body) ||
+            message.title?.let(CaptureLogFormatter::looksFinancial) == true
+        val outcome = CaptureLogFormatter.outcome(result, financial) ?: return
         Diagnostics.recordCapture(
             applicationContext,
             CaptureLogFormatter.line("PUSH", message.sender, message.title, message.body, outcome),
