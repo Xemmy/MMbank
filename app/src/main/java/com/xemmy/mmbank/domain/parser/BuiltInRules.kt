@@ -52,6 +52,11 @@ object BuiltInRules {
     private const val MERCHANT_EN = "(?:\\s+(?:at|to|@|in)\\s+(?<merchant>[^.,;\\n*]{2,40}))?"
     private const val MERCHANT_AR = "(?:\\s+(?:في|لدى|من|إلى)\\s+(?<merchant>[^.,;\\n*]{2,40}))?"
 
+    // Like MERCHANT_EN, but lazy and stopping before "was successful", so a
+    // "Transaction of AED 9 At SHOP was successful" message keeps a clean name.
+    private const val MERCHANT_TXN =
+        "(?:\\s+(?:at|to|@|in)\\s+(?<merchant>[^.,;\\n*]{2,40}?)(?=\\s+was\\s+successful\\b|[.,;\\n*]|\\s*$))?"
+
     // Tabby's "Transaction of ... At {merchant} was successful." / "At
     // {merchant}. Your Tabby Card limit is now ..." layout: a lazy merchant
     // capture that stops right before either terminator, so it never runs on
@@ -233,7 +238,7 @@ object BuiltInRules {
         rule(
             "builtin.en.debit.transaction",
             "(?s)^(?!.*\\b(?:credited|deposited|refund(?:ed)?|received|incoming|reversal|reversed)\\b)" +
-                ".*?\\btransaction\\b.{0,25}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL",
+                ".*?\\btransaction\\b.{0,25}?$CUR\\s?$AMT$MERCHANT_TXN$ACCTAIL",
             TransactionDirection.DEBIT,
             11,
         ),
