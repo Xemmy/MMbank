@@ -20,7 +20,8 @@ object AppPinGate {
 
     data class Outcome(val result: PinCheck, val state: PinAttemptLimiter.State)
 
-    fun check(pin: String, storedHash: String?, state: PinAttemptLimiter.State, now: Long): Outcome {
+    fun check(pin: String, storedHash: String?, rawState: PinAttemptLimiter.State, now: Long): Outcome {
+        val state = PinAttemptLimiter.clamp(rawState, now)
         val remaining = PinAttemptLimiter.remainingLockout(state, now)
         if (remaining > 0L) return Outcome(PinCheck.LockedOut(remaining), state)
         if (storedHash != null && PinHasher.verify(pin, storedHash)) {

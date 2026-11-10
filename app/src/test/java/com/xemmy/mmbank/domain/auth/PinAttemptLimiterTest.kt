@@ -45,4 +45,15 @@ class PinAttemptLimiterTest {
         val s = State(failedAttempts = 9, lockedUntil = now + 3_600_000)
         assertEquals(PinAttemptLimiter.MAX_LOCKOUT_MILLIS, PinAttemptLimiter.remainingLockout(s, now))
     }
+
+    @Test
+    fun `a lockout far in the future is clamped and the clamped value is what gets persisted`() {
+        val now = 1_000_000L
+        val skewed = PinAttemptLimiter.State(failedAttempts = 6, lockedUntil = now + 3L * 24 * 60 * 60 * 1000)
+        val clamped = PinAttemptLimiter.clamp(skewed, now)
+        assertEquals(now + PinAttemptLimiter.MAX_LOCKOUT_MILLIS, clamped.lockedUntil)
+        // A normal lockout is left alone.
+        val normal = PinAttemptLimiter.State(6, now + 30_000L)
+        assertEquals(normal, PinAttemptLimiter.clamp(normal, now))
+    }
 }

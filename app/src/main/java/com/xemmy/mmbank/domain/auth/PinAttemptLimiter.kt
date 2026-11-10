@@ -28,6 +28,15 @@ object PinAttemptLimiter {
         }
     }
 
+    /**
+     * Pulls a lockout that reaches further ahead than any real one (the clock
+     * was moved back) down to the maximum, so the caller can PERSIST the
+     * clamped value -- otherwise every check re-clamps relative to "now" and
+     * the user stays locked out for the whole clock skew.
+     */
+    fun clamp(state: State, now: Long): State =
+        if (state.lockedUntil - now > MAX_LOCKOUT_MILLIS) state.copy(lockedUntil = now + MAX_LOCKOUT_MILLIS) else state
+
     /** The state after a wrong PIN at [now]. */
     fun onFailure(state: State, now: Long): State {
         val failed = state.failedAttempts + 1

@@ -4398,3 +4398,16 @@ Finding 10 (backup coverage, import confirm, password confirm); finding 13's mon
 
 ### Not covered by CI
 Swipe row, rules screen button, dashboard wiring.
+
+## Phase 18.14 — Second-tier fixes: PIN clock skew, Binance sync, uncategorized queue (0.62.6)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- `PinAttemptLimiter.clamp` + `AppPinGate.check`: a lockout set before the clock moved back is clamped to the 15-minute maximum **and persisted**, instead of being re-clamped (and so lasting the whole skew) on every try.
+- `PortfolioRepositoryImpl.syncSpotBalances`: when both the per-asset fetch and the wallet overview come back empty/failed, the sync now fails and keeps the previous holdings instead of clearing them and reporting success.
+- `TransactionDao.observeUncategorized` excludes TRANSFER, CARD_PAYMENT and ADJUSTMENT rows.
+
+Tests: `PinAttemptLimiterTest`, `AppPinGateTest`.
+
+### Not covered by CI
+The Binance guard and the DAO query (Room/SQL; no test harness for either).

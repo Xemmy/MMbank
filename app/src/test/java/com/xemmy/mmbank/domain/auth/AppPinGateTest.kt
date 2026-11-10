@@ -59,4 +59,12 @@ class AppPinGateTest {
         assertEquals("Try again in 2 min", AppPinGate.waitText(120_000))
         assertEquals("Try again in 2 min", AppPinGate.waitText(61_000))
     }
+
+    @Test
+    fun `after the clock moves back the stored lockout is clamped and persisted`() {
+        val skewed = State(failedAttempts = 8, lockedUntil = now + 10L * 24 * 60 * 60 * 1000)
+        val out = AppPinGate.check("2580", stored, skewed, now)
+        assertTrue(out.result is PinCheck.LockedOut)
+        assertEquals(now + PinAttemptLimiter.MAX_LOCKOUT_MILLIS, out.state.lockedUntil)
+    }
 }

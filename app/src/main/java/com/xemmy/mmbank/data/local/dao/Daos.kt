@@ -266,7 +266,8 @@ interface TransactionDao {
      */
     @Query(
         "SELECT * FROM transactions WHERE isDemo = :demo AND " +
-            "(needsCategoryApproval = 1 OR categoryId IS NULL) " +
+            "(needsCategoryApproval = 1 OR categoryId IS NULL) AND " +
+            "kind NOT IN ('TRANSFER', 'CARD_PAYMENT', 'ADJUSTMENT') " +
             "ORDER BY timestamp DESC"
     )
     fun observeUncategorized(demo: Boolean): Flow<List<TransactionEntity>>
