@@ -86,6 +86,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1261,16 +1262,20 @@ private fun SwipeToActionBox(
         return
     }
     val haptic = LocalHapticFeedback.current
+    // The swipe state is remembered from the first composition, so it would keep
+    // calling that composition's lambdas (a stale row). Always call the latest.
+    val currentOnFlag by rememberUpdatedState(onFlag)
+    val currentOnCategorize by rememberUpdatedState(onCategorize)
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onFlag()
+                    currentOnFlag()
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onCategorize()
+                    currentOnCategorize()
                 }
                 SwipeToDismissBoxValue.Settled -> Unit
             }

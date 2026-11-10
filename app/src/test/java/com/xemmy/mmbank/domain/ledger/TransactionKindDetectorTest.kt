@@ -215,4 +215,28 @@ class TransactionKindDetectorTest {
         )
         assertEquals(null, TransactionKindDetector.reclassify(row(DEBIT, "Spent AED 20 at Lulu"), null))
     }
+
+    @Test
+    fun `money transferred to your account from someone else stays income`() {
+        assertEquals(
+            TransactionKind.INCOME,
+            detect(Input(CREDIT, rawMessage = "AED 500.00 transferred to your account *1122 by JOHN")),
+        )
+    }
+
+    @Test
+    fun `a card payment at a merchant is still a purchase`() {
+        assertEquals(
+            TransactionKind.SPEND,
+            detect(Input(DEBIT, rawMessage = "Card payment of AED 80.00 at SPINNEYS")),
+        )
+    }
+
+    @Test
+    fun `a transfer from your savings credit is an own-account transfer`() {
+        assertEquals(
+            TransactionKind.TRANSFER,
+            detect(Input(CREDIT, rawMessage = "AED 900 transferred from your savings account")),
+        )
+    }
 }

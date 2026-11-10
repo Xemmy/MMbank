@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.usecase
 
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionKind
 import kotlin.math.abs
 
@@ -63,6 +64,10 @@ object TransferMatcher {
             .filter { it.id != inserted.id }
             .filter { it.direction != inserted.direction }
             .filterNot(::blocked)
+            // A one-sided kind (ATM, refund, cashback) or a purchase made ON a
+            // credit card can never be the other leg of a transfer.
+            .filter { it.kind.isInternalMove || it.kind == TransactionKind.defaultFor(it.direction) }
+            .filterNot { it.direction == TransactionDirection.DEBIT && it.accountId?.let { id -> accountTypes[id] } == AccountType.CREDIT_CARD }
             .filter { it.accountId == null || inserted.accountId == null || it.accountId != inserted.accountId }
             .filter { inserted.kind.isInternalMove || it.kind.isInternalMove }
             .filter { abs(it.timestampMillis - inserted.timestampMillis) <= windowFor(inserted, it, accountTypes) }

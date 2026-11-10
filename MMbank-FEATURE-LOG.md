@@ -4380,3 +4380,21 @@ Tests: `RuleSenderValidationTest`.
 
 ### Not covered by CI
 Editor error display.
+
+## Phase 18.13 — Review findings batch 3 (0.62.5)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- **Finding 5** `TransferMatcher`: a refund/cashback/ATM row, or a purchase made on a credit card, is never the other leg of a pair.
+- **Finding 6** `TransactionKindDetector`: bare "card payment" no longer makes a debit a card payment (only "card bill payment" etc.); "transferred to your account" stays income, and own-savings wording only counts in the direction it describes.
+- **Finding 7** Transactions swipe row calls the latest flag/categorize lambdas (`rememberUpdatedState`).
+- **Finding 13 (part)** Home's financial-health card uses every active account, not just carousel-visible ones.
+- **Finding 15 (rest)** "Test against history" reads the transactions on demand instead of an uncollected StateFlow.
+
+Tests: extra `TransferMatcherTest` and `TransactionKindDetectorTest` cases.
+
+### Still open
+Finding 10 (backup coverage, import confirm, password confirm); finding 13's monthly-report cross-currency sum; finding 14's 28th-30th bill drift (needs a stored anchor day, i.e. a schema change); the second tier.
+
+### Not covered by CI
+Swipe row, rules screen button, dashboard wiring.

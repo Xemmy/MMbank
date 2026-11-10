@@ -490,7 +490,9 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.billRepository.observeAll(),
     ) { ledger, transactions, subscriptions, rates, bills ->
         computeFinancialHealth(
-            accounts = ledger.accounts,
+            // Every active account: carousel visibility is display-only and must
+            // not change the balances the health card reasons about.
+            accounts = ledger.manageableAccounts,
             transactions = transactions,
             subscriptions = subscriptions,
             bills = bills,

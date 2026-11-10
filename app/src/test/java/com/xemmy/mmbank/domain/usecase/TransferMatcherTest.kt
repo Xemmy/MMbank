@@ -135,4 +135,19 @@ class TransferMatcherTest {
         val b = tx(id = 2, direction = TransactionDirection.CREDIT, timestampMillis = 0, kind = TransactionKind.TRANSFER, accountId = 11)
         assertEquals(TransactionKind.TRANSFER, TransferMatcher.pairKind(a, b, mapOf(10L to AccountType.CHECKING, 11L to AccountType.SAVINGS)))
     }
+
+    @Test
+    fun `a refund or cashback credit is never the other leg of a transfer`() {
+        val debit = tx(id = 1, direction = TransactionDirection.DEBIT, timestampMillis = 1_000, kind = TransactionKind.TRANSFER)
+        val refund = tx(id = 2, direction = TransactionDirection.CREDIT, timestampMillis = 1_005, kind = TransactionKind.REFUND)
+        assertNull(TransferMatcher.bestMatch(debit, listOf(refund)))
+    }
+
+    @Test
+    fun `a purchase made on a credit card is not the paying leg of a card payment`() {
+        val payment = tx(id = 2, direction = TransactionDirection.CREDIT, timestampMillis = 1_005, kind = TransactionKind.CARD_PAYMENT, accountId = 9)
+        val purchaseOnCard = tx(id = 1, direction = TransactionDirection.DEBIT, timestampMillis = 1_000, accountId = 7)
+        val types = mapOf(7L to AccountType.CREDIT_CARD, 9L to AccountType.CREDIT_CARD)
+        assertNull(TransferMatcher.bestMatch(payment, listOf(purchaseOnCard), types))
+    }
 }

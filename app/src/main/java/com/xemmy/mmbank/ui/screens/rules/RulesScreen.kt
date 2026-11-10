@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -68,12 +70,6 @@ class RulesViewModel(private val container: AppContainer) : ViewModel() {
             container.recordError("RulesViewModel", e)
             emit(emptyList())
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Raw message text of every recorded transaction -- the corpus "Test against history" runs a candidate over. */
-    val historicalMessages: StateFlow<List<String>> = container.transactionRepository.observeTransactions()
-        .map { txs -> txs.mapNotNull { it.rawMessage } }
-        .catch { emit(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -120,8 +116,14 @@ class RulesViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** How many already-recorded transactions this candidate's pattern would also match. */
-    fun historyMatchCount(rule: ParsingRule): Int =
-        RuleHistoryTester.countMatches(rule, historicalMessages.value, container.preferences.defaultCurrency)
+    suspend fun historyMatchCount(rule: ParsingRule): Int {
+        // Read on demand: the old WhileSubscribed StateFlow was never collected,
+        // so this always counted against an empty list.
+        val messages = runCatching {
+            container.transactionRepository.observeTransactions().first().mapNotNull { it.rawMessage }
+        }.getOrDefault(emptyList())
+        return RuleHistoryTester.countMatches(rule, messages, container.preferences.defaultCurrency)
+    }
 
     /** Turns a suggested candidate into an active rule -- the only path that ever enables AI-generated output. */
     fun approve(rule: ParsingRule) {
@@ -285,11 +287,12 @@ private fun LearnedRuleRow(merchant: String, meaning: String, onForget: () -> Un
 @Composable
 private fun SuggestedRuleCard(
     rule: ParsingRule,
-    onTest: () -> Int,
+    onTest: suspend () -> Int,
     onApprove: () -> Unit,
     onDiscard: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var matchCount by remember(rule.id) { mutableStateOf<Int?>(null) }
 
     Card(
@@ -339,7 +342,7 @@ private fun SuggestedRuleCard(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { matchCount = onTest() }) { Text("Test against history") }
+                OutlinedButton(onClick = { scope.launch { matchCount = onTest() } }) { Text("Test against history") }
                 Button(onClick = onApprove) { Text("Approve") }
                 TextButton(onClick = onDiscard) { Text("Discard") }
             }

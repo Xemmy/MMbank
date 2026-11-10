@@ -47,7 +47,7 @@ object TransactionKindDetector {
     const val BALANCE_ADJUSTMENT_MERCHANT = "Balance adjustment"
 
     private val CARD_PAYMENT_DEBIT = Regex(
-        "\\b(?:credit\\s*card|cc)\\s+(?:bill\\s+)?payment\\b|\\bcard\\s+(?:bill\\s+)?payment\\b|" +
+        "\\b(?:credit\\s*card|cc)\\s+(?:bill\\s+)?payment\\b|\\bcard\\s+bill\\s+payment\\b|" +
             "\\bpayment\\s+(?:to|towards|for)\\s+(?:your\\s+)?(?:credit\\s+)?card\\b|" +
             "سداد\\s+(?:فاتورة\\s+)?البطاقة",
         RegexOption.IGNORE_CASE,
@@ -60,8 +60,18 @@ object TransactionKindDetector {
     )
     private val OWN_TRANSFER = Regex(
         "\\b(?:own|between\\s+(?:your|my))\\s+accounts?\\b|\\binternal\\s+transfer\\b|" +
-            "\\btransfer(?:red)?\\s+(?:to|from)\\s+(?:your|my)\\s+(?:own\\s+)?(?:savings|account)\\b|" +
             "بين\\s+حساباتك",
+        RegexOption.IGNORE_CASE,
+    )
+    // Direction matters: "transferred to your account" on a CREDIT is someone
+    // else paying in (income), and a bare "account" never proves an own-account
+    // move -- only the savings wording does, in the direction it describes.
+    private val OWN_TRANSFER_OUT = Regex(
+        "\\btransfer(?:red)?\\s+to\\s+(?:your|my)\\s+(?:own\\s+)?savings\\b",
+        RegexOption.IGNORE_CASE,
+    )
+    private val OWN_TRANSFER_IN = Regex(
+        "\\btransfer(?:red)?\\s+from\\s+(?:your|my)\\s+(?:own\\s+)?savings\\b",
         RegexOption.IGNORE_CASE,
     )
     private val ATM = Regex(
@@ -91,7 +101,9 @@ object TransactionKindDetector {
                 credit && CARD_PAYMENT_CREDIT.containsMatchIn(text) &&
                     (input.accountType == AccountType.CREDIT_CARD || text.contains("card", ignoreCase = true)) ->
                     TransactionKind.CARD_PAYMENT
-                OWN_TRANSFER.containsMatchIn(text) -> TransactionKind.TRANSFER
+                OWN_TRANSFER.containsMatchIn(text) ||
+                    (!credit && OWN_TRANSFER_OUT.containsMatchIn(text)) ||
+                    (credit && OWN_TRANSFER_IN.containsMatchIn(text)) -> TransactionKind.TRANSFER
                 !credit && ATM.containsMatchIn(text) -> TransactionKind.ATM
                 credit && REFUND.containsMatchIn(text) -> TransactionKind.REFUND
                 credit && input.accountType == AccountType.CREDIT_CARD -> TransactionKind.CARD_PAYMENT
