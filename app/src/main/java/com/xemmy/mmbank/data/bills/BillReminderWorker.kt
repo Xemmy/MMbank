@@ -31,6 +31,9 @@ class BillReminderWorker(
     override suspend fun doWork(): Result {
         val container = (applicationContext as? MMBankApp)?.container ?: return Result.success()
         if (!container.preferences.billRemindersEnabled) return Result.success()
+        // Nothing can be shown without the permission; leave the "sent" ledger
+        // untouched so the reminders still fire once it is granted.
+        if (!com.xemmy.mmbank.util.NotificationPermission.granted(applicationContext)) return Result.success()
 
         runCatching {
             val bills = container.billRepository.observeAll().first()

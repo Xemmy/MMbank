@@ -2067,8 +2067,8 @@ internal fun AmountRangeDialog(
 ) {
     var minText by remember { mutableStateOf(currentMin?.toPlainString().orEmpty()) }
     var maxText by remember { mutableStateOf(currentMax?.toPlainString().orEmpty()) }
-    val min = minText.trim().replace(",", "").takeIf { it.isNotEmpty() }?.toBigDecimalOrNull()
-    val max = maxText.trim().replace(",", "").takeIf { it.isNotEmpty() }?.toBigDecimalOrNull()
+    val min = com.xemmy.mmbank.util.AmountInput.parse(minText)
+    val max = com.xemmy.mmbank.util.AmountInput.parse(maxText)
     val minValid = minText.isBlank() || min != null
     val maxValid = maxText.isBlank() || max != null
 
@@ -2559,14 +2559,14 @@ private fun TransactionEditorDialog(
     var accountMenuOpen by remember { mutableStateOf(false) }
     var personMenuOpen by remember { mutableStateOf(false) }
 
-    val amountValue = amount.replace(",", "").toBigDecimalOrNull()
+    val amountValue = com.xemmy.mmbank.util.AmountInput.parse(amount)
     val date = runCatching { java.time.LocalDate.parse(dateIso.trim()) }.getOrNull()
     val fromAccount = accounts.firstOrNull { it.id == fromAccountId }
     val toAccount = accounts.firstOrNull { it.id == toAccountId }
     // A second amount only when the money changes currency on the way.
     val crossCurrency = transferMode && fromAccount != null && toAccount != null &&
         !fromAccount.currencyCode.equals(toAccount.currencyCode, ignoreCase = true)
-    val toAmountValue = toAmount.replace(",", "").toBigDecimalOrNull()
+    val toAmountValue = com.xemmy.mmbank.util.AmountInput.parse(toAmount)
     fun endpoint(account: Account?) = account?.let {
         TransferLegs.Endpoint(it.id, it.name, it.type, it.currencyCode)
     }

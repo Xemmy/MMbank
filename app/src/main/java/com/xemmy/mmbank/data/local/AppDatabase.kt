@@ -666,6 +666,19 @@ abstract class AppDatabase : RoomDatabase() {
         const val DB_NAME = "mmbank.db"
 
         /**
+         * Starter categories as (sql, args) pairs. Seeding used to live only
+         * inside MIGRATION_12_13 / MIGRATION_21_22, which Room never runs on a
+         * brand-new database, so a fresh install started with no categories.
+         * [build] now seeds these from `onCreate` (fresh installs only; upgraded
+         * databases already have them from the migrations).
+         */
+        fun starterCategoryInserts(): List<Pair<String, Array<Any?>>> =
+            (DEFAULT_CATEGORIES + DEFAULT_CATEGORIES_V22).map { (name, icon, colorHex) ->
+                "INSERT INTO categories (name, icon, colorHex, isCustom) VALUES (?, ?, ?, 0)" to
+                    arrayOf<Any?>(name, icon, colorHex)
+            }
+
+        /**
          * v24 -> v25: learned merchant -> account rules.
          *
          * Manually assigning a captured transaction to an account used to teach
@@ -804,6 +817,11 @@ abstract class AppDatabase : RoomDatabase() {
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
                 .fallbackToDestructiveMigrationOnDowngrade()
+                .addCallback(object : androidx.room.RoomDatabase.Callback() {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        starterCategoryInserts().forEach { (sql, args) -> db.execSQL(sql, args) }
+                    }
+                })
                 .apply { if (factory != null) openHelperFactory(factory) }
                 .build()
     }

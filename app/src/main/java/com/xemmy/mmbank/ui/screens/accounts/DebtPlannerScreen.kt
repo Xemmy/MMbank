@@ -104,7 +104,7 @@ internal fun computeDebtPlan(
             CurrencyMath.toBase(amount.toDouble(), c.currencyCode, baseCurrency, ratesFromBase)
                 ?.let { BigDecimal.valueOf(it).setScale(2, RoundingMode.HALF_UP) }
         val owed = toBase(c.owed)
-        val minimum = row.minimumInput.toBigDecimalOrNull()?.takeIf { it.signum() >= 0 }?.let(::toBase)
+        val minimum = com.xemmy.mmbank.util.AmountInput.parse(row.minimumInput)?.takeIf { it.signum() >= 0 }?.let(::toBase)
             ?: toBase(c.minimumPayment)
         if (owed == null || minimum == null) {
             unconverted += c.name
@@ -115,7 +115,7 @@ internal fun computeDebtPlan(
         DebtPayoffSimulator.Debt(c.accountId, c.name, owed, apr ?: 0.0, minimum)
     }
     val minimumBudget = DebtPayoffSimulator.minimumBudget(debts)
-    val budget = budgetInput.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+    val budget = com.xemmy.mmbank.util.AmountInput.parse(budgetInput)?.takeIf { it.signum() > 0 }
     val (avalanche, snowball) = if (budget != null && debts.isNotEmpty()) {
         DebtPayoffSimulator.compare(debts, budget)
     } else {

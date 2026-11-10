@@ -416,7 +416,7 @@ private fun ExpenseDialog(
         )
     }
 
-    val amount = amountText.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+    val amount = com.xemmy.mmbank.util.AmountInput.parse(amountText)?.takeIf { it.signum() > 0 }
 
     val splits: Map<Long?, BigDecimal>? = amount?.let { total ->
         when (splitType) {

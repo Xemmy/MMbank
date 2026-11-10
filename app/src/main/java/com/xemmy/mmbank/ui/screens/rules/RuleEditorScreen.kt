@@ -71,6 +71,9 @@ class RuleEditorViewModel(
     var loaded by mutableStateOf(false)
         private set
 
+    /** The stored rule being edited; Save copies onto it so fields the editor doesn't show (enabled, createdAt...) survive. */
+    private var original: ParsingRule? = null
+
     init {
         viewModelScope.launch {
             // Real accounts only: a rule pinned to a demo account would dangle
@@ -78,6 +81,7 @@ class RuleEditorViewModel(
             runCatching { accounts = container.accountRepository.observeActiveReal().first() }
             if (isEditing) {
                 container.parsingRuleRepository.getById(ruleId)?.let { rule ->
+                    original = rule
                     name = rule.name
                     pattern = rule.pattern
                     senderPattern = rule.senderPattern.orEmpty()
@@ -115,7 +119,8 @@ class RuleEditorViewModel(
 
     private fun buildRule(): ParsingRule? {
         if (name.isBlank() || patternError != null) return null
-        return ParsingRule(
+        return RuleEditorMerge.apply(
+            original = original,
             id = if (isEditing) ruleId else 0,
             name = name.trim(),
             pattern = pattern,

@@ -16,8 +16,8 @@ class DailyBudgetPacingTest {
             spentSoFar = BigDecimal("1000"),
             remainingDaysInMonth = 10,
         )
-        // (3000 - 500 - 1000) / 10 = 150
-        assertEquals(BigDecimal("150.00"), allowance)
+        // spent (1000) already covers the 500 fixed: (3000 - 1000) / 10 = 200
+        assertEquals(BigDecimal("200.00"), allowance)
     }
 
     @Test
@@ -28,8 +28,22 @@ class DailyBudgetPacingTest {
             spentSoFar = BigDecimal("1500"),
             remainingDaysInMonth = 5,
         )
-        // (1000 - 200 - 1500) / 5 = -140
-        assertEquals(BigDecimal("-140.00"), allowance)
+        // (1000 - 1500) / 5 = -100
+        assertEquals(BigDecimal("-100.00"), allowance)
+    }
+
+    @Test
+    fun `fixed expenses are not counted twice once they have been paid`() {
+        // 3100 budget, 1000 rent. Before rent: (3100 - 1000) / 10 = 210.
+        val before = DailyBudgetPacing.dailyAllowance(
+            BigDecimal("3100"), BigDecimal("1000"), BigDecimal.ZERO, 10,
+        )
+        // After the 1000 rent debit lands, the allowance must not drop.
+        val after = DailyBudgetPacing.dailyAllowance(
+            BigDecimal("3100"), BigDecimal("1000"), BigDecimal("1000"), 10,
+        )
+        assertEquals(BigDecimal("210.00"), before)
+        assertEquals(before, after)
     }
 
     @Test

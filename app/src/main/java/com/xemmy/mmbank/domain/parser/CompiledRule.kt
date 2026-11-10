@@ -47,9 +47,12 @@ object RuleCompiler {
     fun compile(rule: ParsingRule): CompiledRule? {
         if (!rule.pattern.contains("(?<$AMOUNT_GROUP>")) return null
         val regex = runCatching { Regex(rule.pattern, RegexOption.IGNORE_CASE) }.getOrNull() ?: return null
-        val sender = rule.senderPattern
-            ?.takeIf { it.isNotBlank() }
-            ?.let { runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull() }
+        // An invalid sender regex must disable the rule, not silently widen it
+        // to every sender.
+        val senderText = rule.senderPattern?.takeIf { it.isNotBlank() }
+        val sender = senderText?.let {
+            runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull() ?: return null
+        }
         return CompiledRule(
             ruleId = rule.id,
             name = rule.name,

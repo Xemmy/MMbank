@@ -4353,3 +4353,18 @@ mention funds "will be received", and stored unknown currencies as the default.
 
 The AppContainer refusal path (needs a Keystore failure on a device).
 
+
+## Phase 18.11 — Review findings batch 2 (0.62.3)
+
+Committed with `[skip ci]` on request: **not yet verified by CI** (no build run).
+
+- **Finding 8** `util/AmountInput`: "12,50" is 12.50, not 1250; used by the transaction form, filters, account form, debt planner and split dialog.
+- **Finding 9** `AppDatabase.build` seeds starter categories in `onCreate` (fresh installs only).
+- **Finding 12** `DailyBudgetPacing.dailyAllowance` commits `max(fixed, spent)` instead of both.
+- **Finding 14 (part)** `NotificationPermission`: bill, subscription and weekly-digest workers skip without the permission, so reminders aren't recorded as sent.
+- **Finding 15 (part)** `RuleEditorMerge` keeps `enabled`/`createdAt`/`isDemo` on Save; an invalid sender regex now makes `RuleCompiler.compile` return null instead of making the rule global.
+
+Tests: `AmountInputTest`, `StarterCategoriesTest`, `RuleEditorMergeTest`, extra `DailyBudgetPacingTest` cases.
+
+### Not covered by CI
+Room `onCreate` callback on a real fresh install, worker permission gating, rule editor UI.

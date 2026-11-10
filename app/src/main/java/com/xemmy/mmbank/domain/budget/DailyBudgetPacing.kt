@@ -32,7 +32,7 @@ object DailyBudgetPacing {
     }
 
     /**
-     * `(monthlyBudget - fixedExpenses - spentSoFar) / remainingDaysInMonth`,
+     * `(monthlyBudget - max(fixedExpenses, spentSoFar)) / remainingDaysInMonth`,
      * rounded to 2 decimal places. A month with no remaining days left (the
      * caller rolled past it without re-deriving [remainingDaysInMonth]) yields
      * zero rather than dividing by zero.
@@ -44,7 +44,11 @@ object DailyBudgetPacing {
         remainingDaysInMonth: Int,
     ): BigDecimal {
         if (remainingDaysInMonth <= 0) return BigDecimal.ZERO
-        val remaining = monthlyBudget - fixedExpenses - spentSoFar
+        // Fixed expenses are money already committed; once paid they are part of
+        // spentSoFar, so subtracting both counted them twice. Commit whichever is
+        // larger: the unpaid fixed total, or what has actually gone out.
+        val committed = fixedExpenses.max(spentSoFar)
+        val remaining = monthlyBudget - committed
         return remaining.divide(BigDecimal(remainingDaysInMonth), 2, RoundingMode.HALF_UP)
     }
 

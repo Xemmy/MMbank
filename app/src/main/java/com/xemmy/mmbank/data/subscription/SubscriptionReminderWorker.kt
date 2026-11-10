@@ -31,6 +31,8 @@ class SubscriptionReminderWorker(
     override suspend fun doWork(): Result {
         val container = (applicationContext as? MMBankApp)?.container ?: return Result.success()
         if (!container.preferences.subscriptionRemindersEnabled) return Result.success()
+        // Leave the "sent" ledger untouched while nothing can be shown.
+        if (!com.xemmy.mmbank.util.NotificationPermission.granted(applicationContext)) return Result.success()
 
         runCatching {
             val subscriptions = container.subscriptionRepository.observeActive().first()

@@ -28,6 +28,9 @@ class WeeklyDigestWorker(
         val key = weekKey(today)
         if (!shouldSend(prefs.weeklyDigestNotificationsEnabled, prefs.weeklyDigestLastSentKey, key)) return Result.success()
 
+        // Don't mark the week as sent when nothing can be shown.
+        if (!com.xemmy.mmbank.util.NotificationPermission.granted(applicationContext)) return Result.success()
+
         runCatching {
             val digest = container.buildWeeklyDigest() ?: return@runCatching
             WeeklyDigestNotificationHelper.post(applicationContext, digest, prefs.defaultCurrency)

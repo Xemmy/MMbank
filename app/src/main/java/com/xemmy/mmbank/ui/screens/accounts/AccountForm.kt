@@ -12,9 +12,7 @@ import java.time.ZoneId
  * balance-adjust dialog so the two never disagree about what "1,000" means.
  */
 internal fun parseMoneyInput(raw: String): BigDecimal? =
-    raw.trim().replace(",", "").replace(" ", "").replace(" ", "")
-        .takeIf { it.isNotEmpty() }
-        ?.toBigDecimalOrNull()
+    com.xemmy.mmbank.util.AmountInput.parse(raw)
 
 /** Human name for an account type, for pickers and labels. */
 internal fun accountTypeLabel(type: AccountType): String = when (type) {
