@@ -23,6 +23,7 @@ object BuiltInRules {
     // (e.g. a trailing cashback figure) without a duplicate group name.
     private const val CUR_BODY =
         "USD|USDT|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
+            "|THB|MYR|SGD|HKD|NZD|SEK|NOK|DKK|ZAR|RUB|KRW|IDR|VND|BDT|LKR|NPR|PLN|CZK|BRL|MXN|DHS" +
             "|[$€£₹₺¥]|ر\\.\\s?س|د\\.\\s?إ|ج\\.\\s?م|د\\.\\s?ك|ر\\.\\s?ق|ر\\.\\s?ع|د\\.\\s?ب|د\\.\\s?ا|ل\\.\\s?ل|ريال|درهم|جنيه"
     // Trailing guard so "USD" can never be mistaken for a truncated prefix of
     // "USDT" (or any other longer token) — without it, alternation matches
@@ -224,6 +225,18 @@ object BuiltInRules {
         rule("builtin.ar.debit.cur-amt", "(?:$KW_DEBIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR$ACCTAIL", TransactionDirection.DEBIT, 10),
         rule("builtin.ar.credit.amt-cur", "(?:$KW_CREDIT_AR).{0,30}?$AMT\\s?$CUR$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
         rule("builtin.ar.credit.cur-amt", "(?:$KW_CREDIT_AR).{0,30}?$CUR\\s?$AMT$MERCHANT_AR$ACCTAIL", TransactionDirection.CREDIT, 10),
+
+        // --- English "transaction CUR AMT at MERCHANT" (priority 11) ---
+        // "Your Credit Card ending 1234: transaction AED 75.00 at SPINNEYS" has no
+        // spend verb, so the "credit" keyword rules used to read it as income. A
+        // card "transaction" is spend unless the text also says money came in.
+        rule(
+            "builtin.en.debit.transaction",
+            "(?s)^(?!.*\\b(?:credited|deposited|refund(?:ed)?|received|incoming|reversal|reversed)\\b)" +
+                ".*?\\btransaction\\b.{0,25}?$CUR\\s?$AMT$MERCHANT_EN$ACCTAIL",
+            TransactionDirection.DEBIT,
+            11,
+        ),
 
         // --- Arabic card-use notification (priority 11) ---
         // "تم استخدام البطاقة الائتمانية المنتهية بالرقم XX0000 لإجراء معاملة بقيمة

@@ -371,6 +371,13 @@ class AppContainer(context: Context) {
             )
             if (migrated) SecureDatabaseFactory().encryptedFactory(appContext, passphrase) else null
         }.onFailure { recordError("AppContainer.databaseEncryption", it) }.getOrNull()
+        // No key (Keystore hiccup) must never fall through to opening an
+        // already-encrypted ledger as plain SQLite: SQLite reports "not a
+        // database" and Room's default onCorruption deletes the file. Fail
+        // loudly instead; the next launch retries with the data untouched.
+        check(encrypted != null || !DatabaseEncryptionMigrator.isEncryptedOnDisk(appContext, AppDatabase.DB_NAME)) {
+            "Encrypted ledger present but its key is unavailable; refusing to open it as plaintext"
+        }
         AppDatabase.build(appContext, encrypted)
     }
 

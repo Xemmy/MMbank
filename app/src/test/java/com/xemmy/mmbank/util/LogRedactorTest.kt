@@ -1,6 +1,8 @@
 package com.xemmy.mmbank.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LogRedactorTest {
@@ -55,4 +57,19 @@ class LogRedactorTest {
             redacted,
         )
     }
+
+    @Test
+    fun `arabic-indic card number is masked`() {
+        val out = LogRedactor.redactSensitiveData("البطاقة ١٢٣٤ ٥٦٧٨ ٩٠١٢ ٣٤٥٦ تم")
+        assertTrue(out.contains("**** **** **** 3456"))
+        assertFalse(out.contains("١٢٣٤"))
+    }
+
+    @Test
+    fun `unspaced iban is masked keeping the last four`() {
+        val out = LogRedactor.redactSensitiveData("to AE070331234567890123456 today")
+        assertFalse(out.contains("AE0703312"))
+        assertTrue(out.endsWith("3456 today"))
+    }
 }
+

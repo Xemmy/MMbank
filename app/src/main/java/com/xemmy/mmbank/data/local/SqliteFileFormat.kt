@@ -25,4 +25,13 @@ object SqliteFileFormat {
         }
         return true
     }
+
+    /**
+     * True when a database file exists but is not plaintext SQLite, i.e. it is
+     * (assumed) SQLCipher. Opening such a file *without* its key makes SQLite
+     * report "not a database" and Room's default corruption handler deletes
+     * it, so callers must refuse to open it plain when the key is unavailable.
+     */
+    fun isEncryptedFile(exists: Boolean, header: ByteArray): Boolean =
+        exists && !isPlaintextHeader(header)
 }

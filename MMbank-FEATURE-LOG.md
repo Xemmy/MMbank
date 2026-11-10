@@ -4318,3 +4318,38 @@ Two new cases in `CaptureLogFormatterTest`; the digit-free no-match case still h
 
 The file locking and the listener/receiver wiring need a phone.
 
+
+## Phase 18.10 — Review findings: DB key, parser guards, redactor
+
+Version 0.62.2 (versionCode 91). No schema change.
+
+### Why
+
+The whole-codebase review (findings 1-4 and the rest of 11) found: an encrypted
+ledger could be opened as plaintext if the Keystore key lookup failed, which makes
+Room delete it as corrupt; the built-in parser recorded blocked-card notices,
+OTPs and declined purchases, read a card ending as the amount, flipped debits that
+mention funds "will be received", and stored unknown currencies as the default.
+
+### What changed
+
+- **`AppContainer`**: refuses to open the DB (check) when it is encrypted on disk
+  but no key is available; `SqliteFileFormat.isEncryptedFile` is the pure test.
+- **`ParseGuards`** (pure, built-in rules only): non-transaction wording
+  (declined/failed/blocked/OTP), card/account-ending amounts, and an unrecognised
+  uppercase currency code before the amount all stop a match.
+- **`BuiltInRules`**: a priority-11 "transaction CUR AMT" debit rule (unless the text
+  also says credited/received/refund); 20 more currency codes incl. Dhs.
+- **`GenericExtractors`**: "will be received" / "received by" no longer count as
+  incoming money; "debited/withdrawn/charged" count as debit cues. The
+  DEBIT-to-CREDIT promotion now applies to built-in rules only.
+- **`LogRedactor`**: folds Arabic-Indic digits before masking and masks unspaced IBANs.
+
+### Tests
+
+`ParserReviewFindingsTest`, plus cases in `SqliteFileFormatTest` and `LogRedactorTest`.
+
+### Not covered by CI
+
+The AppContainer refusal path (needs a Keystore failure on a device).
+

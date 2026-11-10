@@ -58,8 +58,11 @@ object GenericExtractors {
         return null
     }
 
-    private val CREDIT_DIRECTION_KEYWORDS = Regex("\\b(?:received|incoming|deposited)\\b", RegexOption.IGNORE_CASE)
-    private val DEBIT_DIRECTION_KEYWORDS = Regex("\\b(?:paid|purchased|sent|spent)\\b", RegexOption.IGNORE_CASE)
+    private val CREDIT_DIRECTION_KEYWORDS = Regex(
+        "(?<!will be\\s)(?<!to be\\s)(?<!be\\s)\\b(?:received|incoming|deposited)\\b(?!\\s+by\\b)",
+        RegexOption.IGNORE_CASE,
+    )
+    private val DEBIT_DIRECTION_KEYWORDS = Regex("\\b(?:paid|purchased|sent|spent|debited|withdrawn|charged)\\b", RegexOption.IGNORE_CASE)
 
     /**
      * Direction implied by explicit wording in [text], for signature-routed
