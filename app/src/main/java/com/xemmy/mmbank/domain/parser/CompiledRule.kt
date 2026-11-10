@@ -73,4 +73,11 @@ object RuleCompiler {
         return runCatching { Regex(pattern, RegexOption.IGNORE_CASE); null }
             .getOrElse { "Invalid regex: ${it.message}" }
     }
+
+    /** Validation for the optional sender filter; blank is valid (no filter). */
+    fun validateSender(senderPattern: String): String? {
+        if (senderPattern.isBlank()) return null
+        return runCatching { Regex(senderPattern, RegexOption.IGNORE_CASE); null }
+            .getOrElse { "Invalid sender regex: ${it.message}" }
+    }
 }

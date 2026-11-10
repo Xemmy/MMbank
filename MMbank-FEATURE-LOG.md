@@ -4368,3 +4368,15 @@ Tests: `AmountInputTest`, `StarterCategoriesTest`, `RuleEditorMergeTest`, extra 
 
 ### Not covered by CI
 Room `onCreate` callback on a real fresh install, worker permission gating, rule editor UI.
+
+## Phase 18.12 — Rule editor sender validation (0.62.4)
+
+Committed with `[skip ci]`: **not yet verified by CI**. The original review text for the remaining findings (5, 6, 7, 10, 13, the rest of 14/15, second tier) was unavailable, so this is a fresh audit of the partial items only; those numbered findings stay open.
+
+- `RuleCompiler.validateSender`; the rule editor shows the error and blocks Save on an invalid sender regex (previously Save stored a rule that `compile` now silently rejects).
+- Audited finding 14: all three ledger-based reminder workers already gate on `NotificationPermission`; the event-driven alert helpers (budget, category cap, unusual charge) keep no sent-ledger, so they need no change.
+
+Tests: `RuleSenderValidationTest`.
+
+### Not covered by CI
+Editor error display.

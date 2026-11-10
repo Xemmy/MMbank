@@ -101,6 +101,7 @@ class RuleEditorViewModel(
         get() = accounts.firstOrNull { it.id == assignAccountId }?.name
 
     val patternError: String? get() = RuleCompiler.validate(pattern)
+    val senderError: String? get() = RuleCompiler.validateSender(senderPattern)
 
     /** Runs the current pattern against the sample text exactly as the live pipeline would. */
     fun testAgainstSample(): ParsedTransaction? {
@@ -118,7 +119,7 @@ class RuleEditorViewModel(
     }
 
     private fun buildRule(): ParsingRule? {
-        if (name.isBlank() || patternError != null) return null
+        if (name.isBlank() || patternError != null || senderError != null) return null
         return RuleEditorMerge.apply(
             original = original,
             id = if (isEditing) ruleId else 0,
@@ -211,6 +212,8 @@ fun RuleEditorScreen(
             label = { Text("Sender filter regex (optional — SMS sender / app package)") },
             textStyle = mono,
             singleLine = true,
+            isError = viewModel.senderError != null,
+            supportingText = viewModel.senderError?.let { e -> { Text(e, color = MaterialTheme.colorScheme.error) } },
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -335,7 +338,7 @@ fun RuleEditorScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = { viewModel.save(onDone) },
-                enabled = viewModel.name.isNotBlank() && viewModel.patternError == null,
+                enabled = viewModel.name.isNotBlank() && viewModel.patternError == null && viewModel.senderError == null,
                 modifier = Modifier.weight(1f),
             ) { Text("Save rule") }
             if (viewModel.isEditing) {
