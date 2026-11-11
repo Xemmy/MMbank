@@ -126,4 +126,16 @@ class MessageDateExtractorTest {
     fun `arabic-indic digits are read like ascii ones`() {
         assertEquals(millis(2025, 6, 12), extract("بتاريخ ١٢/٠٦/٢٠٢٥")?.epochMillis)
     }
+
+    @Test
+    fun `a merchant starting with AM is not read as a meridiem`() {
+        val result = extract("Spent AED 10 on 12/06/2025 12:05 AMAZON")
+        assertEquals(millis(2025, 6, 12, 12, 5), result?.epochMillis)
+    }
+
+    @Test
+    fun `a real pm suffix still applies`() {
+        val result = extract("Spent AED 10 on 12/06/2025 1:05 PM at Costa")
+        assertEquals(millis(2025, 6, 12, 13, 5), result?.epochMillis)
+    }
 }

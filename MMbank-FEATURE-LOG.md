@@ -4463,3 +4463,15 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Real bank messages; a merchant whose real name contains one of the stop words is cut at it.
+
+## Phase 18.19 — Parser: "12:05 AMAZON" is not AM (0.62.11)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- `MessageDateExtractor` only accepts an AM/PM marker that is not followed by a letter, so a merchant starting "AM..." after a time no longer turns 12:05 into 00:05. Test: `MessageDateExtractorTest`.
+
+### Still open
+- Day-first reading of ambiguous dates is kept (banks in this region write day-first); learned merchant kind vs refund wording; paste import issues.
+
+### Not covered by CI
+Real pasted statements.

@@ -40,7 +40,7 @@ object MessageDateExtractor {
 
     private val NUMERIC_DATE = Regex("(\\d{1,4})[/.\\-](\\d{1,2})[/.\\-](\\d{2,4})")
     private val NAMED_DATE = Regex("(\\d{1,2})[\\s\\-]([A-Za-z]{3,9})[\\s\\-](\\d{2,4})")
-    private val TIME = Regex("(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*([AaPp][Mm])?")
+    private val TIME = Regex("(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*([AaPp][Mm])?(?![A-Za-z])")
 
     private val MONTHS = mapOf(
         "jan" to 1, "feb" to 2, "mar" to 3, "apr" to 4, "may" to 5, "jun" to 6,
