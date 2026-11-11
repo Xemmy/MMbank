@@ -4451,3 +4451,15 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Report screen on a device.
+
+## Phase 18.18 — Parser: merchant tail trim (0.62.10)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- New `MerchantTail` cuts a captured merchant at trailing words (on, with, card, balance, حساب, رصيد...), so an Arabic merchant no longer swallows the account number. Applied in `TransactionParser`. Test: `MerchantTailTest`.
+
+### Still open
+- Pasted-date AM/PM and day-first parsing, learned merchant kind vs refund wording, paste import issues.
+
+### Not covered by CI
+Real bank messages; a merchant whose real name contains one of the stop words is cut at it.

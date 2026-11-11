@@ -100,6 +100,7 @@ class TransactionParser(
 
             val merchant = match.groupOrNull(RuleCompiler.MERCHANT_GROUP)
                 ?.trim()
+                ?.let(MerchantTail::trim)
                 ?.trimEnd('.', ',', '-', ':')
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
