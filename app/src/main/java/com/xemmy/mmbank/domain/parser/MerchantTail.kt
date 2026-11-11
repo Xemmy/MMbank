@@ -9,7 +9,7 @@ package com.xemmy.mmbank.domain.parser
 object MerchantTail {
     private val STOP = Regex(
         "\\s+(?:on|with|using|via|ref|avl|avail|available|balance|bal|card|acct|account|a/c|" +
-            "حساب|حسابك|رصيد|الرصيد|بطاقة|بطاقتك|رقم|بتاريخ)\\b.*$",
+            "حساب|حسابك|رصيد|الرصيد|بطاقة|بطاقتك|رقم|بتاريخ)(?=\\s|$).*$",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
     )
 
