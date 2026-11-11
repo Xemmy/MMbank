@@ -633,6 +633,18 @@ interface BillDao {
 
     @Query("DELETE FROM bills WHERE id = :id")
     suspend fun delete(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM bills")
+    suspend fun getAll(): List<BillEntity>
+
+    @Query("DELETE FROM bills")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<BillEntity>)
+
 }
 
 @Dao
@@ -658,6 +670,18 @@ interface SavingsGoalDao {
 
     @Query("DELETE FROM savings_goals WHERE id = :id")
     suspend fun delete(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM savings_goals")
+    suspend fun getAll(): List<SavingsGoalEntity>
+
+    @Query("DELETE FROM savings_goals")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<SavingsGoalEntity>)
+
 }
 
 @Dao
@@ -674,6 +698,18 @@ interface FriendDao {
 
     @Query("UPDATE friends SET archived = 1 WHERE id = :id")
     suspend fun archive(id: Long)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM friends")
+    suspend fun getAll(): List<FriendEntity>
+
+    @Query("DELETE FROM friends")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<FriendEntity>)
+
 }
 
 @Dao
@@ -700,6 +736,21 @@ interface SplitGroupDao {
 
     @Query("SELECT * FROM split_group_members")
     fun observeAllMemberships(): Flow<List<SplitGroupMemberEntity>>
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM split_groups")
+    suspend fun getAll(): List<SplitGroupEntity>
+
+    @Query("DELETE FROM split_groups")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertAll(entities: List<SplitGroupEntity>)
+
+    @Query("SELECT * FROM split_group_members")
+    suspend fun getAllMembers(): List<SplitGroupMemberEntity>
+
 }
 
 @Dao
@@ -734,6 +785,18 @@ interface GroupExpenseDao {
 
     @Query("SELECT * FROM expense_splits")
     fun observeAllSplits(): Flow<List<ExpenseSplitEntity>>
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM group_expenses")
+    suspend fun getAll(): List<GroupExpenseEntity>
+
+    @Query("SELECT * FROM expense_splits")
+    suspend fun getAllSplits(): List<ExpenseSplitEntity>
+
+    @Insert
+    suspend fun insertAll(entities: List<GroupExpenseEntity>)
+
 }
 
 @Dao

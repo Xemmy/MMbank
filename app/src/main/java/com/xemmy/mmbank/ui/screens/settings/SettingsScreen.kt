@@ -84,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.xemmy.mmbank.data.backup.BackupPasswordRules
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
@@ -749,6 +750,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     var backupPassword by mutableStateOf("")
+    var backupPasswordConfirm by mutableStateOf("")
 
     /** [writeBytes] runs on IO and streams the encrypted blob to the chosen document. */
     fun exportBackup(writeBytes: suspend (ByteArray) -> Unit) {
@@ -2298,6 +2300,35 @@ private fun BackupSection(viewModel: SettingsViewModel) {
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
     )
+    OutlinedTextField(
+        value = viewModel.backupPasswordConfirm,
+        onValueChange = { viewModel.backupPasswordConfirm = it },
+        label = { Text("Confirm password (for export)") },
+        singleLine = true,
+        isError = BackupPasswordRules.mismatch(viewModel.backupPassword, viewModel.backupPasswordConfirm),
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    var confirmImport by remember { mutableStateOf(false) }
+    if (confirmImport) {
+        AlertDialog(
+            onDismissRequest = { confirmImport = false },
+            title = { Text("Replace all data?") },
+            text = {
+                Text(
+                    "Importing wipes every account, transaction and setting currently in the app " +
+                        "and replaces them with the backup. This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmImport = false
+                    importLauncher.launch(arrayOf("*/*"))
+                }) { Text("Choose backup") }
+            },
+            dismissButton = { TextButton(onClick = { confirmImport = false }) { Text("Cancel") } },
+        )
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
             onClick = {
@@ -2305,11 +2336,12 @@ private fun BackupSection(viewModel: SettingsViewModel) {
                     .format(java.util.Date())
                 exportLauncher.launch("mmbank-backup-$stamp.mmb")
             },
-            enabled = viewModel.backupPassword.length >= 6 && !viewModel.busy,
+            enabled = BackupPasswordRules.canExport(viewModel.backupPassword, viewModel.backupPasswordConfirm) &&
+                !viewModel.busy,
         ) { Text("Export") }
         OutlinedButton(
-            onClick = { importLauncher.launch(arrayOf("*/*")) },
-            enabled = viewModel.backupPassword.length >= 6 && !viewModel.busy,
+            onClick = { confirmImport = true },
+            enabled = BackupPasswordRules.canImport(viewModel.backupPassword) && !viewModel.busy,
         ) { Text("Import") }
     }
     if (viewModel.backupPassword.isNotEmpty() && viewModel.backupPassword.length < 6) {

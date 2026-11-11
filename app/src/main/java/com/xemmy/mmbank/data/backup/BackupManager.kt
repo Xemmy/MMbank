@@ -10,10 +10,19 @@ import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
+import com.xemmy.mmbank.data.local.entity.BillEntity
+import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
+import com.xemmy.mmbank.data.local.entity.FriendEntity
+import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
+import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
+import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
+import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.BillRecurrence
+import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.TransactionCategory
@@ -191,6 +200,9 @@ data class BackupPayload(
      *
      * 10 = adds [ignoredKeywords]. Gated like the ignore list: a pre-v10
      * backup never held them, so restoring one must leave this device's alone.
+     *
+     * 11 = adds [extras]: bills, goals, friends, group splits and the goal/budget
+     * preferences. Null on older backups, which then leave those alone.
      */
     val formatVersion: Int = 1,
     val exportedAtMillis: Long,
@@ -208,7 +220,57 @@ data class BackupPayload(
     val merchantAccountMappings: List<BackupMerchantAccountMapping> = emptyList(),
     val merchantKindMappings: List<BackupMerchantKindMapping> = emptyList(),
     val ignoredKeywords: List<BackupIgnoredKeyword> = emptyList(),
+    val extras: BackupExtras? = null,
 )
+
+/**
+ * Format 11: bills, savings goals, friends and group splits, plus the goal and
+ * budget preferences. Null on older backups, which then leave these alone.
+ */
+@Serializable
+data class BackupExtras(
+    val bills: List<BackupBill> = emptyList(),
+    val goals: List<BackupGoal> = emptyList(),
+    val friends: List<BackupFriend> = emptyList(),
+    val groups: List<BackupGroup> = emptyList(),
+    val groupMembers: List<BackupGroupMember> = emptyList(),
+    val groupExpenses: List<BackupGroupExpense> = emptyList(),
+    val expenseSplits: List<BackupExpenseSplit> = emptyList(),
+    val goalTargetAmount: Double? = null,
+    val goalMonthlySaving: Double? = null,
+    val monthlySpendBudget: Double? = null,
+    val fixedMonthlyExpenses: Double? = null,
+)
+
+@Serializable
+data class BackupBill(
+    val id: Long, val name: String, val amount: String, val currencyCode: String,
+    val recurrence: String?, val nextDueDateMillis: Long, val createdAt: Long,
+)
+
+@Serializable
+data class BackupGoal(
+    val id: Long, val title: String, val targetAmount: String, val currentAmount: String,
+    val targetDateMillis: Long?, val icon: String, val createdAt: Long, val archived: Boolean,
+)
+
+@Serializable
+data class BackupFriend(val id: Long, val name: String, val createdAt: Long, val archived: Boolean)
+
+@Serializable
+data class BackupGroup(val id: Long, val name: String, val icon: String, val createdAt: Long, val archived: Boolean)
+
+@Serializable
+data class BackupGroupMember(val groupId: Long, val friendId: Long)
+
+@Serializable
+data class BackupGroupExpense(
+    val id: Long, val groupId: Long, val description: String, val amount: String, val currencyCode: String,
+    val paidByFriendId: Long?, val splitType: String, val createdAt: Long,
+)
+
+@Serializable
+data class BackupExpenseSplit(val id: Long, val expenseId: Long, val friendId: Long?, val owedAmount: String)
 
 /** A learned merchant -> kind rule; see [BackupPayload.formatVersion] 7. */
 @Serializable
@@ -261,7 +323,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 10,
+            formatVersion = 11,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -276,6 +338,19 @@ class BackupManager(
             merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
             merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
             ignoredKeywords = database.ignoredKeywordDao().getAll().map { it.toBackup() },
+            extras = BackupExtras(
+                bills = database.billDao().getAll().map { it.toBackup() },
+                goals = database.savingsGoalDao().getAll().map { it.toBackup() },
+                friends = database.friendDao().getAll().map { it.toBackup() },
+                groups = database.splitGroupDao().getAll().map { it.toBackup() },
+                groupMembers = database.splitGroupDao().getAllMembers().map { BackupGroupMember(it.groupId, it.friendId) },
+                groupExpenses = database.groupExpenseDao().getAll().map { it.toBackup() },
+                expenseSplits = database.groupExpenseDao().getAllSplits().map { it.toBackup() },
+                goalTargetAmount = preferences.goalTargetAmount,
+                goalMonthlySaving = preferences.goalMonthlySaving,
+                monthlySpendBudget = preferences.monthlySpendBudget,
+                fixedMonthlyExpenses = preferences.fixedMonthlyExpenses,
+            ),
         )
         return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
@@ -339,6 +414,7 @@ class BackupManager(
         // And for the learned merchant -> kind rules.
         val hasKindMappings = payload.formatVersion >= 7
         val hasIgnoredKeywords = payload.formatVersion >= 10
+        val extras = payload.extras
         database.withTransaction {
             database.transactionDao().clearAll()
             database.accountDao().clearAll()
@@ -401,10 +477,34 @@ class BackupManager(
                     payload.merchantKindMappings.mapNotNull { it.toEntity() }
                 )
             }
+
+            if (extras != null) {
+                // Friends and groups first: members, expenses and splits cascade
+                // from them, so clearing the parents empties the children too.
+                database.friendDao().clearAll()
+                database.splitGroupDao().clearAll()
+                database.billDao().clearAll()
+                database.savingsGoalDao().clearAll()
+                database.billDao().insertAll(extras.bills.map { it.toEntity() })
+                database.savingsGoalDao().insertAll(extras.goals.map { it.toEntity() })
+                database.friendDao().insertAll(extras.friends.map { it.toEntity() })
+                database.splitGroupDao().insertAll(extras.groups.map { it.toEntity() })
+                database.splitGroupDao().insertMembers(
+                    extras.groupMembers.map { SplitGroupMemberEntity(it.groupId, it.friendId) }
+                )
+                database.groupExpenseDao().insertAll(extras.groupExpenses.map { it.toEntity() })
+                database.groupExpenseDao().insertSplits(extras.expenseSplits.map { it.toEntity() })
+            }
         }
         preferences.defaultCurrency = payload.defaultCurrency
         preferences.cashbackSpendRaw = payload.cashbackSpendRaw
         preferences.personsRaw = payload.personsRaw
+        extras?.let {
+            it.goalTargetAmount?.let { v -> preferences.goalTargetAmount = v }
+            it.goalMonthlySaving?.let { v -> preferences.goalMonthlySaving = v }
+            it.monthlySpendBudget?.let { v -> preferences.monthlySpendBudget = v }
+            it.fixedMonthlyExpenses?.let { v -> preferences.fixedMonthlyExpenses = v }
+        }
         return payload.accounts.size to payload.transactions.size
     }
 }
@@ -690,3 +790,54 @@ internal fun BackupIgnoredKeyword.toEntity() = IgnoredKeywordEntity(
     keyword = keyword,
     createdAt = createdAt,
 )
+
+// --- format 11 mappers ---
+
+internal fun BillEntity.toBackup() = BackupBill(
+    id = id, name = name, amount = amount.toPlainString(), currencyCode = currencyCode,
+    recurrence = recurrence?.name, nextDueDateMillis = nextDueDateMillis, createdAt = createdAt,
+)
+
+internal fun BackupBill.toEntity() = BillEntity(
+    id = id, name = name, amount = BigDecimal(amount), currencyCode = currencyCode,
+    recurrence = recurrence?.let { r -> BillRecurrence.values().firstOrNull { it.name == r } },
+    nextDueDateMillis = nextDueDateMillis, createdAt = createdAt,
+)
+
+internal fun SavingsGoalEntity.toBackup() = BackupGoal(
+    id = id, title = title, targetAmount = targetAmount.toPlainString(),
+    currentAmount = currentAmount.toPlainString(), targetDateMillis = targetDateMillis,
+    icon = icon, createdAt = createdAt, archived = archived,
+)
+
+internal fun BackupGoal.toEntity() = SavingsGoalEntity(
+    id = id, title = title, targetAmount = BigDecimal(targetAmount), currentAmount = BigDecimal(currentAmount),
+    targetDateMillis = targetDateMillis, icon = icon, createdAt = createdAt, archived = archived,
+)
+
+internal fun FriendEntity.toBackup() = BackupFriend(id = id, name = name, createdAt = createdAt, archived = archived)
+
+internal fun BackupFriend.toEntity() = FriendEntity(id = id, name = name, createdAt = createdAt, archived = archived)
+
+internal fun SplitGroupEntity.toBackup() =
+    BackupGroup(id = id, name = name, icon = icon, createdAt = createdAt, archived = archived)
+
+internal fun BackupGroup.toEntity() =
+    SplitGroupEntity(id = id, name = name, icon = icon, createdAt = createdAt, archived = archived)
+
+internal fun GroupExpenseEntity.toBackup() = BackupGroupExpense(
+    id = id, groupId = groupId, description = description, amount = amount.toPlainString(),
+    currencyCode = currencyCode, paidByFriendId = paidByFriendId, splitType = splitType.name, createdAt = createdAt,
+)
+
+internal fun BackupGroupExpense.toEntity() = GroupExpenseEntity(
+    id = id, groupId = groupId, description = description, amount = BigDecimal(amount),
+    currencyCode = currencyCode, paidByFriendId = paidByFriendId,
+    splitType = SplitType.values().firstOrNull { it.name == splitType } ?: SplitType.EQUAL, createdAt = createdAt,
+)
+
+internal fun ExpenseSplitEntity.toBackup() =
+    BackupExpenseSplit(id = id, expenseId = expenseId, friendId = friendId, owedAmount = owedAmount.toPlainString())
+
+internal fun BackupExpenseSplit.toEntity() =
+    ExpenseSplitEntity(id = id, expenseId = expenseId, friendId = friendId, owedAmount = BigDecimal(owedAmount))

@@ -4475,3 +4475,16 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Real pasted statements.
+
+## Phase 18.20 — Backup completeness and safer import (0.62.12)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- Backup format 11 adds bills, savings goals, friends, group splits (groups, members, expenses, splits) and the goal/budget preferences. Older backups carry no such section and leave this data alone on restore. New DAO `getAll`/`clearAll`/`insertAll` queries back it. Test: `BackupExtrasTest`.
+- Import now asks "Replace all data?" before opening the file picker; export needs the password typed twice (`BackupPasswordRules`). Test: `BackupPasswordRulesTest`.
+
+### Still open
+- Subscriptions are not in the backup (they are re-detected from transactions).
+
+### Not covered by CI
+The dialog and confirm field on a device; the Room queries on a real database; a full export-then-import on a device.
