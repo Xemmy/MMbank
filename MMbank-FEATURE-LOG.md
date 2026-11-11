@@ -4426,3 +4426,16 @@ Fuzzy category match can win over a better merchant match (not reproduced here, 
 
 ### Not covered by CI
 Copilot screen wording on a device.
+
+## Phase 18.16 — Second-tier fixes: NBSP in bank messages (0.62.8)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- `TextNormalizer` collapses non-breaking and other Unicode spaces (NBSP, narrow NBSP, thin space, ideographic space) so "AED\u00a045.00" matches the amount patterns. Test: `TextNormalizerTest`.
+
+### Still open
+- Duplicate guard (`TransactionRepositoryImpl.recordParsed`): left as is. SMS and notification text for the same purchase can differ in merchant, so tightening the 2-minute amount match risks double-recording.
+- Refund wording: "refund" is already a credit keyword; reversals worded as debits were not reproduced.
+
+### Not covered by CI
+Real bank messages containing NBSP.
