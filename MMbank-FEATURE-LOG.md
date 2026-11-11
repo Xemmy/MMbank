@@ -4497,3 +4497,15 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Opening a real v30 database on a device; the Bills screen.
+
+## Phase 18.22 — Subscription reminders no longer repeat (0.62.14)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- A rescan used REPLACE, which re-minted each subscription's id and so the reminder key, re-announcing renewals already notified. `SubscriptionMerge` reuses the stored id and dismissed flag before upsert. Test: `SubscriptionMergeTest`.
+
+### Still open
+- The price-change flag: the weekly digest already limits it to subscriptions seen this week, so it was not changed; the radar still keeps `previousAmount` until the price changes again.
+
+### Not covered by CI
+Real notifications on a device.

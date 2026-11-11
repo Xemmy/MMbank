@@ -23,6 +23,7 @@ import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.domain.intelligence.BillAdvancer
+import com.xemmy.mmbank.domain.intelligence.SubscriptionMerge
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.ExchangeRate
@@ -209,11 +210,10 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
      * something the user already dealt with.
      */
     override suspend fun replaceAll(detected: List<Subscription>) {
-        val dismissedMerchants = dao.getAll().filter { it.dismissed }.map { it.merchant }.toSet()
-        detected.forEach { subscription ->
-            val alreadyDismissed = subscription.merchant in dismissedMerchants
-            dao.upsert(subscription.copy(dismissed = alreadyDismissed).toEntity())
-        }
+        // Reuses each stored row's id (REPLACE would mint a new one and re-arm
+        // every renewal reminder) and its dismissed flag.
+        val stored = dao.getAll().map { it.toDomain() }
+        SubscriptionMerge.merge(stored, detected).forEach { dao.upsert(it.toEntity()) }
     }
 
     override suspend fun dismiss(id: Long) = dao.dismiss(id)
