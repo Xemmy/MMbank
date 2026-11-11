@@ -4509,3 +4509,15 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Real notifications on a device.
+
+## Phase 18.23 — Confirm before deleting a bill or archiving a goal (0.62.15)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- Deleting a bill and archiving a goal now ask first. UI only, so no JVM test is possible; the dialogs are plain Compose `AlertDialog`s.
+
+### Still open
+- Bill due date time of day: left as is, because `BillReminders.daysUntil` rounds down and a midnight due date would read "overdue" all day on the due date.
+
+### Not covered by CI
+Both dialogs on a device (no Compose test suite).

@@ -181,6 +181,16 @@ fun BillsScreen(
 
 @Composable
 private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onDelete: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Delete bill?") },
+            text = { Text("This removes the bill permanently.") },
+            confirmButton = { TextButton(onClick = { confirming = false; onDelete() }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        )
+    }
     val now = remember { System.currentTimeMillis() }
     val days = BillReminders.daysUntil(bill, now)
     val whenText = when {
@@ -209,7 +219,7 @@ private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onDelete: () -> Unit) {
             IconButton(onClick = onMarkPaid) {
                 Icon(Icons.Filled.CheckCircle, contentDescription = "Mark ${bill.name} paid")
             }
-            IconButton(onClick = onDelete) {
+            IconButton(onClick = { confirming = true }) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete ${bill.name}")
             }
         }

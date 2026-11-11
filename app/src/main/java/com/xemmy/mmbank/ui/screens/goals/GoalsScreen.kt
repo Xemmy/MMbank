@@ -263,6 +263,16 @@ fun GoalsScreen(
 
 @Composable
 private fun GoalRow(goal: SavingsGoal, currency: String, forecast: GoalForecaster.Forecast?, onArchive: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text("Archive goal?") },
+            text = { Text("This hides the goal from your list.") },
+            confirmButton = { TextButton(onClick = { confirming = false; onArchive() }) { Text("Archive") } },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
+        )
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -279,7 +289,7 @@ private fun GoalRow(goal: SavingsGoal, currency: String, forecast: GoalForecaste
                         )
                     }
                 }
-                IconButton(onClick = onArchive) {
+                IconButton(onClick = { confirming = true }) {
                     Icon(Icons.Filled.Close, contentDescription = "Archive ${goal.title}")
                 }
             }
