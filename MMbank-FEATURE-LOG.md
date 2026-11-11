@@ -4439,3 +4439,15 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Real bank messages containing NBSP.
+
+## Phase 18.17 — Monthly report net worth per currency (0.62.9)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- `NetWorthAggregator.AccountBalance` gained an optional `currencyCode`; `MonthlyReportBuilder` only aggregates accounts in the report currency, so dirhams are no longer added to dollars. Test: `MonthlyReportBuilderTest`.
+
+### Still open
+- The report still shows today's balances for past months.
+
+### Not covered by CI
+Report screen on a device.

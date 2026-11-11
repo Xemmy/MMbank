@@ -152,6 +152,7 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
                 accountId = account.id,
                 type = account.type,
                 balance = AccountBalanceCalculator.balanceOf(account, netByAccount),
+                currencyCode = account.currencyCode,
             )
         }
 

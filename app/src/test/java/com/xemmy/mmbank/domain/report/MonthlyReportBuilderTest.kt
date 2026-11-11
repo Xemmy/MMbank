@@ -250,4 +250,18 @@ class MonthlyReportBuilderTest {
         )
         assertEquals(listOf("Emergency"), report.goals.map { it.title })
     }
+
+    @Test
+    fun `net worth leaves out accounts in other currencies`() {
+        val report = MonthlyReportBuilder.build(
+            monthLabel = "Jan",
+            currency = "AED",
+            monthTransactions = emptyList(),
+            accountBalances = listOf(
+                NetWorthAggregator.AccountBalance(1L, AccountType.CHECKING, BigDecimal("5000"), "AED"),
+                NetWorthAggregator.AccountBalance(2L, AccountType.CHECKING, BigDecimal("900"), "USD"),
+            ),
+        )
+        org.junit.Assert.assertEquals(0, BigDecimal("5000").compareTo(report.netWorth!!.netWorth))
+    }
 }

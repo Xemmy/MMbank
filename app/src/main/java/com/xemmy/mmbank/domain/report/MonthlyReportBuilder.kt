@@ -99,7 +99,10 @@ object MonthlyReportBuilder {
             incomeDelta = if (hasPrevious) income - LedgerMath.incomeExact(previous) else null,
             spentDelta = if (hasPrevious) spent - LedgerMath.netSpendExact(previous) else null,
             transactionCount = current.size,
-            netWorth = accountBalances.takeIf { it.isNotEmpty() }?.let(NetWorthAggregator::aggregate),
+            netWorth = accountBalances
+                .filter { it.currencyCode == null || it.currencyCode.equals(currency, ignoreCase = true) }
+                .takeIf { it.isNotEmpty() }
+                ?.let(NetWorthAggregator::aggregate),
             topCategories = topCategories(current, categoryNames, spent),
             topMerchants = topMerchants(current),
             subscriptions = activeSubscriptions,

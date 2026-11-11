@@ -23,7 +23,13 @@ object NetWorthAggregator {
     private val CREDIT_TYPES = setOf(AccountType.CREDIT_CARD, AccountType.LOAN)
 
     /** One account's id, [AccountType] and current balance, ready to aggregate. */
-    data class AccountBalance(val accountId: Long, val type: AccountType, val balance: BigDecimal)
+    data class AccountBalance(
+        val accountId: Long,
+        val type: AccountType,
+        val balance: BigDecimal,
+        /** Null means "unknown / don't filter" (legacy callers). */
+        val currencyCode: String? = null,
+    )
 
     /**
      * [debitTotal] and [creditTotal] are both non-negative magnitudes;
