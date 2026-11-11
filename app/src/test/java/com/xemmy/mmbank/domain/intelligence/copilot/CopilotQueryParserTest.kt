@@ -115,6 +115,41 @@ class CopilotQueryParserTest {
     }
 
     @Test
+    fun `so far this year is the year, not the month`() {
+        val r = CopilotQueryParser.parseRange("how much have I spent so far this year", today)!!
+        assertEquals(window(LocalDate.of(2026, 1, 1), today), r.window)
+        assertEquals("this year", r.label)
+        // The bare phrase still means the month.
+        assertEquals(window(LocalDate.of(2026, 11, 1), today), CopilotQueryParser.parseRange("spend so far", today)!!.window)
+    }
+
+    @Test
+    fun `past week, month and year are rolling windows ending today`() {
+        fun range(q: String) = CopilotQueryParser.parseRange(q, today)!!
+        assertEquals(window(LocalDate.of(2026, 11, 1), today), range("spend in the past week").window)
+        assertEquals("in the last week", range("past week").label)
+        assertEquals(window(LocalDate.of(2026, 10, 8), today), range("spend in the past month").window)
+        assertEquals(window(LocalDate.of(2025, 11, 8), today), range("past year").window)
+        // "last" still means the previous calendar period.
+        assertEquals(window(LocalDate.of(2026, 10, 26), LocalDate.of(2026, 11, 1)), range("last week").window)
+        assertEquals(window(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31)), range("last month").window)
+    }
+
+    @Test
+    fun `how many dirhams is an amount question, how many purchases a count`() {
+        assertEquals(CopilotIntent.SPEND, parse("how many dirhams did I spend this month")!!.intent)
+        assertEquals(CopilotIntent.SPEND, parse("how many AED did I spend on dining")!!.intent)
+        assertEquals(CopilotIntent.TRANSACTION_COUNT, parse("how many purchases this month")!!.intent)
+    }
+
+    @Test
+    fun `income keeps a named payer but not a category`() {
+        val q = parse("how much did Careem pay me this month", ms = listOf("Careem"))!!
+        assertEquals(CopilotIntent.INCOME, q.intent)
+        assertTrue(q.subject is CopilotSubject.MerchantSubject)
+    }
+
+    @Test
     fun `a month name means its latest occurrence that isn't in the future`() {
         val may = CopilotQueryParser.parseRange("how much in May", today)!!
         assertEquals(window(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31)), may.window)

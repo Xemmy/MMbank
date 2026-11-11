@@ -209,6 +209,49 @@ class CopilotAnswerEngineTest {
     }
 
     @Test
+    fun `comparison windows for one-day and year-to-date questions`() {
+        // "Today" on the 1st or a Monday is a day, not a month or week to date.
+        val firstOfMonth = CopilotAnswerEngine.previousWindow(DateWindow(nov(1), nov(1)), nov(1), "today")
+        assertEquals(DateWindow(oct(31), oct(31)), firstOfMonth.first)
+        assertEquals("the day before", firstOfMonth.second)
+
+        val monday = CopilotAnswerEngine.previousWindow(DateWindow(nov(2), nov(2)), nov(2), "today")
+        assertEquals(DateWindow(nov(1), nov(1)), monday.first)
+        assertEquals("the day before", monday.second)
+
+        // "This year" early in January is the year, not January.
+        val ytd = CopilotAnswerEngine.previousWindow(
+            DateWindow(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 15)),
+            LocalDate.of(2026, 1, 15),
+            "this year",
+        )
+        assertEquals(DateWindow(LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 15)), ytd.first)
+        assertEquals("in the same part of 2025", ytd.second)
+
+        // Month to date on the 1st still compares with the 1st of last month.
+        val mtd = CopilotAnswerEngine.previousWindow(DateWindow(nov(1), nov(1)), nov(1), "this month")
+        assertEquals(DateWindow(oct(1), oct(1)), mtd.first)
+    }
+
+    @Test
+    fun `all-time daily average counts from the first transaction, not 1970`() {
+        val allTime = DateWindow(LocalDate.of(1970, 1, 1), today)
+        val a = ask(CopilotIntent.AVERAGE_PER_DAY, window = allTime, label = "in total")
+        // The ledger starts on 5 Oct: 5 Oct..7 Nov is 34 days; spend there is 1,130.
+        assertEquals(
+            "You spent AED 33.24 a day on average in total (AED 1,130.00 over 34 days).",
+            a.text,
+        )
+    }
+
+    @Test
+    fun `income from a named payer`() {
+        val employer = CopilotSubject.MerchantSubject("Employer", "employer", "employer")
+        assertEquals("You received AED 5,000.00 from Employer this month (1 payment in).", ask(CopilotIntent.INCOME, employer).text)
+        assertEquals("No money received from Nobody this month.", ask(CopilotIntent.INCOME, CopilotSubject.MerchantSubject("Nobody", "nobody", "nobody")).text)
+    }
+
+    @Test
     fun `savings rate`() {
         assertEquals(
             "This month, you received AED 5,000.00 and spent AED 130.00: you kept 97% (AED 4,870.00).",

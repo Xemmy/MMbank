@@ -62,18 +62,26 @@ object CopilotAnswerEngine {
      * month (a partial month against a full one would always read as "less");
      * a full month with the full previous month; likewise weeks and years.
      */
-    fun previousWindow(window: DateWindow, today: LocalDate): Pair<DateWindow, String> {
+    fun previousWindow(
+        window: DateWindow,
+        today: LocalDate,
+        rangeLabel: String? = null,
+    ): Pair<DateWindow, String> {
         val start = window.start
         val end = window.end
         val sameMonth = start.year == end.year && start.month == end.month
-        if (start.dayOfMonth == 1 && sameMonth) {
+        // A one-day window ("today" on the 1st or on a Monday) is a day, not a
+        // month or week to date -- unless the question said "this month/year".
+        val asDay = start == end && rangeLabel != "this month" && rangeLabel != "this year"
+        val yearToDate = rangeLabel == "this year"
+        if (!asDay && !yearToDate && start.dayOfMonth == 1 && sameMonth) {
             val prevStart = start.minusMonths(1)
             val full = end == end.withDayOfMonth(end.lengthOfMonth())
             val prevEnd = if (full) prevStart.withDayOfMonth(prevStart.lengthOfMonth()) else end.minusMonths(1)
             val name = monthName(prevStart, today)
             return DateWindow(prevStart, prevEnd) to if (full) "in $name" else "in the same days of $name"
         }
-        if (start.dayOfYear == 1 && start.year == end.year) {
+        if (!asDay && start.dayOfYear == 1 && start.year == end.year) {
             val prevStart = start.minusYears(1)
             val full = end.dayOfYear == end.lengthOfYear()
             val prevEnd = if (full) LocalDate.of(prevStart.year, 12, 31) else end.minusYears(1)
@@ -81,7 +89,7 @@ object CopilotAnswerEngine {
                 if (full) "in ${prevStart.year}" else "in the same part of ${prevStart.year}"
         }
         val days = ChronoUnit.DAYS.between(start, end) + 1
-        if (start.dayOfWeek == DayOfWeek.MONDAY && days <= 7) {
+        if (!asDay && start.dayOfWeek == DayOfWeek.MONDAY && days <= 7) {
             return DateWindow(start.minusDays(7), end.minusDays(7)) to
                 if (days == 7L) "the week before" else "in the same days of the week before"
         }
@@ -170,10 +178,11 @@ object CopilotAnswerEngine {
         fun income(): CopilotAnswer {
             val rows = scope().filter { LedgerMath.isIncome(it) }
             val total = LedgerMath.income(rows) { value(it) }
+            val from = (query.subject as? CopilotSubject.MerchantSubject)?.let { " from ${it.label}" }.orEmpty()
             val text = if (rows.isEmpty()) {
-                "No money received $range."
+                "No money received$from $range."
             } else {
-                "You received ${money(total)} $range (${plural(rows.size, "payment")} in)."
+                "You received ${money(total)}$from $range (${plural(rows.size, "payment")} in)."
             }
             return CopilotAnswer(text, drill())
         }
@@ -235,7 +244,7 @@ object CopilotAnswerEngine {
         }
 
         fun compare(): CopilotAnswer {
-            val (prevWindow, prevLabel) = previousWindow(query.window, today)
+            val (prevWindow, prevLabel) = previousWindow(query.window, today, query.rangeLabel)
             val current = spendOf(scope())
             val previous = spendOf(scope(prevWindow))
             val text = when {
@@ -279,7 +288,12 @@ object CopilotAnswerEngine {
 
         fun averagePerDay(): CopilotAnswer {
             val end = minOf(query.window.end, today)
-            val days = if (end.isBefore(query.window.start)) 0L else ChronoUnit.DAYS.between(query.window.start, end) + 1
+            // "All time" starts in 1970; dividing by those days gives a
+            // meaningless average. Count from the first day the ledger has.
+            val firstDay = all.minOfOrNull { it.timestampMillis }
+                ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+            val start = if (firstDay != null && firstDay.isAfter(query.window.start)) firstDay else query.window.start
+            val days = if (end.isBefore(start)) 0L else ChronoUnit.DAYS.between(start, end) + 1
             val total = spendOf(scope())
             if (days <= 0L || total <= 0.0) return CopilotAnswer("Nothing spent$about $range yet.", drill())
             val avg = total / days

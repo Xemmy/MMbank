@@ -45,7 +45,10 @@ object CopilotQueryParser {
         // in Dining" keeps Dining; "top categories" never narrows to one.
         val effectiveSubject = when (intent) {
             CopilotIntent.TOP_CATEGORIES -> subject as? CopilotSubject.MerchantSubject
-            CopilotIntent.INCOME, CopilotIntent.SAVINGS_RATE -> null
+            // "How much did Employer pay me" keeps the payer; the Income
+            // category is the question itself, never a filter.
+            CopilotIntent.INCOME -> subject as? CopilotSubject.MerchantSubject
+            CopilotIntent.SAVINGS_RATE -> null
             else -> subject
         }
         return CopilotQuery(intent, range.window, range.label, effectiveSubject)
@@ -87,22 +90,34 @@ object CopilotQueryParser {
         }
 
         val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        // "The past week/month/year" is a rolling window ending today, not the
+        // previous calendar period ("last week" is that).
+        if (has(text, "past week")) {
+            return CopilotRange(DateWindow(today.minusDays(6), today), "in the last week")
+        }
+        if (has(text, "past month")) {
+            return CopilotRange(DateWindow(today.minusMonths(1).plusDays(1), today), "in the last month")
+        }
+        if (has(text, "past year")) {
+            return CopilotRange(DateWindow(today.minusYears(1).plusDays(1), today), "in the last year")
+        }
         if (has(text, "this week", "current week", "so far this week")) {
             return CopilotRange(DateWindow(weekStart, today), "this week")
         }
-        if (has(text, "last week", "previous week", "past week")) {
+        if (has(text, "last week", "previous week")) {
             return CopilotRange(DateWindow(weekStart.minusDays(7), weekStart.minusDays(1)), "last week")
+        }
+        // Year phrases before the bare "so far": "so far this year" is the year.
+        if (has(text, "this year", "current year", "year to date", "ytd")) {
+            return CopilotRange(DateWindow(today.withDayOfYear(1), today), "this year")
         }
         if (has(text, "this month", "current month", "so far", "month to date", "mtd")) {
             return defaultRange(today)
         }
-        if (has(text, "last month", "previous month", "past month")) {
+        if (has(text, "last month", "previous month")) {
             return monthRange(YearMonth.from(today).minusMonths(1), today)
         }
-        if (has(text, "this year", "current year", "year to date", "ytd")) {
-            return CopilotRange(DateWindow(today.withDayOfYear(1), today), "this year")
-        }
-        if (has(text, "last year", "previous year", "past year")) {
+        if (has(text, "last year", "previous year")) {
             val y = today.year - 1
             return CopilotRange(DateWindow(LocalDate.of(y, 1, 1), LocalDate.of(y, 12, 31)), "in $y")
         }
@@ -126,6 +141,11 @@ object CopilotQueryParser {
     }
 
     // ---------------------------------------------------------------- intent
+
+    private val CURRENCY_WORDS = arrayOf(
+        "dirham", "dirhams", "aed", "dollar", "dollars", "usd", "euro", "euros", "eur",
+        "pound", "pounds", "gbp", "rupee", "rupees", "inr", "bucks",
+    )
 
     private fun detectIntent(text: String): CopilotIntent? {
         val biggestWord = has(text, "biggest", "largest", "highest", "most expensive", "priciest", "single biggest")
@@ -153,11 +173,13 @@ object CopilotQueryParser {
             merchantWord && rankWord -> CopilotIntent.TOP_MERCHANTS
             has(text, "where") && has(text, "most") -> CopilotIntent.TOP_MERCHANTS
             has(text, "who do i pay", "who did i pay", "whom do i pay") -> CopilotIntent.TOP_MERCHANTS
-            has(text, "how many", "number of", "count") -> CopilotIntent.TRANSACTION_COUNT
+            // "How many dirhams did I spend" asks for an amount, not a count.
+            has(text, "how many", "number of", "count") && !has(text, *CURRENCY_WORDS) ->
+                CopilotIntent.TRANSACTION_COUNT
             has(text, "average", "avg", "per day", "a day", "daily", "each day") -> CopilotIntent.AVERAGE_PER_DAY
             has(
                 text, "income", "earn", "earned", "earnings", "salary", "received", "receive", "got paid",
-                "deposits", "deposited", "how much did i make", "how much have i made", "money in",
+                "deposits", "deposited", "pay me", "paid me", "pays me", "how much did i make", "how much have i made", "money in",
             ) -> CopilotIntent.INCOME
             has(
                 text, "spend", "spent", "spending", "cost", "costs", "paid", "pay", "expenses", "expense",

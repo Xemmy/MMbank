@@ -4411,3 +4411,18 @@ Tests: `PinAttemptLimiterTest`, `AppPinGateTest`.
 
 ### Not covered by CI
 The Binance guard and the DAO query (Room/SQL; no test harness for either).
+
+## Phase 18.15 — Second-tier fixes: Copilot date windows and wording (0.62.7)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- `CopilotQueryParser`: "so far this year" is the year (year phrases are checked before the bare "so far"); "past week/month/year" are rolling windows ending today ("last week/month/year" stay the previous calendar period); "how many dirhams/AED/dollars…" is an amount question, not a purchase count; "pay me / paid me" is income, and an income question keeps a named payer (the Income category still never filters).
+- `CopilotAnswerEngine`: the all-time daily average counts from the first transaction instead of 1970 (was ~20,700 days); `previousWindow` takes the range label so a one-day "today" on the 1st or a Monday compares with the day before, and "this year" in January compares with the same part of last year; income answers say "from <payer>" when one was named.
+
+Tests: `CopilotQueryParserTest`, `CopilotAnswerEngineTest`.
+
+### Still open (Copilot)
+Fuzzy category match can win over a better merchant match (not reproduced here, left alone).
+
+### Not covered by CI
+Copilot screen wording on a device.
