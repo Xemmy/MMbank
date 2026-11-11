@@ -55,3 +55,4 @@ by CI" in the feature log.
   hideZeroBalances) when only that ViewModel needs it; a reactive StateFlow
   on AppContainer (e.g. hideBalances) when multiple independent
   ViewModels/screens must reflect the change live.
+- Improvement tracker: MMbank-IMPROVEMENT-PLAN.md — mark items ✅ (with version) in the same commit that delivers them.
