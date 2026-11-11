@@ -4488,3 +4488,12 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 The dialog and confirm field on a device; the Room queries on a real database; a full export-then-import on a device.
+
+## Phase 18.21 — Bill due day no longer drifts after February (0.62.13)
+
+Committed with `[skip ci]`: **not yet verified by CI** (no build run).
+
+- Room v31: `bills.dueDayAnchor` (nullable INTEGER) via `MIGRATION_30_31` (additive `ALTER TABLE`). Added to `BillEntity`, `Bill`, the mappers and the backup DTO. `BillAdvancer` clamps to the anchor, so a bill on the 31st goes Feb 28 then Mar 31. New bills store the day they were set for; older bills keep the previous month-end behaviour. Tests: `BillAdvancerTest`, `EntityMappersTest`, `BackupExtrasTest`, `MigrationSqlTest` (now reads `31.json`).
+
+### Not covered by CI
+Opening a real v30 database on a device; the Bills screen.

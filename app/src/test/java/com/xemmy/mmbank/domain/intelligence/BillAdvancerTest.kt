@@ -136,4 +136,24 @@ class BillAdvancerTest {
         // The month-end snap keys off this: only month-based cycles may snap.
         assertEquals(0L, BillRecurrence.WEEKLY.period.toTotalMonths())
     }
+
+    @Test
+    fun `an anchored 31st bill returns to the 31st after February`() {
+        val feb = bill(BillRecurrence.MONTHLY, at(2026, 2, 28)).copy(dueDayAnchor = 31)
+        val mar = BillAdvancer.advance(feb, zone)!!
+        assertEquals(
+            at(2026, 3, 31),
+            java.time.Instant.ofEpochMilli(mar.nextDueDateMillis).atZone(zone).toLocalDateTime(),
+        )
+    }
+
+    @Test
+    fun `an anchored 30th bill clamps in February then recovers`() {
+        val jan = bill(BillRecurrence.MONTHLY, at(2026, 1, 30)).copy(dueDayAnchor = 30)
+        val feb = BillAdvancer.advance(jan, zone)!!
+        val mar = BillAdvancer.advance(feb, zone)!!
+        fun d(b: Bill) = java.time.Instant.ofEpochMilli(b.nextDueDateMillis).atZone(zone).toLocalDateTime()
+        assertEquals(at(2026, 2, 28), d(feb))
+        assertEquals(at(2026, 3, 30), d(mar))
+    }
 }

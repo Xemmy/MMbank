@@ -584,6 +584,8 @@ data class Bill(
     val recurrence: BillRecurrence? = null,
     val nextDueDateMillis: Long,
     val createdAt: Long,
+    /** Day of month the user picked, kept so month-end clamping in a short month is not permanent. */
+    val dueDayAnchor: Int? = null,
 )
 
 /**

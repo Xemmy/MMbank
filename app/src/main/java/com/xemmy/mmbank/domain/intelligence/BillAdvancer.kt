@@ -47,7 +47,12 @@ object BillAdvancer {
         var next = current.plus(recurrence.period)
 
         val isMonthBased = recurrence.period.toTotalMonths() > 0
-        if (isMonthBased && current.dayOfMonth == current.toLocalDate().lengthOfMonth()) {
+        val anchor = bill.dueDayAnchor
+        if (isMonthBased && anchor != null) {
+            // The picked day wins over wherever a short month pushed the date:
+            // a bill due on the 31st goes Feb 28 -> Mar 31, not Mar 28.
+            next = next.withDayOfMonth(minOf(anchor, next.toLocalDate().lengthOfMonth()))
+        } else if (isMonthBased && current.dayOfMonth == current.toLocalDate().lengthOfMonth()) {
             next = next.withDayOfMonth(next.toLocalDate().lengthOfMonth())
         }
 

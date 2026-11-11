@@ -246,6 +246,7 @@ data class BackupExtras(
 data class BackupBill(
     val id: Long, val name: String, val amount: String, val currencyCode: String,
     val recurrence: String?, val nextDueDateMillis: Long, val createdAt: Long,
+    val dueDayAnchor: Int? = null,
 )
 
 @Serializable
@@ -796,12 +797,13 @@ internal fun BackupIgnoredKeyword.toEntity() = IgnoredKeywordEntity(
 internal fun BillEntity.toBackup() = BackupBill(
     id = id, name = name, amount = amount.toPlainString(), currencyCode = currencyCode,
     recurrence = recurrence?.name, nextDueDateMillis = nextDueDateMillis, createdAt = createdAt,
+    dueDayAnchor = dueDayAnchor,
 )
 
 internal fun BackupBill.toEntity() = BillEntity(
     id = id, name = name, amount = BigDecimal(amount), currencyCode = currencyCode,
     recurrence = recurrence?.let { r -> BillRecurrence.values().firstOrNull { it.name == r } },
-    nextDueDateMillis = nextDueDateMillis, createdAt = createdAt,
+    nextDueDateMillis = nextDueDateMillis, createdAt = createdAt, dueDayAnchor = dueDayAnchor,
 )
 
 internal fun SavingsGoalEntity.toBackup() = BackupGoal(

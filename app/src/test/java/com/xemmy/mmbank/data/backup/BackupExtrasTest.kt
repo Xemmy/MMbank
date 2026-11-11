@@ -17,7 +17,7 @@ import org.junit.Test
 
 class BackupExtrasTest {
     @Test fun `bill round trips`() {
-        val e = BillEntity(3, "Rent", BigDecimal("4500.50"), "AED", BillRecurrence.MONTHLY, 1_700_000_000_000, 5)
+        val e = BillEntity(3, "Rent", BigDecimal("4500.50"), "AED", BillRecurrence.MONTHLY, 1_700_000_000_000, 5, 31)
         assertEquals(e, e.toBackup().toEntity())
         val oneOff = e.copy(recurrence = null)
         assertEquals(oneOff, oneOff.toBackup().toEntity())

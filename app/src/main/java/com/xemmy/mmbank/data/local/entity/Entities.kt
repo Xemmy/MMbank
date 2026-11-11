@@ -317,6 +317,8 @@ data class BillEntity(
     val recurrence: BillRecurrence? = null,
     val nextDueDateMillis: Long,
     val createdAt: Long,
+    /** Day of month the user picked; lets a 31st bill return to the 31st after February. Null on legacy rows. */
+    val dueDayAnchor: Int? = null,
 )
 
 @Entity(tableName = "savings_goals")
@@ -551,9 +553,9 @@ fun Subscription.toEntity() = SubscriptionEntity(
     previousAmount,
 )
 
-fun BillEntity.toDomain() = Bill(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt)
+fun BillEntity.toDomain() = Bill(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt, dueDayAnchor)
 
-fun Bill.toEntity() = BillEntity(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt)
+fun Bill.toEntity() = BillEntity(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt, dueDayAnchor)
 
 fun SavingsGoalEntity.toDomain() = SavingsGoal(
     id, title, targetAmount, currentAmount, targetDateMillis, icon, createdAt, archived,

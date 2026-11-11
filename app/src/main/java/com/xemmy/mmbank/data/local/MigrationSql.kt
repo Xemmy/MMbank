@@ -61,6 +61,11 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
 
+    /** v31: bills remember the day of month they were set for. Purely additive: one nullable column. */
+    val MIGRATION_30_31_SQL: List<String> = listOf(
+        "ALTER TABLE `bills` ADD COLUMN `dueDayAnchor` INTEGER",
+    )
+
     /** v29 -> v30: the keyword ignore list. Purely additive: one new table. */
     val MIGRATION_29_30_SQL: List<String> = listOf(
         "CREATE TABLE IF NOT EXISTS `ignored_keywords` (" +

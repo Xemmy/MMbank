@@ -518,9 +518,11 @@ class EntityMappersTest {
             recurrence = BillRecurrence.MONTHLY,
             nextDueDateMillis = 1_700_000_000_000,
             createdAt = 1_690_000_000_000,
+            dueDayAnchor = 31,
         )
         val roundTripped = original.toEntity().toDomain()
         assertEquals(original, roundTripped)
+        assertEquals(31, roundTripped.dueDayAnchor)
         assertEquals(BillRecurrence.MONTHLY, roundTripped.recurrence)
     }
 

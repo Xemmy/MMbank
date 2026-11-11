@@ -76,14 +76,17 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             runCatching {
                 val now = System.currentTimeMillis()
+                val due = now + dueInDays * TimeUnit.DAYS.toMillis(1)
                 container.billRepository.save(
                     Bill(
                         name = clean,
                         amount = amount,
                         currencyCode = container.preferences.defaultCurrency,
                         recurrence = recurrence,
-                        nextDueDateMillis = now + dueInDays * TimeUnit.DAYS.toMillis(1),
+                        nextDueDateMillis = due,
                         createdAt = now,
+                        dueDayAnchor = java.time.Instant.ofEpochMilli(due)
+                            .atZone(java.time.ZoneId.systemDefault()).dayOfMonth,
                     )
                 )
             }.onFailure { container.recordError("BillsViewModel.addBill", it) }
