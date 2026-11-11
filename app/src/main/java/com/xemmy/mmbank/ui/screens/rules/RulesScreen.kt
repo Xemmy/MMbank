@@ -158,6 +158,7 @@ fun RulesScreen(
     val custom = rules.filterNot { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         floatingActionButton = {
             FloatingActionButton(onClick = onNewRule) {
                 Icon(Icons.Filled.Add, contentDescription = "New rule")

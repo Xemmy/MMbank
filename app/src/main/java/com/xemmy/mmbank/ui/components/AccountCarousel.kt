@@ -130,7 +130,7 @@ private fun AllAccountsCard(
                 total.asMoneyOrMask(currency, hidden),
                 color = Color.White,
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
             )
         }
         if (selected) {

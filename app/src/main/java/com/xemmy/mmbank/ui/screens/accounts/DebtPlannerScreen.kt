@@ -236,6 +236,7 @@ fun DebtPlannerScreen(
     val money = { v: BigDecimal -> v.asMoney(base) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Pay off debts") },

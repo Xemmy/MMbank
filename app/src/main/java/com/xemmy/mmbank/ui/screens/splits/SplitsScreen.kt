@@ -132,6 +132,7 @@ fun SplitsScreen(
     var addGroupOpen by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Splits & groups") },

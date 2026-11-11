@@ -72,7 +72,7 @@ fun AmountText(
                         SpanStyle(
                             fontFamily = AppFonts.inter,
                             fontSize = ObsidianTokens.currencyFontSize,
-                            fontWeight = FontWeight.Light,
+                            fontWeight = FontWeight.Normal,
                             letterSpacing = ObsidianTokens.currencyTracking,
                             color = color.copy(alpha = 0.55f),
                         )

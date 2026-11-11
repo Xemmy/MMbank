@@ -124,6 +124,7 @@ fun BillsScreen(
     var addOpen by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Upcoming bills") },

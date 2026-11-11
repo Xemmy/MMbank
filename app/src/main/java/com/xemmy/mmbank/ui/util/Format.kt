@@ -6,11 +6,36 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.TextStyle
+import java.util.Currency
 import java.util.Date
 import java.util.Locale
 
-fun Double.asMoney(currencyCode: String): String =
-    String.format(Locale.US, "%,.2f %s", this, currencyCode)
+/**
+ * Decimal places to show for [currencyCode]: ISO-4217 default for fiat (JPY 0,
+ * KWD 3), up to 8 for crypto tickers (trailing zeros trimmed by [asMoney]),
+ * 2 for anything unrecognised.
+ */
+fun fractionDigitsFor(currencyCode: String): Int {
+    if (currencyCode in CRYPTO_CODES) return 8
+    return try {
+        Currency.getInstance(currencyCode).defaultFractionDigits.let { if (it < 0) 2 else it }
+    } catch (_: IllegalArgumentException) {
+        2
+    }
+}
+
+private val CRYPTO_CODES = setOf("BTC", "ETH", "USDT", "USDC", "BNB", "SOL", "XRP", "ADA", "DOGE", "MATIC", "BUSD", "DOT", "LTC", "TRX")
+
+fun Double.asMoney(currencyCode: String): String {
+    val max = fractionDigitsFor(currencyCode)
+    val min = if (max > 2 && currencyCode in CRYPTO_CODES) 2 else max
+    val nf = java.text.NumberFormat.getNumberInstance(Locale.US).apply {
+        minimumFractionDigits = min
+        maximumFractionDigits = max
+        roundingMode = java.math.RoundingMode.HALF_UP
+    }
+    return "${nf.format(this)} $currencyCode"
+}
 
 /**
  * Whole-currency-unit rendering (cents rounded off) for compact stat tiles

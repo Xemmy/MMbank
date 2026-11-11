@@ -251,6 +251,7 @@ fun MonthlyReportScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Monthly report") },
@@ -433,7 +434,7 @@ private fun AmountRow(
         Text(
             amount.asMoney(currency),
             style = MaterialTheme.typography.bodySmall,
-            fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal,
+            fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal,
             color = ObsidianTokens.textPrimary,
         )
     }

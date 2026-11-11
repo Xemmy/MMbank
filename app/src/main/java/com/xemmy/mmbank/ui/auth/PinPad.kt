@@ -20,7 +20,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
 import com.xemmy.mmbank.domain.auth.PinHasher
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 
@@ -39,6 +46,11 @@ fun PinPad(
     messageIsError: Boolean = false,
 ) {
     var digits by remember { mutableStateOf("") }
+    val haptic = LocalHapticFeedback.current
+    // Reject buzz whenever a new error message appears.
+    LaunchedEffect(message, messageIsError) {
+        if (messageIsError && message != null) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(title, style = MaterialTheme.typography.titleMedium, color = ObsidianTokens.textPrimary)
@@ -60,6 +72,7 @@ fun PinPad(
             message.orEmpty(),
             style = MaterialTheme.typography.bodySmall,
             color = if (messageIsError) MaterialTheme.colorScheme.error else ObsidianTokens.textMeta,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
         Spacer(Modifier.height(8.dp))
         val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("⌫", "0", "OK"))
@@ -84,7 +97,9 @@ fun PinPad(
                             }
                         },
                         enabled = keyEnabled,
-                        modifier = Modifier.size(width = 76.dp, height = 56.dp),
+                        modifier = Modifier
+                            .size(width = 76.dp, height = 56.dp)
+                            .semantics { if (key == "⌫") contentDescription = "Delete digit" },
                     ) {
                         Text(key, style = MaterialTheme.typography.titleLarge)
                     }

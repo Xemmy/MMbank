@@ -28,4 +28,23 @@ class FormatTest {
         val display = 22739.90.asMoneyWhole("AED")
         assertEquals(MoneyParts("22,740", "AED"), splitMoneyDisplay(display))
     }
+
+    @Test
+    fun `fiat currencies use their ISO fraction digits`() {
+        assertEquals("1,234.50 AED", 1234.5.asMoney("AED"))
+        assertEquals("1,235 JPY", 1234.5.asMoney("JPY"))
+        assertEquals("1.235 KWD", 1.2349.asMoney("KWD"))
+    }
+
+    @Test
+    fun `crypto keeps up to 8 decimals and is not rounded to 0_00`() {
+        assertEquals("0.00012345 BTC", 0.00012345.asMoney("BTC"))
+        assertEquals("1.50 USDT", 1.5.asMoney("USDT"))
+    }
+
+    @Test
+    fun `unknown currency code falls back to 2 decimals`() {
+        assertEquals(2, fractionDigitsFor("ZZZZ"))
+        assertEquals("3.10 ZZZZ", 3.1.asMoney("ZZZZ"))
+    }
 }

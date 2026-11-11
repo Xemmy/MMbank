@@ -79,6 +79,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import com.xemmy.mmbank.ui.util.rememberCurrentDate
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -910,7 +911,11 @@ fun TransactionsScreen(
         }
     }
 
+    // Back leaves multi-select instead of leaving the screen.
+    androidx.activity.compose.BackHandler(enabled = state.isInBulkMode) { viewModel.exitBulkMode() }
+
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         modifier = Modifier.nestedScroll(heroScrollBehavior.nestedScrollConnection),
         floatingActionButton = {
             FloatingActionButton(onClick = { addOpen = true }) {
@@ -1045,7 +1050,7 @@ fun TransactionsScreen(
                 // feed by calendar day and float a sticky label over each
                 // section. groupBy preserves first-encounter key order, which
                 // matches the feed's order as long as it stays date-sorted.
-                val today = remember { LocalDate.now() }
+                val today = rememberCurrentDate()
                 val grouped = remember(state.transactions) {
                     state.transactions.groupBy { it.timestampMillis.toLocalDate() }
                 }
@@ -2281,7 +2286,7 @@ private fun TransactionCard(
                     },
                     style = androidx.compose.ui.text.TextStyle(
                         fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         // Tabular figures so decimal points align down the list.
                         fontFeatureSettings = "tnum",
                     ),
@@ -2699,11 +2704,13 @@ private fun TransactionEditorDialog(
                             fontSize = ObsidianTokens.amountFontSize,
                         ),
                         singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                         isError = amount.isNotBlank() && amountValue == null,
                         colors = glassFieldColors(),
-                        modifier = Modifier.weight(0.6f),
+                        modifier = if (transferMode) Modifier.weight(1f) else Modifier.weight(0.6f),
                     )
-                    OutlinedTextField(
+                    // Transfers take the currency from the chosen account.
+                    if (!transferMode) OutlinedTextField(
                         value = currency,
                         onValueChange = { currency = it.uppercase().take(CURRENCY_CODE_MAX_LENGTH) },
                         label = { MetaLabel("Currency") },
@@ -2763,6 +2770,7 @@ private fun TransactionEditorDialog(
                             onValueChange = { toAmount = it },
                             label = { MetaLabel("Amount received (${toAccount?.currencyCode})") },
                             singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                             isError = toAmount.isNotBlank() && toAmountValue == null,
                             colors = glassFieldColors(),
                             modifier = Modifier.fillMaxWidth(),
@@ -2822,6 +2830,7 @@ private fun TransactionEditorDialog(
                     }
                 }
 
+                if (!transferMode) {
                 // Category chip row — defaults to the merchant-derived guess
                 // ("Auto"), overridable, plus a trailing "+ New" chip opening
                 // the shared create form. Mirrors the auto-categorization done
@@ -2874,6 +2883,7 @@ private fun TransactionEditorDialog(
                         onCheckedChange = { excludeFromStats = it },
                         colors = SwitchDefaults.colors(checkedTrackColor = ObsidianTokens.credit),
                     )
+                }
                 }
             }
         },

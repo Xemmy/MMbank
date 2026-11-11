@@ -45,6 +45,7 @@ private val ConfidenceGreen = Color(0xFF4CAF50)
 private val ConfidenceYellow = Color(0xFFF9A825)
 private val ConfidenceRed = Color(0xFFEF5350)
 private val HighlightColor = Color(0xFFFFF59D)
+private val HighlightTextColor = Color(0xFF1B1B1F)
 
 private fun ConfidenceLevel.color(): Color = when (this) {
     ConfidenceLevel.HIGH -> ConfidenceGreen
@@ -134,7 +135,7 @@ fun TransactionDetailReviewCard(
                 Text(
                     amountDisplay,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
 
@@ -215,7 +216,7 @@ private fun highlightedSmsText(raw: String, amount: String, merchant: String?) =
     append(raw)
     highlightRanges(raw, amount, merchant).forEach { range ->
         addStyle(
-            SpanStyle(background = HighlightColor, fontWeight = FontWeight.SemiBold),
+            SpanStyle(background = HighlightColor, color = HighlightTextColor, fontWeight = FontWeight.SemiBold),
             range.first,
             (range.last + 1).coerceAtMost(raw.length),
         )

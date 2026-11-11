@@ -174,6 +174,7 @@ fun GroupDetailScreen(
     var editingExpense by remember { mutableStateOf<GroupExpense?>(null) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text(state.group?.let { "${it.icon} ${it.name}" } ?: "Group") },

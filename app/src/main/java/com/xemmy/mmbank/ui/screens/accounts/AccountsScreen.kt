@@ -293,6 +293,7 @@ fun AccountsScreen(
     var showArchived by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         floatingActionButton = {
             FloatingActionButton(onClick = { editing = Account(name = "", type = AccountType.CHECKING, currencyCode = viewModel.defaultCurrency) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add account")

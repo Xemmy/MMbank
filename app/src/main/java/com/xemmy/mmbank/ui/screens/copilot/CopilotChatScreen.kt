@@ -236,6 +236,7 @@ fun CopilotChatScreen(
         (state.messages.isEmpty() || state.messages.last().isHelp)
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Financial Copilot") },

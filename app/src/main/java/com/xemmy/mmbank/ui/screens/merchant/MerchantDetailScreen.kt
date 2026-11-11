@@ -182,6 +182,7 @@ fun MerchantDetailScreen(
     var pickerOpen by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text(state.merchant, maxLines = 1, overflow = TextOverflow.Ellipsis) },

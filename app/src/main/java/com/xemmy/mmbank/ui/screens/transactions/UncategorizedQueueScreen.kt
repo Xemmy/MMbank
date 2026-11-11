@@ -215,7 +215,7 @@ private fun UncategorizedRow(
                     (if (transaction.direction == TransactionDirection.CREDIT) "+" else "-") +
                         transaction.amount.asMoney(transaction.currencyCode),
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
 

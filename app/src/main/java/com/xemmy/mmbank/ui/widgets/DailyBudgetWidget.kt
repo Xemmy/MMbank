@@ -123,7 +123,7 @@ private fun DailyBudgetWidgetContent(pacing: WidgetPacing) {
         } else {
             Text(
                 pacing.remaining.asMoney(pacing.currencyCode) + " left today",
-                style = TextStyle(color = WIDGET_TEXT, fontWeight = FontWeight.Bold),
+                style = TextStyle(color = WIDGET_TEXT, fontWeight = FontWeight.SemiBold),
             )
             Text(
                 pacing.spentToday.asMoney(pacing.currencyCode) + " of " +

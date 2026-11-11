@@ -170,6 +170,7 @@ fun GoalsScreen(
     var allocateOpen by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Savings goals") },

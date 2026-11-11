@@ -202,7 +202,7 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, o
                 Text(
                     subscription.averageAmount.asMoney(subscription.currencyCode),
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 // A price change used to make a subscription vanish from the
                 // radar entirely; now it's the headline.

@@ -1081,6 +1081,7 @@ fun CategoriesAndPeopleScreen(
     var creatingNewCategory by remember { mutableStateOf(false) }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Categories & People") },
@@ -1428,6 +1429,9 @@ fun SecuritySettingsScreen(
             onRemovePin = viewModel::removeAppPin,
             onSecureScreen = viewModel::updateSecureScreen,
         )
+        viewModel.statusMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        }
     }
 }
 

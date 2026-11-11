@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,7 +33,13 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 
 /** Gradient stops per [AccountType] — purely decorative, kept as data rather than logic. */
-private fun walletGradient(type: AccountType): List<Color> = when (type) {
+internal fun walletGradient(type: AccountType): List<Color> =
+    rawWalletGradient(type).map { lerp(it, WALLET_INK, 0.45f) }
+
+/** App canvas colour mixed into every stop so white text keeps >=4.5:1 contrast. */
+private val WALLET_INK = Color(0xFF0B0E14)
+
+private fun rawWalletGradient(type: AccountType): List<Color> = when (type) {
     AccountType.CHECKING -> listOf(Color(0xFF4568DC), Color(0xFFB06AB3))
     AccountType.SAVINGS -> listOf(Color(0xFF11998E), Color(0xFF38EF7D))
     AccountType.CASH -> listOf(Color(0xFFF7971E), Color(0xFFFFD200))
@@ -112,7 +119,7 @@ fun GlassWalletCard(
                 balance.asMoneyOrMask(account.currencyCode, hidden),
                 color = Color.White,
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
             )
         }
         if (selected) {

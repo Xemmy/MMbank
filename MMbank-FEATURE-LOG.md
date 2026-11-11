@@ -4521,3 +4521,20 @@ Committed with `[skip ci]`: **not yet verified by CI** (no build run).
 
 ### Not covered by CI
 Both dialogs on a device (no Compose test suite).
+
+## Phase 18.24 — Phase 0 design hotfixes (0.62.16)
+
+First delivery from MMbank-IMPROVEMENT-PLAN.md (Phase 0).
+
+- Dark theme pinned (light mode was unreadable on several screens) and window background #0B0E14.
+- Type floor raised to 11sp (labelSmall/MetaLabel/currency code), line heights on every custom style, bottom-nav labels use labelMedium.
+- Edge-to-edge enabled; root Scaffold owns the system-bar insets, nested Scaffolds use zero insets.
+- Lock screen: app hidden from TalkBack while locked; Recents thumbnail hidden when app lock is on (`SecureScreenPolicy`); delete-digit label, polite live region and haptic on wrong PIN.
+- Security settings show status messages; notification toggles only switch on once permission is granted, with a "Blocked, Open settings" row.
+- Back exits bulk mode; Activity day labels roll over at midnight (`rememberCurrentDate`).
+- Transfer editor hides Category/Exclude/Currency; amount fields use the decimal keypad.
+- Money formatting uses per-currency fraction digits (JPY 0, KWD 3, crypto up to 8).
+- Wallet cards mix 45% canvas into every gradient stop (white text >= 4.5:1); review SMS highlight has a dark text colour; Bold requests are SemiBold.
+
+### Not covered by CI
+Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lock screen, Recents thumbnail, haptics, BackHandler, the notification permission flow, and all rendering.

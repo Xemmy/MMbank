@@ -87,7 +87,13 @@ import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import com.xemmy.mmbank.ui.theme.ambientBackground
+import android.os.Build
 import kotlinx.coroutines.delay
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.xemmy.mmbank.ui.util.SecureScreenPolicy
 
 // FragmentActivity (not ComponentActivity) because BiometricPrompt requires
 // a fragment host; it is a ComponentActivity subclass, so setContent and the
@@ -100,6 +106,12 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Android 15 forces edge-to-edge at targetSdk 35; opt in explicitly so
+        // API <35 matches. The theme is dark-pinned (Phase 0.1), so light icons.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         val container = (application as MMBankApp).container
         val biometricAuth = BiometricAuthManagerImpl(this)
@@ -110,11 +122,14 @@ class MainActivity : FragmentActivity() {
             val designMode by container.designMode.collectAsStateWithLifecycle()
             val secureScreen by container.secureScreen.collectAsStateWithLifecycle()
             LaunchedEffect(secureScreen) { applySecureScreen(secureScreen) }
-            MMbankTheme(designMode = designMode) {
+            MMbankTheme(designMode = designMode, darkTheme = true) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
                 Box {
+                    // While locked, hide the ledger from TalkBack as well as from touch.
+                    Box(if (locked) Modifier.clearAndSetSemantics {} else Modifier) {
                     MMbankApp(openUncategorizedQueue = openUncategorizedQueue, backgroundStyle = backgroundStyle)
+                    }
                     // Opaque gate over (not instead of) the app so navigation
                     // and screen state survive a lock/unlock round-trip.
                     if (locked) {
@@ -140,12 +155,24 @@ class MainActivity : FragmentActivity() {
      * `FLAG_SECURE` app-wide while "Block screenshots" is on: no screenshots
      * or screen recording, and a blank thumbnail in Recents.
      */
-    private fun applySecureScreen(enabled: Boolean) {
-        if (enabled) {
+    private fun applySecureScreen(blockScreenshots: Boolean) {
+        val decision = SecureScreenPolicy.decide(
+            blockScreenshots = blockScreenshots,
+            appLockEnabled = (application as MMBankApp).container.preferences.appLockEnabled,
+            sdkInt = Build.VERSION.SDK_INT,
+        )
+        if (decision.flagSecure) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!decision.hideRecentsScreenshot)
+    }
+
+    override fun onStop() {
+        // App lock may have been toggled since launch; re-evaluate before Recents snapshots us.
+        applySecureScreen((application as MMBankApp).container.secureScreen.value)
+        super.onStop()
     }
 
     override fun onUserInteraction() {
@@ -248,7 +275,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
                         label = {
                             Text(
                                 dest.label,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                             )
                         },
@@ -268,6 +295,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
         Column(
             Modifier
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
                 .fillMaxSize(),
         ) {
             if (recoveredFromCrash) {

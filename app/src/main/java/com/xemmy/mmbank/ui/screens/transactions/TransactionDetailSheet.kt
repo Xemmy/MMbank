@@ -121,7 +121,7 @@ fun TransactionDetailSheet(
                     },
                     style = TextStyle(
                         fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         fontFeatureSettings = "tnum",
                     ),
                 )
