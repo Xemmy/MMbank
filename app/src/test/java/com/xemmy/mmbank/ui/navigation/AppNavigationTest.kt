@@ -85,4 +85,18 @@ class AppNavigationTest {
         assertEquals("home", TabRouting.startRoute(recoveredFromCrash = false))
         assertEquals("settings", TabRouting.startRoute(recoveredFromCrash = true))
     }
+
+    @Test fun transitionKinds() {
+        val k = { f: String?, t: String?, pop: Boolean, rm: Boolean -> NavTransitions.kind(f, t, pop, rm) }
+        assertEquals(NavTransitionKind.TAB_SWITCH, k(Routes.HOME, Routes.ACTIVITY_PATTERN, false, false))
+        assertEquals(NavTransitionKind.TAB_SWITCH, k(Routes.SETTINGS, Routes.HOME, true, false))
+        assertEquals(NavTransitionKind.FORWARD, k(Routes.INSIGHTS, Routes.GOALS, false, false))
+        assertEquals(NavTransitionKind.BACK, k(Routes.GOALS, Routes.INSIGHTS, true, false))
+        assertEquals(NavTransitionKind.FORWARD, k(Routes.HOME, Routes.merchantDetail("Uber"), false, false))
+        assertEquals(NavTransitionKind.NONE, k(Routes.HOME, Routes.ACTIVITY, false, true))
+        assertEquals(NavTransitionKind.NONE, k(Routes.ACTIVITY_PATTERN, Routes.ACTIVITY_UNASSIGNED, false, false))
+        assertEquals(NavTransitionKind.NONE, k(null, Routes.HOME, false, false))
+        assertTrue(NavTransitions.isTabRoot(Routes.ACTIVITY_UNASSIGNED))
+        assertTrue(!NavTransitions.isTabRoot(Routes.GOALS))
+    }
 }

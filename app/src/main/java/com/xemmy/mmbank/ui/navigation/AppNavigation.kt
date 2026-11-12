@@ -116,3 +116,41 @@ object TabRouting {
     fun startRoute(recoveredFromCrash: Boolean): String =
         if (recoveredFromCrash) Routes.SETTINGS else Routes.HOME
 }
+
+/** How a navigation step should animate. */
+enum class NavTransitionKind {
+    /** Between two tab roots: a short fade-through, no spatial movement. */
+    TAB_SWITCH,
+
+    /** Into a child screen: slides in from the end edge. */
+    FORWARD,
+
+    /** Back out of a child screen: slides toward the end edge. */
+    BACK,
+
+    /** Reduce-motion, or the same destination: no animation. */
+    NONE,
+}
+
+object NavTransitions {
+    const val FADE_MILLIS = 150
+    const val SLIDE_MILLIS = 280
+
+    private val tabRoots: Set<String> = AppTab.values().map { it.route }.toSet()
+
+    fun isTabRoot(route: String?): Boolean = TabRouting.baseRoute(route) in tabRoots
+
+    /**
+     * Animation for moving from [from] to [to]. [isPop] is true when the
+     * step is a back navigation. Tab root to tab root is a fade-through; any
+     * step involving a child screen slides; reduce-motion disables it all.
+     */
+    fun kind(from: String?, to: String?, isPop: Boolean, reduceMotion: Boolean): NavTransitionKind {
+        if (reduceMotion) return NavTransitionKind.NONE
+        val a = TabRouting.baseRoute(from)
+        val b = TabRouting.baseRoute(to)
+        if (a == null || b == null || a == b) return NavTransitionKind.NONE
+        if (isTabRoot(a) && isTabRoot(b)) return NavTransitionKind.TAB_SWITCH
+        return if (isPop) NavTransitionKind.BACK else NavTransitionKind.FORWARD
+    }
+}

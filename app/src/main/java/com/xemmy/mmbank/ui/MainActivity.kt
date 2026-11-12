@@ -40,7 +40,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.xemmy.mmbank.ui.navigation.NavTransitionKind
+import com.xemmy.mmbank.ui.navigation.NavTransitions
+import com.xemmy.mmbank.ui.util.rememberReduceMotion
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -318,10 +330,48 @@ private fun AppNavHost(
     startDestination: String,
     modifier: Modifier = Modifier,
 ) {
+    val reduceMotion = rememberReduceMotion()
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.kindFor(isPop: Boolean) =
+        NavTransitions.kind(
+            initialState.destination.route,
+            targetState.destination.route,
+            isPop,
+            reduceMotion,
+        )
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier,
+        enterTransition = {
+            when (kindFor(false)) {
+                NavTransitionKind.TAB_SWITCH -> fadeIn(tween(NavTransitions.FADE_MILLIS))
+                NavTransitionKind.FORWARD -> slideInHorizontally(tween(NavTransitions.SLIDE_MILLIS)) { it / 4 } +
+                    fadeIn(tween(NavTransitions.SLIDE_MILLIS))
+                else -> EnterTransition.None
+            }
+        },
+        exitTransition = {
+            when (kindFor(false)) {
+                NavTransitionKind.TAB_SWITCH -> fadeOut(tween(NavTransitions.FADE_MILLIS))
+                NavTransitionKind.FORWARD -> fadeOut(tween(NavTransitions.SLIDE_MILLIS))
+                else -> ExitTransition.None
+            }
+        },
+        popEnterTransition = {
+            when (kindFor(true)) {
+                NavTransitionKind.TAB_SWITCH -> fadeIn(tween(NavTransitions.FADE_MILLIS))
+                NavTransitionKind.BACK -> fadeIn(tween(NavTransitions.SLIDE_MILLIS))
+                else -> EnterTransition.None
+            }
+        },
+        popExitTransition = {
+            when (kindFor(true)) {
+                NavTransitionKind.TAB_SWITCH -> fadeOut(tween(NavTransitions.FADE_MILLIS))
+                NavTransitionKind.BACK -> slideOutHorizontally(tween(NavTransitions.SLIDE_MILLIS)) { it / 4 } +
+                    fadeOut(tween(NavTransitions.SLIDE_MILLIS))
+                else -> ExitTransition.None
+            }
+        },
     ) {
         composable(Routes.HOME) {
             DashboardScreen(
