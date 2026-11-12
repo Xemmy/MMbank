@@ -600,11 +600,11 @@ Plan debt payoff                   ›
 
 ### B.6 Privacy & honesty
 
-> ✅ 0.75.1 (CI runs 462/463 green): README AI/privacy section; persistent "Online AI is on" notice on the AI parsing screen and in the Settings row (`AiPrivacyStatus`). Still ⬜: redaction audit (#33).
+> ✅ 0.75.1 (CI runs 462/463 green): README AI/privacy section; persistent "Online AI is on" notice on the AI parsing screen and in the Settings row (`AiPrivacyStatus`). ✅ 0.82.0: redaction audit (#33) -- audit found the message body went to online providers unmasked (only logs were redacted); `AiPayloadRedactor` now masks card/account/IBAN numbers, one-time codes and PINs, e-mails and international phone numbers before an Online request (on-device is untouched). Amounts, merchants, dates and balances are deliberately kept.
 
 - The README still says AI is loopback-only, but `AiProviderMode.ONLINE` sends message text to third parties. Fix the README.
 - Show a persistent "Online AI on" indicator in Capture settings.
-- Run the redaction audit (#33) before anyone enables Online.
+- ✅ Redaction audit (#33) done in 0.82.0 -- see above.
 
 ### B.7 Suggested order (functional track, interleaved with the design track)
 

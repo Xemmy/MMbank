@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.data.ai
 
+import com.xemmy.mmbank.domain.ai.AiPayloadRedactor
 import com.xemmy.mmbank.domain.ai.LocalAiEngine
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.ai.OpenAiChatProtocol
@@ -63,7 +64,11 @@ class OpenAiCompatibleEngine(
         loopbackFailure()?.let { return Result.failure(it) }
         return withContext(Dispatchers.IO) {
             runCatching {
-                val body = OpenAiChatProtocol.buildRequestJson(model, prompt, maxTokens).toRequestBody(jsonMedia)
+                // Online providers are third parties: strip card/account numbers, one-time
+                // codes, e-mails and phone numbers first. The on-device server's text
+                // never leaves the phone, so it is sent as-is.
+                val outgoing = if (requireLoopback) prompt else AiPayloadRedactor.redact(prompt)
+                val body = OpenAiChatProtocol.buildRequestJson(model, outgoing, maxTokens).toRequestBody(jsonMedia)
                 val request = authorizedRequestBuilder(chatCompletionsUrl).post(body).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {

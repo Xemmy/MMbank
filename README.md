@@ -66,6 +66,12 @@ message text leaves the phone. In **Online** mode the text of messages the
 rules cannot read IS sent to the provider you configure; Settings → AI parsing
 shows a persistent "Online AI is on" notice while that is active.
 
+Before text is sent in Online mode, card, account and IBAN numbers are masked
+(last four digits kept), one-time codes and PINs are masked, and e-mail
+addresses and international phone numbers are replaced. Amounts, currencies,
+merchants, dates and balances are sent as they are, because the model needs
+them to answer.
+
 ### Smart, and entirely on the phone (0.54–0.60)
 
 None of these needs an AI model, a network call or a new permission. Each
