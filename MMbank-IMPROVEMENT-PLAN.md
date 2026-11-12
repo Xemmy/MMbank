@@ -785,11 +785,11 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.2 fresh backup before prune** ✅ 0.90.0 (CI run 43317469306 green): the weekly retention prune now only deletes when an *encrypted* backup was exported in the last 30 days (`RetentionBackupGate`; each export stamps `lastBackupAt`; a CSV export doesn't count). Otherwise that run does nothing, and the retention preview under the history chips says so ("Pruning is paused until you export an encrypted backup" / "your last backup is N days old"). Existing installs have no stamp yet, so pruning stays paused until their first export after this version. Still open in B.2: scheduled automatic backups (#67).
 
-> **B.3 per-sender stats (#17)** ✅ 0.91.0: Settings → Diagnostics shows "Capture by sender" above the capture log -- per sender, how many messages were saved, duplicate, ignored, unmatched or failed (`CaptureSenderStats`, read from the rolling capture log, unmatched-heavy senders first and highlighted). Covers what the log still holds, not all time. UI is not verified by CI.
+> **B.3 per-sender stats (#17)** ✅ 0.91.0 (CI run 43320300934 green): Settings → Diagnostics shows "Capture by sender" above the capture log -- per sender, how many messages were saved, duplicate, ignored, unmatched or failed (`CaptureSenderStats`, read from the rolling capture log, unmatched-heavy senders first and highlighted). Covers what the log still holds, not all time. UI is not verified by CI.
 
-## Where things stand after 0.90.0
+## Where things stand after 0.91.0
 
-Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest is run 43317469306 for 0.90.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43320300934 for 0.91.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
 
 **Still open, grouped by what blocks it**
 
