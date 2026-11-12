@@ -4575,3 +4575,19 @@ Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lo
 Home, Insights, Analytics, Bills, Goals, Splits, GroupDetail and Categories now use `MMTheme` tokens, `MMCard`, `MoneyText` (hide-balances, AED glyph) and `MMFilterChip`. New pure helpers: `netTileKind`, `budgetTone`, `balanceDirection`, dashboard format helpers. DesignLintTest baselines lowered.
 
 Not covered by CI: Compose rendering of the new layouts, stat tiles lost their glow, Insights lost the ambient wash, TalkBack on money rows, charts still the old components.
+
+## Phase 18.31 — Screen migration batch 2 (0.67.0)
+
+Moved onto the design system (MMTheme.colors, MMCard, MoneyText/moneyLabel, MMFilterChip, shape tokens):
+Activity (`transactions/`), Accounts + Debt planner + account form, Rules, Subscriptions, Merchant, Monthly report,
+Cashback, Integrity, Review and Copilot. New pure helpers with tests: `balanceKind`/`balanceMagnitude`
+(`AccountsFormatTest`) and `AmountTone.toMoneyTone` (`AmountToneTest`). `DesignLintTest` baselines lowered for all
+these files.
+
+Behaviour changes to check on a device: Activity hero card now honours hide-balances and shows explicit signs;
+row amounts use moneyOut/moneyIn/moneyNeutral instead of copper/primary; negative account balances show a Unicode
+minus in `danger` red; Report delta "bad" colour is red; Copilot bubbles are 2dp rounder; the glass look in Activity
+is replaced by surface tokens; dense Activity filter chips are tokenised, not MMFilterChip (touch target).
+
+Not covered by CI: all Compose rendering, TalkBack text (Spent reads "transferred"), rowEdgeGlow placement inside
+MMCard on Accounts, long-press on rows, theme switching on these screens.
