@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.budget.BudgetRollover
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator.BudgetState
 import com.xemmy.mmbank.domain.budget.CategoryHierarchy
@@ -52,10 +53,12 @@ import com.xemmy.mmbank.ui.designsystem.MMCard
 import com.xemmy.mmbank.ui.designsystem.MMProgressBar
 import com.xemmy.mmbank.ui.designsystem.MMTone
 import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -104,23 +107,29 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
         val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
         val endMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
+        val convert = CategoryBudgetCalculator.converter(
+            currency,
+            rates.filter { it.baseCode.equals(currency, ignoreCase = true) }
+                .associate { it.quoteCode.uppercase() to it.rate },
+        )
         val monthSpend = CategoryBudgetCalculator.monthSpend(
             transactions = transactions,
             baseCurrency = currency,
             startMillis = startMillis,
             endMillisExclusive = endMillis,
-            convert = CategoryBudgetCalculator.converter(
-                currency,
-                rates.filter { it.baseCode.equals(currency, ignoreCase = true) }
-                    .associate { it.quoteCode.uppercase() to it.rate },
-            ),
+            convert = convert,
         )
         val rolledUpSpend = CategoryBudgetCalculator.rollUpSpend(categories, monthSpend.byCategory)
+        val carry = if (container.preferences.budgetRollover) {
+            BudgetRollover.carryByCategory(categories, transactions, currency, convert, YearMonth.from(monthStart), zone)
+        } else {
+            emptyMap()
+        }
         val transactionCounts = transactions.mapNotNull { it.categoryId }
             .groupingBy { it }
             .eachCount()
         CategoriesUiState(
-            statuses = CategoryBudgetCalculator.statuses(categories, rolledUpSpend),
+            statuses = CategoryBudgetCalculator.statuses(categories, rolledUpSpend, carry),
             currency = currency,
             categories = categories,
             transactionCounts = transactionCounts,
@@ -583,6 +592,13 @@ private fun CategoryRow(
                         )
                         Text(" left", style = labelStyle, color = amountColor)
                     }
+                }
+                if (status.carriedOver.signum() > 0) {
+                    Text(
+                        "Includes ${moneyLabel(status.carriedOver, currency)} carried over from earlier months",
+                        style = labelStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

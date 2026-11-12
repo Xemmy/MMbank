@@ -48,6 +48,7 @@ import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.retention.RetentionPruner
 import com.xemmy.mmbank.data.retention.TransactionRetentionWorker
 import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
+import com.xemmy.mmbank.domain.budget.BudgetRollover
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
 import com.xemmy.mmbank.data.digest.WeeklyDigestWorker
@@ -766,15 +767,28 @@ class AppContainer(context: Context) {
                 // currency is converted into it (as the Budgets screen does);
                 // spend with no rate is left out rather than added at face value.
                 val base = preferences.defaultCurrency
+                val allReal = transactionRepository.getAllReal()
+                val convert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base))
                 val spent = CategoryBudgetCalculator.monthSpend(
-                    transactions = transactionRepository.getAllReal().filter { it.categoryId == categoryId },
+                    transactions = allReal.filter { it.categoryId == categoryId },
                     baseCurrency = base,
                     startMillis = startMillis,
                     endMillisExclusive = endMillis,
-                    convert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base)),
+                    convert = convert,
                 ).byCategory[categoryId] ?: java.math.BigDecimal.ZERO
+                // Envelope budgets: what earlier months left unspent raises this month's cap.
+                val carry: java.math.BigDecimal = (
+                    if (preferences.budgetRollover) {
+                        BudgetRollover.carryByCategory(
+                            categoryRepository.observeAll().first(), allReal, base, convert,
+                            java.time.YearMonth.from(monthStart), zone,
+                        )[categoryId]
+                    } else {
+                        null
+                    }
+                    ) ?: java.math.BigDecimal.ZERO
 
-                val status = CategoryBudgetCalculator.statusFor(category, spent) ?: return@runCatching
+                val status = CategoryBudgetCalculator.statusFor(category, spent, carry) ?: return@runCatching
                 // Locale.US explicitly: the default locale would render these
                 // digits Arabic-Indic on an Arabic device, so the same month
                 // would key differently depending on system language.
@@ -974,6 +988,7 @@ class AppContainer(context: Context) {
             nowMillis = now,
             captureQuietDays = health.takeIf { it.state == CaptureHealthEvaluator.State.QUIET }?.quietDays,
             capConvert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base)),
+            rolloverBudgets = preferences.budgetRollover,
         )
     }
 

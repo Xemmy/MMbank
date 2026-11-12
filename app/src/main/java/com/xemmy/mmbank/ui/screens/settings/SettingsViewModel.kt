@@ -146,6 +146,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var secureScreen by mutableStateOf(container.secureScreen.value)
         private set
     var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
+    var budgetRollover by mutableStateOf(container.preferences.budgetRollover)
         private set
     var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
         private set
@@ -457,6 +458,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.setWeeklyDigestEnabled(enabled)
         weeklyDigestEnabled = enabled
         statusMessage = if (enabled) "Weekly digest on: once a week, what changed." else "Weekly digest off."
+    }
+
+    fun updateBudgetRollover(on: Boolean) {
+        container.preferences.budgetRollover = on
+        budgetRollover = on
     }
 
     fun updateHideZeroBalances(hide: Boolean) {

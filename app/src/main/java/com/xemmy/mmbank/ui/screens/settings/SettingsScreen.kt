@@ -544,6 +544,26 @@ fun PreferencesSettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
+                Text("Carry unspent budget forward", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Envelope budgets: what a category's monthly cap didn't use is added to next month's cap " +
+                        "(up to 6 months back). Overspending never carries over.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.budgetRollover,
+                onCheckedChange = viewModel::updateBudgetRollover,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
                 Text("Hide zero-value coins/tokens", style = MaterialTheme.typography.bodyLarge)
                 Text(
                     "Dust and unpriced crypto holdings are left off the Dashboard. Turn off to show every holding.",

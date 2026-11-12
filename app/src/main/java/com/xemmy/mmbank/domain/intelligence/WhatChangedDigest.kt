@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.intelligence
 
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.budget.BudgetRollover
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.filter.DateWindow
 import com.xemmy.mmbank.domain.ledger.LedgerMath
@@ -105,6 +106,8 @@ object WhatChangedDigest {
         captureQuietDays: Int? = null,
         /** Converts other-currency spend toward category caps; default counts base-currency spend only. */
         capConvert: ((String, BigDecimal) -> BigDecimal?)? = null,
+        /** Envelope budgets: unspent cap from earlier months raises this month's. */
+        rolloverBudgets: Boolean = false,
     ): Digest? {
         val thisWeek = DateWindow(today.minusDays(6), today)
         val lastWeek = DateWindow(today.minusDays(13), today.minusDays(7))
@@ -120,11 +123,14 @@ object WhatChangedDigest {
         // Category caps, month to date, in the base currency (as the budgets screen does).
         val monthStart = today.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val monthEnd = today.withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val monthSpend = CategoryBudgetCalculator.monthSpend(
-            transactions, baseCurrency, monthStart, monthEnd,
-            capConvert ?: CategoryBudgetCalculator.converter(baseCurrency, emptyMap()),
-        )
-        CategoryBudgetCalculator.statuses(categories, CategoryBudgetCalculator.rollUpSpend(categories, monthSpend.byCategory))
+        val convert = capConvert ?: CategoryBudgetCalculator.converter(baseCurrency, emptyMap())
+        val monthSpend = CategoryBudgetCalculator.monthSpend(transactions, baseCurrency, monthStart, monthEnd, convert)
+        val carry = if (rolloverBudgets) {
+            BudgetRollover.carryByCategory(categories, transactions, baseCurrency, convert, java.time.YearMonth.from(today), zone)
+        } else {
+            emptyMap()
+        }
+        CategoryBudgetCalculator.statuses(categories, CategoryBudgetCalculator.rollUpSpend(categories, monthSpend.byCategory), carry)
             .filter { it.state != CategoryBudgetCalculator.BudgetState.UNDER }
             .forEach { s ->
                 items += CategoryCap(

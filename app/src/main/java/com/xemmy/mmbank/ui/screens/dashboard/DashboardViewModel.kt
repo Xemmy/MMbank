@@ -453,6 +453,11 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             baseCurrency = base,
             today = today,
             captureQuietDays = health?.takeIf { it.state == CaptureHealthEvaluator.State.QUIET }?.quietDays,
+            capConvert = com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator.converter(
+                base,
+                rates.filter { it.baseCode.equals(base, ignoreCase = true) }.associate { it.quoteCode.uppercase() to it.rate },
+            ),
+            rolloverBudgets = container.preferences.budgetRollover,
         )
     }.flowOn(Dispatchers.Default)
         .recoverAndRetry("DashboardViewModel.weeklyDigest", container) { null }

@@ -38,6 +38,8 @@ object CategoryBudgetCalculator {
         /** [spent] / [cap]; can exceed 1.0 once the cap is blown. */
         val fraction: Double,
         val state: BudgetState,
+        /** Unspent money brought in from earlier months (envelope budgets); already included in [cap]. */
+        val carriedOver: BigDecimal = BigDecimal.ZERO,
     ) {
         /** Never negative -- an overspent category has zero left, not "minus 40". */
         val remaining: BigDecimal get() = (cap - spent).max(BigDecimal.ZERO)
@@ -148,25 +150,29 @@ object CategoryBudgetCalculator {
      * either unset, or set to zero/negative, which reads as "no budget" rather
      * than "a budget of nothing you instantly blow past".
      */
-    fun statusFor(category: Category, spent: BigDecimal): CategoryBudgetStatus? {
-        val cap = category.monthlyCap ?: return null
-        if (cap.signum() <= 0) return null
+    fun statusFor(category: Category, spent: BigDecimal, carriedOver: BigDecimal = BigDecimal.ZERO): CategoryBudgetStatus? {
+        val base = category.monthlyCap ?: return null
+        if (base.signum() <= 0) return null
+        val cap = base + carriedOver.max(BigDecimal.ZERO)
         val fraction = spent.toDouble() / cap.toDouble()
         val state = when {
             spent >= cap -> BudgetState.OVER
             fraction >= NEAR_THRESHOLD -> BudgetState.NEAR
             else -> BudgetState.UNDER
         }
-        return CategoryBudgetStatus(category, spent, cap, fraction, state)
+        return CategoryBudgetStatus(category, spent, cap, fraction, state, carriedOver.max(BigDecimal.ZERO))
     }
 
     /** Statuses for every capped category, closest to (or furthest past) its cap first. */
     fun statuses(
         categories: List<Category>,
         spendByCategoryId: Map<Long, BigDecimal>,
+        carryByCategoryId: Map<Long, BigDecimal> = emptyMap(),
     ): List<CategoryBudgetStatus> =
         categories
-            .mapNotNull { statusFor(it, spendByCategoryId[it.id] ?: BigDecimal.ZERO) }
+            .mapNotNull {
+                statusFor(it, spendByCategoryId[it.id] ?: BigDecimal.ZERO, carryByCategoryId[it.id] ?: BigDecimal.ZERO)
+            }
             .sortedByDescending { it.fraction }
 
     /**
