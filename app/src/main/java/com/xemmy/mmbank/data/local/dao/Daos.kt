@@ -355,6 +355,18 @@ interface TransactionDao {
     )
     suspend fun findRealDebitsByMerchant(merchant: String): List<TransactionEntity>
 
+    /** The persons the two most recent real rows at [merchant] were assigned to, newest first -- see PersonLearner. */
+    @Query(
+        """
+        SELECT person FROM transactions
+        WHERE isDemo = 0 AND person IS NOT NULL AND TRIM(person) != ''
+          AND merchant IS NOT NULL AND LOWER(TRIM(merchant)) = LOWER(TRIM(:merchant))
+        ORDER BY timestamp DESC, id DESC
+        LIMIT 2
+        """
+    )
+    suspend fun lastPersonsForMerchant(merchant: String): List<String>
+
     /**
      * Still-unlinked, opposite-direction, same amount+currency real rows
      * within a broad time bound, for [com.xemmy.mmbank.domain.usecase.TransferMatcher]

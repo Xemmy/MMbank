@@ -577,7 +577,9 @@ Plan debt payoff                   ›
 - **SMS inbox import** at onboarding (#11). It's the single biggest day-one win, because a new install starts with months of history instead of an empty ledger.
 - **Per-sender stats** ("ADCB: 212 captured, 3 unmatched") make capture quality visible (#17).
 
-> **B.3 why-unmatched (#13)** ✅ 0.84.0: `UnmatchedExplainer` says why a financial-looking message produced nothing -- declined/OTP wording skipped on purpose, an unknown currency code ("THB is not a currency MMbank reads yet"), no amount next to a currency, or a clear amount with no matching rule (with a money-in/out cue) -- and the Diagnostics capture log now prints it on every NO MATCH line (redacted like the rest of the line). Still open in B.3: a one-tap "create rule from this" button wired to `AiSelfHealingRuleGenerator`, corpus testing surfaced in the rule editor, shadow warnings, SMS inbox import, per-sender stats.
+> **B.3 why-unmatched (#13)** ✅ 0.84.0 (CI run 43301447217 green): `UnmatchedExplainer` says why a financial-looking message produced nothing -- declined/OTP wording skipped on purpose, an unknown currency code ("THB is not a currency MMbank reads yet"), no amount next to a currency, or a clear amount with no matching rule (with a money-in/out cue) -- and the Diagnostics capture log now prints it on every NO MATCH line (redacted like the rest of the line). Still open in B.3: a one-tap "create rule from this" button wired to `AiSelfHealingRuleGenerator`, corpus testing surfaced in the rule editor, shadow warnings, SMS inbox import, per-sender stats.
+
+> **C.2 person learning** ✅ 0.85.0 (first slice, no schema change): a new capture goes to the person the merchant's last two real rows were assigned to (`PersonLearner`), else the default person as before; two defaults in a row hand it back. Still open in C.2: `categorySource`/`personSource` columns (so USER choices are never re-assigned and the app can explain why), counts/confidence per merchant, amount/card/sender signals, keyword fixes.
 
 ### B.4 Consolidate overlapping features
 

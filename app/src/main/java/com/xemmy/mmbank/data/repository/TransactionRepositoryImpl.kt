@@ -11,6 +11,7 @@ import com.xemmy.mmbank.domain.account.AccountNumberMatcher
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.domain.ledger.CaptureDedupPolicy
 import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
+import com.xemmy.mmbank.domain.ledger.PersonLearner
 import com.xemmy.mmbank.domain.ledger.RefundMatcher
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
 import com.xemmy.mmbank.domain.ledger.TransferLegs
@@ -220,6 +221,13 @@ class TransactionRepositoryImpl(
                 detectedKind
             }
 
+            // Who this belongs to: the default person, unless the user has moved
+            // this merchant's last two rows to someone else (see PersonLearner).
+            val person = PersonLearner.pick(
+                parsed.merchant?.takeIf { it.isNotBlank() }?.let { dao.lastPersonsForMerchant(it) }.orEmpty(),
+                defaultPersonProvider(),
+            )
+
             val entity = TransactionEntity(
                 amount = parsed.amount,
                 currencyCode = parsed.currencyCode,
@@ -234,7 +242,7 @@ class TransactionRepositoryImpl(
                 accountNumberSuffix = parsed.accountNumberSuffix,
                 accountId = detectedAccountId,
                 category = parsed.category,
-                person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
+                person = person,
                 spendingCategory = spendingCategory,
                 excludeFromStats = parsed.excludeFromStats,
                 categoryId = categoryId,
