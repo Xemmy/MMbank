@@ -91,6 +91,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xemmy.mmbank.domain.ai.RetentionPreview
+import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -159,6 +161,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
         private set
+    /** What the selected retention window would delete today; null until computed or when retention is off. */
+    var retentionPreview by mutableStateOf<String?>(null)
+        private set
+
     var transactionRetentionMonths by mutableStateOf(container.preferences.transactionRetentionMonths)
         private set
 
@@ -489,10 +495,27 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         appLockTimeoutMinutes = minutes
     }
 
+    /** Recomputes [retentionPreview] with the same planner the weekly prune runs. */
+    fun refreshRetentionPreview() {
+        val months = transactionRetentionMonths
+        if (months <= 0) {
+            retentionPreview = null
+            return
+        }
+        viewModelScope.launch {
+            retentionPreview = runCatching {
+                val rows = container.transactionRepository.getAllReal()
+                val plan = TransactionRetentionPlanner.plan(rows, months, System.currentTimeMillis())
+                RetentionPreview.describe(RetentionPreview.summarize(plan, rows))
+            }.getOrNull()
+        }
+    }
+
     /** `0` means "keep everything forever" -- turns the retention prune off and cancels its schedule. */
     fun updateTransactionRetentionMonths(months: Int) {
         container.setTransactionRetentionMonths(months)
         transactionRetentionMonths = months
+        refreshRetentionPreview()
         statusMessage = if (months <= 0) {
             "Transaction history kept forever."
         } else {

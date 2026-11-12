@@ -547,6 +547,8 @@ Plan debt payoff                   ›
 
 ### B.2 Data safety (the only area with data-loss consequences)
 
+> Status: schema JSONs are exported by KSP in CI and `MigrationSqlTest` runs v25→v32 on real SQLite (already in place). ✅ 0.75.2 (CI pending): retention prune preview ("This would delete N transactions from YEAR", `RetentionPreview`) shown under the history chips; "require a fresh backup first" not enforced. Still ⬜: scheduled automatic backups (#67).
+
 - **31 schema versions, and no migration is ever executed in CI.** `app/schemas/` is not committed, so `MigrationTestHelper` is impossible. Commit the schema JSONs and add Robolectric migration tests, at minimum a "v1 → v31" smoke test (backlog #1–3).
 - **Automatic backups:** today backup is manual-only. Add a scheduled encrypted `.mmb` to a chosen SAF folder, weekly plus before every migration (backlog #67). Subscriptions aren't in the backup (re-detected); say so in the UI.
 - **Retention prune deletes with no preview.** Show "This will delete 1,240 transactions from 2023" and require a fresh backup first (backlog #58).
@@ -584,7 +586,7 @@ Plan debt payoff                   ›
 
 ### B.6 Privacy & honesty
 
-> ✅ 0.75.1 (CI pending): README AI/privacy section; persistent "Online AI is on" notice on the AI parsing screen and in the Settings row (`AiPrivacyStatus`). Still ⬜: redaction audit (#33).
+> ✅ 0.75.1 (CI runs 462/463 green): README AI/privacy section; persistent "Online AI is on" notice on the AI parsing screen and in the Settings row (`AiPrivacyStatus`). Still ⬜: redaction audit (#33).
 
 - The README still says AI is loopback-only, but `AiProviderMode.ONLINE` sends message text to third parties. Fix the README.
 - Show a persistent "Online AI on" indicator in Capture settings.

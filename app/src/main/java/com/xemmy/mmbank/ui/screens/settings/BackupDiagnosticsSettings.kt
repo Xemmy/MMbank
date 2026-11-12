@@ -296,6 +296,10 @@ private fun RetentionSection(viewModel: SettingsViewModel) {
             )
         }
     }
+    LaunchedEffect(Unit) { viewModel.refreshRetentionPreview() }
+    viewModel.retentionPreview?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
 }
 
 /**
