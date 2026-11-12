@@ -11,6 +11,7 @@ import com.xemmy.mmbank.domain.account.AccountNumberMatcher
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.domain.ledger.CaptureDedupPolicy
 import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
+import com.xemmy.mmbank.domain.ledger.RefundMatcher
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
 import com.xemmy.mmbank.domain.ledger.TransferLegs
 import com.xemmy.mmbank.domain.model.TransactionKind
@@ -187,7 +188,8 @@ class TransactionRepositoryImpl(
             // decided once the account is known, since a credit landing on a
             // credit card is a payment or a refund, never income.
             val accountType = detectedAccountId?.let { database.accountDao().getById(it)?.type }
-            val kind = TransactionKindDetector.detect(
+            val learnedKind = parsed.merchant?.let { findKindForMerchant(it) }
+            val detectedKind = TransactionKindDetector.detect(
                 TransactionKindDetector.Input(
                     direction = parsed.direction,
                     matchedRuleName = parsed.matchedRuleName,
@@ -196,9 +198,27 @@ class TransactionRepositoryImpl(
                     accountType = accountType,
                     category = parsed.category,
                     ruleKind = parsed.kindOverride,
-                    learnedKind = parsed.merchant?.let { findKindForMerchant(it) },
+                    learnedKind = learnedKind,
                 ),
             )
+            // A credit the bank didn't label as a refund can still be one: same
+            // merchant, earlier purchase, no larger. Never second-guesses a kind
+            // a rule or the user's own teaching already decided.
+            val kind = if (detectedKind == TransactionKind.INCOME && parsed.kindOverride == null && learnedKind == null &&
+                !parsed.merchant.isNullOrBlank()
+            ) {
+                val credit = Transaction(
+                    amount = parsed.amount,
+                    currencyCode = parsed.currencyCode,
+                    direction = parsed.direction,
+                    merchant = parsed.merchant,
+                    source = message.source,
+                    timestampMillis = message.timestampMillis,
+                )
+                RefundMatcher.refine(detectedKind, credit, spendHistoryForMerchant(parsed.merchant!!))
+            } else {
+                detectedKind
+            }
 
             val entity = TransactionEntity(
                 amount = parsed.amount,
