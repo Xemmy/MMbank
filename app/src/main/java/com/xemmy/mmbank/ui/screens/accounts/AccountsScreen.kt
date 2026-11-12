@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -75,20 +74,20 @@ import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.MMTone
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.RowAvatar
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.theme.rowEdgeGlow
-import com.xemmy.mmbank.ui.util.AMOUNT_MASK
-import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
-import com.xemmy.mmbank.ui.util.asMoney
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -202,7 +201,7 @@ fun AccountsScreen(
                     TextButton(onClick = { showArchived = !showArchived }) {
                         Text(
                             (if (showArchived) "Hide" else "Show") + " archived (${state.archived.size})",
-                            color = ObsidianTokens.textMeta,
+                            color = MMTheme.colors.textSecondary,
                         )
                     }
                 }
@@ -254,19 +253,14 @@ private fun AccountCard(
     // Edge glow (spec 5.3): the account's brand origin, or a neutral slate
     // for accounts with none registered.
     val originTone = GlowTones.forAccountOrigin(a.name, a.bankName) ?: GlowTone.SYSTEM_SLATE
-    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
-    Box(
-        Modifier
+    MMCard(
+        modifier = Modifier
             .fillMaxWidth()
             // Loan-section expansion and edits glide instead of snapping.
-            .animateContentSize()
-            .clickable { onEdit() }
-            .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, ObsidianTokens.hairline, shape)
-            .rowEdgeGlow(originTone),
+            .animateContentSize(),
+        onClick = onEdit,
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.rowEdgeGlow(originTone)) {
             // Row 1: avatar, full (never-truncated) title, actions.
             Row(verticalAlignment = Alignment.Top) {
                 RowAvatar(name = a.bankName ?: a.name, tone = originTone, size = 40.dp)
@@ -274,20 +268,20 @@ private fun AccountCard(
                 Text(
                     a.name,
                     style = MaterialTheme.typography.titleMedium,
-                    color = ObsidianTokens.textPrimary,
+                    color = MMTheme.colors.textPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Clip,
                     softWrap = true,
                     modifier = Modifier.weight(1f).padding(top = 2.dp),
                 )
                 IconButton(onClick = onAdjust) {
-                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = ObsidianTokens.textMeta)
+                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = MMTheme.colors.textSecondary)
                 }
                 IconButton(onClick = { confirmingArchive = true }) {
-                    Icon(Icons.Filled.Archive, contentDescription = "Archive account", tint = ObsidianTokens.textMeta)
+                    Icon(Icons.Filled.Archive, contentDescription = "Archive account", tint = MMTheme.colors.textSecondary)
                 }
                 IconButton(onClick = { confirmingDelete = true }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = ObsidianTokens.textMeta)
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = MMTheme.colors.textSecondary)
                 }
             }
 
@@ -312,10 +306,13 @@ private fun AccountCard(
                     },
                     modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
                 )
-                AmountText(
-                    display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
-                    color = if (!hidden && row.balance.signum() < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
-                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
+                MoneyText(
+                    amount = balanceMagnitude(row.balance),
+                    currencyCode = a.currencyCode,
+                    kind = balanceKind(row.balance),
+                    hidden = hidden,
+                    color = if (!hidden && row.balance.signum() < 0) MMTheme.colors.danger else MMTheme.colors.textPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
 
@@ -326,18 +323,18 @@ private fun AccountCard(
             if (a.outstandingBalance != null || a.nextInstallmentAmount != null) {
                 Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     a.outstandingBalance?.let {
-                        LoanLine("Outstanding", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode))
+                        LoanLine("Outstanding", moneyLabel(it, a.currencyCode, hidden))
                     }
                     a.nextInstallmentAmount?.let {
                         val due = a.dueDayOfMonth?.let { d -> " · due day $d" }.orEmpty()
-                        LoanLine("Next installment", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode) + due)
+                        LoanLine("Next installment", moneyLabel(it, a.currencyCode, hidden) + (if (hidden) "" else due))
                     }
                     a.profitRatePa?.let { LoanLine("Profit rate", String.format(java.util.Locale.US, "%.2f%% p.a.", it)) }
                     a.maturityDateMillis?.let { LoanLine("Maturity", it.asDate()) }
                     a.earlySettlementFeeEstimate?.let {
                         LoanLine(
                             "Est. early-settlement fee",
-                            if (hidden) AMOUNT_MASK else "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)",
+                            if (hidden) moneyLabel(it, a.currencyCode, true) else "≈ " + moneyLabel(it, a.currencyCode) + " (1% of outstanding)",
                         )
                     }
                     settlementRecommendation(a)?.let {
@@ -361,7 +358,7 @@ private fun AccountCard(
                     if (row.balance.signum() == 0) {
                         "“${a.name}” moves to Archived: out of your lists and pickers, history kept. You can restore it any time."
                     } else {
-                        "“${a.name}” still shows ${row.balance.asMoney(a.currencyCode)}. Archiving keeps that " +
+                        "“${a.name}” still shows ${moneyLabel(row.balance, a.currencyCode)}. Archiving keeps that " +
                             "in your history but hides the account from lists and totals. If it's closed, " +
                             "adjust the balance to 0 first."
                     },
@@ -395,13 +392,13 @@ private fun AccountCard(
  */
 @Composable
 private fun CardStatusBlock(card: CreditCardStatusCalculator.CardStatus, currency: String, hidden: Boolean) {
-    fun money(v: BigDecimal) = if (hidden) AMOUNT_MASK else v.asMoney(currency)
+    fun money(v: BigDecimal) = moneyLabel(v, currency, hidden)
     Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         card.utilisation?.let { used ->
             LinearProgressIndicator(
                 progress = { used.toFloat().coerceIn(0f, 1f) },
                 color = when {
-                    used > 0.9 -> ObsidianTokens.debit
+                    used > 0.9 -> MMTheme.colors.danger
                     used > 0.3 -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.primary
                 },
@@ -436,7 +433,7 @@ private fun CardStatusBlock(card: CreditCardStatusCalculator.CardStatus, currenc
             color = if (card.status == CreditCardStatusCalculator.Status.OVERDUE) {
                 MaterialTheme.colorScheme.error
             } else {
-                ObsidianTokens.textPrimary
+                MMTheme.colors.textPrimary
             },
         )
     }
@@ -456,12 +453,12 @@ private fun BankCheckLine(rec: IntegrityChecker.Reconciliation, currency: String
         IntegrityChecker.Status.MATCHES -> Text(
             "Matches your bank ✓ (${asOf.orEmpty()})",
             style = MaterialTheme.typography.labelSmall,
-            color = ObsidianTokens.textMeta,
+            color = MMTheme.colors.textSecondary,
             modifier = Modifier.padding(top = 4.dp),
         )
         IntegrityChecker.Status.DIFFERS -> Text(
             "Differs from your bank by " +
-                (rec.drift?.abs()?.asMoneyOrMask(currency, hidden) ?: "") +
+                (rec.drift?.abs()?.let { moneyLabel(it, currency, hidden) } ?: "") +
                 (asOf?.let { " (as of $it)" }.orEmpty()),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.error,
@@ -474,25 +471,17 @@ private fun BankCheckLine(rec: IntegrityChecker.Reconciliation, currency: String
 /** Entry to the integrity screen, shown only while something needs a look. */
 @Composable
 private fun IntegritySummaryCard(count: Int, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f), shape)
-            .clickable(onClick = onClick),
-    ) {
-        Column(Modifier.padding(12.dp)) {
+    MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick, tone = MMTone.DANGER) {
+        Column {
             Text(
                 if (count == 1) "1 thing to check against your bank" else "$count things to check against your bank",
                 style = MaterialTheme.typography.titleSmall,
-                color = ObsidianTokens.textPrimary,
+                color = MMTheme.colors.textPrimary,
             )
             Text(
                 "Tap to see what doesn't add up",
                 style = MaterialTheme.typography.labelSmall,
-                color = ObsidianTokens.textMeta,
+                color = MMTheme.colors.textSecondary,
             )
         }
     }
@@ -501,25 +490,17 @@ private fun IntegritySummaryCard(count: Int, onClick: () -> Unit) {
 /** Entry to the debt payoff planner, shown while any card or loan owes money. */
 @Composable
 private fun DebtPlannerEntryCard(debts: Int, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, ObsidianTokens.hairline, shape)
-            .clickable(onClick = onClick),
-    ) {
-        Column(Modifier.padding(12.dp)) {
+    MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Column {
             Text(
                 "Plan paying off ${if (debts == 1) "your debt" else "your $debts debts"}",
                 style = MaterialTheme.typography.titleSmall,
-                color = ObsidianTokens.textPrimary,
+                color = MMTheme.colors.textPrimary,
             )
             Text(
                 "See when you'd be debt-free, and how much interest each strategy costs",
                 style = MaterialTheme.typography.labelSmall,
-                color = ObsidianTokens.textMeta,
+                color = MMTheme.colors.textSecondary,
             )
         }
     }
@@ -535,8 +516,8 @@ private fun ArchivedAccountRow(row: AccountWithBalance, hidden: Boolean, onResto
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(row.account.name, style = MaterialTheme.typography.bodyMedium, color = ObsidianTokens.textMeta)
-            MetaLabel(accountTypeLabel(row.account.type) + " · " + row.balance.asMoneyOrMask(row.account.currencyCode, hidden))
+            Text(row.account.name, style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textSecondary)
+            MetaLabel(accountTypeLabel(row.account.type) + " · " + moneyLabel(row.balance, row.account.currencyCode, hidden))
         }
         TextButton(onClick = onRestore) { Text("Restore") }
     }
@@ -556,16 +537,8 @@ private fun UnassignedCard(
     hidden: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, ObsidianTokens.hairline, shape),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 if (unassigned.entryCount == 1) {
                     "1 transaction isn't in any account"
@@ -573,19 +546,19 @@ private fun UnassignedCard(
                     "${unassigned.entryCount} transactions aren't in any account"
                 },
                 style = MaterialTheme.typography.bodyLarge,
-                color = ObsidianTokens.textPrimary,
+                color = MMTheme.colors.textPrimary,
             )
             unassigned.totalsByCurrency.forEach { (code, total) ->
                 Text(
-                    total.asMoneyOrMask(code, hidden),
+                    moneyLabel(total, code, hidden),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = ObsidianTokens.textMeta,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
             Text(
                 "They're counted in analytics but in no balance. Tap to assign them.",
                 style = MaterialTheme.typography.bodySmall,
-                color = ObsidianTokens.textMeta,
+                color = MMTheme.colors.textSecondary,
             )
         }
     }
@@ -619,7 +592,7 @@ private fun AdjustBalanceDialog(
             GlassDialogBackdrop()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "“${account.name}” currently computes to ${row.balance.asMoney(account.currencyCode)} " +
+                    "“${account.name}” currently computes to ${moneyLabel(row.balance, account.currencyCode)} " +
                         "from its opening balance and transactions. Enter the real balance and a matching " +
                         "“Balance adjustment” entry is added so they line up.",
                     style = MaterialTheme.typography.bodySmall,
@@ -633,10 +606,10 @@ private fun AdjustBalanceDialog(
                     singleLine = true,
                     isError = target == null,
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = ObsidianTokens.surfaceGlass,
-                        focusedContainerColor = ObsidianTokens.surfaceGlass,
-                        unfocusedBorderColor = ObsidianTokens.hairline,
-                        focusedBorderColor = Color.White.copy(alpha = 0.28f),
+                        unfocusedContainerColor = MMTheme.colors.surface,
+                        focusedContainerColor = MMTheme.colors.surface,
+                        unfocusedBorderColor = MMTheme.colors.borderSubtle,
+                        focusedBorderColor = MMTheme.colors.borderStrong,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -645,15 +618,15 @@ private fun AdjustBalanceDialog(
                     delta.signum() == 0 -> Text(
                         "Already matches — no adjustment needed.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                     )
                     else -> {
                         val credit = delta.signum() > 0
                         Text(
                             (if (credit) "Adds a credit of +" else "Adds a debit of −") +
-                                delta.abs().asMoney(account.currencyCode) + ".",
+                                moneyLabel(delta.abs(), account.currencyCode) + ".",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (credit) ObsidianTokens.credit else ObsidianTokens.debit,
+                            color = if (credit) MMTheme.colors.moneyIn else MMTheme.colors.danger,
                         )
                     }
                 }
@@ -676,7 +649,7 @@ private fun LoanLine(label: String, value: String) {
         Text(
             value,
             style = MaterialTheme.typography.labelSmall,
-            color = ObsidianTokens.textPrimary,
+            color = MMTheme.colors.textPrimary,
             modifier = Modifier.padding(start = 8.dp),
         )
     }

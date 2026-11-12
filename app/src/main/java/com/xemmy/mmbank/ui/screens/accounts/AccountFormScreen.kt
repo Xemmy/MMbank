@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -78,8 +77,8 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
+import com.xemmy.mmbank.ui.theme.MMShapes
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
@@ -87,8 +86,6 @@ import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
-import com.xemmy.mmbank.ui.util.asMoney
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -422,7 +419,7 @@ private fun CompactField(
         readOnly = readOnly,
         trailingIcon = trailingIcon,
         textStyle = MaterialTheme.typography.bodyMedium,
-        shape = RoundedCornerShape(12.dp),
+        shape = MMShapes.small,
         modifier = modifier.fillMaxWidth(),
     )
 }
@@ -488,7 +485,7 @@ private fun PasteDetailsDialog(
                     onValueChange = { text = it },
                     label = { Text("Pasted text", style = MaterialTheme.typography.labelMedium) },
                     textStyle = MaterialTheme.typography.bodyMedium,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MMShapes.small,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 120.dp),

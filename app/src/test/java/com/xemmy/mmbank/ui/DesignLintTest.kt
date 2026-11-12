@@ -40,7 +40,6 @@ class DesignLintTest {
             Regex("fontSize\\s*="),
             { !it.startsWith("ui/theme/") },
             mapOf(
-                "ui/screens/accounts/AccountsScreen.kt" to 1,
                 "ui/screens/settings/BackupDiagnosticsSettings.kt" to 1,
                 "ui/screens/transactions/HeroSpendSummaryCard.kt" to 7,
                 "ui/screens/transactions/TransactionDetailSheet.kt" to 1,
@@ -58,8 +57,6 @@ class DesignLintTest {
                 "ui/auth/PinPad.kt" to 4,
                 "ui/components/CanvasCharts.kt" to 5,
                 "ui/components/DonutChart.kt" to 2,
-                "ui/screens/accounts/AccountsScreen.kt" to 37,
-                "ui/screens/accounts/DebtPlannerScreen.kt" to 5,
                 "ui/screens/transactions/HeroSpendSummaryCard.kt" to 22,
                 "ui/screens/transactions/MoreFiltersDialog.kt" to 6,
                 "ui/screens/transactions/TransactionDetailSheet.kt" to 10,
@@ -79,8 +76,6 @@ class DesignLintTest {
             Regex("asMoney\\w*\\("),
             { it.startsWith("ui/screens/") },
             mapOf(
-                "ui/screens/accounts/AccountsScreen.kt" to 11,
-                "ui/screens/accounts/DebtPlannerScreen.kt" to 2,
                 "ui/screens/analytics/AnalyticsScreen.kt" to 2,
                 "ui/screens/insights/InsightsScreen.kt" to 8,
                 "ui/screens/settings/SettingsViewModel.kt" to 1,
@@ -97,7 +92,6 @@ class DesignLintTest {
             mapOf(
                 "ui/components/AccountCarousel.kt" to 1,
                 "ui/components/GlassWalletCard.kt" to 1,
-                "ui/screens/accounts/AccountFormScreen.kt" to 2,
                 "ui/screens/analytics/SpendingHeatmap.kt" to 2,
                 "ui/screens/settings/AppearanceSettingsScreen.kt" to 1,
                 "ui/screens/transactions/HeroSpendSummaryCard.kt" to 1,

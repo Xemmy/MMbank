@@ -37,11 +37,11 @@ import com.xemmy.mmbank.domain.account.DebtCandidates
 import com.xemmy.mmbank.domain.account.DebtPayoffSimulator
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.theme.ObsidianCard
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.util.CurrencyMath
-import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -233,7 +233,7 @@ fun DebtPlannerScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val base = state.baseCurrency
-    val money = { v: BigDecimal -> v.asMoney(base) }
+    val money = { v: BigDecimal -> moneyLabel(v, base) }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
@@ -299,7 +299,7 @@ fun DebtPlannerScreen(
             if (avalanche != null && snowball != null) {
                 compareStrategies(avalanche, snowball, money)?.let { line ->
                     item(key = "compare") {
-                        Text(line, style = MaterialTheme.typography.titleSmall, color = ObsidianTokens.credit)
+                        Text(line, style = MaterialTheme.typography.titleSmall, color = MMTheme.colors.moneyIn)
                     }
                 }
                 item(key = "avalanche") {
@@ -315,7 +315,7 @@ fun DebtPlannerScreen(
                     Text(
                         "No rate known for ${state.unknownRate.joinToString()}: treated as 0%. Type the yearly rate above for a real plan.",
                         style = MaterialTheme.typography.labelSmall,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             }
@@ -324,7 +324,7 @@ fun DebtPlannerScreen(
                     Text(
                         "Left out (no exchange rate to $base yet): ${state.unconverted.joinToString()}.",
                         style = MaterialTheme.typography.labelSmall,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             }
@@ -335,13 +335,13 @@ fun DebtPlannerScreen(
 @Composable
 private fun DebtRowCard(row: PlannerDebtRow, onApr: (String) -> Unit, onMinimum: (String) -> Unit) {
     val c = row.candidate
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column {
             Text(c.name, style = MaterialTheme.typography.titleSmall)
             Text(
-                "Owes ${c.owed.asMoney(c.currencyCode)}",
+                "Owes ${moneyLabel(c.owed, c.currencyCode)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = ObsidianTokens.debit,
+                color = MMTheme.colors.danger,
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -373,8 +373,8 @@ private fun DebtRowCard(row: PlannerDebtRow, onApr: (String) -> Unit, onMinimum:
 
 @Composable
 private fun PlanCard(title: String, plan: DebtPayoffSimulator.Plan, money: (BigDecimal) -> String, best: Boolean) {
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column {
             Text(title + if (best) "  ★" else "", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))
             val headline = when (plan.outcome) {
@@ -394,7 +394,7 @@ private fun PlanCard(title: String, plan: DebtPayoffSimulator.Plan, money: (BigD
                     Text(
                         "${i + 1}. ${d.name}: paid off in month ${d.payoffMonth} (${money(d.interestPaid)} interest)",
                         style = MaterialTheme.typography.labelSmall,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             }
