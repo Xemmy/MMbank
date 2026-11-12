@@ -107,6 +107,8 @@ fun TransactionDetailReviewCard(
     onSelectSuggestion: (CategorySuggestion) -> Unit,
     onMoreCategories: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Clears a pending AI suggestion without assigning a category; shown only while one is pending. */
+    onDismissSuggestion: (() -> Unit)? = null,
 ) {
     var smsExpanded by remember { mutableStateOf(false) }
     val amountDisplay = (if (transaction.direction == TransactionDirection.CREDIT) "+" else "-") +
@@ -199,6 +201,11 @@ fun TransactionDetailReviewCard(
                 onSelect = onSelectSuggestion,
                 onMoreCategories = onMoreCategories,
             )
+            if (onDismissSuggestion != null && transaction.needsCategoryApproval) {
+                androidx.compose.material3.TextButton(onClick = onDismissSuggestion) {
+                    Text("Dismiss suggestion")
+                }
+            }
         }
     }
 }

@@ -40,8 +40,7 @@ object SearchDestinations {
         SearchDestination("Monthly report", "statement month export", Routes.MONTHLY_REPORT),
         SearchDestination("Year in review", "annual yearly summary totals wrapped", Routes.YEAR_IN_REVIEW),
         SearchDestination("Copilot", "ask question chat assistant", Routes.COPILOT),
-        SearchDestination("To review", "review uncategorized queue inbox", Routes.REVIEW_TRANSACTIONS),
-        SearchDestination("Uncategorized", "categorize queue", Routes.UNCATEGORIZED_QUEUE),
+        SearchDestination("To review", "review uncategorized categorize queue inbox suggestions", Routes.REVIEW_TRANSACTIONS),
         SearchDestination("Compare with a bank statement", "reconcile csv statement missing transactions", Routes.STATEMENT_RECONCILE),
     )
 

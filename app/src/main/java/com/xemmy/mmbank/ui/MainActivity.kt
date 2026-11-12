@@ -119,7 +119,6 @@ import com.xemmy.mmbank.ui.screens.settings.SettingsScreen
 import com.xemmy.mmbank.ui.screens.splits.GroupDetailScreen
 import com.xemmy.mmbank.ui.screens.splits.SplitsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
-import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import com.xemmy.mmbank.ui.theme.ambientBackground
 import android.os.Build
@@ -466,8 +465,10 @@ private fun AppNavHost(
                 onOpenMerchant = { merchant -> navController.navigate(Routes.merchantDetail(Uri.encode(merchant))) },
             )
         }
-        composable("uncategorized_queue") {
-            UncategorizedQueueScreen(onBack = { navController.popBackStack() })
+        // The old standalone Uncategorized queue was merged into the Review inbox;
+        // the route stays so the Activity banner, the widget and notifications still land somewhere.
+        composable(Routes.UNCATEGORIZED_QUEUE) {
+            ReviewTransactionsScreen(onBack = { navController.popBackStack() })
         }
         composable("review_transactions") {
             ReviewTransactionsScreen(onBack = { navController.popBackStack() })

@@ -179,7 +179,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** Entry point into [UncategorizedQueueScreen] -- shown only while there's something to review. */
+/** Entry point into the To review inbox ([com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen]) -- shown only while there's something to review. */
 @Composable
 private fun UncategorizedBanner(count: Int, onClick: () -> Unit) {
     Card(

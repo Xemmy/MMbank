@@ -30,7 +30,6 @@ import com.xemmy.mmbank.ui.screens.splits.GroupDetailViewModel
 import com.xemmy.mmbank.ui.screens.splits.SplitsViewModel
 import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsViewModel
-import com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueViewModel
 
 /** Central factory wiring every ViewModel to the manual [AppContainer]. */
 object AppViewModelProvider {
@@ -45,7 +44,6 @@ object AppViewModelProvider {
         initializer { RuleEditorViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SettingsViewModel(mmBankApp().container) }
         initializer { ImportMessagesViewModel(mmBankApp().container) }
-        initializer { UncategorizedQueueViewModel(mmBankApp().container) }
         initializer { SubscriptionsViewModel(mmBankApp().container) }
         initializer { AnalyticsViewModel(mmBankApp().container) }
         initializer { GoalsViewModel(mmBankApp().container) }

@@ -8,7 +8,7 @@ import com.xemmy.mmbank.domain.model.Transaction
  * A one-tap category pick offered by [CategorySuggestionEngine]. [categoryId]
  * is null only for a not-yet-created pending AI suggestion -- assigning it
  * must create the [Category] first (mirrors the existing accept-suggestion
- * flow in [com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueViewModel]).
+ * flow in [com.xemmy.mmbank.ui.screens.review.ReviewViewModel]).
  */
 data class CategorySuggestion(
     val categoryId: Long?,

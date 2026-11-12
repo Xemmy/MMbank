@@ -45,7 +45,9 @@ import com.xemmy.mmbank.ui.screens.review.components.TransactionDetailReviewCard
 import com.xemmy.mmbank.ui.theme.MMTheme
 
 /**
- * High-detail Review Transactions screen: a batch-approval banner for
+ * The single "To review" inbox: every still-uncategorized transaction (the old
+ * separate Uncategorized queue was merged into this screen, and its route now
+ * opens it). High-detail Review Transactions screen: a batch-approval banner for
  * high-confidence pending suggestions, then one [TransactionDetailReviewCard]
  * per still-uncategorized transaction with its ranked one-tap category picks.
  * Assigning a category (chip tap, bottom-sheet pick, or batch approval) drops
@@ -95,6 +97,7 @@ fun ReviewTransactionsScreen(
                         accountLabel = state.accounts.firstOrNull { it.id == transaction.accountId }?.name,
                         onSelectSuggestion = { suggestion -> viewModel.assignSuggestion(transaction, suggestion) },
                         onMoreCategories = { pickerFor = transaction },
+                        onDismissSuggestion = { viewModel.dismissSuggestion(transaction) },
                         modifier = Modifier.animateItem(),
                     )
                 }

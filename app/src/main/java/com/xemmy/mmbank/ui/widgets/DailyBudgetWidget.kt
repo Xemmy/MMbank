@@ -79,7 +79,7 @@ private suspend fun loadWidgetPacing(container: AppContainer): WidgetPacing {
 
 /**
  * Home screen widget: today's remaining safe-to-spend allowance plus a
- * shortcut into [com.xemmy.mmbank.ui.screens.transactions.UncategorizedQueueScreen].
+ * shortcut into [com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen].
  * Recomputed from the live ledger every time the OS refreshes the widget
  * (see `updatePeriodMillis` in daily_budget_widget_info.xml) — there is no
  * separate widget-only cache to go stale.
