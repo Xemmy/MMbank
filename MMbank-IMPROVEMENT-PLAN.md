@@ -793,11 +793,11 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **Phase 3 live status on Plan cards** ✅ 0.94.0 (CI run 43326950201 green): each Plan card shows one line of live status when there is something to say -- Budgets ("1 over budget · 2 near their cap" / "All 4 on track"), Bills ("1 overdue · 2 due this week" / "Next: Gym in 12 days"), Subscriptions ("5 active · AED 140.00/month", amounts honour hide-balances), Goals ("closest: Trip 80%") (`PlanStatus`, `PlanViewModel`). The budget numbers now come from one shared `BudgetStatusBuilder`, also used by the Budgets screen, so they cannot disagree. Debt/Splits/Rewards have no status yet. UI is not verified by CI.
 
-> **Phase 3 Settings "Notifications" group** ✅ 0.95.0: the four phone-notification switches (subscription renewals, bill due dates, unusual charges, weekly digest) moved out of the middle of Preferences into their own Settings → Notifications page, with an "N of 4 on" summary on the menu row and a search entry. Nothing changed about what they do. UI is not verified by CI.
+> **Phase 3 Settings "Notifications" group** ✅ 0.95.0 (CI run 43328478115 green): the four phone-notification switches (subscription renewals, bill due dates, unusual charges, weekly digest) moved out of the middle of Preferences into their own Settings → Notifications page, with an "N of 4 on" summary on the menu row and a search entry. Nothing changed about what they do. UI is not verified by CI.
 
-## Where things stand after 0.94.0
+## Where things stand after 0.95.0
 
-Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43326950201 for 0.94.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43328478115 for 0.95.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
 
 **Still open, grouped by what blocks it**
 
