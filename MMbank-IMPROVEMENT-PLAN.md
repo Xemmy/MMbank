@@ -783,20 +783,20 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.5 #4 envelope budgets** ✅ 0.89.0 (CI run 43315687558 green): Settings → Currency & preferences → "Carry unspent budget forward" (off by default). With it on, what a category's monthly cap didn't use is added to the next month's cap, up to 6 months back (`BudgetRollover`); overspending carries nothing and never creates debt; a category only starts accumulating in its first month of spend; a parent's envelope covers its sub-categories. The Budgets screen, the 80%/100% cap alerts and the weekly digest all use the same effective cap, and the Budgets row says "Includes X carried over". Also fixed: the Home "This week" card now converts foreign-currency spend toward caps like the notification path does (it had been missed in 0.78.0). UI is not verified by CI.
 
-> **B.2 fresh backup before prune** ✅ 0.90.0: the weekly retention prune now only deletes when an *encrypted* backup was exported in the last 30 days (`RetentionBackupGate`; each export stamps `lastBackupAt`; a CSV export doesn't count). Otherwise that run does nothing, and the retention preview under the history chips says so ("Pruning is paused until you export an encrypted backup" / "your last backup is N days old"). Existing installs have no stamp yet, so pruning stays paused until their first export after this version. Still open in B.2: scheduled automatic backups (#67).
+> **B.2 fresh backup before prune** ✅ 0.90.0 (CI run 43317469306 green): the weekly retention prune now only deletes when an *encrypted* backup was exported in the last 30 days (`RetentionBackupGate`; each export stamps `lastBackupAt`; a CSV export doesn't count). Otherwise that run does nothing, and the retention preview under the history chips says so ("Pruning is paused until you export an encrypted backup" / "your last backup is N days old"). Existing installs have no stamp yet, so pruning stays paused until their first export after this version. Still open in B.2: scheduled automatic backups (#67).
 
-## Where things stand after 0.85.1
+## Where things stand after 0.90.0
 
-Every batch above is verified by a green CI run (unit tests and a built APK). The latest is run 43304628317 for 0.85.1. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest is run 43317469306 for 0.90.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
 
 **Still open, grouped by what blocks it**
 
 *Needs UI work that CI cannot check (build it, then look at it on a device):*
 - Phase 3: nested nav graphs, Activity list-detail on tablets, one merged "To review" inbox, live status on Plan cards, a Settings "Notifications" group, per-form Save.
-- B.5: Quick Settings tile / notification quick-add, global search, statement reconcile (bank CSV diff), envelope budgets, year in review.
+- B.5: quick add (Quick Settings tile / notification action); month-over-month deltas on every headline number (#38).
 - B.4 consolidation: one Recurring model (bills + subscriptions + card dues), one People list, goals-only (drop the duplicate Home card), cashback onto user categories.
-- B5 follow-ups: show the refund link on a transaction, a way to break it, "Also arrived by SMS" display and Split back out (B4).
-- B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings, per-sender stats, SMS inbox import at onboarding.
+- B5/B4 follow-ups: show and break the refund link on a transaction; "Also arrived by SMS" display and Split back out (these need the link/merge stored, so also a schema change).
+- B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings, per-sender stats.
 - Phases 1/2/4/5/6 design track: Roborazzi screenshots, onboarding, notifications/widget/icon/splash, accessibility and localisation (Arabic/RTL, string resources).
 
 *Needs a schema change (so a v34 migration plus its test):*
@@ -804,8 +804,9 @@ Every batch above is verified by a green CI run (unit tests and a built APK). Th
 - B2 part 4: per-transaction historical conversion in Insights (only worth it once rate history has accumulated).
 
 *Needs a decision or a device from the owner:*
-- Scheduled automatic backups (#67) need a chosen folder (SAF) and a backup-key policy; "require a fresh backup before prune".
+- Scheduled automatic backups (#67): a chosen folder (SAF) and a backup-key policy.
+- SMS inbox import at onboarding (#11): a new READ_SMS permission and a privacy decision.
 - Swapping the Transactions list onto the design-system `TransactionRow`; a colour picker for `accentColor`; device checks 0.3 / 0.4.
 
-**Not covered by CI (to check on a device):** tab bar and gear placement, the tablet rail, AI notice look, the retention-preview refresh timing, predictive-back preview (Android 14+), transition feel, the "≈" note and the Budgets "not counted" notice as rendered, the real Room v32→v33 migration, and a live request to an online AI provider with redaction on.
+**Not covered by CI (to check on a device):** tab bar, gear and search placement, the tablet rail, AI notice look, the retention-preview text and refresh timing, predictive-back preview (Android 14+), transition feel, the "≈" note and the Budgets "not counted" / "carried over" notices as rendered, the global-search, statement-compare and year-in-review screens, the real Room v32→v33 migration, a live request to an online AI provider with redaction on, and the weekly prune actually running once a backup exists.
 
