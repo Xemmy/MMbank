@@ -210,6 +210,8 @@ data class Account(
      * [com.xemmy.mmbank.domain.account.AccountNumberMatcher]).
      */
     val cardEndings: String? = null,
+    /** Optional user-picked ARGB colour tinting this account's card and row accents; null = theme default. */
+    val accentColor: Int? = null,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement

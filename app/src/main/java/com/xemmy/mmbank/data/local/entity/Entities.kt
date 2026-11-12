@@ -64,6 +64,8 @@ data class AccountEntity(
     val creditLimit: BigDecimal? = null,
     /** See [Account.cardEndings]. */
     val cardEndings: String? = null,
+    /** See [Account.accentColor]. */
+    val accentColor: Int? = null,
 )
 
 @Entity(tableName = "sender_labels")
@@ -420,14 +422,14 @@ fun AccountEntity.toDomain() = Account(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings,
+    statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings, accentColor,
 )
 
 fun Account.toEntity() = AccountEntity(
     id, name, type, currencyCode, openingBalance, archived, notes, createdAt, accountNumber,
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
-    statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings,
+    statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings, accentColor,
 )
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)

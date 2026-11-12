@@ -61,6 +61,11 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
 
+    /** v32: optional per-account accent colour (ARGB int). Purely additive: one nullable column. */
+    val MIGRATION_31_32_SQL: List<String> = listOf(
+        "ALTER TABLE `accounts` ADD COLUMN `accentColor` INTEGER",
+    )
+
     /** v31: bills remember the day of month they were set for. Purely additive: one nullable column. */
     val MIGRATION_30_31_SQL: List<String> = listOf(
         "ALTER TABLE `bills` ADD COLUMN `dueDayAnchor` INTEGER",

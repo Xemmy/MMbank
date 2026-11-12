@@ -73,7 +73,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         IgnoredMessagePatternEntity::class,
         IgnoredKeywordEntity::class,
     ],
-    version = 31,
+    version = 32,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -796,6 +796,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_29_30_SQL.forEach(db::execSQL)
         }
 
+        /** v31 -> v32: per-account accent colour (see [MigrationSql.MIGRATION_31_32_SQL]). */
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_31_32_SQL.forEach(db::execSQL)
+        }
+
         /** v30 -> v31: bills remember their due day (see [MigrationSql.MIGRATION_30_31_SQL]). */
         val MIGRATION_30_31 = object : Migration(30, 31) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_30_31_SQL.forEach(db::execSQL)
@@ -817,7 +822,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
-                    MIGRATION_29_30, MIGRATION_30_31,
+                    MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

@@ -94,6 +94,7 @@ class BackupMappersTest {
         hiddenFromDashboard = true,
         creditLimit = BigDecimal("20000.00"),
         cardEndings = "5555, 6666",
+        accentColor = 0xFFCC3366.toInt(),
     )
 
     @Test

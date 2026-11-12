@@ -68,6 +68,8 @@ data class BackupAccount(
     /** Absent (null) on backups from before format v8. */
     val creditLimit: String? = null,
     val cardEndings: String? = null,
+    /** Absent (null) on backups from before accent colours; no format gate needed. */
+    val accentColor: Int? = null,
 )
 
 @Serializable
@@ -546,6 +548,7 @@ internal fun AccountEntity.toBackup() = BackupAccount(
     hiddenFromDashboard = hiddenFromDashboard,
     creditLimit = creditLimit?.toPlainString(),
     cardEndings = cardEndings,
+    accentColor = accentColor,
 )
 
 internal fun BackupAccount.toEntity() = AccountEntity(
@@ -572,6 +575,7 @@ internal fun BackupAccount.toEntity() = AccountEntity(
     hiddenFromDashboard = hiddenFromDashboard,
     creditLimit = creditLimit?.let(::BigDecimal),
     cardEndings = cardEndings,
+    accentColor = accentColor,
 )
 
 internal fun TransactionEntity.toBackup() = BackupTransaction(

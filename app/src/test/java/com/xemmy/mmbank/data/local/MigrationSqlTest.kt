@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v31 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v32 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v31
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v32
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../31.json`), so
+ *     compiler exports during this same build (`app/schemas/.../32.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/31.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/31.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/32.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/32.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 31.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 32.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -62,11 +62,11 @@ class MigrationSqlTest {
         }
     }
 
-    /** Columns each table gained in 26-30; removed to rebuild the v25 shape. */
+    /** Columns each table gained in 26-31; removed to rebuild the v25 shape. */
     private val addedColumns = mapOf(
         "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind"),
         "parsing_rules" to listOf("assignKind"),
-        "accounts" to listOf("creditLimit", "cardEndings"),
+        "accounts" to listOf("creditLimit", "cardEndings", "accentColor"),
         "bills" to listOf("dueDayAnchor"),
     )
     private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords")
@@ -103,7 +103,8 @@ class MigrationSqlTest {
         (
             MigrationSql.MIGRATION_25_26_SQL + MigrationSql.MIGRATION_26_27_SQL +
                 MigrationSql.MIGRATION_27_28_SQL + MigrationSql.MIGRATION_28_29_SQL +
-                MigrationSql.MIGRATION_29_30_SQL + MigrationSql.MIGRATION_30_31_SQL
+                MigrationSql.MIGRATION_29_30_SQL + MigrationSql.MIGRATION_30_31_SQL +
+                MigrationSql.MIGRATION_31_32_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -144,7 +145,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v31 install table for table`() {
+    fun `an upgraded database matches a fresh v32 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->

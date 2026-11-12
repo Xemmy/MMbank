@@ -106,6 +106,7 @@ class EntityMappersTest {
         hiddenFromDashboard = hiddenFromDashboard,
         creditLimit = BigDecimal("15000.00"),
         cardEndings = "4321, 8765",
+        accentColor = 0xFF3366CC.toInt(),
     )
 
     @Test
