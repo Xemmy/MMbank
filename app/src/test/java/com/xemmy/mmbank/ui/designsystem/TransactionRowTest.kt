@@ -115,4 +115,12 @@ class TransactionRowTest {
     fun `excluded alpha is 60 percent`() {
         assertEquals(0.6f, EXCLUDED_ROW_ALPHA, 0f)
     }
+
+    @Test
+    fun `row is interactive on tap or long-press only`() {
+        assertFalse(transactionRowIsInteractive(hasClick = false, hasLongClick = false))
+        assertTrue(transactionRowIsInteractive(hasClick = true, hasLongClick = false))
+        assertTrue(transactionRowIsInteractive(hasClick = false, hasLongClick = true))
+        assertEquals("Select", LONG_CLICK_LABEL)
+    }
 }

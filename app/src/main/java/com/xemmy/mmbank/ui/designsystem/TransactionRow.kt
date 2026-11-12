@@ -1,7 +1,8 @@
 package com.xemmy.mmbank.ui.designsystem
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +24,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.MMSpacing
 import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.MMbankTheme
+import com.xemmy.mmbank.ui.theme.rowEdgeGlow
 
 /** Row heights from the plan: comfortable 72dp (two lines), compact 56dp (Home "Recent"). */
 enum class TransactionRowDensity(val minHeightDp: Int) {
@@ -109,11 +112,19 @@ fun transactionRowDescription(row: TransactionRowUi, hidden: Boolean): String {
     return parts.joinToString(", ")
 }
 
+/** True when the row needs a click target at all (tap or long-press). */
+fun transactionRowIsInteractive(hasClick: Boolean, hasLongClick: Boolean): Boolean = hasClick || hasLongClick
+
+/** TalkBack label announced for the long-press action (bulk select). */
+const val LONG_CLICK_LABEL = "Select"
+
 /**
  * The ledger row: leading tile, merchant, "category · account" subtitle with
  * status tags, and the amount over the time. The whole row is one TalkBack
- * sentence and, with [onClick], one button.
+ * sentence and, with [onClick], one button. [onLongClick] adds the long-press
+ * action (bulk select); [glowTone] paints the brand-origin edge glow (spec 5.3).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TransactionRow(
     row: TransactionRowUi,
@@ -121,13 +132,25 @@ fun TransactionRow(
     density: TransactionRowDensity = TransactionRowDensity.COMFORTABLE,
     leading: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    glowTone: GlowTone? = null,
 ) {
     val colors = MMTheme.colors
     val description = transactionRowDescription(row, LocalHideBalances.current)
     val tags = transactionRowTags(row)
-    val base = if (onClick != null) modifier.clickable(role = Role.Button, onClick = onClick) else modifier
+    val base = if (transactionRowIsInteractive(onClick != null, onLongClick != null)) {
+        modifier.combinedClickable(
+            role = Role.Button,
+            onLongClickLabel = if (onLongClick != null) LONG_CLICK_LABEL else null,
+            onLongClick = onLongClick,
+            onClick = onClick ?: {},
+        )
+    } else {
+        modifier
+    }
     Row(
         modifier = base
+            .rowEdgeGlow(glowTone)
             .fillMaxWidth()
             .alpha(if (row.isExcluded) EXCLUDED_ROW_ALPHA else 1f)
             .heightIn(min = density.minHeightDp.dp)
