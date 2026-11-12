@@ -46,8 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.intelligence.FinancialCopilotQueryHandler
@@ -58,13 +58,13 @@ import com.xemmy.mmbank.domain.intelligence.copilot.CopilotResponder
 import com.xemmy.mmbank.domain.intelligence.copilot.CopilotSuggestions
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.screens.dashboard.resolveCategory
 import com.xemmy.mmbank.ui.util.CurrencyMath
-import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.recoverAndRetry
-import kotlinx.coroutines.Dispatchers
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -174,7 +174,7 @@ class CopilotChatViewModel(private val container: AppContainer) : ViewModel() {
                         currencyCode = base,
                         today = today,
                         zone = zone,
-                        formatMoney = { it.asMoney(base) },
+                        formatMoney = { moneyLabel(it, base) },
                     )
                 }
                 ChatMessage(
@@ -348,7 +348,7 @@ private fun ChatBubble(message: ChatMessage, onOpenActivity: (String) -> Unit) {
         }
         Card(
             modifier = Modifier.widthIn(max = 300.dp),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(
                 containerColor = if (message.fromUser) {
                     MaterialTheme.colorScheme.primaryContainer

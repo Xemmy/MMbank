@@ -42,6 +42,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
 import com.xemmy.mmbank.ui.screens.review.components.BatchApprovalBanner
 import com.xemmy.mmbank.ui.screens.review.components.TransactionDetailReviewCard
+import com.xemmy.mmbank.ui.theme.MMTheme
 
 /**
  * High-detail Review Transactions screen: a batch-approval banner for
@@ -132,7 +133,7 @@ private fun ReviewEmptyState(modifier: Modifier = Modifier) {
                 Icon(
                     Icons.Filled.CheckCircle,
                     contentDescription = null,
-                    tint = Color(0xFF4CAF50),
+                    tint = MMTheme.colors.moneyIn,
                     modifier = Modifier.size(64.dp),
                 )
             }

@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,18 +43,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
-import com.xemmy.mmbank.domain.parser.AccountMatcher
 import com.xemmy.mmbank.domain.intelligence.MerchantProfiler
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.parser.AccountMatcher
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianCard
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.util.asDate
-import com.xemmy.mmbank.ui.util.asMoney
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -215,18 +215,18 @@ fun MerchantDetailScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ObsidianCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            MMCard(Modifier.fillMaxWidth()) {
+                Column {
                     Row {
-                        StatColumn("Total spent", profile.totalSpent.asMoney(profile.currencyCode), Modifier.weight(1f))
+                        StatColumn("Total spent", moneyLabel(profile.totalSpent, profile.currencyCode), Modifier.weight(1f))
                         StatColumn("Transactions", profile.transactionCount.toString(), Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(12.dp))
                     Row {
-                        StatColumn("Average", profile.averageAmount.asMoney(profile.currencyCode), Modifier.weight(1f))
+                        StatColumn("Average", moneyLabel(profile.averageAmount, profile.currencyCode), Modifier.weight(1f))
                         StatColumn(
                             "Range",
-                            "${profile.minAmount.asMoney(profile.currencyCode)} – ${profile.maxAmount.asMoney(profile.currencyCode)}",
+                            "${moneyLabel(profile.minAmount, profile.currencyCode)} – ${moneyLabel(profile.maxAmount, profile.currencyCode)}",
                             Modifier.weight(1f),
                         )
                     }
@@ -283,8 +283,8 @@ fun MerchantDetailScreen(
             }
 
             if (profile.monthlySeries.isNotEmpty()) {
-                ObsidianCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
+                MMCard(Modifier.fillMaxWidth()) {
+                    Column {
                         Text("Monthly spend", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(12.dp))
                         val maxValue = profile.monthlySeries.maxOf { it.total }.takeIf { it.signum() > 0 } ?: BigDecimal.ONE
@@ -310,9 +310,9 @@ fun MerchantDetailScreen(
                 }
             }
 
-            ObsidianCard(Modifier.fillMaxWidth()) {
+            MMCard(Modifier.fillMaxWidth()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -355,13 +355,14 @@ private fun StatColumn(label: String, value: String, modifier: Modifier = Modifi
 
 @Composable
 private fun MerchantChartBar(fraction: Float) {
+    val barColor = MMTheme.colors.moneyOut
     val barHeight = (fraction.coerceIn(0f, 1f) * 70).dp
     Box(
         Modifier
             .width(14.dp)
             .height(maxOf(barHeight, 2.dp))
             .background(
-                if (barHeight > 2.dp) ObsidianTokens.debit else MaterialTheme.colorScheme.surfaceVariant,
+                if (barHeight > 2.dp) barColor else MaterialTheme.colorScheme.surfaceVariant,
                 RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
             ),
     )

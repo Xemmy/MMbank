@@ -38,9 +38,9 @@ import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.screens.accounts.buildBalanceAdjustment
 import com.xemmy.mmbank.ui.util.asDate
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -162,7 +162,7 @@ fun IntegrityScreen(
                 val text = IntegrityWording.describe(
                     issue = issue,
                     accountName = issue.accountId?.let(names::get),
-                    money = { v, c -> v.asMoneyOrMask(c, hidden) },
+                    money = { v, c -> moneyLabel(v, c, hidden) },
                     date = { it.asDate() },
                 )
                 IssueCard(

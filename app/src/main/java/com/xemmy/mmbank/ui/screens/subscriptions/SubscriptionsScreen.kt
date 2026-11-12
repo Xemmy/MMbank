@@ -26,23 +26,23 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -200,7 +200,7 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, o
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    subscription.averageAmount.asMoney(subscription.currencyCode),
+                    moneyLabel(subscription.averageAmount, subscription.currencyCode),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -209,7 +209,7 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, o
                 subscription.previousAmount?.let { previous ->
                     val rose = subscription.averageAmount > previous
                     Text(
-                        (if (rose) "↑ was " else "↓ was ") + previous.asMoney(subscription.currencyCode),
+                        (if (rose) "↑ was " else "↓ was ") + moneyLabel(previous, subscription.currencyCode),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (rose) {
                             MaterialTheme.colorScheme.error

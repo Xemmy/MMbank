@@ -13,7 +13,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,19 +30,20 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.RuleCompiler
 import com.xemmy.mmbank.domain.parser.TransactionParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.LedgerColors
-import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -219,10 +219,10 @@ fun RuleEditorScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TransactionDirection.entries.forEach { entry ->
-                FilterChip(
+                MMFilterChip(
+                    label = entry.name,
                     selected = viewModel.direction == entry,
                     onClick = { viewModel.direction = entry },
-                    label = { Text(entry.name) },
                 )
             }
         }
@@ -326,7 +326,7 @@ fun RuleEditorScreen(
                         Text("No match", color = MaterialTheme.colorScheme.error)
                     } else {
                         Text("Match ✓", color = LedgerColors.credit, style = MaterialTheme.typography.titleSmall)
-                        Text("Amount: ${result.amount.asMoney(result.currencyCode)}")
+                        Text("Amount: ${moneyLabel(result.amount, result.currencyCode)}")
                         Text("Direction: ${result.direction.name}")
                         Text("Merchant: ${result.merchant ?: "—"}")
                         Text("Account: ${viewModel.assignedAccountName ?: "detected from message"}")

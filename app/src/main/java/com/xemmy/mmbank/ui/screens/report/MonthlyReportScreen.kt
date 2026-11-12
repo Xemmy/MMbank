@@ -40,11 +40,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.intelligence.NetWorthAggregator
+import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SavingsGoal
@@ -55,11 +55,11 @@ import com.xemmy.mmbank.domain.report.MonthlyReport
 import com.xemmy.mmbank.domain.report.MonthlyReportBuilder
 import com.xemmy.mmbank.domain.report.MonthlyReportHtmlFormatter
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianCard
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
-import com.xemmy.mmbank.ui.util.asMoney
 import java.math.BigDecimal
 import java.time.YearMonth
 import java.time.ZoneId
@@ -278,7 +278,7 @@ fun MonthlyReportScreen(
                         report?.monthLabel ?: state.month.toString(),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = ObsidianTokens.textPrimary,
+                        color = MMTheme.colors.textPrimary,
                         modifier = Modifier.weight(1f),
                         textAlign = TextAlign.Center,
                     )
@@ -379,8 +379,8 @@ fun MonthlyReportScreen(
 
 @Composable
 private fun SummaryCard(report: MonthlyReport) {
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             AmountRow("Income", report.income, report.currency, delta = report.incomeDelta, higherIsBetter = true)
             AmountRow("Spent", report.spent, report.currency, delta = report.spentDelta, higherIsBetter = false)
             AmountRow("Net", report.net, report.currency, strong = true)
@@ -391,8 +391,8 @@ private fun SummaryCard(report: MonthlyReport) {
 
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             MetaLabel(title)
             Spacer(Modifier.height(2.dp))
             content()
@@ -415,7 +415,7 @@ private fun AmountRow(
                 label,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal,
-                color = ObsidianTokens.textPrimary,
+                color = MMTheme.colors.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -425,17 +425,17 @@ private fun AmountRow(
                 val up = change.signum() > 0
                 val good = up == higherIsBetter
                 Text(
-                    (if (up) "▲ " else "▼ ") + change.abs().asMoney(currency) + " vs last month",
+                    (if (up) "▲ " else "▼ ") + moneyLabel(change.abs(), currency) + " vs last month",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (good) ObsidianTokens.credit else ObsidianTokens.debit,
+                    color = if (good) MMTheme.colors.moneyIn else MMTheme.colors.danger,
                 )
             }
         }
         Text(
-            amount.asMoney(currency),
+            moneyLabel(amount, currency),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal,
-            color = ObsidianTokens.textPrimary,
+            color = MMTheme.colors.textPrimary,
         )
     }
 }

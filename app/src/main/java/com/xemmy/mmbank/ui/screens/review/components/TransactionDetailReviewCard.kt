@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -36,21 +35,20 @@ import androidx.compose.ui.unit.dp
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.CategorySuggestion
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.screens.review.ConfidenceLevel
+import com.xemmy.mmbank.ui.theme.MMColors
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.util.asDateTime
-import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.asQuantity
 
-private val ConfidenceGreen = Color(0xFF4CAF50)
-private val ConfidenceYellow = Color(0xFFF9A825)
-private val ConfidenceRed = Color(0xFFEF5350)
-private val HighlightColor = Color(0xFFFFF59D)
-private val HighlightTextColor = Color(0xFF1B1B1F)
+/** Alpha of the tinted background behind highlighted amount/merchant text in the raw message. */
+private const val HIGHLIGHT_ALPHA = 0.35f
 
-private fun ConfidenceLevel.color(): Color = when (this) {
-    ConfidenceLevel.HIGH -> ConfidenceGreen
-    ConfidenceLevel.MEDIUM -> ConfidenceYellow
-    ConfidenceLevel.LOW -> ConfidenceRed
+private fun ConfidenceLevel.color(colors: MMColors): Color = when (this) {
+    ConfidenceLevel.HIGH -> colors.moneyIn
+    ConfidenceLevel.MEDIUM -> colors.warning
+    ConfidenceLevel.LOW -> colors.danger
 }
 
 private fun confidenceLabel(score: Int?): String = "${score ?: 0}% confident"
@@ -112,7 +110,7 @@ fun TransactionDetailReviewCard(
 ) {
     var smsExpanded by remember { mutableStateOf(false) }
     val amountDisplay = (if (transaction.direction == TransactionDirection.CREDIT) "+" else "-") +
-        transaction.amount.asMoney(transaction.currencyCode)
+        moneyLabel(transaction.amount, transaction.currencyCode)
 
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -152,7 +150,7 @@ fun TransactionDetailReviewCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(MaterialTheme.shapes.extraSmall)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
@@ -179,8 +177,15 @@ fun TransactionDetailReviewCard(
                     )
                 }
                 AnimatedVisibility(visible = smsExpanded) {
+                    val highlightBackground = MMTheme.colors.warning.copy(alpha = HIGHLIGHT_ALPHA)
                     Text(
-                        highlightedSmsText(raw, transaction.amount.asQuantity(), transaction.merchant),
+                        highlightedSmsText(
+                            raw,
+                            transaction.amount.asQuantity(),
+                            transaction.merchant,
+                            highlightBackground,
+                            MMTheme.colors.textPrimary,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 6.dp),
                     )
@@ -200,23 +205,29 @@ fun TransactionDetailReviewCard(
 
 @Composable
 private fun ConfidenceChip(level: ConfidenceLevel, score: Int?) {
-    val color = level.color()
+    val color = level.color(MMTheme.colors)
     Text(
         confidenceLabel(score),
         style = MaterialTheme.typography.labelMedium,
         color = color,
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(color.copy(alpha = 0.15f))
             .padding(horizontal = 8.dp, vertical = 4.dp),
     )
 }
 
-private fun highlightedSmsText(raw: String, amount: String, merchant: String?) = buildAnnotatedString {
+private fun highlightedSmsText(
+    raw: String,
+    amount: String,
+    merchant: String?,
+    highlightBackground: Color,
+    highlightText: Color,
+) = buildAnnotatedString {
     append(raw)
     highlightRanges(raw, amount, merchant).forEach { range ->
         addStyle(
-            SpanStyle(background = HighlightColor, color = HighlightTextColor, fontWeight = FontWeight.SemiBold),
+            SpanStyle(background = highlightBackground, color = highlightText, fontWeight = FontWeight.SemiBold),
             range.first,
             (range.last + 1).coerceAtMost(raw.length),
         )
