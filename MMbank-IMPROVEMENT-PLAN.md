@@ -818,6 +818,7 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 *Needs a decision or a device from the owner:*
 - Scheduled automatic backups (#67): a chosen folder (SAF) and a backup-key policy.
 - SMS inbox import at onboarding (#11): a new READ_SMS permission and a privacy decision.
+- Goals consolidation (B.4): the Insights "Savings goal" card measures progress by your **total net worth** against a target, while the Goals screen tracks a **manually entered amount** per goal. Folding one into the other changes what "progress" means for anyone with an existing goal, so it needs a choice: keep the net-worth meaning (e.g. as an optional "track against net worth" goal type) or switch the card to the top Goals-screen goal and migrate the old target as a manual goal.
 - Swapping the Transactions list onto the design-system `TransactionRow`; a colour picker for `accentColor`; device checks 0.3 / 0.4.
 
 **Not covered by CI (to check on a device):** tab bar, gear and search placement, the tablet rail, AI notice look, the retention-preview text and refresh timing, predictive-back preview (Android 14+), transition feel, the "≈" note and the Budgets "not counted" / "carried over" notices as rendered, the global-search, statement-compare and year-in-review screens, the real Room v32→v33 migration, a live request to an online AI provider with redaction on, and the weekly prune actually running once a backup exists.
