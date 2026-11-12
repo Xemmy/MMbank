@@ -1,89 +1,14 @@
 package com.xemmy.mmbank.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.xemmy.mmbank.domain.model.DesignMode
-
-private val DarkColors = darkColorScheme(
-    primary = PrimaryElectric,
-    onPrimary = OnPrimaryElectric,
-    primaryContainer = PrimaryContainerDark,
-    onPrimaryContainer = OnPrimaryContainerDark,
-    inversePrimary = PrimaryContainerLight,
-    secondary = SecondaryDark,
-    onSecondary = OnSecondaryDark,
-    secondaryContainer = SecondaryContainerDark,
-    onSecondaryContainer = OnSecondaryContainerDark,
-    tertiary = TertiaryDark,
-    onTertiary = OnTertiaryDark,
-    tertiaryContainer = TertiaryContainerDark,
-    onTertiaryContainer = OnTertiaryContainerDark,
-    background = DarkSurface,
-    onBackground = DarkOnSurface,
-    surface = DarkSurface,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceContainer,
-    onSurfaceVariant = DarkOnSurfaceVariant,
-    surfaceContainerLowest = DarkSurfaceContainerLowest,
-    surfaceContainerLow = DarkSurfaceContainerLow,
-    surfaceContainer = DarkSurfaceContainer,
-    surfaceContainerHigh = DarkSurfaceContainerHigh,
-    surfaceContainerHighest = DarkSurfaceContainerHighest,
-    outline = DarkOutline,
-    outlineVariant = DarkOutlineVariant,
-    error = ErrorDark,
-    onError = OnErrorDark,
-    errorContainer = ErrorContainerDark,
-    onErrorContainer = OnErrorContainerDark,
-    inverseSurface = DarkOnSurface,
-    inverseOnSurface = DarkSurface,
-    scrim = Color.Black,
-)
-
-private val LightColors = lightColorScheme(
-    primary = PrimaryElectric,
-    onPrimary = OnPrimaryElectric,
-    primaryContainer = PrimaryContainerLight,
-    onPrimaryContainer = OnPrimaryContainerLight,
-    inversePrimary = PrimaryContainerDark,
-    secondary = SecondaryLight,
-    onSecondary = OnSecondaryLight,
-    secondaryContainer = SecondaryContainerLight,
-    onSecondaryContainer = OnSecondaryContainerLight,
-    tertiary = TertiaryLight,
-    onTertiary = OnTertiaryLight,
-    tertiaryContainer = TertiaryContainerLight,
-    onTertiaryContainer = OnTertiaryContainerLight,
-    background = LightSurface,
-    onBackground = LightOnSurface,
-    surface = LightSurface,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceContainer,
-    onSurfaceVariant = LightOnSurfaceVariant,
-    surfaceContainerLowest = LightSurfaceContainerLowest,
-    surfaceContainerLow = LightSurfaceContainerLow,
-    surfaceContainer = LightSurfaceContainer,
-    surfaceContainerHigh = LightSurfaceContainerHigh,
-    surfaceContainerHighest = LightSurfaceContainerHighest,
-    outline = LightOutline,
-    outlineVariant = LightOutlineVariant,
-    error = ErrorLight,
-    onError = OnErrorLight,
-    errorContainer = ErrorContainerLight,
-    onErrorContainer = OnErrorContainerLight,
-    inverseSurface = LightOnSurface,
-    inverseOnSurface = LightSurface,
-    scrim = Color.Black,
-)
 
 /**
  * Financial-status semantic tokens (Zero-Conflict Color System spec). Resolved
@@ -162,11 +87,12 @@ val LocalDesignMode = staticCompositionLocalOf { DesignMode.CLASSIC }
 @Composable
 fun MMbankTheme(
     designMode: DesignMode = DesignMode.CLASSIC,
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColors else LightColors
-    CompositionLocalProvider(LocalDesignMode provides designMode) {
+    val mmColors = if (darkTheme) darkMMColors() else lightMMColors()
+    val colorScheme = mmColors.toColorScheme()
+    CompositionLocalProvider(LocalDesignMode provides designMode, LocalMMColors provides mmColors) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = ObsidianTypography,

@@ -26,7 +26,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -120,9 +122,22 @@ class MainActivity : FragmentActivity() {
         applySecureScreen(container.secureScreen.value)
         setContent {
             val designMode by container.designMode.collectAsStateWithLifecycle()
+            val themeMode by container.themeMode.collectAsStateWithLifecycle()
+            val darkTheme = themeMode.resolve(isSystemInDarkTheme())
+            // Keep status/nav-bar icon appearance in sync with the theme.
+            DisposableEffect(darkTheme) {
+                val transparent = android.graphics.Color.TRANSPARENT
+                enableEdgeToEdge(
+                    statusBarStyle = if (darkTheme) SystemBarStyle.dark(transparent)
+                    else SystemBarStyle.light(transparent, transparent),
+                    navigationBarStyle = if (darkTheme) SystemBarStyle.dark(transparent)
+                    else SystemBarStyle.light(transparent, transparent),
+                )
+                onDispose {}
+            }
             val secureScreen by container.secureScreen.collectAsStateWithLifecycle()
             LaunchedEffect(secureScreen) { applySecureScreen(secureScreen) }
-            MMbankTheme(designMode = designMode, darkTheme = true) {
+            MMbankTheme(designMode = designMode, darkTheme = darkTheme) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
                 Box {

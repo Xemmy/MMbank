@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
+import com.xemmy.mmbank.domain.model.ThemeMode
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,7 +49,37 @@ fun AppearanceSettingsScreen(
     viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val current by viewModel.backgroundStyle.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     SettingsSubpage(title = "Appearance & Backgrounds", onBack = onBack) {
+        Text("Theme", style = MaterialTheme.typography.titleSmall)
+        Column(Modifier.selectableGroup()) {
+            ThemeMode.entries.forEach { mode ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .selectable(selected = mode == themeMode, role = Role.RadioButton, onClick = { viewModel.setThemeMode(mode) })
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RadioButton(selected = mode == themeMode, onClick = null)
+                    Text(
+                        when (mode) {
+                            ThemeMode.DARK -> "Dark"
+                            ThemeMode.LIGHT -> "Light (beta)"
+                            ThemeMode.SYSTEM -> "Follow system"
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
+        }
+        Text(
+            "Light is a beta: screens move over to it one by one, so some may still look dark.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             "An ultra-subtle ambient glow behind the app. Pick a style below — it applies instantly.",
             style = MaterialTheme.typography.bodySmall,

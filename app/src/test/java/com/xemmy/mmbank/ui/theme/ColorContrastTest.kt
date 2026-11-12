@@ -101,4 +101,32 @@ class ColorContrastTest {
         val ratio = contrastRatio(OnPrimaryElectric, PrimaryElectric)
         assertTrue(ratio in 4.0f..4.5f)
     }
+
+    // -- Semantic MMColors tokens (Improvement Plan §1.1), both themes -------------
+
+    private fun semantic(c: MMColors) {
+        val text = mapOf(
+            "textPrimary" to c.textPrimary, "textSecondary" to c.textSecondary,
+            "moneyIn" to c.moneyIn, "moneyOut" to c.moneyOut, "moneyNeutral" to c.moneyNeutral,
+            "danger" to c.danger, "warning" to c.warning, "info" to c.info,
+            "brandGold" to c.brandGold, "brandTeal" to c.brandTeal, "accent" to c.accent,
+        )
+        for ((name, color) in text) {
+            for ((sn, surf) in listOf("canvas" to c.canvas, "surface" to c.surface, "surfaceRaised" to c.surfaceRaised)) {
+                val r = contrastRatio(color, surf)
+                assertTrue("dark=${c.isDark} $name on $sn = $r", r >= AA)
+            }
+        }
+        // Tertiary is for captions on the two base surfaces only.
+        assertTrue(contrastRatio(c.textTertiary, c.canvas) >= AA)
+        assertTrue(contrastRatio(c.textTertiary, c.surface) >= AA)
+        // Filled primary buttons.
+        assertTrue("onAccent on accent", contrastRatio(c.onAccent, c.accent) >= AA)
+    }
+
+    @Test
+    fun `dark semantic tokens clear AA`() = semantic(darkMMColors())
+
+    @Test
+    fun `light semantic tokens clear AA`() = semantic(lightMMColors())
 }

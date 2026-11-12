@@ -4538,3 +4538,10 @@ First delivery from MMbank-IMPROVEMENT-PLAN.md (Phase 0).
 
 ### Not covered by CI
 Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lock screen, Recents thumbnail, haptics, BackHandler, the notification permission flow, and all rendering.
+
+## Phase 18.25 — Tokens 2.0 + ThemeMode (0.63.0)
+- New semantic colour layer `MMColors` (`darkMMColors()` / `lightMMColors()`, read via `MMTheme.colors`) over `Palette.kt` primitives; the Material `ColorScheme` is now derived from it (`toColorScheme()`). Primary is `#818CF8` on `#0B0E14` (dark) and `#4F46E5` on white (light), which fixes the 4.47:1 primary.
+- `ThemeMode` (Dark default / Light beta / System): `AppContainer.themeMode` flow, Settings → Appearance radio group, system-bar icons follow the theme.
+- Screens still read `ObsidianTokens`, so Light is a beta until they migrate (plan steps 6–11).
+- Tests: `MMColorsTest`, `ThemeModeTest`, semantic-pair cases in `ColorContrastTest`.
+- **Not covered by CI:** how Light actually renders, bar icon appearance, the radio group.

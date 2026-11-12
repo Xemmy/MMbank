@@ -4,6 +4,7 @@ import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 
 /** Non-sensitive app settings. */
@@ -180,6 +181,11 @@ class AppPreferences(context: Context) {
     var aiBudgetDayCount: Int
         get() = prefs.getInt(KEY_AI_BUDGET_DAY_COUNT, 0)
         set(value) = prefs.edit().putInt(KEY_AI_BUDGET_DAY_COUNT, value).apply()
+
+    /** App theme (Dark / Light / System). Dark by default; unknown stored values fall back to Dark. */
+    var themeMode: ThemeMode
+        get() = ThemeMode.fromStored(prefs.getString(KEY_THEME_MODE, null))
+        set(value) = prefs.edit().putString(KEY_THEME_MODE, value.name).apply()
 
     /**
      * Classic vs Premium (AGSL AI-parsing indicator + springier motion on top
@@ -452,6 +458,7 @@ class AppPreferences(context: Context) {
         const val KEY_FIXED_MONTHLY_EXPENSES = "fixed_monthly_expenses"
         const val KEY_PAYCHECK_DAY_OF_MONTH = "paycheck_day_of_month"
         const val KEY_DESIGN_MODE = "design_mode"
+        const val KEY_THEME_MODE = "theme_mode"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
         const val KEY_BACKGROUND_PRESET = "background_preset"
         const val KEY_CATEGORY_BUDGET_ALERTS = "category_budget_alerts"

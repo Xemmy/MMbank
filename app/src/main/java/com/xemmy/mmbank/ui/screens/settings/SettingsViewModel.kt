@@ -104,6 +104,7 @@ import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -162,6 +163,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     var transactionRetentionMonths by mutableStateOf(container.preferences.transactionRetentionMonths)
         private set
+
+    val themeMode: StateFlow<ThemeMode> = container.themeMode
+    fun setThemeMode(mode: ThemeMode) = container.setThemeMode(mode)
 
     // Classic vs Premium: a reactive flow (not a mutableStateOf snapshot) since
     // the root theme wrapper, the AI-parsing indicator and the transaction

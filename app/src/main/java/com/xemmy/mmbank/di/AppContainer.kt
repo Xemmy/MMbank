@@ -87,6 +87,7 @@ import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.DesignMode
+import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -150,6 +151,16 @@ class AppContainer(context: Context) {
     }
 
     fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
+
+    // Single reactive source of truth for the Dark/Light/System theme: every
+    // screen renders through it, so it's a container-level flow.
+    private val _themeMode by lazy { MutableStateFlow(preferences.themeMode) }
+    val themeMode: StateFlow<ThemeMode> by lazy { _themeMode.asStateFlow() }
+
+    fun setThemeMode(mode: ThemeMode) {
+        preferences.themeMode = mode   // persist across restarts
+        _themeMode.value = mode        // notify all collectors live
+    }
 
     // Single reactive source of truth for Classic vs Premium design mode. The
     // toggle lives in Settings but the root theme wrapper (MainActivity), the
