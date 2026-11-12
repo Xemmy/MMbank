@@ -15,13 +15,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,7 +42,11 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.DonutChart
 import com.xemmy.mmbank.ui.components.PacingArcGauge
 import com.xemmy.mmbank.ui.screens.dashboard.RecentTransactionRow
-import com.xemmy.mmbank.ui.theme.ObsidianCard
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.Instant
 import java.time.LocalDate
@@ -88,15 +90,15 @@ fun AnalyticsScreen(
         }
 
         item(key = "heatmap") {
-            ObsidianCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            MMCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
                     Text("Daily spend", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(10.dp))
                     if (state.dailySpend.isEmpty()) {
                         Text(
                             "No days in range.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MMTheme.colors.textSecondary,
                         )
                     } else {
                         SpendingHeatmap(
@@ -130,7 +132,7 @@ fun AnalyticsScreen(
                 Text(
                     "No spend to show here.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
         } else {
@@ -148,26 +150,26 @@ fun AnalyticsScreen(
 private fun AnalyticsDateRangeRow(selected: AnalyticsDateRange, onSelect: (AnalyticsDateRange) -> Unit) {
     var customOpen by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        FilterChip(
+        MMFilterChip(
+            label = "Daily",
             selected = selected == AnalyticsDateRange.Daily,
             onClick = { onSelect(AnalyticsDateRange.Daily) },
-            label = { Text("Daily") },
         )
-        FilterChip(
+        MMFilterChip(
+            label = "Weekly",
             selected = selected == AnalyticsDateRange.Weekly,
             onClick = { onSelect(AnalyticsDateRange.Weekly) },
-            label = { Text("Weekly") },
         )
-        FilterChip(
+        MMFilterChip(
+            label = "Monthly",
             selected = selected == AnalyticsDateRange.Monthly,
             onClick = { onSelect(AnalyticsDateRange.Monthly) },
-            label = { Text("Monthly") },
         )
         val isCustom = selected is AnalyticsDateRange.Custom
-        FilterChip(
+        MMFilterChip(
+            label = "Custom",
             selected = isCustom,
             onClick = { customOpen = true },
-            label = { Text("Custom") },
         )
     }
 
@@ -217,8 +219,8 @@ private fun AnalyticsCustomRangeDialog(
 
 @Composable
 private fun PacingGaugeCard(state: AnalyticsUiState) {
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             PacingArcGauge(
                 spent = state.pacing.spentToday,
                 allowance = state.pacing.allowance,
@@ -232,14 +234,14 @@ private fun PacingGaugeCard(state: AnalyticsUiState) {
                     "${state.pacing.spentToday.asMoneyOrMask(state.pacing.currencyCode, state.hideBalances)} of " +
                         "${state.pacing.allowance.asMoneyOrMask(state.pacing.currencyCode, state.hideBalances)} allowance",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
                 if (state.pacing.allowance > 0.0) {
                     val percent = (state.pacing.spentToday / state.pacing.allowance * 100.0).roundToInt()
                     Text(
                         "$percent% of today's allowance used",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             }
@@ -250,8 +252,8 @@ private fun PacingGaugeCard(state: AnalyticsUiState) {
 @Composable
 private fun CategoryDonutCard(state: AnalyticsUiState) {
     val slices = state.categorySlices
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Spend by category", style = MaterialTheme.typography.titleSmall)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -265,14 +267,17 @@ private fun CategoryDonutCard(state: AnalyticsUiState) {
                             Box(
                                 Modifier
                                     .size(10.dp)
-                                    .background(Color(slice.color), RoundedCornerShape(3.dp)),
+                                    .background(Color(slice.color), MaterialTheme.shapes.extraSmall),
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(slice.name, style = MaterialTheme.typography.bodySmall)
                             Spacer(Modifier.width(12.dp))
-                            Text(
-                                slice.amount.asMoneyOrMask(state.baseCurrency, state.hideBalances),
+                            MoneyText(
+                                amount = slice.amount,
+                                currencyCode = state.baseCurrency,
+                                kind = TransactionKind.TRANSFER,
                                 style = MaterialTheme.typography.bodySmall,
+                                hidden = state.hideBalances,
                             )
                         }
                     }
