@@ -763,4 +763,18 @@ class EntityMappersTest {
         assertEquals("2026-11-12", entity.day)
         assertEquals(domain, entity.toDomain())
     }
+
+    @Test
+    fun `transaction category and person sources round-trip through the entity`() {
+        val domain = com.xemmy.mmbank.domain.model.Transaction(
+            amount = BigDecimal("10.00"), currencyCode = "AED", direction = TransactionDirection.DEBIT,
+            source = TransactionSource.SMS, timestampMillis = 1L,
+            categorySource = com.xemmy.mmbank.domain.model.AssignmentSource.KEYWORD,
+            personSource = com.xemmy.mmbank.domain.model.AssignmentSource.LEARNED,
+        )
+        val entity = domain.toEntity()
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.KEYWORD, entity.categorySource)
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.LEARNED, entity.personSource)
+        assertEquals(domain, entity.toDomain())
+    }
 }

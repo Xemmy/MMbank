@@ -757,6 +757,13 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 accountId = accountId,
                 person = person,
                 categoryId = categoryId,
+                // Changing either in the form is the user's decision; leaving it alone decides nothing.
+                categorySource = com.xemmy.mmbank.domain.model.AssignmentSource.afterEdit(
+                    original.categorySource, original.categoryId, categoryId,
+                ),
+                personSource = com.xemmy.mmbank.domain.model.AssignmentSource.afterEdit(
+                    original.personSource, original.person?.takeIf { it.isNotBlank() }, person?.takeIf { it.isNotBlank() },
+                ),
                 spendingCategory = resolveLegacySpendingCategory(categoryId),
                 timestampMillis = timestampMillis,
                 excludeFromStats = excludeFromStats,

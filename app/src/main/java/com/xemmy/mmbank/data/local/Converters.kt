@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.local
 import androidx.room.TypeConverter
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.BillRecurrence
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.SplitType
@@ -42,6 +43,13 @@ class Converters {
     @TypeConverter
     fun stringToKind(value: String?): TransactionKind? =
         value?.let { n -> TransactionKind.entries.firstOrNull { it.name == n } }
+
+    @TypeConverter
+    fun assignmentSourceToString(value: AssignmentSource?): String? = value?.name
+
+    @TypeConverter
+    fun stringToAssignmentSource(value: String?): AssignmentSource? =
+        value?.let { n -> AssignmentSource.entries.firstOrNull { it.name == n } } ?: AssignmentSource.DEFAULT
 
     @TypeConverter
     fun reportedBalanceKindToString(value: ReportedBalanceKind?): String? = value?.name

@@ -185,7 +185,11 @@ interface TransactionDao {
     )
     suspend fun assignAccountByRuleName(ruleName: String, accountId: Long): Int
 
-    @Query("UPDATE transactions SET person = :person WHERE id = :transactionId")
+    /** A person set here is the user's choice; clearing it hands the row back to the default. */
+    @Query(
+        "UPDATE transactions SET person = :person, " +
+            "personSource = CASE WHEN :person IS NULL THEN 'DEFAULT' ELSE 'USER' END WHERE id = :transactionId"
+    )
     suspend fun setPerson(transactionId: Long, person: String?)
 
     @Query("UPDATE transactions SET spendingCategory = :category WHERE id = :transactionId")
@@ -220,7 +224,10 @@ interface TransactionDao {
     suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
 
     /** Multi-select edit: assigns (or clears, when null) the person on every row in [ids] at once. Returns affected count. */
-    @Query("UPDATE transactions SET person = :person WHERE id IN (:ids)")
+    @Query(
+        "UPDATE transactions SET person = :person, " +
+            "personSource = CASE WHEN :person IS NULL THEN 'DEFAULT' ELSE 'USER' END WHERE id IN (:ids)"
+    )
     suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int
 
     // --- Dynamic category assignment (see CategoryRepository / CategoryMatcher) ---
@@ -228,6 +235,7 @@ interface TransactionDao {
     /** Assigns a dynamic category and clears any pending AI suggestion on the row (manual pick or accept). */
     @Query(
         "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "categorySource = CASE WHEN :categoryId IS NULL THEN 'DEFAULT' ELSE 'USER' END, " +
             "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
             "WHERE id = :transactionId"
     )
@@ -236,6 +244,7 @@ interface TransactionDao {
     /** Multi-select edit: assigns (or clears, when null) a dynamic category on every row in [ids] at once. Returns affected count. */
     @Query(
         "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "categorySource = CASE WHEN :categoryId IS NULL THEN 'DEFAULT' ELSE 'USER' END, " +
             "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
             "WHERE id IN (:ids)"
     )
@@ -260,6 +269,7 @@ interface TransactionDao {
      */
     @Query(
         "UPDATE transactions SET categoryId = :newCategoryId, needsCategoryApproval = 0, " +
+            "categorySource = CASE WHEN :newCategoryId IS NULL THEN 'DEFAULT' ELSE 'USER' END, " +
             "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
             "WHERE categoryId = :oldCategoryId AND isDemo = :demo"
     )
@@ -267,13 +277,18 @@ interface TransactionDao {
 
     /**
      * Backfills a newly learned/confirmed merchant->category rule onto every
-     * still-uncategorized real row from that merchant (mirrors
-     * [assignAccountByRuleName]'s backfill pattern). Returns the count.
+     * row from that merchant that is still uncategorized OR was categorized by
+     * the app's own guess (a keyword match, an earlier learned rule, an AI
+     * suggestion) -- never one the user chose themselves (`USER`, which is
+     * also what every pre-existing categorized row was marked as when
+     * categorySource was added). Returns the count.
      */
     @Query(
         "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "categorySource = 'LEARNED', " +
             "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
-            "WHERE merchant = :merchant COLLATE NOCASE AND categoryId IS NULL"
+            "WHERE merchant = :merchant COLLATE NOCASE " +
+            "AND (categoryId IS NULL OR categorySource IN ('KEYWORD', 'LEARNED', 'AI'))"
     )
     suspend fun backfillCategoryByMerchant(merchant: String, categoryId: Long): Int
 
@@ -355,17 +370,21 @@ interface TransactionDao {
     )
     suspend fun findRealDebitsByMerchant(merchant: String): List<TransactionEntity>
 
-    /** The persons the two most recent real rows at [merchant] were assigned to, newest first -- see PersonLearner. */
+    /**
+     * The persons the user explicitly assigned to the two most recent rows at
+     * [merchant], newest first -- see PersonLearner. Only `USER` rows count: a
+     * row that merely received the default person says nothing about intent.
+     */
     @Query(
         """
         SELECT person FROM transactions
-        WHERE isDemo = 0 AND person IS NOT NULL AND TRIM(person) != ''
+        WHERE isDemo = 0 AND personSource = 'USER' AND person IS NOT NULL AND TRIM(person) != ''
           AND merchant IS NOT NULL AND LOWER(TRIM(merchant)) = LOWER(TRIM(:merchant))
         ORDER BY timestamp DESC, id DESC
         LIMIT 2
         """
     )
-    suspend fun lastPersonsForMerchant(merchant: String): List<String>
+    suspend fun lastUserPersonsForMerchant(merchant: String): List<String>
 
     /**
      * Still-unlinked, opposite-direction, same amount+currency real rows

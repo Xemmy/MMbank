@@ -21,6 +21,7 @@ import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
@@ -120,6 +121,14 @@ data class BackupTransaction(
     /** Absent (null) on backups from before format v9. */
     val reportedBalance: String? = null,
     val reportedBalanceKind: String? = null,
+    /**
+     * Who decided the category / person (an [AssignmentSource] name). Absent
+     * (null) on backups from before format v12: such a row restores as `USER`
+     * when it has a category / person, exactly as the v33 -> v34 database
+     * upgrade marks existing rows, so the app never re-assigns old history.
+     */
+    val categorySource: String? = null,
+    val personSource: String? = null,
 )
 
 @Serializable
@@ -186,6 +195,9 @@ data class BackupPayload(
      * 5 = adds [merchantAccountMappings], the learned merchant -> account
      * rules. Gated the same way: a pre-v5 backup never held them, so restoring
      * one must not erase what this device has learned.
+     *
+     * 12 = adds [BackupTransaction.categorySource]/[BackupTransaction.personSource].
+     * No gate: an older row's sources are derived on restore.
      *
      * 6 = adds [BackupTransaction.kind]/[BackupTransaction.kindUserSet] and
      * [BackupRule.assignKind]. No gate: an older row's kind is derived on
@@ -326,7 +338,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 11,
+            formatVersion = 12,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -608,6 +620,8 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     kindUserSet = kindUserSet,
     reportedBalance = reportedBalance?.toPlainString(),
     reportedBalanceKind = reportedBalanceKind?.name,
+    categorySource = categorySource.name,
+    personSource = personSource.name,
 )
 
 /**
@@ -663,8 +677,15 @@ internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): Transact
         kindUserSet = kindUserSet,
         reportedBalance = reportedBalance?.let { runCatching { BigDecimal(it) }.getOrNull() },
         reportedBalanceKind = reportedBalanceKind?.let { n -> ReportedBalanceKind.entries.firstOrNull { it.name == n } },
+        categorySource = restoreSource(categorySource, hasValue = categoryId != null),
+        personSource = restoreSource(personSource, hasValue = !person.isNullOrBlank()),
     )
 }
+
+/** A recorded source, or -- for a pre-v12 backup -- `USER` if the row has a value and `DEFAULT` if not. */
+private fun restoreSource(name: String?, hasValue: Boolean): AssignmentSource =
+    name?.let { n -> AssignmentSource.entries.firstOrNull { it.name == n } }
+        ?: if (hasValue) AssignmentSource.USER else AssignmentSource.DEFAULT
 
 internal fun ParsingRuleEntity.toBackup() = BackupRule(
     id = id,

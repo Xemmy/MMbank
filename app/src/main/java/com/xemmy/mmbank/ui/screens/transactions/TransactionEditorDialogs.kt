@@ -533,6 +533,14 @@ internal fun TransactionEditorDialog(
                         }
                     }
                 }
+                // Why this person is what it is -- only while it is still what the app stored.
+                if (existing != null && person != null && person == existing.person) {
+                    Text(
+                        existing.personSource.explain("person"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 if (!transferMode) {
                 // Category chip row — defaults to the merchant-derived guess
@@ -561,6 +569,14 @@ internal fun TransactionEditorDialog(
                             selected = false,
                             onClick = { creatingCategory = true },
                             label = "+ New",
+                        )
+                    }
+                    // Why this category is what it is -- only while it is still what the app stored.
+                    if (existing != null && existing.categoryId != null && categoryIdOverride == existing.categoryId) {
+                        Text(
+                            existing.categorySource.explain("category"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

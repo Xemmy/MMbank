@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v33 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v34 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v33
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v34
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../33.json`), so
+ *     compiler exports during this same build (`app/schemas/.../34.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/33.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/33.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/34.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/34.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 33.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 34.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -64,7 +64,7 @@ class MigrationSqlTest {
 
     /** Columns each table gained in 26-31; removed to rebuild the v25 shape. */
     private val addedColumns = mapOf(
-        "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind"),
+        "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind", "categorySource", "personSource"),
         "parsing_rules" to listOf("assignKind"),
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor"),
         "bills" to listOf("dueDayAnchor"),
@@ -104,7 +104,8 @@ class MigrationSqlTest {
             MigrationSql.MIGRATION_25_26_SQL + MigrationSql.MIGRATION_26_27_SQL +
                 MigrationSql.MIGRATION_27_28_SQL + MigrationSql.MIGRATION_28_29_SQL +
                 MigrationSql.MIGRATION_29_30_SQL + MigrationSql.MIGRATION_30_31_SQL +
-                MigrationSql.MIGRATION_31_32_SQL + MigrationSql.MIGRATION_32_33_SQL
+                MigrationSql.MIGRATION_31_32_SQL + MigrationSql.MIGRATION_32_33_SQL +
+                MigrationSql.MIGRATION_33_34_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -145,7 +146,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v33 install table for table`() {
+    fun `an upgraded database matches a fresh v34 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -218,5 +219,39 @@ class MigrationSqlTest {
                 assertEquals(null, rs.getString(4))
             }
         }
+    }
+
+    @Test
+    fun `existing categories and persons are marked as the user's own choice, empty ones as default`() {
+        fun tx(id: Int, categoryId: String, person: String) =
+            migrated.exec(
+                "INSERT INTO transactions (id, accountId, amount, currencyCode, direction, merchant, source, matchedRuleName, " +
+                    "timestamp, createdAt, category, spendingCategory, excludeFromStats, linkedTransactionId, isDemo, " +
+                    "needsCategoryApproval, categoryId, person) VALUES ($id, NULL, '10', 'AED', 'DEBIT', 'Shop', 'SMS', NULL, " +
+                    "0, 0, 'NORMAL', 'UNCATEGORIZED', 0, NULL, 0, 0, $categoryId, $person)"
+            )
+        tx(1, "5", "'Sam'")
+        tx(2, "NULL", "NULL")
+        tx(3, "7", "NULL")
+        tx(4, "NULL", "'  '")
+        tx(5, "NULL", "'Omar'")
+
+        migrate()
+
+        val rows = migrated.createStatement().use { st ->
+            st.executeQuery("SELECT id, categorySource, personSource FROM transactions ORDER BY id").use { rs ->
+                buildMap { while (rs.next()) put(rs.getInt(1), rs.getString(2) to rs.getString(3)) }
+            }
+        }
+        assertEquals(
+            mapOf(
+                1 to ("USER" to "USER"),
+                2 to ("DEFAULT" to "DEFAULT"),
+                3 to ("USER" to "DEFAULT"),
+                4 to ("DEFAULT" to "DEFAULT"), // a blank person is no person
+                5 to ("DEFAULT" to "USER"),
+            ),
+            rows,
+        )
     }
 }

@@ -67,6 +67,8 @@ class BackupMappersTest {
         kindUserSet = true,
         reportedBalance = BigDecimal("46120.85"),
         reportedBalanceKind = com.xemmy.mmbank.domain.model.ReportedBalanceKind.AVAILABLE_CREDIT,
+        categorySource = com.xemmy.mmbank.domain.model.AssignmentSource.LEARNED,
+        personSource = com.xemmy.mmbank.domain.model.AssignmentSource.USER,
     )
 
     private val fullAccount = AccountEntity(
@@ -285,6 +287,29 @@ class BackupMappersTest {
         val decoded = json.decodeFromString(BackupTransaction.serializer(), old).toEntity()
         assertNull(decoded.reportedBalance)
         assertNull(decoded.reportedBalanceKind)
+    }
+
+    @Test
+    fun `a pre-v12 transaction restores its sources the way the v34 upgrade marks them`() {
+        fun old(categoryId: String, person: String) = """
+            {"id":1,"accountId":null,"amount":"10.00","currencyCode":"AED","direction":"DEBIT",
+             "merchant":null,"source":"MANUAL","sender":null,"rawMessage":null,"matchedRuleName":null,
+             "timestamp":1,"createdAt":1,"accountNumberSuffix":null,"categoryId":$categoryId,"person":$person}
+        """.trimIndent()
+        val withBoth = json.decodeFromString(BackupTransaction.serializer(), old("5", "\"Sam\"")).toEntity()
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.USER, withBoth.categorySource)
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.USER, withBoth.personSource)
+        val withNeither = json.decodeFromString(BackupTransaction.serializer(), old("null", "null")).toEntity()
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.DEFAULT, withNeither.categorySource)
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.DEFAULT, withNeither.personSource)
+    }
+
+    @Test
+    fun `an unknown source name from a newer build is treated like an absent one`() {
+        val restored = fullTransaction.toBackup().copy(categorySource = "FROM_THE_FUTURE", personSource = "FROM_THE_FUTURE").toEntity()
+        // fullTransaction has a category and a person, so the absent-source rule gives USER.
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.USER, restored.categorySource)
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.USER, restored.personSource)
     }
 
     @Test

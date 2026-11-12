@@ -19,6 +19,7 @@ import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.parser.MerchantAccountLearner
 import com.xemmy.mmbank.domain.repository.LedgerRepository
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.IngestResult
@@ -223,10 +224,17 @@ class TransactionRepositoryImpl(
 
             // Who this belongs to: the default person, unless the user has moved
             // this merchant's last two rows to someone else (see PersonLearner).
+            val defaultPerson = defaultPersonProvider()
             val person = PersonLearner.pick(
-                parsed.merchant?.takeIf { it.isNotBlank() }?.let { dao.lastPersonsForMerchant(it) }.orEmpty(),
-                defaultPersonProvider(),
+                parsed.merchant?.takeIf { it.isNotBlank() }?.let { dao.lastUserPersonsForMerchant(it) }.orEmpty(),
+                defaultPerson,
             )
+            // Learned only when the pattern chose someone other than the default.
+            val personSource = if (person != null && !person.equals(defaultPerson?.trim(), ignoreCase = true)) {
+                AssignmentSource.LEARNED
+            } else {
+                AssignmentSource.DEFAULT
+            }
 
             val entity = TransactionEntity(
                 amount = parsed.amount,
@@ -243,6 +251,12 @@ class TransactionRepositoryImpl(
                 accountId = detectedAccountId,
                 category = parsed.category,
                 person = person,
+                personSource = personSource,
+                categorySource = when {
+                    categoryId == null -> AssignmentSource.DEFAULT
+                    categoryId == confirmedCategoryId -> AssignmentSource.LEARNED
+                    else -> AssignmentSource.KEYWORD
+                },
                 spendingCategory = spendingCategory,
                 excludeFromStats = parsed.excludeFromStats,
                 categoryId = categoryId,
@@ -344,8 +358,14 @@ class TransactionRepositoryImpl(
         deleted
     }
 
+    /** Whatever the user typed in is their choice: a category or person on a manual row is `USER`. */
     override suspend fun recordManual(transaction: Transaction): Long =
-        dao.insert(transaction.toEntity())
+        dao.insert(
+            transaction.copy(
+                categorySource = if (transaction.categoryId != null) AssignmentSource.USER else transaction.categorySource,
+                personSource = if (!transaction.person.isNullOrBlank()) AssignmentSource.USER else transaction.personSource,
+            ).toEntity(),
+        )
 
     // --- LedgerRepository ---
 

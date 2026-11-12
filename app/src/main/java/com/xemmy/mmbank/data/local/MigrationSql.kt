@@ -61,6 +61,19 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
 
+    /**
+     * v34: who decided each transaction's category and person (see
+     * AssignmentSource). Existing rows can't say, so every one that has a
+     * category or a person is marked USER: the app never re-assigns history
+     * on its own, which is the same behaviour as before this column existed.
+     */
+    val MIGRATION_33_34_SQL: List<String> = listOf(
+        "ALTER TABLE `transactions` ADD COLUMN `categorySource` TEXT NOT NULL DEFAULT 'DEFAULT'",
+        "ALTER TABLE `transactions` ADD COLUMN `personSource` TEXT NOT NULL DEFAULT 'DEFAULT'",
+        "UPDATE `transactions` SET `categorySource` = 'USER' WHERE `categoryId` IS NOT NULL",
+        "UPDATE `transactions` SET `personSource` = 'USER' WHERE `person` IS NOT NULL AND TRIM(`person`) != ''",
+    )
+
     /** v33: daily forex-rate history. Purely additive: one new table, no existing data touched. */
     val MIGRATION_32_33_SQL: List<String> = listOf(
         "CREATE TABLE IF NOT EXISTS `exchange_rates_history` (" +

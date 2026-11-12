@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.Bill
@@ -164,6 +165,10 @@ data class TransactionEntity(
     /** Bank-printed balance in the source message; see [Transaction.reportedBalance]. */
     val reportedBalance: BigDecimal? = null,
     val reportedBalanceKind: ReportedBalanceKind? = null,
+    /** Who decided [categoryId]; see [Transaction.categorySource]. */
+    val categorySource: AssignmentSource = AssignmentSource.DEFAULT,
+    /** Who decided [person]; see [Transaction.personSource]. */
+    val personSource: AssignmentSource = AssignmentSource.DEFAULT,
 )
 
 @Entity(tableName = "categories")
@@ -481,6 +486,7 @@ fun TransactionEntity.toDomain() = Transaction(
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
     extractedMerchant, aiConfidence, kind, kindUserSet, reportedBalance, reportedBalanceKind,
+    categorySource, personSource,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -514,6 +520,8 @@ fun Transaction.toEntity() = TransactionEntity(
     kindUserSet = kindUserSet,
     reportedBalance = reportedBalance,
     reportedBalanceKind = reportedBalanceKind,
+    categorySource = categorySource,
+    personSource = personSource,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)

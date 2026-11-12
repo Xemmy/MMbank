@@ -313,7 +313,61 @@ data class Transaction(
      */
     val reportedBalance: BigDecimal? = null,
     val reportedBalanceKind: ReportedBalanceKind? = null,
+    /** Who decided [categoryId]; the app may re-assign anything except [AssignmentSource.USER]. */
+    val categorySource: AssignmentSource = AssignmentSource.DEFAULT,
+    /** Who decided [person]; see [categorySource]. */
+    val personSource: AssignmentSource = AssignmentSource.DEFAULT,
 )
+
+/**
+ * Where a transaction's category or person came from (backlog Part C.2), so
+ * the app can tell the user's own choice from its guess: it may re-assign a
+ * guess when it learns better, but never a [USER] choice, and it can say why
+ * a value is what it is.
+ */
+enum class AssignmentSource {
+    /** Nothing decided it: no category, or the default person. */
+    DEFAULT,
+
+    /** A built-in keyword guess from the merchant name. */
+    KEYWORD,
+
+    /** An AI suggestion the user accepted is [USER]; one still pending never reaches the row. */
+    AI,
+
+    /** Learned from the user's earlier choices (a merchant mapping or person pattern). */
+    LEARNED,
+
+    /** The user picked it. Never overridden automatically. */
+    USER,
+    ;
+
+    /** True for values the app guessed and may replace when it learns better. */
+    val isReassignable: Boolean get() = this == KEYWORD || this == LEARNED || this == AI
+
+    companion object {
+        /**
+         * The source after an edit form saved [new] over [old]: unchanged
+         * stays as it was (opening and saving a row decides nothing), cleared
+         * goes back to [DEFAULT], and a different value is the user's [USER]
+         * choice.
+         */
+        fun <T> afterEdit(previous: AssignmentSource, old: T?, new: T?): AssignmentSource = when {
+            old == new -> previous
+            new == null -> DEFAULT
+            else -> USER
+        }
+    }
+
+    /** One plain sentence for [what] ("category" / "person"), shown next to the value. */
+    fun explain(what: String): String = when (this) {
+        DEFAULT -> "No $what was chosen automatically"
+        KEYWORD -> "Guessed from the merchant name"
+        AI -> "Suggested by AI"
+        LEARNED -> "Learned from your earlier choices"
+        USER -> "Chosen by you"
+    }
+}
 
 /**
  * A user-defined parsing rule, editable in-app without recompiling the APK.
