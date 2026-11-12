@@ -148,122 +148,85 @@ fun SettingsScreen(
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
 
-        MenuSectionLabel("Capture")
-        Card(Modifier.fillMaxWidth()) {
-            Column {
-                MenuRow(
-                    icon = Icons.Filled.NotificationsActive,
-                    title = "Capture & permissions",
-                    subtitle = if (captureOk) "All channels enabled" else "Action needed",
-                    subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
-                    onClick = { onOpen("settings_capture") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.ContentPaste,
-                    title = "Import & ignore messages",
-                    subtitle = "Paste a backlog to import — or an example to stop capturing",
-                    onClick = { onOpen("settings_import") },
-                )
-            }
-        }
-
-        MenuSectionLabel("General")
-        Card(Modifier.fillMaxWidth()) {
-            Column {
-                MenuRow(
-                    icon = Icons.Filled.Tune,
-                    title = "Preferences",
-                    subtitle = "Currency ${viewModel.defaultCurrency}" +
-                        (viewModel.defaultPerson.takeIf { it.isNotBlank() }?.let { " · default person $it" } ?: "") +
-                        " · Forex rates",
-                    onClick = { onOpen("settings_prefs") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.PieChart,
-                    title = "Categories & People",
-                    subtitle = "Manage categories and saved people — add, edit, delete",
-                    onClick = { onOpen("settings_categories_people") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.CurrencyBitcoin,
-                    title = "Binance",
-                    subtitle = if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
-                    onClick = { onOpen("settings_binance") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Rule,
-                    title = "Parsing rules",
-                    subtitle = "Teach the app new bank message formats",
-                    onClick = { onOpen("rules") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.AutoAwesome,
-                    title = "Local AI parsing",
-                    subtitle = if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
-                    onClick = { onOpen("settings_ai") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Palette,
-                    title = "Appearance & Backgrounds",
-                    subtitle = backgroundStyle.displayName,
-                    onClick = { onOpen("settings_appearance") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Lock,
-                    title = "Security",
-                    subtitle = if (viewModel.appLockEnabled) {
-                        "App lock on · auto-lock ${appLockTimeoutLabel(viewModel.appLockTimeoutMinutes)}"
-                    } else {
-                        "Biometric app lock (off)"
-                    },
-                    onClick = { onOpen("settings_security") },
-                )
-            }
-        }
-
-        MenuSectionLabel("Data")
-        Card(Modifier.fillMaxWidth()) {
-            Column {
-                MenuRow(
-                    icon = Icons.Filled.Backup,
-                    title = "Backup & restore",
-                    subtitle = "Encrypted export and import",
-                    onClick = { onOpen("settings_backup") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.VerifiedUser,
-                    title = "Integrity check",
-                    subtitle = "Compare your books with your bank's balances",
-                    onClick = { onOpen("integrity_check") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.BugReport,
-                    title = "Diagnostics",
-                    subtitle = if (crashRecorded) "Crash log recorded — tap to view" else "No problems recorded",
-                    subtitleColor = if (crashRecorded) MaterialTheme.colorScheme.error else null,
-                    onClick = { onOpen("settings_diagnostics") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Science,
-                    title = "Demo mode",
-                    subtitle = if (viewModel.demoModeEnabled) {
-                        "On — real data hidden behind sample data"
-                    } else {
-                        "Show sample data for demos (your data stays safe)"
-                    },
-                    subtitleColor = if (viewModel.demoModeEnabled) MaterialTheme.colorScheme.primary else null,
-                    onClick = { onOpen("settings_demo") },
-                )
+        SettingsGroup.entries.forEach { group ->
+            MenuSectionLabel(group.title)
+            Card(Modifier.fillMaxWidth()) {
+                Column {
+                    group.entries.forEachIndexed { index, entry ->
+                        if (index > 0) HorizontalDivider(Modifier.padding(start = 56.dp))
+                        val row = when (entry) {
+                            SettingsEntry.CAPTURE -> MenuRowSpec(
+                                Icons.Filled.NotificationsActive, "Capture & permissions",
+                                if (captureOk) "All channels enabled" else "Action needed",
+                                if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
+                            )
+                            SettingsEntry.IMPORT -> MenuRowSpec(
+                                Icons.Filled.ContentPaste, "Import & ignore messages",
+                                "Paste a backlog to import — or an example to stop capturing",
+                            )
+                            SettingsEntry.PREFERENCES -> MenuRowSpec(
+                                Icons.Filled.Tune, "Currency & preferences",
+                                "Currency ${viewModel.defaultCurrency}" +
+                                    (viewModel.defaultPerson.takeIf { it.isNotBlank() }?.let { " · default person $it" } ?: "") +
+                                    " · Forex rates",
+                            )
+                            SettingsEntry.CATEGORIES_PEOPLE -> MenuRowSpec(
+                                Icons.Filled.PieChart, "Categories & People",
+                                "Manage categories and saved people — add, edit, delete",
+                            )
+                            SettingsEntry.BINANCE -> MenuRowSpec(
+                                Icons.Filled.CurrencyBitcoin, "Binance",
+                                if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
+                            )
+                            SettingsEntry.RULES -> MenuRowSpec(
+                                Icons.Filled.Rule, "Parsing rules", "Teach the app new bank message formats",
+                            )
+                            SettingsEntry.AI -> MenuRowSpec(
+                                Icons.Filled.AutoAwesome, "Local AI parsing",
+                                if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
+                            )
+                            SettingsEntry.APPEARANCE -> MenuRowSpec(
+                                Icons.Filled.Palette, "Appearance & Backgrounds", backgroundStyle.displayName,
+                            )
+                            SettingsEntry.SECURITY -> MenuRowSpec(
+                                Icons.Filled.Lock, "App lock & PIN",
+                                if (viewModel.appLockEnabled) {
+                                    "App lock on · auto-lock ${appLockTimeoutLabel(viewModel.appLockTimeoutMinutes)}"
+                                } else {
+                                    "Biometric app lock (off)"
+                                },
+                            )
+                            SettingsEntry.BACKUP -> MenuRowSpec(
+                                Icons.Filled.Backup, "Backup & restore", "Encrypted export and import",
+                            )
+                            SettingsEntry.INTEGRITY -> MenuRowSpec(
+                                Icons.Filled.VerifiedUser, "Integrity check",
+                                "Compare your books with your bank's balances",
+                            )
+                            SettingsEntry.DIAGNOSTICS -> MenuRowSpec(
+                                Icons.Filled.BugReport, "Diagnostics",
+                                if (crashRecorded) "Crash log recorded — tap to view" else "No problems recorded",
+                                if (crashRecorded) MaterialTheme.colorScheme.error else null,
+                            )
+                            SettingsEntry.DEMO -> MenuRowSpec(
+                                Icons.Filled.Science, "Demo mode",
+                                if (viewModel.demoModeEnabled) {
+                                    "On — real data hidden behind sample data"
+                                } else {
+                                    "Show sample data for demos (your data stays safe)"
+                                },
+                                if (viewModel.demoModeEnabled) MaterialTheme.colorScheme.primary else null,
+                            )
+                        }
+                        MenuRow(
+                            icon = row.icon,
+                            title = row.title,
+                            subtitle = row.subtitle,
+                            subtitleColor = row.subtitleColor,
+                            onClick = { onOpen(entry.route) },
+                        )
+                    }
+                }
             }
         }
 
@@ -283,6 +246,13 @@ fun SettingsScreen(
         )
     }
 }
+
+private class MenuRowSpec(
+    val icon: ImageVector,
+    val title: String,
+    val subtitle: String,
+    val subtitleColor: Color? = null,
+)
 
 @Composable
 private fun MenuSectionLabel(text: String) {
