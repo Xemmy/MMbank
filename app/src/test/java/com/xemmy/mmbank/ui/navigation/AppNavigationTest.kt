@@ -106,3 +106,22 @@ class AppNavigationTest {
         assertTrue(!NavTransitions.isTabRoot(Routes.GOALS))
     }
 }
+
+class AdaptiveLayoutTest {
+    @Test fun compactWidthsUseBottomBar() {
+        assertEquals(NavChrome.BOTTOM_BAR, AdaptiveLayout.chrome(360))
+        assertEquals(NavChrome.BOTTOM_BAR, AdaptiveLayout.chrome(599))
+    }
+
+    @Test fun mediumAndWiderUseRail() {
+        assertEquals(NavChrome.RAIL, AdaptiveLayout.chrome(600))
+        assertEquals(NavChrome.RAIL, AdaptiveLayout.chrome(1280))
+    }
+
+    @Test fun contentWidthIsCapped() {
+        assertEquals(360, AdaptiveLayout.contentWidthDp(360))
+        assertEquals(640, AdaptiveLayout.contentWidthDp(640))
+        assertEquals(640, AdaptiveLayout.contentWidthDp(1200))
+        assertEquals(0, AdaptiveLayout.contentWidthDp(-5))
+    }
+}

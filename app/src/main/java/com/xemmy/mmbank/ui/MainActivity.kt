@@ -39,6 +39,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import com.xemmy.mmbank.ui.navigation.NavChrome
+import com.xemmy.mmbank.ui.navigation.AdaptiveLayout
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -256,24 +264,67 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
         if (openUncategorizedQueue) navController.navigate(Routes.UNCATEGORIZED_QUEUE)
     }
 
+    val chrome = AdaptiveLayout.chrome(LocalConfiguration.current.screenWidthDp)
+    val goToTab: (AppTab) -> Unit = { dest ->
+        navController.navigate(dest.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize().ambientBackground(backgroundStyle),
         containerColor = Color.Transparent,
         bottomBar = {
-            NavigationBar {
+            if (chrome == NavChrome.BOTTOM_BAR) {
+                NavigationBar {
+                    val currentTab = TabRouting.tabFor(currentRoute)
+                    AppTab.values().forEach { dest ->
+                        val visual = dest.visual()
+                        val selected = currentTab == dest
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { goToTab(dest) },
+                            icon = {
+                                Icon(
+                                    if (selected) visual.selectedIcon else visual.unselectedIcon,
+                                    contentDescription = dest.label,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            },
+                            label = {
+                                Text(dest.label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            },
+                            // Pinned explicitly (Material3 1.4 changed the selected-label
+                            // default to secondary) so the bottom bar's look is unaffected
+                            // by the Compose BOM bump, in both Classic and Premium.
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+      Row(
+        Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
+            .fillMaxSize(),
+      ) {
+        if (chrome == NavChrome.RAIL) {
+            NavigationRail {
                 val currentTab = TabRouting.tabFor(currentRoute)
                 AppTab.values().forEach { dest ->
                     val visual = dest.visual()
                     val selected = currentTab == dest
-                    NavigationBarItem(
+                    NavigationRailItem(
                         selected = selected,
-                        onClick = {
-                            navController.navigate(dest.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { goToTab(dest) },
                         icon = {
                             Icon(
                                 if (selected) visual.selectedIcon else visual.unselectedIcon,
@@ -281,31 +332,17 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
                                 modifier = Modifier.size(22.dp),
                             )
                         },
-                        label = {
-                            Text(
-                                dest.label,
-                                style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1,
-                            )
-                        },
-                        // Pinned explicitly (Material3 1.4 changed the selected-label
-                        // default to secondary) so the bottom bar's look is unaffected
-                        // by the Compose BOM bump, in both Classic and Premium.
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                        ),
+                        label = { Text(dest.label, style = MaterialTheme.typography.labelMedium, maxLines = 1) },
                     )
                 }
             }
-        },
-    ) { innerPadding ->
+        }
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
-                .fillMaxSize(),
+                .fillMaxHeight()
+                .widthIn(max = AdaptiveLayout.CONTENT_MAX_WIDTH_DP.dp)
+                .fillMaxWidth(),
         ) {
             if (recoveredFromCrash) {
                 Card(
@@ -335,6 +372,8 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
                 modifier = Modifier.weight(1f),
             )
         }
+        }
+      }
     }
 }
 

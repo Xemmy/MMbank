@@ -152,3 +152,21 @@ object NavTransitions {
         return if (isPop) NavTransitionKind.BACK else NavTransitionKind.FORWARD
     }
 }
+
+/** Which navigation chrome to show for a given window width. */
+enum class NavChrome { BOTTOM_BAR, RAIL }
+
+/** Pure width rules for adaptive layouts (Phase 3.3), unit-testable on the JVM. */
+object AdaptiveLayout {
+    /** Material "medium" window width starts here; below it is compact. */
+    const val RAIL_MIN_WIDTH_DP = 600
+
+    /** Readable content width: wider windows centre the content instead of stretching it. */
+    const val CONTENT_MAX_WIDTH_DP = 640
+
+    fun chrome(widthDp: Int): NavChrome =
+        if (widthDp >= RAIL_MIN_WIDTH_DP) NavChrome.RAIL else NavChrome.BOTTOM_BAR
+
+    /** Width the content column actually gets, given the room left after the chrome. */
+    fun contentWidthDp(availableDp: Int): Int = availableDp.coerceIn(0, CONTENT_MAX_WIDTH_DP)
+}
