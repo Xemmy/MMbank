@@ -103,6 +103,14 @@ object AccountBalanceCalculator {
         return totals
     }
 
+    /**
+     * Accounts whose balance includes at least one [LedgerEntry.approximate]
+     * entry -- a charge in another currency, converted at today's rate or left
+     * at face value for want of one -- so the UI can mark that balance "≈".
+     */
+    fun approximateAccounts(entries: List<LedgerEntry>): Set<Long> =
+        entries.filter { it.approximate }.mapNotNull { it.accountId }.toSet()
+
     /** How many entries belong to no account. */
     fun unassignedCount(entries: List<LedgerEntry>): Int = entries.count { it.accountId == null }
 }

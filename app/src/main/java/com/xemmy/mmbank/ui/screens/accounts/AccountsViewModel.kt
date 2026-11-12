@@ -113,6 +113,8 @@ data class AccountWithBalance(
     val balance: BigDecimal,
     /** Credit cards only: owed, available, statement and due date. */
     val card: CreditCardStatusCalculator.CardStatus? = null,
+    /** The balance includes foreign-currency charges that were converted (or couldn't be): show "≈". */
+    val approximate: Boolean = false,
 )
 
 /**
@@ -148,6 +150,7 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         container.transactionRepository.observeTransactions(),
     ) { accounts, archived, entries, transactions ->
         val net = AccountBalanceCalculator.netByAccount(entries)
+        val approximate = AccountBalanceCalculator.approximateAccounts(entries)
         val cards = CardPaymentReminders.build(accounts, transactions, entries, LocalDate.now())
             .associate { it.accountId to it.status }
         val now = System.currentTimeMillis()
@@ -165,10 +168,11 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                     account = account,
                     balance = AccountBalanceCalculator.balanceOf(account, net),
                     card = cards[account.id],
+                    approximate = account.id in approximate,
                 )
             },
             archived = archived.map { account ->
-                AccountWithBalance(account, AccountBalanceCalculator.balanceOf(account, net))
+                AccountWithBalance(account, AccountBalanceCalculator.balanceOf(account, net), approximate = account.id in approximate)
             },
             unassigned = UnassignedTotal(
                 totalsByCurrency = AccountBalanceCalculator.unassignedTotals(entries),

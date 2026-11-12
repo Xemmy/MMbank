@@ -316,6 +316,10 @@ private fun AccountCard(
                 )
             }
 
+            if (row.approximate && !hidden) {
+                MetaLabel("≈ Includes foreign-currency charges, converted at today's exchange rate where one is stored", maxLines = 2)
+            }
+
             reconciliation?.let { BankCheckLine(it, a.currencyCode, hidden) }
 
             row.card?.let { CardStatusBlock(it, a.currencyCode, hidden) }

@@ -183,4 +183,20 @@ class AccountBalanceCalculatorTest {
         val net = AccountBalanceCalculator.netByAccount(listOf(credit("5", accountId = 3)))
         assertEquals(setOf(3L), net.keys)
     }
+
+    @Test
+    fun `approximateAccounts lists only accounts with an approximate entry`() {
+        fun entry(account: Long?, approximate: Boolean) = AccountBalanceCalculator.LedgerEntry(
+            accountId = account,
+            amount = BigDecimal.TEN,
+            currencyCode = "AED",
+            direction = com.xemmy.mmbank.domain.model.TransactionDirection.DEBIT,
+            approximate = approximate,
+        )
+        val result = AccountBalanceCalculator.approximateAccounts(
+            listOf(entry(1, false), entry(2, true), entry(2, false), entry(null, true), entry(3, true)),
+        )
+        assertEquals(setOf(2L, 3L), result)
+        assertEquals(emptySet<Long>(), AccountBalanceCalculator.approximateAccounts(emptyList()))
+    }
 }
