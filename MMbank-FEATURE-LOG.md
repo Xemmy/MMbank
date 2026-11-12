@@ -4552,3 +4552,7 @@ Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lo
 - Removed the Classic `ActivityFilterBar` (~290 lines), `FilterBarLayout` and its pref/VM plumbing; the single-row `TransactionFilterBar` is the only bar.
 - Tests: `AiParsingIndicatorSpecTest` rewritten, new `ReduceMotionTest`.
 - **Not covered by CI:** shader/spring behaviour with animations off, the hero card and filter bar rendering, absence of the Design menu row.
+
+## Phase 18.27 — DesignLintTest ratchet (test only)
+- `DesignLintTest` counts hex `Color(0x…)`, `fontSize =`, `ObsidianTokens.`, `asMoney(` in screens and literal `RoundedCornerShape(n.dp)` per file under `ui/` and compares to a baseline. Counts can't rise, and must be lowered in the test when they fall, so the baseline only tightens as screens migrate.
+- No app behaviour change, so no version bump.
