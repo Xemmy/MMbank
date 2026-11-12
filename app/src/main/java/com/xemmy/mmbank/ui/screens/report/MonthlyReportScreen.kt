@@ -159,7 +159,7 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
         )
 
         val balances = if (balanceMap == null) {
-            emptyList()
+            emptyList<NetWorthAggregator.AccountBalance>()
         } else {
             accounts.map { account ->
                 NetWorthAggregator.AccountBalance(
