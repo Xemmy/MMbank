@@ -17,6 +17,7 @@ object SearchDestinations {
         SettingsEntry.IMPORT to ("Import & ignore messages" to "paste backlog ignore mute"),
         SettingsEntry.RULES to ("Parsing rules" to "regex bank message format sender"),
         SettingsEntry.AI to ("Local AI parsing" to "ai model online provider privacy gemma"),
+        SettingsEntry.NOTIFICATIONS to ("Notifications" to "alerts reminders weekly digest unusual charge subscription bill due"),
         SettingsEntry.PREFERENCES to ("Currency & preferences" to "default currency forex rates exchange default person retention"),
         SettingsEntry.CATEGORIES_PEOPLE to ("Categories & People" to "category people person manage"),
         SettingsEntry.APPEARANCE to ("Appearance & Backgrounds" to "theme dark light background style"),

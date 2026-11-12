@@ -26,8 +26,22 @@ class SettingsGroupsTest {
     @Test
     fun groupOrderMatchesPlan() {
         assertEquals(
-            listOf("Capture", "Money", "Appearance", "Security & privacy", "Data", "Connections", "About"),
+            listOf("Capture", "Money", "Notifications", "Appearance", "Security & privacy", "Data", "Connections", "About"),
             SettingsGroup.entries.map { it.title },
         )
+    }
+
+    @Test
+    fun notificationsHaveTheirOwnGroupAndRoute() {
+        assertEquals("settings_notifications", SettingsEntry.NOTIFICATIONS.route)
+        assertEquals(listOf(SettingsEntry.NOTIFICATIONS), SettingsGroup.NOTIFICATIONS.entries)
+    }
+
+    @Test
+    fun notificationsSummaryCountsTheSwitchesThatAreOn() {
+        assertEquals("All off", notificationsSummary(listOf(false, false, false, false)))
+        assertEquals("1 of 4 on", notificationsSummary(listOf(true, false, false, false)))
+        assertEquals("4 of 4 on", notificationsSummary(listOf(true, true, true, true)))
+        assertEquals("All off", notificationsSummary(emptyList()))
     }
 }
