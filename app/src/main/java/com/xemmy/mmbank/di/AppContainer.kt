@@ -404,12 +404,35 @@ class AppContainer(context: Context) {
             .create(ForexApi::class.java)
     }
 
+    /**
+     * Foreign-currency converter for balances: converts each charge into its
+     * account's currency at the stored forex rates ([LedgerFx]). Re-emits when
+     * accounts or rates change.
+     */
+    val ledgerFxFlow: kotlinx.coroutines.flow.Flow<com.xemmy.mmbank.domain.account.LedgerFx> by lazy {
+        kotlinx.coroutines.flow.combine(
+            accountRepository.observeActive(),
+            accountRepository.observeArchived(),
+            ratesRepository.observeRates(),
+        ) { active, archived, rates ->
+            val base = preferences.defaultCurrency
+            com.xemmy.mmbank.domain.account.LedgerFx(
+                baseCurrency = base,
+                ratesFromBase = rates
+                    .filter { it.baseCode.equals(base, ignoreCase = true) }
+                    .associate { it.quoteCode.uppercase() to it.rate },
+                accountCurrencies = (active + archived).associate { it.id to it.currencyCode },
+            )
+        }
+    }
+
     /** One instance behind both [transactionRepository] and [ledgerRepository]: they share transfer linking. */
     private val transactionRepositoryImpl: TransactionRepositoryImpl by lazy {
         TransactionRepositoryImpl(
             database = database,
             dao = database.transactionDao(),
             demoMode = demoModeEnabled,
+            ledgerFx = ledgerFxFlow,
             defaultPersonProvider = { preferences.defaultPerson },
             categoryRepository = categoryRepository,
             merchantAccountRepository = merchantAccountRepository,
@@ -496,7 +519,7 @@ class AppContainer(context: Context) {
      * not a ledger query.
      */
     val retentionPruner: RetentionPruner by lazy {
-        RetentionPruner(database)
+        RetentionPruner(database, fxProvider = { ledgerFxFlow.first() })
     }
 
     private val compiledRuleCache by lazy {
@@ -984,17 +1007,18 @@ class AppContainer(context: Context) {
      */
     suspend fun cardStatuses(): List<com.xemmy.mmbank.domain.account.CardPaymentReminders.CardReminder> {
         val transactions = transactionRepository.getAllReal()
+        val entries = transactions.map {
+            com.xemmy.mmbank.domain.account.AccountBalanceCalculator.LedgerEntry(
+                accountId = it.accountId,
+                amount = it.amount,
+                currencyCode = it.currencyCode,
+                direction = it.direction,
+            )
+        }
         return com.xemmy.mmbank.domain.account.CardPaymentReminders.build(
             accounts = accountRepository.observeActiveReal().first(),
             transactions = transactions,
-            entries = transactions.map {
-                com.xemmy.mmbank.domain.account.AccountBalanceCalculator.LedgerEntry(
-                    accountId = it.accountId,
-                    amount = it.amount,
-                    currencyCode = it.currencyCode,
-                    direction = it.direction,
-                )
-            },
+            entries = ledgerFxFlow.first().apply(entries),
             today = java.time.LocalDate.now(),
         )
     }

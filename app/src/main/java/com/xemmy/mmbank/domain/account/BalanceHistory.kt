@@ -24,11 +24,15 @@ import java.time.ZoneId
 object BalanceHistory {
 
     /** Each account's balance at [atMillis] (inclusive). Every account is present. */
-    fun balancesAt(accounts: List<Account>, transactions: List<Transaction>, atMillis: Long): Map<Long, BigDecimal> =
-        AccountBalanceCalculator.balances(
-            accounts,
-            transactions.filter { it.timestampMillis <= atMillis }.map(::toLedgerEntry),
-        )
+    fun balancesAt(
+        accounts: List<Account>,
+        transactions: List<Transaction>,
+        atMillis: Long,
+        fx: LedgerFx? = null,
+    ): Map<Long, BigDecimal> {
+        val entries = transactions.filter { it.timestampMillis <= atMillis }.map(::toLedgerEntry)
+        return AccountBalanceCalculator.balances(accounts, fx?.apply(entries) ?: entries)
+    }
 
     fun toLedgerEntry(tx: Transaction) = AccountBalanceCalculator.LedgerEntry(
         accountId = tx.accountId,

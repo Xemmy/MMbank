@@ -26,11 +26,10 @@ import java.math.BigDecimal
  *     means "keep this out of income/spend ANALYTICS", not "this never
  *     happened". Filtering them out of a *balance* is what made the monthly
  *     report wrong. Callers who want analytics figures filter for themselves.
- *  2. **Amounts are summed regardless of currency.** A transaction whose
- *     currency differs from its account's is added at face value, preserving
- *     the behaviour the app has always had rather than quietly changing it.
- *     This is a known limitation, kept on purpose; converting would need the
- *     rates table and a decision about what to show when no rate exists.
+ *  2. **Amounts are summed as given.** This calculator does no currency
+ *     maths: the entries it receives are already in their account's currency
+ *     where a rate exists ([LedgerFx], applied where the ledger entries are
+ *     produced), and at face value, flagged `approximate`, where none does.
  *
  * Pure and `BigDecimal` end to end, so it is exact and JVM-testable.
  */
@@ -47,6 +46,8 @@ object AccountBalanceCalculator {
         val amount: BigDecimal,
         val currencyCode: String,
         val direction: TransactionDirection,
+        /** True when [amount] was converted from another currency (or couldn't be): show it as "≈". See [LedgerFx]. */
+        val approximate: Boolean = false,
     )
 
     /** Signed contribution of one entry: credits add, debits subtract. */

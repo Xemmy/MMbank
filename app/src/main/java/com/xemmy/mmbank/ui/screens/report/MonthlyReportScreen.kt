@@ -71,6 +71,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -136,15 +137,16 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
         // legs out of income/spend analytics (which `income`/`expenses` below
         // still honour), but they are real movements and dropping them here is
         // what used to make this figure disagree with the Accounts screen.
+        val rawEntries = transactions.map {
+            AccountBalanceCalculator.LedgerEntry(
+                accountId = it.accountId,
+                amount = it.amount,
+                currencyCode = it.currencyCode,
+                direction = it.direction,
+            )
+        }
         val netByAccount = AccountBalanceCalculator.netByAccount(
-            transactions.map {
-                AccountBalanceCalculator.LedgerEntry(
-                    accountId = it.accountId,
-                    amount = it.amount,
-                    currencyCode = it.currencyCode,
-                    direction = it.direction,
-                )
-            }
+            container.ledgerFxFlow.first().apply(rawEntries),
         )
 
         val balances = accounts.map { account ->

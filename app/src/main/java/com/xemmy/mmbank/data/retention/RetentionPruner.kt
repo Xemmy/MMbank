@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.LedgerFx
 import com.xemmy.mmbank.domain.account.PrunedBalanceFolder
 
 /**
@@ -22,7 +23,15 @@ import com.xemmy.mmbank.domain.account.PrunedBalanceFolder
  * both are whole-database operations, and the repository interface is already
  * wide enough that every hand-written test fake pays for each new member.
  */
-class RetentionPruner(private val database: AppDatabase) {
+class RetentionPruner(
+    private val database: AppDatabase,
+    /**
+     * Foreign-currency converter, so the fold is computed on the same
+     * converted amounts every balance screen uses -- otherwise a prune would
+     * move balances for accounts holding foreign-currency rows.
+     */
+    private val fxProvider: suspend () -> LedgerFx? = { null },
+) {
 
     /**
      * @param deleted how many rows were actually removed.
@@ -38,13 +47,14 @@ class RetentionPruner(private val database: AppDatabase) {
     suspend fun prune(plannedIds: List<Long>): Result {
         if (plannedIds.isEmpty()) return Result(deleted = 0, accountsAdjusted = 0)
 
+        val fx = fxProvider()
         return database.withTransaction {
             val transactionDao = database.transactionDao()
             val accountDao = database.accountDao()
 
             // Read the rows INSIDE the transaction: the fold has to describe
             // exactly the rows the delete below removes.
-            val entries = transactionDao.getLedgerEntriesByIds(plannedIds).map { row ->
+            val rawEntries = transactionDao.getLedgerEntriesByIds(plannedIds).map { row ->
                 AccountBalanceCalculator.LedgerEntry(
                     accountId = row.accountId,
                     amount = row.amount,
@@ -52,6 +62,7 @@ class RetentionPruner(private val database: AppDatabase) {
                     direction = row.direction,
                 )
             }
+            val entries = fx?.apply(rawEntries) ?: rawEntries
             val adjustments = PrunedBalanceFolder.fold(
                 accounts = accountDao.getAll().map { it.toDomain() },
                 prunedEntries = entries,

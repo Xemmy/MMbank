@@ -1142,6 +1142,13 @@ internal fun computeNetWorthTrend(
     val ratesFromBase = rates
         .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
         .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+    val fx = com.xemmy.mmbank.domain.account.LedgerFx(
+        baseCurrency = baseCurrency,
+        ratesFromBase = rates
+            .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate },
+        accountCurrencies = accounts.associate { it.id to it.currencyCode },
+    )
     val start = BalanceHistory.historyStart(transactions, zone)
     var approximate = false
     val ends = BalanceHistory.monthEnds(thisMonth, months, zone)
@@ -1149,7 +1156,7 @@ internal fun computeNetWorthTrend(
         if (start == null || month < start) {
             if (month != thisMonth) return@map null
         }
-        val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis)
+        val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis, fx)
         val rows = accounts.map { account ->
             val balance = balances.getValue(account.id).toDouble()
             AccountRow(account, balance, CurrencyMath.toBase(balance, account.currencyCode, baseCurrency, ratesFromBase))

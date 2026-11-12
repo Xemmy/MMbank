@@ -545,15 +545,17 @@ Plan debt payoff                   ›
 | B4 | **Dedup key is coarse:** amount + currency + direction within ±2 min (`Daos.kt:66-82`). It ignores account, card ending and channel. | Two *real* identical charges get dropped, e.g. two AED 4 Salik gates a minute apart, or two coffees. Meanwhile an SMS and a push for the same FX purchase with different amounts are both kept. | Dedup only **across channels** (SMS ↔ push). Two SMS are two purchases unless the body text is identical. Never dedup when both card endings are known and differ. Show merged rows ("Also arrived by SMS") with **Split back out**. Backlog #25. |
 | B5 | **No refund/reversal pairing, pending→posted, or partial refunds.** | Spend is overstated; reversals look like income. | Pair by merchant + amount within N days, net them in analytics, and keep the link visible and breakable. Backlog #22–24. |
 
+> **B1 foreign-currency balances** ✅ 0.76.0 (CI pending), per your choice "convert at today's rate": `LedgerFx` converts each charge into its account's currency at the stored forex rates where ledger entries are produced (Accounts, Home, Debt planner, card reminders, Monthly report, net-worth trend, retention fold), so every surface agrees. No usable rate → face value, flagged `approximate`. Known limit: today's rate is used, so a converted charge's effect moves when rates move (fixed by B2 rate history); the ≈ mark is not yet shown in the UI; Part-B "store billed amount" is not done.
+
 ### B.2 Data safety (the only area with data-loss consequences)
 
-> Status: schema JSONs are exported by KSP in CI and `MigrationSqlTest` runs v25→v32 on real SQLite (already in place). ✅ 0.75.2 (CI pending): retention prune preview ("This would delete N transactions from YEAR", `RetentionPreview`) shown under the history chips; "require a fresh backup first" not enforced. Still ⬜: scheduled automatic backups (#67).
+> Status: schema JSONs are exported by KSP in CI and `MigrationSqlTest` runs v25→v32 on real SQLite (already in place). ✅ 0.75.2 (verified by CI runs 466/467): retention prune preview ("This would delete N transactions from YEAR", `RetentionPreview`) shown under the history chips; "require a fresh backup first" not enforced. Still ⬜: scheduled automatic backups (#67).
 
 - **31 schema versions, and no migration is ever executed in CI.** `app/schemas/` is not committed, so `MigrationTestHelper` is impossible. Commit the schema JSONs and add Robolectric migration tests, at minimum a "v1 → v31" smoke test (backlog #1–3).
 - **Automatic backups:** today backup is manual-only. Add a scheduled encrypted `.mmb` to a chosen SAF folder, weekly plus before every migration (backlog #67). Subscriptions aren't in the backup (re-detected); say so in the UI.
 - **Retention prune deletes with no preview.** Show "This will delete 1,240 transactions from 2023" and require a fresh backup first (backlog #58).
 
-> **B4 dedup** ✅ 0.75.3 (CI pending): `CaptureDedupPolicy` — only cross-channel (SMS↔push) matches merge; two same-channel messages are two purchases unless the text is identical; differing known card endings never merge. Still ⬜: "Also arrived by SMS" merged-row display + Split back out.
+> **B4 dedup** ✅ 0.75.3 (CI runs 466/467 green): `CaptureDedupPolicy` — only cross-channel (SMS↔push) matches merge; two same-channel messages are two purchases unless the text is identical; differing known card endings never merge. Still ⬜: "Also arrived by SMS" merged-row display + Split back out.
 
 ### B.3 Capture loop (the growth loop for accuracy)
 

@@ -34,6 +34,8 @@ import com.xemmy.mmbank.domain.usecase.TransferMatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import com.xemmy.mmbank.domain.account.LedgerFx
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
@@ -65,6 +67,11 @@ class TransactionRepositoryImpl(
      * ingest pipeline's own result.
      */
     private val onTransactionRecorded: (Transaction) -> Unit = {},
+    /**
+     * Live foreign-currency converter for balances ([LedgerFx]). Null keeps
+     * entries at face value, so hand-written test fakes behave as before.
+     */
+    private val ledgerFx: Flow<LedgerFx>? = null,
 ) : TransactionRepository, LedgerRepository {
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -89,6 +96,10 @@ class TransactionRepositoryImpl(
                         direction = it.direction,
                     )
                 }
+            }
+            .let { entries ->
+                val fxFlow = ledgerFx ?: return@let entries
+                combine(entries, fxFlow) { list, fx -> fx.apply(list) }
             }
 
     /**

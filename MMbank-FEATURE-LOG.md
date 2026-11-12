@@ -2872,7 +2872,7 @@ and that derivation existed in three places that disagreed with each other.
 
 ### Deferred
 
-- **Foreign-currency amounts still sum 1:1** into an account of a different
+- **(Superseded in 0.76.0: converted at today's rate by `LedgerFx`.)** **Foreign-currency amounts still sum 1:1** into an account of a different
   currency — a USD 100 charge reduces an AED account by 100. Raised as the
   defect most likely to be quietly wrong on a real ledger; the user chose
   explicitly to leave the behaviour alone, so the new calculator preserves it
