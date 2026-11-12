@@ -30,8 +30,8 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.report.YearInReview
 import com.xemmy.mmbank.domain.report.YearInReviewBuilder
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.moneyLabelWhole
 import com.xemmy.mmbank.ui.util.CurrencyMath
-import com.xemmy.mmbank.ui.util.asMoneyWhole
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
@@ -74,6 +74,9 @@ class YearInReviewViewModel(private val container: AppContainer) : ViewModel() {
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YearUiState(LocalDate.now().year, "", null, false))
 
+    /** Shared, live hide-balances flag -- see [AppContainer.hideBalances]. */
+    val hideBalances: StateFlow<Boolean> = container.hideBalances
+
     fun previousYear() { year.value = year.value - 1 }
 
     /** Never past the current year: there is nothing to review yet. */
@@ -87,7 +90,8 @@ fun YearInReviewScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val review = state.review
-    val money = { v: Double -> v.asMoneyWhole(state.currency) }
+    val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
+    val money = { v: Double -> moneyLabelWhole(v, state.currency, hidden) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
