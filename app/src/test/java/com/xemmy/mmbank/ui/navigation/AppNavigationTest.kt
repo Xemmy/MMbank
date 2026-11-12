@@ -43,6 +43,12 @@ class AppNavigationTest {
         ).forEach { assertNull(it, TabRouting.tabFor(it)) }
     }
 
+    @Test fun searchHighlightsNoTabAndIsNotATabRoot() {
+        assertNull(TabRouting.tabFor(Routes.SEARCH))
+        assertTrue(!NavTransitions.isTabRoot(Routes.SEARCH))
+        assertEquals(NavTransitionKind.FORWARD, NavTransitions.kind(Routes.HOME, Routes.SEARCH, false, false))
+    }
+
     @Test fun planToolsHighlightPlan() {
         listOf(
             Routes.CASHBACK, Routes.SUBSCRIPTIONS, Routes.GOALS, Routes.BILLS, Routes.SPLITS,

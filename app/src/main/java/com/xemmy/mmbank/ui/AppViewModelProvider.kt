@@ -19,6 +19,7 @@ import com.xemmy.mmbank.ui.screens.integrity.IntegrityViewModel
 import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailViewModel
 import com.xemmy.mmbank.ui.screens.report.MonthlyReportViewModel
 import com.xemmy.mmbank.ui.screens.review.ReviewViewModel
+import com.xemmy.mmbank.ui.screens.search.SearchViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
 import com.xemmy.mmbank.ui.screens.settings.ImportMessagesViewModel
@@ -55,6 +56,7 @@ object AppViewModelProvider {
         initializer { BillsViewModel(mmBankApp().container) }
         initializer { SplitsViewModel(mmBankApp().container) }
         initializer { GroupDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
+        initializer { SearchViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

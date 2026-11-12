@@ -774,6 +774,9 @@ merchant_learning(merchantKey, field[CATEGORY|PERSON|ACCOUNT|KIND], value,
 
 ---
 
+> **B.5 #2 global search** ✅ 0.86.0: a search icon beside the gear on every tab root opens one search across screens and settings (by title or keyword, so "pin" finds App lock),
+merchants (brand-grouped, with counts), transactions (by merchant or an exact amount), accounts (name, bank, last four digits) and parsing rules (`GlobalSearch`, ranked exact > prefix > word-start > contains, capped per kind). UI is not verified by CI.
+
 ## Where things stand after 0.85.1
 
 Every batch above is verified by a green CI run (unit tests and a built APK). The latest is run 43304628317 for 0.85.1. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.

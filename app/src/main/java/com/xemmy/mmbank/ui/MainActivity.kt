@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Home
@@ -40,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import com.xemmy.mmbank.ui.navigation.NavChrome
+import com.xemmy.mmbank.ui.screens.search.SearchScreen
+import com.xemmy.mmbank.ui.screens.search.SearchTarget
 import com.xemmy.mmbank.ui.navigation.AdaptiveLayout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Alignment
@@ -361,6 +364,9 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
             // Settings lives behind the gear on every tab root, not in the bar.
             if (NavTransitions.isTabRoot(currentRoute)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = { navController.navigate(Routes.SEARCH) { launchSingleTop = true } }) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search")
+                    }
                     IconButton(onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
@@ -531,6 +537,28 @@ private fun AppNavHost(
             CopilotChatScreen(
                 onBack = { navController.popBackStack() },
                 onOpenActivity = { drill -> navController.navigate(Routes.activityDrill(Uri.encode(drill))) },
+            )
+        }
+        composable(Routes.SEARCH) {
+            SearchScreen(
+                onBack = { navController.popBackStack() },
+                onOpen = { target ->
+                    when (target) {
+                        is SearchTarget.Merchant ->
+                            navController.navigate(Routes.merchantDetail(Uri.encode(target.merchant)))
+                        is SearchTarget.Rule -> navController.navigate(Routes.ruleEditor(target.ruleId))
+                        is SearchTarget.Route ->
+                            if (NavTransitions.isTabRoot(target.route)) {
+                                navController.navigate(target.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            } else {
+                                navController.navigate(target.route)
+                            }
+                    }
+                },
             )
         }
         composable("rules") {

@@ -39,6 +39,7 @@ object Routes {
     const val COPILOT = "copilot"
     const val RULES = "rules"
     const val SETTINGS_CAPTURE = "settings_capture"
+    const val SEARCH = "search"
 
     /** Activity, pre-filtered to transactions that belong to no account. */
     const val ACTIVITY_UNASSIGNED = "transactions?accountFilter=unassigned"
