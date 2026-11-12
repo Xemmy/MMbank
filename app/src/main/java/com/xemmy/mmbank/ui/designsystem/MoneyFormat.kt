@@ -2,6 +2,8 @@ package com.xemmy.mmbank.ui.designsystem
 
 import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
+import com.xemmy.mmbank.ui.util.asMoneyOrMask
+import com.xemmy.mmbank.ui.util.asMoneyWholeOrMask
 import com.xemmy.mmbank.ui.util.fractionDigitsFor
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -96,3 +98,19 @@ fun moneyContentDescription(amount: Double, currencyCode: String, kind: Transact
     }
     return "$verb $spoken"
 }
+
+/**
+ * Plain money string for running text (sentences, captions, summary lines)
+ * where a coloured [MoneyText] cannot be embedded. Keeps the amount's own sign
+ * and the app-wide number format; the mask when [hidden].
+ */
+fun moneyLabel(amount: Double, currencyCode: String, hidden: Boolean = false): String =
+    amount.asMoneyOrMask(currencyCode, hidden)
+
+/** [moneyLabel] for exact balances held as BigDecimal. */
+fun moneyLabel(amount: BigDecimal, currencyCode: String, hidden: Boolean = false): String =
+    amount.asMoneyOrMask(currencyCode, hidden)
+
+/** [moneyLabel] rounded to whole units, for compact stat tiles. */
+fun moneyLabelWhole(amount: Double, currencyCode: String, hidden: Boolean = false): String =
+    amount.asMoneyWholeOrMask(currencyCode, hidden)

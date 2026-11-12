@@ -1,7 +1,6 @@
 package com.xemmy.mmbank.ui.screens.dashboard
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,13 +22,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -63,18 +57,23 @@ import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
-import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.AccountCarousel
 import com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet
-import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.designsystem.Banner
+import com.xemmy.mmbank.ui.designsystem.MMAssistChip
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.MMTone
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.SectionHeader
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.designsystem.moneyLabelWhole
+import com.xemmy.mmbank.ui.theme.MMSpacing
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.util.AMOUNT_MASK
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
-import com.xemmy.mmbank.ui.util.asMoney
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
-import com.xemmy.mmbank.ui.util.asMoneyWholeOrMask
 import com.xemmy.mmbank.ui.util.asQuantity
 import java.time.Instant
 import java.time.ZoneId
@@ -132,8 +131,8 @@ fun DashboardScreen(
         // must stay prefixed per section.
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(MMSpacing.gutter),
+            verticalArrangement = Arrangement.spacedBy(MMSpacing.cardGap),
         ) {
             captureHealth?.takeIf { it.showBanner }?.let { health ->
                 item(key = "capture_health") {
@@ -216,20 +215,20 @@ fun DashboardScreen(
             }
 
             if (state.cryptoBalances.isNotEmpty() || state.cryptoWallets.isNotEmpty()) {
-                item { SectionTitle("Crypto (Binance)") }
+                item { SectionHeader("Crypto (Binance)") }
                 item(key = "crypto_group") {
                     CryptoCard(state)
                 }
             }
 
-            item { SectionTitle("Recent activity") }
+            item { SectionHeader("Recent activity") }
             if (state.recent.isEmpty()) {
                 item {
                     Text(
                         "No transactions captured yet. Enable notification access and SMS " +
                             "permission in Settings, then wait for a bank message.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             } else {
@@ -238,7 +237,7 @@ fun DashboardScreen(
                     // "com.adib.mobile" shows as "ADIB", not the raw package.
                     val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
                     RecentTransactionRow(tx, bankName, hidden)
-                    HorizontalDivider()
+                    HorizontalDivider(color = MMTheme.colors.borderSubtle)
                 }
             }
         }
@@ -259,11 +258,12 @@ fun DashboardScreen(
 /** Card payments due within a week or overdue, most urgent first. */
 @Composable
 private fun CardsDueCard(cards: List<CardPaymentReminders.CardReminder>, hidden: Boolean) {
+    // The LazyColumn's contentPadding already supplies the gutter; no extra inset here.
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .padding(vertical = MMSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(MMSpacing.xs),
     ) {
         Text("Cards due", style = MaterialTheme.typography.titleSmall)
         cards.forEach { card ->
@@ -272,11 +272,11 @@ private fun CardsDueCard(cards: List<CardPaymentReminders.CardReminder>, hidden:
                 Text(
                     "${card.accountName} · ${CardPaymentReminders.whenText(days)}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (days < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    color = if (days < 0) MMTheme.colors.danger else MMTheme.colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    card.status.amountDue.asMoneyOrMask(card.currencyCode, hidden),
+                    moneyLabel(card.status.amountDue, card.currencyCode, hidden),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -290,7 +290,7 @@ private fun DashboardHeader() {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = MMSpacing.gutter, vertical = MMSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Home", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -300,20 +300,15 @@ private fun DashboardHeader() {
 /** Compact "filtered by [label]" chip above the feed, with an X to clear the carousel's account selection. */
 @Composable
 private fun AccountFilterChip(label: String, onClear: () -> Unit) {
-    AssistChip(
+    MMAssistChip(
+        label = "Filtered: $label",
         onClick = onClear,
-        label = { Text("Filtered: $label") },
-        trailingIcon = {
+        leadingIcon = {
             Icon(Icons.Filled.Close, contentDescription = "Clear filter", modifier = Modifier.size(16.dp))
         },
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ),
     )
 }
 
-/** "N items to review" entry point into the High-Detail Review Transactions screen; hidden by the caller when count is 0. */
 /**
  * "Capture may have stopped" -- the app's main way of failing is silently,
  * so this sits above everything else on Home (see [CaptureHealthEvaluator]).
@@ -324,75 +319,49 @@ private fun CaptureHealthBanner(
     onFix: () -> Unit,
     onSnooze: () -> Unit,
 ) {
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.WarningAmber,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                )
-                Text(
-                    when (health.state) {
-                        CaptureHealthEvaluator.State.NO_ACCESS -> "Capture is off"
-                        CaptureHealthEvaluator.State.DISCONNECTED -> "Capture may have stopped"
-                        else -> "Unusually quiet"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(start = 10.dp),
-                )
+    Banner(
+        tone = MMTone.DANGER,
+        title = when (health.state) {
+            CaptureHealthEvaluator.State.NO_ACCESS -> "Capture is off"
+            CaptureHealthEvaluator.State.DISCONNECTED -> "Capture may have stopped"
+            else -> "Unusually quiet"
+        },
+        body = health.message,
+        modifier = Modifier.fillMaxWidth(),
+        actions = {
+            if (health.state != CaptureHealthEvaluator.State.NO_ACCESS) {
+                TextButton(onClick = onSnooze) { Text("Snooze 24h") }
             }
-            Text(
-                health.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                if (health.state != CaptureHealthEvaluator.State.NO_ACCESS) {
-                    TextButton(onClick = onSnooze) { Text("Snooze 24h") }
-                }
-                TextButton(onClick = onFix) { Text("Fix") }
-            }
-        }
-    }
+            TextButton(onClick = onFix) { Text("Fix") }
+        },
+    )
 }
 
+/** "N items to review" entry point into the High-Detail Review Transactions screen; hidden by the caller when count is 0. */
 @Composable
 private fun ReviewBadgeCard(count: Int, onClick: () -> Unit) {
-    Card(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-    ) {
+    MMCard(Modifier.fillMaxWidth(), onClick = onClick, tone = MMTone.INFO) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Outlined.AutoAwesome,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = MMTheme.colors.info,
             )
             Text(
                 "$count ${if (count == 1) "item" else "items"} to review",
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = MMTheme.colors.textPrimary,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = MMSpacing.md),
             )
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = MMTheme.colors.textSecondary,
             )
         }
     }
@@ -412,27 +381,20 @@ private fun UnassignedRow(
     hidden: Boolean,
     onClick: () -> Unit,
 ) {
-    Card(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
+    MMCard(Modifier.fillMaxWidth(), onClick = onClick, tone = MMTone.WARNING) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Outlined.HelpOutline,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MMTheme.colors.textSecondary,
             )
             Column(
                 Modifier
                     .weight(1f)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = MMSpacing.md),
             ) {
                 Text(
                     if (unassigned.entryCount == 1) {
@@ -441,20 +403,18 @@ private fun UnassignedRow(
                         "${unassigned.entryCount} transactions aren't in any account"
                     },
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textPrimary,
                 )
                 Text(
-                    unassigned.totalsByCurrency.entries.joinToString("  ") { (code, total) ->
-                        total.asMoneyOrMask(code, hidden)
-                    },
+                    unassignedTotalsLabel(unassigned.totalsByCurrency, hidden),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MMTheme.colors.textSecondary,
             )
         }
     }
@@ -472,38 +432,36 @@ private fun NetWorthCard(
     onToggleHide: () -> Unit,
     onRefresh: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(start = 16.dp, end = 4.dp, top = 16.dp, bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    val colors = MMTheme.colors
+    MMCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Net worth", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(4.dp))
+                Text("Net worth", style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+                Spacer(Modifier.height(MMSpacing.xs))
                 AmountText(
-                    display = if (hidden) AMOUNT_MASK else (if (approximate) "≈ " else "") + netWorth.asMoney(currency),
-                    color = if (!hidden && netWorth < 0) LedgerColors.debit else MaterialTheme.colorScheme.primary,
+                    display = netWorthDisplay(netWorth, currency, approximate, hidden),
+                    color = if (!hidden && netWorth < 0) colors.moneyOut else colors.accent,
                     style = MaterialTheme.typography.headlineMedium,
                 )
                 if (approximate && !hidden) {
                     Text(
                         "Some balances lack an exchange rate — refresh rates in Settings.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.textSecondary,
                     )
                 }
                 if (cryptoExcluded && !hidden) {
                     Text(
                         "Crypto excluded from total — change in Settings.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.textSecondary,
                     )
                 }
                 if (creditCardExcluded && !hidden) {
                     Text(
                         "Credit card excluded from total — change in Settings.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = colors.textSecondary,
                     )
                 }
             }
@@ -511,14 +469,18 @@ private fun NetWorthCard(
                 Icon(
                     if (hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
                     contentDescription = if (hidden) "Show balances" else "Hide balances",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = colors.textSecondary,
                 )
             }
             if (refreshing) {
                 CircularProgressIndicator(Modifier.size(24.dp))
             } else {
                 IconButton(onClick = onRefresh) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh rates and balances")
+                    Icon(
+                        Icons.Filled.Refresh,
+                        contentDescription = "Refresh rates and balances",
+                        tint = colors.textSecondary,
+                    )
                 }
             }
         }
@@ -538,32 +500,29 @@ private fun WeeklyDigestCard(
 ) {
     val wording = remember(currency, hidden) {
         WhatChangedWording(
-            money = { it.asMoneyOrMask(currency, hidden) },
-            moneyIn = { amount, code -> amount.asMoneyOrMask(code, hidden) },
+            money = { moneyLabel(it, currency, hidden) },
+            moneyIn = { amount, code -> moneyLabel(amount, code, hidden) },
         )
     }
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Top) {
             Icon(
                 Icons.Outlined.AutoAwesome,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = MMTheme.colors.accent,
                 modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("This week", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(4.dp))
+                Text("This week", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
+                Spacer(Modifier.height(MMSpacing.xs))
                 Text(wording.headline(digest), style = MaterialTheme.typography.bodyMedium)
                 digest.items.forEach { item ->
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(MMSpacing.xs))
                     Text(
                         "• " + wording.item(item),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             }
@@ -584,41 +543,40 @@ private fun FinancialHealthCard(
     currency: String,
     hidden: Boolean,
 ) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Financial health", style = MaterialTheme.typography.labelLarge)
+    val colors = MMTheme.colors
+    MMCard(Modifier.fillMaxWidth()) {
+        Text("Financial health", style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            HealthMetricTile(
+                label = "Savings rate",
+                value = "${metrics.savingsRatePercent.roundToInt()}%",
+                valueColor = if (metrics.savingsRatePercent >= 0) colors.moneyIn else colors.moneyOut,
+            )
+            HealthMetricTile(
+                label = "Cash runway",
+                value = metrics.cashRunwayMonths?.let { "${it.roundToInt()} mo" } ?: "—",
+                valueColor = colors.textPrimary,
+            )
+            HealthMetricTile(
+                label = "Net cash flow",
+                value = moneyLabelWhole(metrics.netCashFlow, currency, hidden),
+                valueColor = if (metrics.netCashFlow >= 0) colors.moneyIn else colors.moneyOut,
+            )
+        }
+        if (cashFlow != null) {
+            Spacer(Modifier.height(MMSpacing.md))
+            HorizontalDivider(color = colors.borderSubtle)
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                HealthMetricTile(
-                    label = "Savings rate",
-                    value = "${metrics.savingsRatePercent.roundToInt()}%",
-                    valueColor = if (metrics.savingsRatePercent >= 0) LedgerColors.credit else LedgerColors.debit,
-                )
-                HealthMetricTile(
-                    label = "Cash runway",
-                    value = metrics.cashRunwayMonths?.let { "${it.roundToInt()} mo" } ?: "—",
-                    valueColor = MaterialTheme.colorScheme.onSurface,
-                )
-                HealthMetricTile(
-                    label = "Net cash flow",
-                    value = metrics.netCashFlow.asMoneyWholeOrMask(currency, hidden),
-                    valueColor = if (metrics.netCashFlow >= 0) LedgerColors.credit else LedgerColors.debit,
-                )
-            }
-            if (cashFlow != null) {
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(10.dp))
-                val paydayLabel = Instant.ofEpochMilli(cashFlow.nextPaydayMillis).atZone(ZoneId.systemDefault())
-                    .toLocalDate().format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
-                Text(
-                    "Safe to spend until payday ($paydayLabel, ${cashFlow.daysUntilPayday}d): " +
-                        "${cashFlow.safeToSpend.toDouble().asMoneyOrMask(currency, hidden)} " +
-                        "(${cashFlow.dailyAllowance.toDouble().asMoneyOrMask(currency, hidden)}/day)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            val paydayLabel = Instant.ofEpochMilli(cashFlow.nextPaydayMillis).atZone(ZoneId.systemDefault())
+                .toLocalDate().format(DateTimeFormatter.ofPattern("MMM d", Locale.US))
+            Text(
+                "Safe to spend until payday ($paydayLabel, ${cashFlow.daysUntilPayday}d): " +
+                    "${moneyLabel(cashFlow.safeToSpend.toDouble(), currency, hidden)} " +
+                    "(${moneyLabel(cashFlow.dailyAllowance.toDouble(), currency, hidden)}/day)",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+            )
         }
     }
 }
@@ -626,15 +584,10 @@ private fun FinancialHealthCard(
 @Composable
 private fun HealthMetricTile(label: String, value: String, valueColor: androidx.compose.ui.graphics.Color) {
     Column {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(2.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MMTheme.colors.textSecondary)
+        Spacer(Modifier.height(MMSpacing.xxs))
         AmountText(display = value, color = valueColor, style = MaterialTheme.typography.titleMedium)
     }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
 }
 
 /**
@@ -646,89 +599,85 @@ private fun SectionTitle(text: String) {
 private fun CryptoCard(state: DashboardUiState) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val hidden = state.hideBalances
+    val colors = MMTheme.colors
     val summary = buildList {
         if (state.cryptoWallets.isNotEmpty()) add("${state.cryptoWallets.size} wallets")
         if (state.cryptoBalances.isNotEmpty()) add("${state.cryptoBalances.size} spot assets")
     }.joinToString(" · ")
 
-    Card(Modifier.fillMaxWidth()) {
-        Column {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Total across wallets", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+    MMCard(Modifier.fillMaxWidth(), onClick = { expanded = !expanded }) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Total across wallets", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    state.cryptoTotalUsd.asMoneyOrMask("USD", hidden),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Icon(
-                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
                 )
             }
+            Text(
+                moneyLabel(state.cryptoTotalUsd, "USD", hidden),
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.accent,
+            )
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = colors.textSecondary,
+            )
+        }
 
-            AnimatedVisibility(visible = expanded) {
-                Column(Modifier.padding(bottom = 6.dp)) {
-                    state.cryptoWallets.forEach { wallet ->
-                        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+        AnimatedVisibility(visible = expanded) {
+            Column {
+                state.cryptoWallets.forEach { wallet ->
+                    HorizontalDivider(Modifier.padding(top = MMSpacing.md), color = colors.borderSubtle)
+                    Row(
+                        Modifier.padding(top = MMSpacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(wallet.walletName, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (hidden) AMOUNT_MASK else "≈ ${wallet.balanceBtc.asQuantity()} BTC",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary,
+                            )
+                        }
+                        Text(
+                            usdValueLabel(wallet.valueUsd, hidden),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                    }
+                }
+
+                if (state.cryptoBalances.isNotEmpty()) {
+                    HorizontalDivider(Modifier.padding(top = MMSpacing.md), color = colors.borderSubtle)
+                    Text(
+                        "HOLDINGS (SPOT · FUNDING · EARN)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.accent,
+                        modifier = Modifier.padding(top = MMSpacing.md),
+                    )
+                    state.cryptoBalances.forEach { asset ->
                         Row(
-                            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            Modifier.padding(top = MMSpacing.sm),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(wallet.walletName, style = MaterialTheme.typography.titleSmall)
+                                Text(asset.asset, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    if (hidden) AMOUNT_MASK else "≈ ${wallet.balanceBtc.asQuantity()} BTC",
+                                    if (hidden) AMOUNT_MASK else asset.total.asQuantity(),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = colors.textSecondary,
                                 )
                             }
                             Text(
-                                if (hidden) AMOUNT_MASK else wallet.valueUsd?.toDouble()?.asMoney("USD") ?: "—",
-                                style = MaterialTheme.typography.titleSmall,
+                                usdValueLabel(asset.valueUsd, hidden),
+                                style = MaterialTheme.typography.bodyMedium,
                             )
-                        }
-                    }
-
-                    if (state.cryptoBalances.isNotEmpty()) {
-                        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                        Text(
-                            "HOLDINGS (SPOT · FUNDING · EARN)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 16.dp, top = 10.dp),
-                        )
-                        state.cryptoBalances.forEach { asset ->
-                            Row(
-                                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(asset.asset, style = MaterialTheme.typography.bodyMedium)
-                                    Text(
-                                        if (hidden) AMOUNT_MASK else asset.total.asQuantity(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Text(
-                                    if (hidden) AMOUNT_MASK else asset.valueUsd?.toDouble()?.asMoney("USD") ?: "—",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
                         }
                     }
                 }
@@ -739,7 +688,6 @@ private fun CryptoCard(state: DashboardUiState) {
 
 @Composable
 fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Boolean = false) {
-    val isCredit = tx.direction == TransactionDirection.CREDIT
     val title = tx.merchant ?: bankName ?: tx.sender ?: tx.source.name
     val subtitle = listOfNotNull(
         tx.person,
@@ -764,20 +712,22 @@ fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Bool
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MMTheme.colors.textSecondary,
             )
         }
-        AmountText(
-            display = if (hidden) AMOUNT_MASK else (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
-            color = if (isCredit) LedgerColors.credit else LedgerColors.debit,
+        MoneyText(
+            amount = tx.amount,
+            currencyCode = tx.currencyCode,
+            kind = homeRowKind(tx.direction),
             style = MaterialTheme.typography.bodyLarge,
+            hidden = hidden,
         )
         if (tx.excludeFromStats) {
             Icon(
                 Icons.Filled.VisibilityOff,
                 contentDescription = "Excluded from analytics",
-                modifier = Modifier.padding(start = 4.dp).size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = MMSpacing.xs).size(14.dp),
+                tint = MMTheme.colors.textSecondary,
             )
         }
     }
