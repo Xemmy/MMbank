@@ -40,7 +40,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
 import com.xemmy.mmbank.ui.components.categoryColor
-import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -213,7 +213,7 @@ private fun UncategorizedRow(
                 )
                 Text(
                     (if (transaction.direction == TransactionDirection.CREDIT) "+" else "-") +
-                        transaction.amount.asMoney(transaction.currencyCode),
+                        moneyLabel(transaction.amount.toDouble(), transaction.currencyCode),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )

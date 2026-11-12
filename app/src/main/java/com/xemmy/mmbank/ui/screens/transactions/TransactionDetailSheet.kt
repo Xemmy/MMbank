@@ -35,23 +35,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.util.rememberReduceMotion
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.ui.designsystem.moneyColor
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDateTime
-import com.xemmy.mmbank.ui.util.asMoney
 
 /**
  * Read-only detail overlay for a tapped transaction. Built as an [AlertDialog]
@@ -103,7 +103,7 @@ fun TransactionDetailSheet(
                 Text(
                     merchant ?: transaction.sender ?: transaction.source.name,
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = ObsidianTokens.textPrimary,
+                    color = MMTheme.colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = titleModifier,
@@ -111,17 +111,9 @@ fun TransactionDetailSheet(
                 Spacer(Modifier.width(12.dp))
                 AmountText(
                     display = (if (transaction.direction == TransactionDirection.CREDIT) "+" else "-") +
-                        transaction.amount.asMoney(transaction.currencyCode),
-                    color = when (amountTone(transaction.amount, transaction.direction)) {
-                        AmountTone.NEGATIVE -> amountNegativeColor
-                        AmountTone.POSITIVE -> amountPositiveColor
-                        AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
-                    },
-                    style = TextStyle(
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFeatureSettings = "tnum",
-                    ),
+                        moneyLabel(transaction.amount.toDouble(), transaction.currencyCode),
+                    color = moneyColor(amountTone(transaction.amount, transaction.direction).toMoneyTone()),
+                    style = MaterialTheme.typography.titleMedium,
                 )
             }
         },
@@ -155,9 +147,9 @@ fun TransactionDetailSheet(
                 anomaly?.let { a ->
                     Text(
                         "⚠ ${String.format(java.util.Locale.US, "%.1f", a.ratio)}× your usual at ${a.merchant} " +
-                            "(usually about ${a.usual.asMoney(a.currencyCode)})",
+                            "(usually about ${moneyLabel(a.usual, a.currencyCode)})",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = ObsidianTokens.debit,
+                        color = MMTheme.colors.warning,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                 }
@@ -179,17 +171,17 @@ fun TransactionDetailSheet(
                 DetailRow("Source", sourceLabel(transaction.source))
 
                 transaction.rawMessage?.takeIf { it.isNotBlank() }?.let { message ->
-                    HorizontalDivider(color = ObsidianTokens.hairlineDialog, modifier = Modifier.padding(vertical = 10.dp))
+                    HorizontalDivider(color = MMTheme.colors.borderSubtle, modifier = Modifier.padding(vertical = 10.dp))
                     Text(
                         "Message",
                         style = MaterialTheme.typography.labelMedium,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
                     Text(
                         message,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = ObsidianTokens.textPrimary,
+                        color = MMTheme.colors.textPrimary,
                     )
                 }
 
@@ -197,7 +189,7 @@ fun TransactionDetailSheet(
                     Text(
                         "⚠ Excluded from analytics",
                         style = MaterialTheme.typography.labelMedium,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
@@ -237,10 +229,10 @@ private fun KindPicker(transaction: Transaction, onKindChange: (TransactionKind,
                 // A one-sided kind on the wrong side would be coerced away anyway.
                 .filter { it.fixedDirection == null || it.fixedDirection == transaction.direction }
                 .forEach { kind ->
-                    ObsidianChip(
+                    MMFilterChip(
                         selected = transaction.kind == kind,
                         onClick = { if (kind != transaction.kind) onKindChange(kind, rememberForMerchant && merchant != null) },
-                        label = { Text(kind.label) },
+                        label = kind.label,
                     )
                 }
         }
@@ -250,7 +242,7 @@ private fun KindPicker(transaction: Transaction, onKindChange: (TransactionKind,
                 Text(
                     "Remember for $merchant",
                     style = MaterialTheme.typography.bodySmall,
-                    color = ObsidianTokens.textMeta,
+                    color = MMTheme.colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -269,13 +261,13 @@ private fun DetailRow(label: String, value: String) {
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
-            color = ObsidianTokens.textMeta,
+            color = MMTheme.colors.textSecondary,
             modifier = Modifier.weight(1f),
         )
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
-            color = ObsidianTokens.textPrimary,
+            color = MMTheme.colors.textPrimary,
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.End,
         )

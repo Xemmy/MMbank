@@ -155,7 +155,8 @@ import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.RowAvatar
 import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
@@ -378,7 +379,7 @@ internal fun TransactionEditorDialog(
                     parseError?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
-                    HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                    HorizontalDivider(color = MMTheme.colors.borderSubtle)
                 }
                 // What it is: decides the sign in balances AND how it counts in
                 // Spent/Received (a refund lowers spending, a transfer or card
@@ -388,27 +389,24 @@ internal fun TransactionEditorDialog(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                 ) {
                     editorKindsFor(existing?.kind).forEach { entry ->
-                        ObsidianChip(
+                        MMFilterChip(
                             selected = kind == entry,
                             onClick = { kind = entry },
-                            label = { Text(entry.label) },
+                            label = entry.label,
                         )
                     }
                 }
                 Text(
                     kindHint(kind, transferMode),
                     style = MaterialTheme.typography.bodySmall,
-                    color = ObsidianTokens.textMeta,
+                    color = MMTheme.colors.textSecondary,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = amount,
                         onValueChange = { amount = it },
                         label = { MetaLabel("Amount") },
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontFamily = AppFonts.plexMono,
-                            fontSize = ObsidianTokens.amountFontSize,
-                        ),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = AppFonts.plexMono),
                         singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                         isError = amount.isNotBlank() && amountValue == null,
@@ -547,31 +545,27 @@ internal fun TransactionEditorDialog(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        ObsidianChip(
+                        MMFilterChip(
                             selected = categoryIdOverride == null,
                             onClick = { categoryIdOverride = null },
-                            label = {
-                                Text(
-                                    suggestedCategory?.let { "Auto · ${it.icon} ${it.name}" } ?: "Auto · Uncategorized",
-                                )
-                            },
+                            label = suggestedCategory?.let { "Auto · ${it.icon} ${it.name}" } ?: "Auto · Uncategorized",
                         )
                         categories.forEach { category ->
-                            ObsidianChip(
+                            MMFilterChip(
                                 selected = categoryIdOverride == category.id,
                                 onClick = { categoryIdOverride = category.id },
-                                label = { Text("${category.icon} ${category.name}") },
+                                label = "${category.icon} ${category.name}",
                             )
                         }
-                        ObsidianChip(
+                        MMFilterChip(
                             selected = false,
                             onClick = { creatingCategory = true },
-                            label = { Text("+ New") },
+                            label = "+ New",
                         )
                     }
                 }
 
-                androidx.compose.material3.HorizontalDivider(color = ObsidianTokens.hairline)
+                androidx.compose.material3.HorizontalDivider(color = MMTheme.colors.borderSubtle)
 
                 // Analytics purity control: internal transfers, cash refunds and
                 // the like stay in the ledger but shouldn't skew the stats.
@@ -587,7 +581,7 @@ internal fun TransactionEditorDialog(
                     Switch(
                         checked = excludeFromStats,
                         onCheckedChange = { excludeFromStats = it },
-                        colors = SwitchDefaults.colors(checkedTrackColor = ObsidianTokens.credit),
+                        colors = SwitchDefaults.colors(checkedTrackColor = MMTheme.colors.moneyIn),
                     )
                 }
                 }
@@ -597,8 +591,8 @@ internal fun TransactionEditorDialog(
             androidx.compose.material3.Button(
                 enabled = valid,
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = ObsidianTokens.textPrimary,
-                    contentColor = ObsidianTokens.canvas,
+                    containerColor = MMTheme.colors.textPrimary,
+                    contentColor = MMTheme.colors.canvas,
                 ),
                 onClick = {
                     // Button is only enabled when both parse, so this is safe.

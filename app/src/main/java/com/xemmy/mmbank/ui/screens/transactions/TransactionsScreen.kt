@@ -26,7 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -57,8 +57,6 @@ import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -109,7 +107,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import java.time.LocalDate
 import kotlin.math.roundToInt
 import androidx.lifecycle.ViewModel
@@ -146,16 +144,18 @@ import com.xemmy.mmbank.domain.parser.MerchantCategorizer
 import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.domain.usecase.FieldUpdate
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MoneyTone
+import com.xemmy.mmbank.ui.designsystem.moneyColor
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.components.AiParsingIndicator
 import com.xemmy.mmbank.ui.components.CategoryEditorDialog
 import com.xemmy.mmbank.ui.components.CategoryPickerBottomSheet
-import com.xemmy.mmbank.ui.theme.AppFonts
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.RowAvatar
 import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
@@ -166,7 +166,6 @@ import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MAX_LENGTH
 import com.xemmy.mmbank.ui.util.CURRENCY_CODE_MIN_LENGTH
 import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.asDateTime
-import com.xemmy.mmbank.ui.util.asMoney
 import com.xemmy.mmbank.ui.util.dayPillLabel
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import com.xemmy.mmbank.ui.util.toLocalDate
@@ -603,21 +602,19 @@ fun TransactionsScreen(
  */
 @Composable
 private fun DayPill(day: LocalDate, today: LocalDate) {
+    val colors = MMTheme.colors
     Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(ObsidianTokens.pillRadius))
-                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(ObsidianTokens.pillRadius))
-                .border(1.dp, ObsidianTokens.hairline, RoundedCornerShape(ObsidianTokens.pillRadius))
+                .clip(CircleShape)
+                .background(colors.surfaceRaised, CircleShape)
+                .border(1.dp, colors.borderSubtle, CircleShape)
                 .padding(horizontal = 12.dp, vertical = 5.dp),
         ) {
             Text(
                 dayPillLabel(day, today),
-                color = ObsidianTokens.textMeta,
-                fontFamily = AppFonts.inter,
-                fontWeight = FontWeight.Medium,
-                fontSize = ObsidianTokens.metaFontSize,
-                letterSpacing = ObsidianTokens.pillTracking,
+                color = colors.textSecondary,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.18.em),
             )
         }
     }
@@ -674,21 +671,22 @@ private fun SwipeToActionBox(
 
 @Composable
 private fun SwipeActionBackground(direction: SwipeToDismissBoxValue) {
+    val colors = MMTheme.colors
     val (background, icon, alignment) = when (direction) {
         SwipeToDismissBoxValue.StartToEnd ->
-            Triple(ObsidianTokens.debit.copy(alpha = 0.28f), Icons.Filled.Flag, Alignment.CenterStart)
+            Triple(colors.danger.copy(alpha = 0.28f), Icons.Filled.Flag, Alignment.CenterStart)
         SwipeToDismissBoxValue.EndToStart ->
-            Triple(ObsidianTokens.credit.copy(alpha = 0.28f), Icons.Filled.Label, Alignment.CenterEnd)
+            Triple(colors.moneyIn.copy(alpha = 0.28f), Icons.Filled.Label, Alignment.CenterEnd)
         SwipeToDismissBoxValue.Settled -> Triple(Color.Transparent, null, Alignment.Center)
     }
     Box(
         Modifier
             .fillMaxSize()
-            .background(background, RoundedCornerShape(ObsidianTokens.rowRadius))
+            .background(background, MaterialTheme.shapes.medium)
             .padding(horizontal = 22.dp),
         contentAlignment = alignment,
     ) {
-        icon?.let { Icon(it, contentDescription = null, tint = Color.White) }
+        icon?.let { Icon(it, contentDescription = null, tint = colors.textPrimary) }
     }
 }
 
@@ -719,7 +717,7 @@ private fun BulkModeBar(
     var moreMenuOpen by remember { mutableStateOf(false) }
     var deleteConfirmOpen by remember { mutableStateOf(false) }
     val hasSelection = selectedCount > 0
-    Surface(color = ObsidianTokens.canvas, modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MMTheme.colors.canvas, modifier = Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -730,7 +728,7 @@ private fun BulkModeBar(
             Text(
                 "$selectedCount selected",
                 style = MaterialTheme.typography.labelLarge,
-                color = ObsidianTokens.textPrimary,
+                color = MMTheme.colors.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -832,7 +830,7 @@ private fun CompactFilterBar(
 ) {
     if (fraction <= 0f) return
     Surface(
-        color = ObsidianTokens.canvas,
+        color = MMTheme.colors.canvas,
         modifier = Modifier
             .fillMaxWidth()
             .layout { measurable, constraints ->
@@ -880,40 +878,10 @@ private fun CompactFilterBar(
 }
 
 /**
- * Glass filter chip (spec 5.3): idle White@4% fill / hairline label, active
- * White@12% fill / bright label. A thin wrapper around Material's FilterChip,
- * used by the transaction editor dialog; the filter header uses the denser
- * [FilterBarChip].
- */
-@Composable
-internal fun ObsidianChip(
-    selected: Boolean,
-    onClick: () -> Unit,
-    label: @Composable () -> Unit,
-    leadingIcon: (@Composable () -> Unit)? = null,
-) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = label,
-        leadingIcon = leadingIcon,
-        shape = RoundedCornerShape(ObsidianTokens.pillRadius),
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = Color.White.copy(alpha = 0.04f),
-            labelColor = ObsidianTokens.textMeta,
-            iconColor = ObsidianTokens.textMeta,
-            selectedContainerColor = Color.White.copy(alpha = 0.12f),
-            selectedLabelColor = ObsidianTokens.textPrimary,
-            selectedLeadingIconColor = ObsidianTokens.textPrimary,
-        ),
-    )
-}
-
-/**
  * Dense primary filter chip for the Activity filter header: 28dp tall, 8dp
- * corners, 12sp label. Same glass treatment as [ObsidianChip] (idle White@4% /
- * active White@12%) but hand-rolled so height and padding aren't inflated by
- * Material's chip defaults.
+ * corners, 12sp label. Token-coloured (idle transparent / selected raised
+ * surface) but hand-rolled, rather than MMFilterChip, so height and padding
+ * aren't inflated by the 48dp touch target.
  */
 /** "Dining" / "Food + 1 more" -- the parent first when a sub-category tree was selected. */
 internal fun categoryFilterLabel(ids: Set<Long>, categories: List<com.xemmy.mmbank.domain.model.Category>): String {
@@ -946,10 +914,11 @@ internal fun FilterBarChip(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    val background = if (selected) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.04f)
-    val border = if (selected) Color.White.copy(alpha = 0.28f) else ObsidianTokens.hairline
-    val labelColor = if (selected) ObsidianTokens.textPrimary else ObsidianTokens.textMeta
+    val colors = MMTheme.colors
+    val shape = MaterialTheme.shapes.extraSmall
+    val background = if (selected) colors.surfaceRaised else Color.Transparent
+    val border = if (selected) colors.borderStrong else colors.borderSubtle
+    val labelColor = if (selected) colors.textPrimary else colors.textSecondary
     Row(
         modifier = Modifier
             .height(28.dp)
@@ -966,10 +935,8 @@ internal fun FilterBarChip(
         }
         Text(
             label,
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
             color = labelColor,
-            fontFamily = AppFonts.inter,
-            fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
     }
@@ -987,14 +954,15 @@ internal fun SecondaryActionChip(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
-    val shape = RoundedCornerShape(8.dp)
-    val labelColor = if (selected) ObsidianTokens.textPrimary else ObsidianTokens.textMeta
+    val colors = MMTheme.colors
+    val shape = MaterialTheme.shapes.extraSmall
+    val labelColor = if (selected) colors.textPrimary else colors.textSecondary
     Row(
         modifier = Modifier
             .height(24.dp)
             .clip(shape)
-            .background(if (selected) Color.White.copy(alpha = 0.10f) else Color.Transparent, shape)
-            .border(0.5.dp, if (selected) Color.White.copy(alpha = 0.24f) else ObsidianTokens.hairline, shape)
+            .background(if (selected) colors.surfaceRaised else Color.Transparent, shape)
+            .border(0.5.dp, if (selected) colors.borderStrong else colors.borderSubtle, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1005,9 +973,8 @@ internal fun SecondaryActionChip(
         }
         Text(
             label,
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             color = labelColor,
-            fontFamily = AppFonts.inter,
             maxLines = 1,
         )
     }
@@ -1024,21 +991,22 @@ internal fun CompactSearchField(
     onQuery: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val colors = MMTheme.colors
+    val shape = MaterialTheme.shapes.small
     var focused by remember { mutableStateOf(false) }
     BasicTextField(
         value = query,
         onValueChange = onQuery,
         singleLine = true,
-        textStyle = MaterialTheme.typography.bodySmall.copy(color = ObsidianTokens.textPrimary),
-        cursorBrush = SolidColor(ObsidianTokens.textPrimary),
+        textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.textPrimary),
+        cursorBrush = SolidColor(colors.textPrimary),
         modifier = modifier
             .height(40.dp)
             .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
+            .background(colors.surface, shape)
             .border(
                 1.dp,
-                if (focused) Color.White.copy(alpha = 0.28f) else ObsidianTokens.hairline,
+                if (focused) colors.borderStrong else colors.borderSubtle,
                 shape,
             )
             .onFocusChanged { focused = it.isFocused },
@@ -1054,14 +1022,14 @@ internal fun CompactSearchField(
                     Icons.Filled.Search,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = ObsidianTokens.textMeta,
+                    tint = colors.textSecondary,
                 )
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) {
                         Text(
                             "Search merchant, bank, amount…",
                             style = MaterialTheme.typography.bodySmall,
-                            color = ObsidianTokens.textMeta,
+                            color = colors.textSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1075,7 +1043,7 @@ internal fun CompactSearchField(
                         modifier = Modifier
                             .size(16.dp)
                             .clickable { onQuery("") },
-                        tint = ObsidianTokens.textMeta,
+                        tint = colors.textSecondary,
                     )
                 }
             }
@@ -1083,13 +1051,13 @@ internal fun CompactSearchField(
     )
 }
 
-/** Glass field colors (spec 5.3): surfaceGlass fill, hairline/focus border — shared by every OutlinedTextField in the glass dialogs. */
+/** Field colors: surface fill, subtle/accent border — shared by every OutlinedTextField in the glass dialogs. */
 @Composable
 internal fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
-    unfocusedContainerColor = ObsidianTokens.surfaceGlass,
-    focusedContainerColor = ObsidianTokens.surfaceGlass,
-    unfocusedBorderColor = ObsidianTokens.hairline,
-    focusedBorderColor = Color.White.copy(alpha = 0.28f),
+    unfocusedContainerColor = MMTheme.colors.surface,
+    focusedContainerColor = MMTheme.colors.surface,
+    unfocusedBorderColor = MMTheme.colors.borderSubtle,
+    focusedBorderColor = MMTheme.colors.accent,
 )
 
 /** Short human label for a capture source in the filter UI. */
@@ -1215,12 +1183,12 @@ internal fun amountTone(amount: java.math.BigDecimal, direction: TransactionDire
     else -> AmountTone.NEGATIVE
 }
 
-/** Soft copper for money going out, desaturated mint for money coming in. */
-internal val amountNegativeColor = Color(0xFFE07A5F)
-internal val amountPositiveColor = Color(0xFF4ECDC4)
-
-/** Shared treatment for the card's secondary meta lines and chip labels. */
-private val metaTextColor = Color.Gray
+/** Which design-system money tone an [AmountTone] renders in: out / in / neutral. */
+internal fun AmountTone.toMoneyTone(): MoneyTone = when (this) {
+    AmountTone.NEGATIVE -> MoneyTone.OUT
+    AmountTone.POSITIVE -> MoneyTone.IN
+    AmountTone.NEUTRAL -> MoneyTone.NEUTRAL
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1264,7 +1232,10 @@ private fun TransactionCard(
     // system/manual accounts with none registered.
     val originTone = GlowTones.forAccountOrigin(accountName, bankName, tx.sender) ?: GlowTone.SYSTEM_SLATE
     val avatarName = tx.merchant ?: accountName ?: bankName ?: tx.sender ?: tx.source.name
-    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
+    val shape = MaterialTheme.shapes.medium
+    val colors = MMTheme.colors
+    // Shared treatment for the card's secondary meta lines.
+    val metaTextColor = colors.textSecondary
     Box(
         Modifier
             .fillMaxWidth()
@@ -1272,13 +1243,13 @@ private fun TransactionCard(
             .animateContentSize()
             .alpha(cardAlpha)
             .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
+            .background(colors.surface, shape)
             .border(
                 1.dp,
                 when {
                     isSelected -> MaterialTheme.colorScheme.primary
                     accountFilterTint != null -> accountFilterTint.copy(alpha = 0.35f)
-                    else -> ObsidianTokens.hairline
+                    else -> colors.borderSubtle
                 },
                 shape,
             )
@@ -1294,7 +1265,7 @@ private fun TransactionCard(
                     Icon(
                         if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                         contentDescription = if (isSelected) "Selected" else "Not selected",
-                        tint = if (isSelected) MaterialTheme.colorScheme.primary else ObsidianTokens.textMeta,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else colors.textSecondary,
                         modifier = Modifier.size(34.dp).padding(4.dp),
                     )
                 } else {
@@ -1308,12 +1279,11 @@ private fun TransactionCard(
                     // a replacement for either).
                     Text(
                         tx.merchant ?: bankName ?: tx.sender ?: tx.source.name,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 16.sp,
+                        style = MaterialTheme.typography.bodyLarge.copy(
                             fontWeight = FontWeight.SemiBold,
                             textDecoration = if (tx.excludeFromStats) TextDecoration.LineThrough else TextDecoration.None,
                         ),
-                        color = ObsidianTokens.textPrimary,
+                        color = colors.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1333,8 +1303,7 @@ private fun TransactionCard(
                     }
                     Text(
                         bankLine,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
+                        style = MaterialTheme.typography.bodySmall,
                         color = metaTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1349,24 +1318,18 @@ private fun TransactionCard(
                         .dottedLeader(),
                 )
                 AmountText(
-                    display = (if (isCredit) "+" else "-") + tx.amount.asMoney(tx.currencyCode),
+                    display = (if (isCredit) "+" else "-") + moneyLabel(tx.amount.toDouble(), tx.currencyCode),
                     // A transfer, card payment or correction is neither money
-                    // spent nor received: shown neutral, not red/green.
-                    color = if (LedgerMath.effect(tx) == LedgerMath.Effect.NONE && !tx.excludeFromStats) {
-                        ObsidianTokens.textPrimary
-                    } else {
-                        when (amountTone(tx.amount, tx.direction)) {
-                            AmountTone.NEGATIVE -> amountNegativeColor
-                            AmountTone.POSITIVE -> amountPositiveColor
-                            AmountTone.NEUTRAL -> ObsidianTokens.textPrimary
-                        }
-                    },
-                    style = androidx.compose.ui.text.TextStyle(
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        // Tabular figures so decimal points align down the list.
-                        fontFeatureSettings = "tnum",
+                    // spent nor received: shown neutral, not as in/out.
+                    color = moneyColor(
+                        if (LedgerMath.effect(tx) == LedgerMath.Effect.NONE && !tx.excludeFromStats) {
+                            MoneyTone.NEUTRAL
+                        } else {
+                            amountTone(tx.amount, tx.direction).toMoneyTone()
+                        },
                     ),
+                    // AmountText supplies the tabular mono numerals.
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 if (tx.excludeFromStats) {
                     Icon(
@@ -1376,7 +1339,7 @@ private fun TransactionCard(
                             .padding(start = 4.dp)
                             .size(12.dp)
                             .alpha(0.7f),
-                        tint = ObsidianTokens.textMeta,
+                        tint = colors.textSecondary,
                     )
                 }
             }
@@ -1384,8 +1347,7 @@ private fun TransactionCard(
             tx.rawMessage?.let {
                 Text(
                     it,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Normal,
+                    style = MaterialTheme.typography.bodySmall,
                     color = metaTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1394,8 +1356,7 @@ private fun TransactionCard(
             }
             Text(
                 listOfNotNull(tx.timestampMillis.asDateTime(), tx.matchedRuleName).joinToString(" · "),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
+                style = MaterialTheme.typography.bodySmall,
                 color = metaTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1518,13 +1479,14 @@ private fun MetaChip(
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     emoji: String? = null,
 ) {
-    // Glass pill (spec 5.3): idle White@4%/hairline border/meta label; active
-    // White@12%/White@28% border/full-bright label.
-    val shape = RoundedCornerShape(ObsidianTokens.pillRadius)
-    val background = if (active) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.04f)
-    val border = if (active) Color.White.copy(alpha = 0.28f) else ObsidianTokens.hairline
+    // Pill: idle transparent/subtle border/secondary label; active raised
+    // surface/strong border/primary label.
+    val colors = MMTheme.colors
+    val shape = CircleShape
+    val background = if (active) colors.surfaceRaised else Color.Transparent
+    val border = if (active) colors.borderStrong else colors.borderSubtle
     // Assigned values stay full-bright so set/unset chips remain distinguishable.
-    val labelColor = if (active) ObsidianTokens.textPrimary else metaTextColor
+    val labelColor = if (active) colors.textPrimary else colors.textSecondary
     Row(
         modifier = Modifier
             .clip(shape)
@@ -1542,8 +1504,7 @@ private fun MetaChip(
         }
         Text(
             text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Normal,
+            style = MaterialTheme.typography.bodySmall,
             color = labelColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

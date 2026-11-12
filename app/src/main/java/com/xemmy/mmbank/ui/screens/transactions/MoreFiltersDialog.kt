@@ -29,7 +29,7 @@ import com.xemmy.mmbank.domain.filter.AnalyticsStatusFilter
 import com.xemmy.mmbank.domain.filter.PersonFilter
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.glassSurface
 import java.math.BigDecimal
 
@@ -96,7 +96,7 @@ internal fun MoreFiltersDialog(
                     }
                 }
 
-                HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                HorizontalDivider(color = MMTheme.colors.borderSubtle)
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -114,7 +114,7 @@ internal fun MoreFiltersDialog(
                     Switch(checked = f.triageOnly, onCheckedChange = onTriageOnly)
                 }
 
-                HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                HorizontalDivider(color = MMTheme.colors.borderSubtle)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SectionLabel("Amount range")
@@ -132,7 +132,7 @@ internal fun MoreFiltersDialog(
                     }
                 }
 
-                HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                HorizontalDivider(color = MMTheme.colors.borderSubtle)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SectionLabel("Source")
@@ -152,7 +152,7 @@ internal fun MoreFiltersDialog(
                     }
                 }
 
-                HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                HorizontalDivider(color = MMTheme.colors.borderSubtle)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SectionLabel("What it is")
@@ -172,7 +172,7 @@ internal fun MoreFiltersDialog(
                     }
                 }
 
-                HorizontalDivider(color = ObsidianTokens.hairlineDialog)
+                HorizontalDivider(color = MMTheme.colors.borderSubtle)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SectionLabel("Analytics")
@@ -216,7 +216,7 @@ internal fun MoreFiltersDialog(
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, style = MaterialTheme.typography.labelLarge, color = ObsidianTokens.textMeta)
+    Text(text, style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
 }
 
 /** Same open/closed-bound summary text used by the classic bar's amount chip. */
