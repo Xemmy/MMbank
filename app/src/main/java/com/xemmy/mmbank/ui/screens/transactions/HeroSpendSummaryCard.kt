@@ -30,8 +30,7 @@ import kotlin.math.roundToInt
  * (received minus spent), and — once a monthly budget threshold is set
  * in Settings (see [com.xemmy.mmbank.data.prefs.AppPreferences.monthlySpendBudget])
  * — a bar showing how much of it that total consumes. Gated at the call site
- * in [TransactionsScreen] on [com.xemmy.mmbank.ui.theme.LocalDesignMode];
- * Classic never renders it.
+ * in [TransactionsScreen]: it is hidden in bulk mode.
  */
 @Composable
 internal fun HeroSpendSummaryCard(

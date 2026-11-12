@@ -17,20 +17,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.unit.dp
-import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.ui.theme.GlowPalette
-import com.xemmy.mmbank.ui.theme.LocalDesignMode
+import com.xemmy.mmbank.ui.util.rememberReduceMotion
 
 /**
  * Pure API gate, split out so it's JVM-testable without a device: the fluid
- * AGSL shader needs [RuntimeShader] (API 33+) and is only worth it in Premium
- * mode -- every other combination falls back to the plain Material spinner.
+ * AGSL shader needs [RuntimeShader] (API 33+) and is skipped when the user
+ * turned animations off -- every other combination falls back to the plain Material spinner.
  */
 object AiParsingIndicatorSpec {
     const val SHADER_MIN_API = 33
 
-    fun usesShader(designMode: DesignMode, apiLevel: Int): Boolean =
-        designMode == DesignMode.PREMIUM && apiLevel >= SHADER_MIN_API
+    fun usesShader(apiLevel: Int, reduceMotion: Boolean): Boolean =
+        apiLevel >= SHADER_MIN_API && !reduceMotion
 }
 
 private const val FLUID_SHADER = """
@@ -53,16 +52,15 @@ private const val FLUID_SHADER = """
 
 /**
  * Loading indicator shown while Gate-2 AI parsing runs (the "Parse with AI"
- * button in the transaction editor). In Premium mode on API 33+ it's a small
- * fluid AGSL gradient blob; otherwise (Classic, or a pre-Tiramisu device)
+ * button in the transaction editor). On API 33+ (animations on) it's a small
+ * fluid AGSL gradient blob; otherwise (pre-Tiramisu, or reduce-motion)
  * it's the original Material spinner, unchanged.
  */
 @Composable
 fun AiParsingIndicator(
     modifier: Modifier = Modifier,
-    designMode: DesignMode = LocalDesignMode.current,
 ) {
-    if (AiParsingIndicatorSpec.usesShader(designMode, Build.VERSION.SDK_INT)) {
+    if (AiParsingIndicatorSpec.usesShader(Build.VERSION.SDK_INT, rememberReduceMotion())) {
         FluidShaderIndicator(modifier)
     } else {
         CircularProgressIndicator(modifier = modifier, strokeWidth = 2.dp)

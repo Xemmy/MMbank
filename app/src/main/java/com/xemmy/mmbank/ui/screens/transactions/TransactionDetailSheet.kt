@@ -42,11 +42,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xemmy.mmbank.domain.model.Category
-import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
-import com.xemmy.mmbank.ui.theme.LocalDesignMode
+import com.xemmy.mmbank.ui.util.rememberReduceMotion
 import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.glassSurface
@@ -86,7 +85,6 @@ fun TransactionDetailSheet(
     onKindChange: ((TransactionKind, Boolean) -> Unit)? = null,
     /** Set when this charge is far above the merchant's usual (see [SpendAnomalyDetector]). */
     anomaly: SpendAnomalyDetector.Anomaly? = null,
-    designMode: DesignMode = LocalDesignMode.current,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -129,9 +127,10 @@ fun TransactionDetailSheet(
         },
         text = {
             GlassDialogBackdrop()
-            val entranceScale = remember { Animatable(if (designMode == DesignMode.PREMIUM) 0.92f else 1f) }
-            LaunchedEffect(designMode) {
-                if (designMode == DesignMode.PREMIUM) {
+            val reduceMotion = rememberReduceMotion()
+            val entranceScale = remember { Animatable(if (reduceMotion) 1f else 0.92f) }
+            LaunchedEffect(reduceMotion) {
+                if (!reduceMotion) {
                     entranceScale.animateTo(
                         targetValue = 1f,
                         animationSpec = spring(

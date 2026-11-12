@@ -103,8 +103,6 @@ import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
-import com.xemmy.mmbank.domain.model.DesignMode
-import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
@@ -130,7 +128,6 @@ fun SettingsScreen(
     val context = LocalContext.current
     var captureOk by remember { mutableStateOf(true) }
     var crashRecorded by remember { mutableStateOf(false) }
-    val designMode by viewModel.designMode.collectAsStateWithLifecycle()
     val backgroundStyle by viewModel.backgroundStyle.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
@@ -209,13 +206,6 @@ fun SettingsScreen(
                     title = "Local AI parsing",
                     subtitle = if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
                     onClick = { onOpen("settings_ai") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Palette,
-                    title = "Design",
-                    subtitle = if (designMode == DesignMode.PREMIUM) "Premium · AGSL indicator + springier motion" else "Classic",
-                    onClick = { onOpen("settings_design") },
                 )
                 HorizontalDivider(Modifier.padding(start = 56.dp))
                 MenuRow(
@@ -1046,67 +1036,6 @@ fun AiSettingsScreen(
                 onClear = {
                     AiCallLogStore.clearLog(context)
                     aiLogRefreshKey++
-                },
-            )
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Subpage: Design (Classic vs Premium)
-// ---------------------------------------------------------------------------
-
-@Composable
-fun DesignSettingsScreen(
-    onBack: () -> Unit,
-    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
-) {
-    val designMode by viewModel.designMode.collectAsStateWithLifecycle()
-    SettingsSubpage(title = "Design", onBack = onBack) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Premium design", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "A GPU-shader AI-parsing indicator and a springier transaction detail dialog, " +
-                        "on top of the same Material 3 theme. Falls back to the plain Classic look " +
-                        "on anything that can't render an effect.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = designMode == DesignMode.PREMIUM,
-                onCheckedChange = { checked ->
-                    viewModel.setDesignMode(if (checked) DesignMode.PREMIUM else DesignMode.CLASSIC)
-                },
-            )
-        }
-
-        HorizontalDivider()
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Single-row filter bar", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "Time, Type, and Account collapse into one scrollable row of dropdown chips on the " +
-                        "Activity tab, with the rest tucked behind a More filters dialog. Off reverts to the " +
-                        "classic filter chips wrapped across multiple lines.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = viewModel.filterBarLayout == FilterBarLayout.SINGLE_ROW,
-                onCheckedChange = { checked ->
-                    viewModel.updateFilterBarLayout(if (checked) FilterBarLayout.SINGLE_ROW else FilterBarLayout.CLASSIC)
                 },
             )
         }

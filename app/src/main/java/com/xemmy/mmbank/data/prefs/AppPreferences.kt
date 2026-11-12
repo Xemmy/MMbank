@@ -3,9 +3,7 @@ package com.xemmy.mmbank.data.prefs
 import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.model.BackgroundStyle
-import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ThemeMode
-import com.xemmy.mmbank.domain.model.FilterBarLayout
 
 /** Non-sensitive app settings. */
 class AppPreferences(context: Context) {
@@ -186,29 +184,6 @@ class AppPreferences(context: Context) {
     var themeMode: ThemeMode
         get() = ThemeMode.fromStored(prefs.getString(KEY_THEME_MODE, null))
         set(value) = prefs.edit().putString(KEY_THEME_MODE, value.name).apply()
-
-    /**
-     * Classic vs Premium (AGSL AI-parsing indicator + springier motion on top
-     * of the same Material 3 baseline theme -- see [com.xemmy.mmbank.ui.theme.MMbankTheme]).
-     * Classic by default.
-     */
-    var designMode: DesignMode
-        get() = runCatching {
-            DesignMode.valueOf(prefs.getString(KEY_DESIGN_MODE, null) ?: DesignMode.CLASSIC.name)
-        }.getOrDefault(DesignMode.CLASSIC)
-        set(value) = prefs.edit().putString(KEY_DESIGN_MODE, value.name).apply()
-
-    /**
-     * Layout of the Activity tab's filter row (see [FilterBarLayout]).
-     * Single-row by default; Classic keeps every chip visible across wrapped
-     * lines, the original behavior. Only the Transactions screen reads this,
-     * so it's a plain re-read rather than a reactive AppContainer flow.
-     */
-    var filterBarLayout: FilterBarLayout
-        get() = runCatching {
-            FilterBarLayout.valueOf(prefs.getString(KEY_FILTER_BAR_LAYOUT, null) ?: FilterBarLayout.SINGLE_ROW.name)
-        }.getOrDefault(FilterBarLayout.SINGLE_ROW)
-        set(value) = prefs.edit().putString(KEY_FILTER_BAR_LAYOUT, value.name).apply()
 
     /** Ambient background style drawn behind the whole app. Minimal Slate by default. */
     var backgroundPreset: BackgroundStyle

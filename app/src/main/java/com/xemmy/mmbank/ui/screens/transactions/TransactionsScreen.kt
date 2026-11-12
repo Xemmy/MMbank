@@ -131,9 +131,7 @@ import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
-import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ExchangeRate
-import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -156,7 +154,6 @@ import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.LocalDesignMode
 import com.xemmy.mmbank.ui.theme.MetaLabel
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
@@ -295,7 +292,7 @@ fun TransactionsScreen(
     // before any leftover delta reaches feedScrollConnection to compact the
     // filter header, and expands back in the reverse order on scroll down.
     val heroScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val heroVisible = LocalDesignMode.current == DesignMode.PREMIUM && !state.isInBulkMode
+    val heroVisible = !state.isInBulkMode
     // The hero card stops measuring (and so stops updating heightOffsetLimit)
     // whenever it's not shown -- Classic, or bulk mode temporarily hiding it.
     // Without this, a mid-collapse offset from before it disappeared would
@@ -386,36 +383,20 @@ fun TransactionsScreen(
                         .graphicsLayer { alpha = 1f - collapseFraction },
                 ) {
                     Column {
-                    when (state.filterBarLayout) {
-                        FilterBarLayout.SINGLE_ROW -> TransactionFilterBar(
-                            state = state,
-                            onQuery = viewModel::setQuery,
-                            onDateRange = viewModel::setDateRange,
-                            onDirectionFilter = viewModel::setDirectionFilter,
-                            onAccountFilter = viewModel::setAccountFilter,
-                            onPersonFilter = viewModel::setPersonFilter,
-                            onTriageOnly = viewModel::setTriageOnly,
-                            onAmountRange = viewModel::setAmountRange,
-                            onSourceFilter = viewModel::setSourceFilter,
-                            onAnalyticsStatus = viewModel::setAnalyticsStatus,
-                            onClear = viewModel::clearFilters,
-                            onKindFilter = viewModel::setKindFilter,
-                        )
-                        FilterBarLayout.CLASSIC -> ActivityFilterBar(
-                            state = state,
-                            onQuery = viewModel::setQuery,
-                            onDateRange = viewModel::setDateRange,
-                            onDirectionFilter = viewModel::setDirectionFilter,
-                            onAccountFilter = viewModel::setAccountFilter,
-                            onPersonFilter = viewModel::setPersonFilter,
-                            onTriageOnly = viewModel::setTriageOnly,
-                            onAmountRange = viewModel::setAmountRange,
-                            onSourceFilter = viewModel::setSourceFilter,
-                            onAnalyticsStatus = viewModel::setAnalyticsStatus,
-                            onClear = viewModel::clearFilters,
-                            onKindFilter = viewModel::setKindFilter,
-                        )
-                    }
+                    TransactionFilterBar(
+                        state = state,
+                        onQuery = viewModel::setQuery,
+                        onDateRange = viewModel::setDateRange,
+                        onDirectionFilter = viewModel::setDirectionFilter,
+                        onAccountFilter = viewModel::setAccountFilter,
+                        onPersonFilter = viewModel::setPersonFilter,
+                        onTriageOnly = viewModel::setTriageOnly,
+                        onAmountRange = viewModel::setAmountRange,
+                        onSourceFilter = viewModel::setSourceFilter,
+                        onAnalyticsStatus = viewModel::setAnalyticsStatus,
+                        onClear = viewModel::clearFilters,
+                        onKindFilter = viewModel::setKindFilter,
+                    )
                     // The category filter has no picker in either bar, so it
                     // is always shown here while active, with a way out.
                     state.filters.categoryIds?.let { ids ->
@@ -1110,306 +1091,6 @@ internal fun glassFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedBorderColor = ObsidianTokens.hairline,
     focusedBorderColor = Color.White.copy(alpha = 0.28f),
 )
-
-/**
- * Search box + date/direction/account/person/triage/amount/source/analytics
- * filter chips for the Activity list. Filtering is purely in-memory
- * (personal-scale data), so it's instant and needs no new queries. Primary
- * chips share one FlowRow and wrap only on narrow phones; the quieter
- * secondary row scrolls horizontally.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ActivityFilterBar(
-    state: TransactionsUiState,
-    onQuery: (String) -> Unit,
-    onDateRange: (DateRangeFilter) -> Unit,
-    onDirectionFilter: (TransactionDirection?) -> Unit,
-    onAccountFilter: (AccountFilter) -> Unit,
-    onPersonFilter: (PersonFilter) -> Unit,
-    onTriageOnly: (Boolean) -> Unit,
-    onAmountRange: (java.math.BigDecimal?, java.math.BigDecimal?) -> Unit,
-    onSourceFilter: (TransactionSource?) -> Unit,
-    onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
-    onClear: () -> Unit,
-    onKindFilter: (TransactionKind?) -> Unit = {},
-) {
-    val f = state.filters
-    var kindMenuOpen by remember { mutableStateOf(false) }
-    var accountMenuOpen by remember { mutableStateOf(false) }
-    var personMenuOpen by remember { mutableStateOf(false) }
-    var sourceMenuOpen by remember { mutableStateOf(false) }
-    var analyticsMenuOpen by remember { mutableStateOf(false) }
-    var customRangeOpen by remember { mutableStateOf(false) }
-    var amountOpen by remember { mutableStateOf(false) }
-
-    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // Compact glass search bar (spec 5.3): surfaceGlass fill, 14dp radius,
-        // 40dp tall.
-        CompactSearchField(
-            query = f.query,
-            onQuery = onQuery,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        // Primary filters — date range presets (incl. the data-driven statement
-        // cycle and a twin-calendar custom range) plus direction/account/person
-        // — share one FlowRow, wrapping onto extra lines only when the screen
-        // is too narrow to fit them.
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            val presets = listOf(
-                DateRangeFilter.All to "All",
-                DateRangeFilter.Today to "Today",
-                DateRangeFilter.Past7Days to "Past 7 days",
-                DateRangeFilter.Past30Days to "Past 30 days",
-                DateRangeFilter.YearToDate to "Year-to-date",
-            )
-            presets.forEach { (range, label) ->
-                FilterBarChip(
-                    selected = f.dateRange == range,
-                    onClick = { onDateRange(range) },
-                    label = label,
-                )
-            }
-            // Label the statement chip with the cycle when one applies, so the
-            // rolling-30-day fallback (no account / no cycle day) is visible.
-            val cycleDay = TransactionFilterEngine
-                .activeAccount(f.account, state.accounts)?.statementCycleDay
-            FilterBarChip(
-                selected = f.dateRange == DateRangeFilter.StatementCycle,
-                onClick = { onDateRange(DateRangeFilter.StatementCycle) },
-                label = if (cycleDay != null) "Statement (day $cycleDay)" else "Statement",
-            )
-            val custom = f.dateRange as? DateRangeFilter.Custom
-            FilterBarChip(
-                selected = custom != null,
-                onClick = { customRangeOpen = true },
-                label = custom?.let { "${it.start.format(chipDateFormat)} – ${it.end.format(chipDateFormat)}" }
-                    ?: "Custom…",
-                icon = Icons.Filled.DateRange,
-            )
-
-            FilterBarChip(
-                selected = f.direction == null,
-                onClick = { onDirectionFilter(null) },
-                label = "All",
-            )
-            FilterBarChip(
-                selected = f.direction == TransactionDirection.DEBIT,
-                onClick = { onDirectionFilter(TransactionDirection.DEBIT) },
-                label = "Spent",
-            )
-            FilterBarChip(
-                selected = f.direction == TransactionDirection.CREDIT,
-                onClick = { onDirectionFilter(TransactionDirection.CREDIT) },
-                label = "Received",
-            )
-
-            // Account filter chip + menu.
-            Box {
-                val accountLabel = when (val a = f.account) {
-                    AccountFilter.Any -> "Account"
-                    AccountFilter.Unassigned -> "Unassigned"
-                    is AccountFilter.Specific ->
-                        state.accounts.firstOrNull { it.id == a.id }?.name ?: "Account"
-                }
-                FilterBarChip(
-                    selected = f.account != AccountFilter.Any,
-                    onClick = { accountMenuOpen = true },
-                    label = accountLabel,
-                    icon = Icons.Filled.AccountBalanceWallet,
-                )
-                DropdownMenu(expanded = accountMenuOpen, onDismissRequest = { accountMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Any account") },
-                        onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Any) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Unassigned") },
-                        onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Unassigned) },
-                    )
-                    state.accounts.forEach { account ->
-                        DropdownMenuItem(
-                            text = { Text(account.name) },
-                            onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Specific(account.id)) },
-                        )
-                    }
-                }
-            }
-
-            // Person filter chip + menu.
-            Box {
-                val personLabel = when (val p = f.person) {
-                    PersonFilter.Any -> "Person"
-                    PersonFilter.Unassigned -> "Unassigned"
-                    is PersonFilter.Specific -> p.name
-                }
-                FilterBarChip(
-                    selected = f.person != PersonFilter.Any,
-                    onClick = { personMenuOpen = true },
-                    label = personLabel,
-                    icon = Icons.Filled.Person,
-                )
-                DropdownMenu(expanded = personMenuOpen, onDismissRequest = { personMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Any person") },
-                        onClick = { personMenuOpen = false; onPersonFilter(PersonFilter.Any) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Unassigned") },
-                        onClick = { personMenuOpen = false; onPersonFilter(PersonFilter.Unassigned) },
-                    )
-                    state.knownPersons.forEach { name ->
-                        DropdownMenuItem(
-                            text = { Text(name) },
-                            onClick = { personMenuOpen = false; onPersonFilter(PersonFilter.Specific(name)) },
-                        )
-                    }
-                }
-            }
-
-        }
-
-        // Secondary filters — triage + amount + source + analytics status.
-        // Deliberately quieter than the FilterBarChips above (no fill, thinner
-        // border when idle) so the two tiers read as a hierarchy.
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // "Inbox Zero": rows still needing review — uncategorized captures
-            // and system-generated balance adjustments.
-            SecondaryActionChip(
-                selected = f.triageOnly,
-                onClick = { onTriageOnly(!f.triageOnly) },
-                label = "Inbox Zero",
-                icon = Icons.Filled.Inbox,
-            )
-
-            // Amount threshold / range.
-            val amountLabel = when {
-                f.minAmount != null && f.maxAmount != null -> "${f.minAmount}–${f.maxAmount}"
-                f.minAmount != null -> "≥ ${f.minAmount}"
-                f.maxAmount != null -> "≤ ${f.maxAmount}"
-                else -> "Amount"
-            }
-            SecondaryActionChip(
-                selected = f.minAmount != null || f.maxAmount != null,
-                onClick = { amountOpen = true },
-                label = amountLabel,
-            )
-
-            // Capture source.
-            Box {
-                SecondaryActionChip(
-                    selected = f.source != null,
-                    onClick = { sourceMenuOpen = true },
-                    label = f.source?.let(::sourceLabel) ?: "Source",
-                )
-                DropdownMenu(expanded = sourceMenuOpen, onDismissRequest = { sourceMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Any source") },
-                        onClick = { sourceMenuOpen = false; onSourceFilter(null) },
-                    )
-                    TransactionSource.entries.forEach { source ->
-                        DropdownMenuItem(
-                            text = { Text(sourceLabel(source)) },
-                            onClick = { sourceMenuOpen = false; onSourceFilter(source) },
-                        )
-                    }
-                }
-            }
-
-            // What it is: spend, refund, card payment, transfer...
-            Box {
-                SecondaryActionChip(
-                    selected = f.kind != null,
-                    onClick = { kindMenuOpen = true },
-                    label = f.kind?.label ?: "Kind",
-                )
-                DropdownMenu(expanded = kindMenuOpen, onDismissRequest = { kindMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Any kind") },
-                        onClick = { kindMenuOpen = false; onKindFilter(null) },
-                    )
-                    TransactionKind.entries.forEach { kind ->
-                        DropdownMenuItem(
-                            text = { Text(kind.label) },
-                            onClick = { kindMenuOpen = false; onKindFilter(kind) },
-                        )
-                    }
-                }
-            }
-
-            // Analytics status (the Phase 1 excludeFromStats flag).
-            Box {
-                SecondaryActionChip(
-                    selected = f.analyticsStatus != null,
-                    onClick = { analyticsMenuOpen = true },
-                    label = f.analyticsStatus?.label ?: "Analytics",
-                )
-                DropdownMenu(expanded = analyticsMenuOpen, onDismissRequest = { analyticsMenuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("All rows") },
-                        onClick = { analyticsMenuOpen = false; onAnalyticsStatus(null) },
-                    )
-                    AnalyticsStatusFilter.entries.forEach { status ->
-                        DropdownMenuItem(
-                            text = { Text(status.label) },
-                            onClick = { analyticsMenuOpen = false; onAnalyticsStatus(status) },
-                        )
-                    }
-                }
-            }
-
-            if (f.active) {
-                // Plain text action, not a TextButton: Material's 48dp minimum
-                // touch target would make this row taller than its chips.
-                Text(
-                    "Clear",
-                    fontSize = 11.sp,
-                    color = ObsidianTokens.textPrimary,
-                    fontFamily = AppFonts.inter,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onClear)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                )
-            }
-        }
-    }
-
-    if (customRangeOpen) {
-        CustomDateRangeDialog(
-            initial = f.dateRange as? DateRangeFilter.Custom,
-            onDismiss = { customRangeOpen = false },
-            onSelect = { start, end ->
-                onDateRange(DateRangeFilter.Custom(start, end))
-                customRangeOpen = false
-            },
-        )
-    }
-
-    if (amountOpen) {
-        AmountRangeDialog(
-            currentMin = f.minAmount,
-            currentMax = f.maxAmount,
-            onDismiss = { amountOpen = false },
-            onApply = { min, max ->
-                onAmountRange(min, max)
-                amountOpen = false
-            },
-        )
-    }
-}
 
 /** Short human label for a capture source in the filter UI. */
 internal fun sourceLabel(source: TransactionSource): String = when (source) {

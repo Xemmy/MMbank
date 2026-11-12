@@ -5,10 +5,8 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import com.xemmy.mmbank.domain.model.DesignMode
 
 /**
  * Financial-status semantic tokens (Zero-Conflict Color System spec). Resolved
@@ -73,26 +71,15 @@ object GlowPalette {
     }
 }
 
-/** Read by any composable that needs to branch on Classic vs Premium without threading a parameter through. */
-val LocalDesignMode = staticCompositionLocalOf { DesignMode.CLASSIC }
-
-/**
- * Classic and Premium share the same Material 3 baseline theme.
- * MaterialExpressiveTheme stays `internal` in material3 until the library
- * graduates it out of the 1.5.0-alpha train -- the compose-bom this project
- * pins (stable, 1.4.x material3) can't reach it. Premium's distinct feel
- * (springier entrance motion, AGSL AI-parsing indicator) instead comes from
- * [LocalDesignMode] consumers branching on the mode directly.
- */
+/** One design for everyone: Classic/Premium was merged (Improvement Plan §1.6). */
 @Composable
 fun MMbankTheme(
-    designMode: DesignMode = DesignMode.CLASSIC,
     darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val mmColors = if (darkTheme) darkMMColors() else lightMMColors()
     val colorScheme = mmColors.toColorScheme()
-    CompositionLocalProvider(LocalDesignMode provides designMode, LocalMMColors provides mmColors) {
+    CompositionLocalProvider(LocalMMColors provides mmColors) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = ObsidianTypography,

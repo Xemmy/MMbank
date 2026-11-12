@@ -33,13 +33,10 @@ import com.xemmy.mmbank.domain.model.TransactionSource
 import java.math.BigDecimal
 
 /**
- * Single-row (Premium) Activity filter bar: Time / Type / Account collapse
+ * Single-row Activity filter bar: Time / Type / Account collapse
  * into one horizontally scrollable [LazyRow] of dropdown chips, with the
  * lower-traffic filters (person, triage, amount, source, analytics status)
- * tucked behind a "More filters" chip that opens [MoreFiltersDialog]. See
- * Settings > Design for the toggle back to [ActivityFilterBar]'s classic
- * wrapped-chip layout, which this mirrors callback-for-callback so the two
- * are interchangeable at the call site.
+ * tucked behind a "More filters" chip that opens [MoreFiltersDialog].
  */
 @Composable
 internal fun TransactionFilterBar(

@@ -40,7 +40,7 @@ import java.math.BigDecimal
  * [TransactionDetailSheet]'s doc comment: a `ModalBottomSheet` here could never
  * blur its backdrop and rendered as a translucent, then empty, panel on some
  * devices, which is exactly why that overlay was rewritten as a dialog. Every
- * filter here applies live via its callback, same as [ActivityFilterBar];
+ * filter here applies live via its callback, same as [TransactionFilterBar];
  * "Clear all" resets the whole [ActivityFilters][com.xemmy.mmbank.domain.filter.ActivityFilters]
  * set, including Time/Type/Account.
  */

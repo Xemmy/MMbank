@@ -103,9 +103,7 @@ import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
-import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ThemeMode
-import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
@@ -167,25 +165,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val themeMode: StateFlow<ThemeMode> = container.themeMode
     fun setThemeMode(mode: ThemeMode) = container.setThemeMode(mode)
 
-    // Classic vs Premium: a reactive flow (not a mutableStateOf snapshot) since
-    // the root theme wrapper, the AI-parsing indicator and the transaction
-    // detail dialog all need to see a toggle here live, not just this screen.
-    val designMode: StateFlow<DesignMode> = container.designMode
-    fun setDesignMode(mode: DesignMode) = container.setDesignMode(mode)
-
     // Ambient background style: a reactive flow (not a mutableStateOf snapshot)
     // since the root app scaffold applies it live the instant it's changed here.
     val backgroundStyle: StateFlow<BackgroundStyle> = container.backgroundPreset
     fun setBackgroundStyle(style: BackgroundStyle) = container.setBackgroundPreset(style)
-
-    // Activity tab filter bar layout: only that one screen reads it, so a
-    // plain re-read (not a reactive AppContainer flow like designMode above).
-    var filterBarLayout by mutableStateOf(container.preferences.filterBarLayout)
-        private set
-    fun updateFilterBarLayout(layout: FilterBarLayout) {
-        container.preferences.filterBarLayout = layout
-        filterBarLayout = layout
-    }
 
     // --- Gate-2 AI parsing: local (loopback-only, e.g. Off Grid) or an explicit online provider ---
     var aiParsingEnabled by mutableStateOf(container.preferences.aiParsingEnabled)

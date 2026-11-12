@@ -4545,3 +4545,10 @@ Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lo
 - Screens still read `ObsidianTokens`, so Light is a beta until they migrate (plan steps 6–11).
 - Tests: `MMColorsTest`, `ThemeModeTest`, semantic-pair cases in `ColorContrastTest`.
 - **Not covered by CI:** how Light actually renders, bar icon appearance, the radio group.
+
+## Phase 18.26 — One design: Classic/Premium merged (0.63.1)
+- Removed `DesignMode`, `LocalDesignMode`, `AppContainer.designMode`, the Settings → Design page and its route. The stored `design_mode` and `filter_bar_layout` keys are left unread for backup compatibility.
+- AGSL AI-parsing indicator and the detail-dialog spring now run for everyone unless system animations are off (`isReduceMotion`, `rememberReduceMotion`). The Activity hero card is always shown outside bulk mode.
+- Removed the Classic `ActivityFilterBar` (~290 lines), `FilterBarLayout` and its pref/VM plumbing; the single-row `TransactionFilterBar` is the only bar.
+- Tests: `AiParsingIndicatorSpecTest` rewritten, new `ReduceMotionTest`.
+- **Not covered by CI:** shader/spring behaviour with animations off, the hero card and filter bar rendering, absence of the Design menu row.

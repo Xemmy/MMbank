@@ -131,9 +131,7 @@ import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
-import com.xemmy.mmbank.domain.model.DesignMode
 import com.xemmy.mmbank.domain.model.ExchangeRate
-import com.xemmy.mmbank.domain.model.FilterBarLayout
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -156,7 +154,6 @@ import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowPalette
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.LocalDesignMode
 import com.xemmy.mmbank.ui.theme.MetaLabel
 import com.xemmy.mmbank.ui.theme.ObsidianTokens
 import com.xemmy.mmbank.ui.theme.RowAvatar
@@ -203,7 +200,6 @@ data class TransactionsUiState(
     /** Ids currently checked while in bulk mode. */
     val selectedTransactionIds: Set<Long> = emptySet(),
     /** Single-row (Premium) vs Classic wrapped-chip filter bar; see Settings > Design. */
-    val filterBarLayout: FilterBarLayout = FilterBarLayout.SINGLE_ROW,
     /** Dynamic categories, for the row/bulk-bar category chip and picker. */
     val categories: List<Category> = emptyList(),
 )
@@ -338,7 +334,6 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             knownPersons = persons,
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
-            filterBarLayout = container.preferences.filterBarLayout,
             categories = categories,
         )
     }.combine(bulkMode) { base, bulk ->

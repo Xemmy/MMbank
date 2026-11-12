@@ -77,7 +77,6 @@ import com.xemmy.mmbank.ui.screens.settings.BinanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CaptureSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.CategoriesAndPeopleScreen
 import com.xemmy.mmbank.ui.screens.settings.DemoSettingsScreen
-import com.xemmy.mmbank.ui.screens.settings.DesignSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.DiagnosticsSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.ImportMessagesSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.PreferencesSettingsScreen
@@ -121,7 +120,6 @@ class MainActivity : FragmentActivity() {
         // Before the first frame, so not even the first render can be captured.
         applySecureScreen(container.secureScreen.value)
         setContent {
-            val designMode by container.designMode.collectAsStateWithLifecycle()
             val themeMode by container.themeMode.collectAsStateWithLifecycle()
             val darkTheme = themeMode.resolve(isSystemInDarkTheme())
             // Keep status/nav-bar icon appearance in sync with the theme.
@@ -137,7 +135,7 @@ class MainActivity : FragmentActivity() {
             }
             val secureScreen by container.secureScreen.collectAsStateWithLifecycle()
             LaunchedEffect(secureScreen) { applySecureScreen(secureScreen) }
-            MMbankTheme(designMode = designMode, darkTheme = darkTheme) {
+            MMbankTheme(darkTheme = darkTheme) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
                 Box {
@@ -477,7 +475,6 @@ private fun AppNavHost(
         composable("settings_diagnostics") { DiagnosticsSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_security") { SecuritySettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_ai") { AiSettingsScreen(onBack = { navController.popBackStack() }) }
-        composable("settings_design") { DesignSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_appearance") { AppearanceSettingsScreen(onBack = { navController.popBackStack() }) }
         composable("settings_demo") { DemoSettingsScreen(onBack = { navController.popBackStack() }) }
     }
