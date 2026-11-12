@@ -579,7 +579,9 @@ Plan debt payoff                   ›
 
 > **B.3 why-unmatched (#13)** ✅ 0.84.0 (CI run 43301447217 green): `UnmatchedExplainer` says why a financial-looking message produced nothing -- declined/OTP wording skipped on purpose, an unknown currency code ("THB is not a currency MMbank reads yet"), no amount next to a currency, or a clear amount with no matching rule (with a money-in/out cue) -- and the Diagnostics capture log now prints it on every NO MATCH line (redacted like the rest of the line). Still open in B.3: a one-tap "create rule from this" button wired to `AiSelfHealingRuleGenerator`, corpus testing surfaced in the rule editor, shadow warnings, SMS inbox import, per-sender stats.
 
-> **C.2 person learning** ✅ 0.85.0 (first slice, no schema change): a new capture goes to the person the merchant's last two real rows were assigned to (`PersonLearner`), else the default person as before; two defaults in a row hand it back. Still open in C.2: `categorySource`/`personSource` columns (so USER choices are never re-assigned and the app can explain why), counts/confidence per merchant, amount/card/sender signals, keyword fixes.
+> **C.2 person learning** ✅ 0.85.0 (CI run 43303012219 green; first slice, no schema change): a new capture goes to the person the merchant's last two real rows were assigned to (`PersonLearner`), else the default person as before; two defaults in a row hand it back. Still open in C.2: `categorySource`/`personSource` columns (so USER choices are never re-assigned and the app can explain why), counts/confidence per merchant, amount/card/sender signals, keyword fixes.
+
+> **C.1 keyword misfires** ✅ 0.85.1: short, ambiguous keywords in `MerchantCategorizer` ("ace", "mart", "hala", "vat", "fee", "nol", "rta", "kfc"…) must now stand as a whole word, so Palace/Space/Acer are not shopping, Smart/Martini are not groceries, Halal is not a taxi and "Private" is not a VAT fee; "supermart"/"dmart" and "fees" are handled explicitly. Longer keywords still match inside larger strings ("carrefour" in "CARREFOUR-MAF", "shop" in "bookshop").
 
 ### B.4 Consolidate overlapping features
 

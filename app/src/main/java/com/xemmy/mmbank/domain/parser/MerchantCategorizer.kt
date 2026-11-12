@@ -9,8 +9,11 @@ import com.xemmy.mmbank.domain.model.SpendingCategory
  * — the caller only ever fills categories that are still unset, so an explicit
  * user choice is never overwritten.
  *
- * Keyword lists lean on the UAE merchants this app sees most, but the matching
- * is plain case-insensitive substring so it degrades gracefully elsewhere.
+ * Keyword lists lean on the UAE merchants this app sees most. Matching is
+ * case-insensitive substring so it degrades gracefully elsewhere -- except for
+ * short, ambiguous keywords, which must stand as a whole word (see
+ * [WHOLE_WORD_KEYWORDS]) so "Palace" is not shopping and "Smart" is not a
+ * grocery store.
  */
 object MerchantCategorizer {
 
@@ -57,7 +60,7 @@ object MerchantCategorizer {
             "adidas", "electronics", "jumbo",
         ),
         SpendingCategory.FEES to listOf(
-            "fee", "charge", "vat", "interest", "profit", "penalty", "commission",
+            "fee", "fees", "charge", "vat", "interest", "profit", "penalty", "commission",
         ),
         SpendingCategory.TRANSFERS to listOf(
             "transfer", "remittance", "western union", "exchange", "atm", "cash withdrawal",
@@ -151,8 +154,45 @@ object MerchantCategorizer {
         if (haystack.isBlank()) return SpendingCategory.UNCATEGORIZED
 
         for ((category, keywords) in rules) {
-            if (keywords.any { haystack.contains(it) }) return category
+            if (keywords.any { matches(haystack, it) }) return category
         }
         return SpendingCategory.UNCATEGORIZED
+    }
+
+    /**
+     * Keywords that are real brands but also short runs of letters inside
+     * unrelated words -- "ace" in Palace/Space/Acer, "mart" in Smart/Martini,
+     * "hala" in Halal, "vat" in Private -- so they must stand as a whole word.
+     * Every keyword of three letters or fewer is treated this way too.
+     * Everything else stays a plain substring match: "carrefour" is meant to
+     * match inside "CARREFOUR-MAF".
+     */
+    private val WHOLE_WORD_KEYWORDS = setOf("mart", "hala", "reel", "viva", "bolt", "labs")
+
+    /** Compound prefixes a whole-word keyword may still follow: "supermart", "dmart". */
+    private val COMPOUND_PREFIXES = mapOf("mart" to listOf("super", "hyper", "mini", "mega", "d"))
+
+    private const val SHORT_KEYWORD = 3
+
+    private fun matches(haystack: String, keyword: String): Boolean {
+        if (keyword.length > SHORT_KEYWORD && keyword !in WHOLE_WORD_KEYWORDS) return haystack.contains(keyword)
+        var from = 0
+        while (true) {
+            val at = haystack.indexOf(keyword, from)
+            if (at < 0) return false
+            if (standsAlone(haystack, at, keyword)) return true
+            from = at + 1
+        }
+    }
+
+    private fun standsAlone(haystack: String, at: Int, keyword: String): Boolean {
+        val before = haystack.getOrNull(at - 1)
+        val leftOk = before == null || !before.isLetterOrDigit() ||
+            COMPOUND_PREFIXES[keyword].orEmpty().any { haystack.substring(0, at).endsWith(it) }
+        if (!leftOk) return false
+        // A keyword that ends in a space or dot ("du ") carries its own right edge.
+        if (!keyword.last().isLetterOrDigit()) return true
+        val after = haystack.getOrNull(at + keyword.length)
+        return after == null || !after.isLetterOrDigit()
     }
 }
