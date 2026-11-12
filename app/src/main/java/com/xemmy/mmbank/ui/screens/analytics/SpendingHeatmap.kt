@@ -10,13 +10,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.unit.dp
+import com.xemmy.mmbank.ui.designsystem.heatAlpha
+import com.xemmy.mmbank.ui.theme.MMTheme
 import java.time.LocalDate
 
 /** One day's real, analytics-eligible debit spend — the heatmap's unit of data. */
@@ -26,6 +27,9 @@ data class DailySpend(val date: LocalDate, val amount: Double)
 private val TILE_SIZE = 16.dp
 private val TILE_GAP = 4.dp
 private const val GRID_ROWS = 7
+
+/** Non-zero intensity buckets from [spendPercentileBucket] (1..4); bucket 0 is the empty tile. */
+private const val SPEND_BUCKETS = 4
 
 /**
  * Buckets [amount] into a 0-4 heatmap intensity by its percentile rank among
@@ -53,15 +57,6 @@ internal fun spendPercentileBucket(amount: Double, allAmounts: List<Double>): In
     }
 }
 
-/** Light-to-dark accent ramp, index = [spendPercentileBucket]'s 0-4 result. */
-private val BUCKET_COLORS = listOf(
-    Color(0xFF2A2E37), // 0: no spend
-    Color(0xFF1B4332), // 1: low
-    Color(0xFF2D6A4F), // 2: below-median
-    Color(0xFF40916C), // 3: above-median
-    Color(0xFF52B788), // 4: highest
-)
-
 /**
  * GitHub-style spending heatmap: one tile per day, colored by its spend
  * percentile within [dailySpend]. Tapping a tile invokes [onDayTapped] with
@@ -75,6 +70,8 @@ fun SpendingHeatmap(
     modifier: Modifier = Modifier,
 ) {
     val amounts = remember(dailySpend) { dailySpend.map { it.amount } }
+    val colors = MMTheme.colors
+    val tileShape = MaterialTheme.shapes.extraSmall
     val gridHeight = TILE_SIZE * GRID_ROWS + TILE_GAP * (GRID_ROWS - 1)
 
     LazyHorizontalGrid(
@@ -89,11 +86,11 @@ fun SpendingHeatmap(
             Box(
                 Modifier
                     .size(TILE_SIZE)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(BUCKET_COLORS[bucket])
+                    .clip(tileShape)
+                    .background(if (bucket == 0) colors.borderSubtle else colors.accent.copy(alpha = heatAlpha(bucket, SPEND_BUCKETS)))
                     .then(
                         if (isSelected) {
-                            Modifier.border(1.5.dp, Color.White, RoundedCornerShape(3.dp))
+                            Modifier.border(1.5.dp, colors.textPrimary, tileShape)
                         } else {
                             Modifier
                         },

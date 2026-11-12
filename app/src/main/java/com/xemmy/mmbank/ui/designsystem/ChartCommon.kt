@@ -15,21 +15,11 @@ import com.xemmy.mmbank.ui.theme.MMColors
 import com.xemmy.mmbank.ui.theme.MMTheme
 
 /**
- * Categorical series colours for charts, drawn from the semantic tokens until
- * dedicated chart tokens exist (Improvement Plan §1.1). Hues alternate so
- * neighbouring slices differ; charts never rely on these alone, since every
- * series also has a text label, a legend row or a readout.
+ * Categorical series colours for charts: the dedicated `chart1..chart8` tokens
+ * (colour-blind-safe, 3:1 against every surface). Charts never rely on these
+ * alone, since every series also has a text label, a legend row or a readout.
  */
-fun MMColors.chartSeries(): List<Color> = listOf(
-    accent,
-    moneyIn,
-    warning,
-    info,
-    danger,
-    brandTeal,
-    brandGold,
-    textSecondary,
-)
+fun MMColors.chartSeries(): List<Color> = chartPalette
 
 /** Colour for series [index], cycling when there are more series than colours. */
 fun MMColors.chartSeriesColor(index: Int): Color {

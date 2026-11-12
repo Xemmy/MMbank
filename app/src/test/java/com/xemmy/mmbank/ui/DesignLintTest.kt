@@ -30,7 +30,6 @@ class DesignLintTest {
                 "ui/components/AccountCarousel.kt" to 3,
                 "ui/components/CategoryPresets.kt" to 1,
                 "ui/components/GlassWalletCard.kt" to 16,
-                "ui/screens/analytics/SpendingHeatmap.kt" to 5,
                 "ui/widgets/DailyBudgetWidget.kt" to 3,
             ),
         ),
@@ -63,8 +62,6 @@ class DesignLintTest {
             Regex("asMoney\\w*\\("),
             { it.startsWith("ui/screens/") },
             mapOf(
-                "ui/screens/analytics/AnalyticsScreen.kt" to 2,
-                "ui/screens/insights/InsightsScreen.kt" to 8,
             ),
         ),
         Rule(
@@ -74,7 +71,6 @@ class DesignLintTest {
             mapOf(
                 "ui/components/AccountCarousel.kt" to 1,
                 "ui/components/GlassWalletCard.kt" to 1,
-                "ui/screens/analytics/SpendingHeatmap.kt" to 2,
             ),
         ),
     )

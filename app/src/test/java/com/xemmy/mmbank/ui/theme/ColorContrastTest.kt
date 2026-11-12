@@ -129,4 +129,23 @@ class ColorContrastTest {
 
     @Test
     fun `light semantic tokens clear AA`() = semantic(lightMMColors())
+
+    // -- Chart series tokens: >= 3:1 non-text contrast on every surface, both themes --------
+
+    private fun chartTokens(c: MMColors) {
+        assertTrue(c.chartPalette.size == 8)
+        assertTrue(c.chartPalette.toSet().size == 8)
+        c.chartPalette.forEachIndexed { i, color ->
+            for ((sn, surf) in listOf("canvas" to c.canvas, "surface" to c.surface, "surfaceRaised" to c.surfaceRaised)) {
+                val r = contrastRatio(color, surf)
+                assertTrue("dark=${c.isDark} chart${i + 1} on $sn = $r", r >= 3f)
+            }
+        }
+    }
+
+    @Test
+    fun `dark chart tokens clear 3 to 1`() = chartTokens(darkMMColors())
+
+    @Test
+    fun `light chart tokens clear 3 to 1`() = chartTokens(lightMMColors())
 }

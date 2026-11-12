@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,8 +58,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.components.DonutChart
-import com.xemmy.mmbank.ui.components.Sparkline
 import com.xemmy.mmbank.ui.screens.dashboard.NetWorthTrend
 import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetSummaryCard
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardDateRange
@@ -69,12 +68,16 @@ import com.xemmy.mmbank.ui.screens.dashboard.InsightTone
 import com.xemmy.mmbank.ui.screens.dashboard.SmartInsight
 import com.xemmy.mmbank.ui.screens.dashboard.netFlow
 import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.DonutChart
+import com.xemmy.mmbank.ui.designsystem.DonutSlice
+import com.xemmy.mmbank.ui.designsystem.LocalHideBalances
 import com.xemmy.mmbank.ui.designsystem.MMCard
 import com.xemmy.mmbank.ui.designsystem.MMFilterChip
 import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.Sparkline
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.designsystem.chartSeries
 import com.xemmy.mmbank.ui.theme.MMTheme
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -434,18 +437,18 @@ private fun insightText(insight: SmartInsight, currency: String, hidden: Boolean
         }
     is SmartInsight.TopCategory ->
         "${insight.category.name} is your biggest expense at ${insight.sharePercent.roundToInt()}% " +
-            "(${insight.amount.asMoneyOrMask(currency, hidden)})"
+            "(${moneyLabel(insight.amount, currency, hidden)})"
     is SmartInsight.CategorySpike ->
         "${insight.category.name} spending jumped ${insight.percentChange.roundToInt()}% to " +
-            insight.amount.asMoneyOrMask(currency, hidden)
+            moneyLabel(insight.amount, currency, hidden)
     is SmartInsight.NoIncomeSpend ->
-        "No income recorded this period — ${insight.spend.asMoneyOrMask(currency, hidden)} went out"
+        "No income recorded this period — ${moneyLabel(insight.spend, currency, hidden)} went out"
     is SmartInsight.BiggestExpense ->
-        "Your biggest expense was ${insight.amount.asMoneyOrMask(currency, hidden)} at ${insight.merchant}"
+        "Your biggest expense was ${moneyLabel(insight.amount, currency, hidden)} at ${insight.merchant}"
     is SmartInsight.UnusualCharge ->
-        "Unusual: ${insight.amount.asMoneyOrMask(insight.currencyCode, hidden)} at ${insight.merchant} is " +
+        "Unusual: ${moneyLabel(insight.amount, insight.currencyCode, hidden)} at ${insight.merchant} is " +
             "${String.format(java.util.Locale.US, "%.1f", insight.ratio)}× your usual " +
-            "(about ${insight.usual.asMoneyOrMask(insight.currencyCode, hidden)})"
+            "(about ${moneyLabel(insight.usual, insight.currencyCode, hidden)})"
 }
 
 /** Income / Spent / Net for the selected period as three stat tiles. */
@@ -646,7 +649,7 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
                             .format(DateTimeFormatter.ofPattern("MMM yyyy", Locale.US))
                         val paceLabel = if (goal.monthlySaving > 0.0) "planned" else "recent average"
                         "≈ $months month${if (months == 1) "" else "s"} to go (by $eta, " +
-                            "saving ${pace.asMoneyOrMask(currency, hidden)}/month $paceLabel)"
+                            "saving ${moneyLabel(pace, currency, hidden)}/month $paceLabel)"
                     }
                     else -> "Set a monthly saving (or build up history) to estimate the finish date."
                 }
@@ -731,7 +734,7 @@ private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Bo
 
     fun delta(value: Double): String {
         val sign = if (value >= 0) "▲" else "▼"
-        return "$sign ${kotlin.math.abs(value).asMoneyOrMask(currency, hidden)}"
+        return "$sign ${moneyLabel(kotlin.math.abs(value), currency, hidden)}"
     }
 
     MMCard(Modifier.fillMaxWidth()) {
@@ -765,11 +768,14 @@ private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Bo
                 )
             }
             Spacer(Modifier.height(10.dp))
-            Sparkline(
-                values = trend.values,
-                color = if (up) MMTheme.colors.moneyIn else MMTheme.colors.moneyOut,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            )
+            CompositionLocalProvider(LocalHideBalances provides hidden) {
+                Sparkline(
+                    values = trend.values.filterNotNull(),
+                    title = "Net worth, 12 months",
+                    valueLabel = { moneyLabel(it, currency, hidden) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Spacer(Modifier.height(6.dp))
             Text(
                 "Rebuilt from your ledger at today's exchange rates. Excludes Binance crypto.",
@@ -871,7 +877,7 @@ private fun LegendDot(color: Color) {
     )
 }
 
-/** This month's spend per category as a donut chart with a legend, biggest first. */
+/** This month's spend per category as a donut chart; the legend names every slice with its share. */
 @Composable
 private fun CategorySpendCard(state: DashboardUiState) {
     val slices = state.stats.categorySlices
@@ -880,47 +886,16 @@ private fun CategorySpendCard(state: DashboardUiState) {
 
     MMCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${state.stats.periodLabel} by category",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
+            Text("${state.stats.periodLabel} by category", style = MaterialTheme.typography.titleSmall)
+            CompositionLocalProvider(LocalHideBalances provides hidden) {
+                DonutChart(
+                    slices = slices.map { DonutSlice(it.name, it.amount) },
+                    title = "${state.stats.periodLabel} by category",
+                    centerLabel = moneyLabel(total, state.baseCurrency, hidden),
+                    valueLabel = { moneyLabel(it, state.baseCurrency, hidden) },
+                    modifier = Modifier.fillMaxWidth(),
+                    centerCaption = "total",
                 )
-                MoneyText(
-                    amount = total,
-                    currencyCode = state.baseCurrency,
-                    kind = TransactionKind.TRANSFER,
-                    style = MaterialTheme.typography.labelSmall,
-                    hidden = hidden,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DonutChart(slices = slices, modifier = Modifier.size(120.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    slices.forEach { slice ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(12.dp)
-                                    .background(Color(slice.color), MaterialTheme.shapes.extraSmall),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(slice.name, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.width(16.dp))
-                            MoneyText(
-                                amount = slice.amount,
-                                currencyCode = state.baseCurrency,
-                                kind = TransactionKind.TRANSFER,
-                                style = MaterialTheme.typography.bodySmall,
-                                hidden = hidden,
-                            )
-                        }
-                    }
-                }
             }
         }
     }

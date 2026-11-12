@@ -31,4 +31,12 @@ class MMColorsTest {
         assertEquals(darkMMColors().textPrimary, darkMMColors().moneyOut)
         assertEquals(lightMMColors().textPrimary, lightMMColors().moneyOut)
     }
+
+    @Test
+    fun `chart palette is ordered chart1 to chart8 and differs between themes`() {
+        for (c in listOf(darkMMColors(), lightMMColors())) {
+            assertEquals(listOf(c.chart1, c.chart2, c.chart3, c.chart4, c.chart5, c.chart6, c.chart7, c.chart8), c.chartPalette)
+        }
+        assertTrue(darkMMColors().chartPalette != lightMMColors().chartPalette)
+    }
 }

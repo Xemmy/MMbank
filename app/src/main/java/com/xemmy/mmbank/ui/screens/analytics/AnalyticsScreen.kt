@@ -1,8 +1,6 @@
 package com.xemmy.mmbank.ui.screens.analytics
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,8 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -28,31 +24,31 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.components.DonutChart
-import com.xemmy.mmbank.ui.components.PacingArcGauge
 import com.xemmy.mmbank.ui.screens.dashboard.RecentTransactionRow
-import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.DonutChart
+import com.xemmy.mmbank.ui.designsystem.DonutSlice
+import com.xemmy.mmbank.ui.designsystem.LocalHideBalances
 import com.xemmy.mmbank.ui.designsystem.MMCard
 import com.xemmy.mmbank.ui.designsystem.MMFilterChip
-import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.PacingGauge
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.MMTheme
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import kotlin.math.roundToInt
 
 /**
  * Interactive spending analytics: a Daily/Weekly/Monthly/Custom date filter
@@ -217,34 +213,26 @@ private fun AnalyticsCustomRangeDialog(
     }
 }
 
+/** Share of the local day that has passed at [secondOfDay] (0..86399), clamped to 0..1. */
+internal fun dayElapsedFraction(secondOfDay: Int): Float =
+    (secondOfDay / SECONDS_PER_DAY.toFloat()).coerceIn(0f, 1f)
+
+private const val SECONDS_PER_DAY = 86_400
+
 @Composable
 private fun PacingGaugeCard(state: AnalyticsUiState) {
+    val pacing = state.pacing
+    val elapsed = dayElapsedFraction(LocalTime.now().toSecondOfDay())
     MMCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PacingArcGauge(
-                spent = state.pacing.spentToday,
-                allowance = state.pacing.allowance,
-                modifier = Modifier.size(84.dp),
+        CompositionLocalProvider(LocalHideBalances provides state.hideBalances) {
+            PacingGauge(
+                spent = pacing.spentToday,
+                budget = pacing.allowance,
+                elapsedFraction = elapsed,
+                title = "Today's pacing",
+                valueLabel = { moneyLabel(it, pacing.currencyCode, state.hideBalances) },
+                modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text("Today's pacing", style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "${state.pacing.spentToday.asMoneyOrMask(state.pacing.currencyCode, state.hideBalances)} of " +
-                        "${state.pacing.allowance.asMoneyOrMask(state.pacing.currencyCode, state.hideBalances)} allowance",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MMTheme.colors.textSecondary,
-                )
-                if (state.pacing.allowance > 0.0) {
-                    val percent = (state.pacing.spentToday / state.pacing.allowance * 100.0).roundToInt()
-                    Text(
-                        "$percent% of today's allowance used",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MMTheme.colors.textSecondary,
-                    )
-                }
-            }
         }
     }
 }
@@ -252,36 +240,19 @@ private fun PacingGaugeCard(state: AnalyticsUiState) {
 @Composable
 private fun CategoryDonutCard(state: AnalyticsUiState) {
     val slices = state.categorySlices
+    val total = slices.sumOf { it.amount }
     MMCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Spend by category", style = MaterialTheme.typography.titleSmall)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DonutChart(slices = slices, modifier = Modifier.size(110.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    slices.forEach { slice ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(10.dp)
-                                    .background(Color(slice.color), MaterialTheme.shapes.extraSmall),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(slice.name, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.width(12.dp))
-                            MoneyText(
-                                amount = slice.amount,
-                                currencyCode = state.baseCurrency,
-                                kind = TransactionKind.TRANSFER,
-                                style = MaterialTheme.typography.bodySmall,
-                                hidden = state.hideBalances,
-                            )
-                        }
-                    }
-                }
+            CompositionLocalProvider(LocalHideBalances provides state.hideBalances) {
+                DonutChart(
+                    slices = slices.map { DonutSlice(it.name, it.amount) },
+                    title = "Spend by category",
+                    centerLabel = moneyLabel(total, state.baseCurrency, state.hideBalances),
+                    valueLabel = { moneyLabel(it, state.baseCurrency, state.hideBalances) },
+                    modifier = Modifier.fillMaxWidth(),
+                    centerCaption = "total",
+                )
             }
         }
     }

@@ -38,7 +38,42 @@ data class MMColors(
     val info: Color,
     val brandGold: Color,
     val brandTeal: Color,
-)
+    /**
+     * Categorical chart series, an Okabe-Ito-derived set that stays distinguishable under the
+     * common colour-vision deficiencies. Each clears 3:1 against canvas, surface and surfaceRaised
+     * (ColorContrastTest). Charts still never rely on colour alone.
+     */
+    val chart1: Color,
+    val chart2: Color,
+    val chart3: Color,
+    val chart4: Color,
+    val chart5: Color,
+    val chart6: Color,
+    val chart7: Color,
+    val chart8: Color,
+) {
+    /** [chart1]..[chart8] in order. */
+    val chartPalette: List<Color>
+        get() = listOf(chart1, chart2, chart3, chart4, chart5, chart6, chart7, chart8)
+}
+
+private val ChartDark1 = Color(0xFFE69F00)
+private val ChartDark2 = Color(0xFF56B4E9)
+private val ChartDark3 = Color(0xFF2FC49A)
+private val ChartDark4 = Color(0xFFF0E442)
+private val ChartDark5 = Color(0xFF6F9CF5)
+private val ChartDark6 = Color(0xFFF07C3A)
+private val ChartDark7 = Color(0xFFD98CB8)
+private val ChartDark8 = Color(0xFFA9B0BD)
+
+private val ChartLight1 = Color(0xFFB36B00)
+private val ChartLight2 = Color(0xFF0072B2)
+private val ChartLight3 = Color(0xFF007A5A)
+private val ChartLight4 = Color(0xFF8A7A00)
+private val ChartLight5 = Color(0xFF3B4FC4)
+private val ChartLight6 = Color(0xFFC24E00)
+private val ChartLight7 = Color(0xFFA3487A)
+private val ChartLight8 = Color(0xFF5F6B7A)
 
 fun darkMMColors() = MMColors(
     isDark = true,
@@ -61,6 +96,8 @@ fun darkMMColors() = MMColors(
     info = Blue400,
     brandGold = Gold300,
     brandTeal = Teal400,
+    chart1 = ChartDark1, chart2 = ChartDark2, chart3 = ChartDark3, chart4 = ChartDark4,
+    chart5 = ChartDark5, chart6 = ChartDark6, chart7 = ChartDark7, chart8 = ChartDark8,
 )
 
 fun lightMMColors() = MMColors(
@@ -84,6 +121,8 @@ fun lightMMColors() = MMColors(
     info = Blue700,
     brandGold = Gold700,
     brandTeal = Teal700,
+    chart1 = ChartLight1, chart2 = ChartLight2, chart3 = ChartLight3, chart4 = ChartLight4,
+    chart5 = ChartLight5, chart6 = ChartLight6, chart7 = ChartLight7, chart8 = ChartLight8,
 )
 
 /** Builds the Material scheme from the semantic tokens so both always agree. */
