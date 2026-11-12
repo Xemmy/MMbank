@@ -54,6 +54,9 @@ import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.auth.LockScreen
+import com.xemmy.mmbank.ui.navigation.AppTab
+import com.xemmy.mmbank.ui.navigation.Routes
+import com.xemmy.mmbank.ui.navigation.TabRouting
 import com.xemmy.mmbank.ui.screens.integrity.IntegrityScreen
 import com.xemmy.mmbank.ui.screens.accounts.AccountsScreen
 import com.xemmy.mmbank.ui.screens.cashback.CashbackScreen
@@ -195,44 +198,18 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-private data class TopLevelDestination(
-    val route: String,
-    val label: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector,
-    /** Non-tab routes that should keep this tab highlighted while open. */
-    val childRoutePrefixes: List<String> = emptyList(),
-)
+private data class TabVisual(val selectedIcon: ImageVector, val unselectedIcon: ImageVector)
 
-/** Activity, pre-filtered to transactions that belong to no account. */
-private const val UNASSIGNED_ACTIVITY_ROUTE = "transactions?accountFilter=unassigned"
+private fun AppTab.visual(): TabVisual = when (this) {
+    AppTab.HOME -> TabVisual(Icons.Filled.Home, Icons.Outlined.Home)
+    AppTab.ACTIVITY -> TabVisual(Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong)
+    AppTab.INSIGHTS -> TabVisual(Icons.Filled.Insights, Icons.Outlined.Insights)
+    AppTab.ACCOUNTS -> TabVisual(Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet)
+    AppTab.SETTINGS -> TabVisual(Icons.Filled.Settings, Icons.Outlined.Settings)
+}
 
-// Five destinations, Material 3's sweet spot. Rules lives under Settings and
-// Rewards under the Dashboard tab, so neither crowds the bar.
-private val topLevelDestinations = listOf(
-    TopLevelDestination("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
-    TopLevelDestination(
-        // The Activity route carries an optional accountFilter arg, so the
-        // current route reads as "transactions?accountFilter={...}" when
-        // deep-linked -- the prefix is what keeps the tab highlighted.
-        "transactions", "Activity",
-        Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong,
-        childRoutePrefixes = listOf("transactions"),
-    ),
-    TopLevelDestination(
-        "insights", "Dashboard", Icons.Filled.Insights, Icons.Outlined.Insights,
-        childRoutePrefixes = listOf("cashback"),
-    ),
-    TopLevelDestination(
-        "accounts", "Accounts",
-        Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet,
-        childRoutePrefixes = listOf("debt_planner"),
-    ),
-    TopLevelDestination(
-        "settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings,
-        childRoutePrefixes = listOf("settings_", "rules", "rule_editor"),
-    ),
-)
+// Five destinations, Material 3's sweet spot. Route ownership (which tab stays
+// highlighted for child screens) lives in ui/navigation/AppNavigation.kt.
 
 @Composable
 fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: BackgroundStyle = BackgroundStyle.MINIMAL_SLATE) {
@@ -246,7 +223,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
     // instead — where Diagnostics, Backup/Export, and account editing are
     // still reachable — rather than repeating the same crash on every launch.
     val recoveredFromCrash = remember { Diagnostics.crashStreak(context) > 0 }
-    val startDestination = if (recoveredFromCrash) "settings" else "home"
+    val startDestination = TabRouting.startRoute(recoveredFromCrash)
 
     LaunchedEffect(Unit) {
         // Only clear the streak after staying up a while — a launch that
@@ -258,7 +235,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
 
     // Daily Budget widget's "Review uncategorized" shortcut (see MainActivity.EXTRA_OPEN_UNCATEGORIZED).
     LaunchedEffect(openUncategorizedQueue) {
-        if (openUncategorizedQueue) navController.navigate("uncategorized_queue")
+        if (openUncategorizedQueue) navController.navigate(Routes.UNCATEGORIZED_QUEUE)
     }
 
     Scaffold(
@@ -266,9 +243,10 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
         containerColor = Color.Transparent,
         bottomBar = {
             NavigationBar {
-                topLevelDestinations.forEach { dest ->
-                    val selected = currentRoute == dest.route ||
-                        dest.childRoutePrefixes.any { currentRoute?.startsWith(it) == true }
+                val currentTab = TabRouting.tabFor(currentRoute)
+                AppTab.values().forEach { dest ->
+                    val visual = dest.visual()
+                    val selected = currentTab == dest
                     NavigationBarItem(
                         selected = selected,
                         onClick = {
@@ -280,7 +258,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
                         },
                         icon = {
                             Icon(
-                                if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                if (selected) visual.selectedIcon else visual.unselectedIcon,
                                 contentDescription = dest.label,
                                 modifier = Modifier.size(22.dp),
                             )
@@ -345,10 +323,10 @@ private fun AppNavHost(
         startDestination = startDestination,
         modifier = modifier,
     ) {
-        composable("home") {
+        composable(Routes.HOME) {
             DashboardScreen(
                 onOpenReview = { navController.navigate("review_transactions") },
-                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+                onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
                 onOpenCaptureSettings = { navController.navigate("settings_capture") },
             )
         }
@@ -358,7 +336,7 @@ private fun AppNavHost(
         // optional and matched by name, so the bottom bar's plain
         // navigate("transactions") still matches this route.
         composable(
-            route = "transactions?accountFilter={accountFilter}&drill={drill}",
+            route = Routes.ACTIVITY_PATTERN,
             arguments = listOf(
                 navArgument("accountFilter") {
                     type = NavType.StringType
@@ -373,8 +351,8 @@ private fun AppNavHost(
             TransactionsScreen(
                 initialAccountFilter = entry.arguments?.getString("accountFilter").orEmpty(),
                 initialDrill = entry.arguments?.getString("drill").orEmpty(),
-                onOpenUncategorizedQueue = { navController.navigate("uncategorized_queue") },
-                onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
+                onOpenUncategorizedQueue = { navController.navigate(Routes.UNCATEGORIZED_QUEUE) },
+                onOpenMerchant = { merchant -> navController.navigate(Routes.merchantDetail(Uri.encode(merchant))) },
             )
         }
         composable("uncategorized_queue") {
@@ -387,7 +365,7 @@ private fun AppNavHost(
             IntegrityScreen(
                 onBack = { navController.popBackStack() },
                 onOpenAccounts = { navController.navigate("accounts") },
-                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+                onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
             )
         }
         composable("insights") {
@@ -406,7 +384,7 @@ private fun AppNavHost(
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
         composable("accounts") {
             AccountsScreen(
-                onOpenUnassigned = { navController.navigate(UNASSIGNED_ACTIVITY_ROUTE) },
+                onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
                 onOpenIntegrity = { navController.navigate("integrity_check") },
                 onOpenDebtPlanner = { navController.navigate("debt_planner") },
             )
@@ -416,7 +394,7 @@ private fun AppNavHost(
         composable("subscriptions") {
             SubscriptionsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenMerchant = { merchant -> navController.navigate("merchant_detail/${Uri.encode(merchant)}") },
+                onOpenMerchant = { merchant -> navController.navigate(Routes.merchantDetail(Uri.encode(merchant))) },
             )
         }
         composable("goals") { GoalsScreen(onBack = { navController.popBackStack() }) }
@@ -424,11 +402,11 @@ private fun AppNavHost(
         composable("splits") {
             SplitsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenGroup = { groupId -> navController.navigate("splits_group/$groupId") },
+                onOpenGroup = { groupId -> navController.navigate(Routes.splitsGroup(groupId)) },
             )
         }
         composable(
-            route = "splits_group/{groupId}",
+            route = Routes.SPLITS_GROUP_PATTERN,
             arguments = listOf(navArgument("groupId") { type = NavType.LongType }),
         ) {
             GroupDetailScreen(onBack = { navController.popBackStack() })
@@ -438,7 +416,7 @@ private fun AppNavHost(
         }
         composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
         composable(
-            route = "merchant_detail/{merchant}",
+            route = Routes.MERCHANT_DETAIL_PATTERN,
             arguments = listOf(navArgument("merchant") { type = NavType.StringType }),
         ) {
             MerchantDetailScreen(onBack = { navController.popBackStack() })
@@ -446,17 +424,17 @@ private fun AppNavHost(
         composable("copilot") {
             CopilotChatScreen(
                 onBack = { navController.popBackStack() },
-                onOpenActivity = { drill -> navController.navigate("transactions?drill=${Uri.encode(drill)}") },
+                onOpenActivity = { drill -> navController.navigate(Routes.activityDrill(Uri.encode(drill))) },
             )
         }
         composable("rules") {
             RulesScreen(
-                onEditRule = { id -> navController.navigate("rule_editor?ruleId=$id") },
-                onNewRule = { navController.navigate("rule_editor?ruleId=-1") },
+                onEditRule = { id -> navController.navigate(Routes.ruleEditor(id)) },
+                onNewRule = { navController.navigate(Routes.NEW_RULE) },
             )
         }
         composable(
-            route = "rule_editor?ruleId={ruleId}",
+            route = Routes.RULE_EDITOR_PATTERN,
             arguments = listOf(navArgument("ruleId") { type = NavType.LongType; defaultValue = -1L }),
         ) {
             RuleEditorScreen(onDone = { navController.popBackStack() })
