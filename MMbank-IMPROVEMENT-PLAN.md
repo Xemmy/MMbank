@@ -779,6 +779,8 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.5 #3 statement reconcile** ✅ 0.87.0: Integrity check → "Compare with a bank statement": paste a statement CSV (comma/semicolon/tab, header or not, signed or debit/credit columns, `(x)`/DR/CR amounts, UAE date formats), pick the account, and `StatementReconciler` pairs each line with a captured transaction (same signed amount, within 3 days, nearest date then closest description, one-to-one) and lists what is missing from MMbank and what is only in MMbank. Read-only; unreadable lines are counted, not hidden. UI is not verified by CI.
 
+> **B.5 #5 year in review** ✅ 0.88.0: Monthly report → "Year in review" (also findable from search): the year's spent / received / net / savings rate, change vs the year before, busiest and quietest month, biggest single expense, no-spend days, spending by month, and top categories and merchants (`YearInReviewBuilder`, Spent/Received per `LedgerMath`, converted row by row). Month-over-month deltas on every headline number (#38) is still open. UI is not verified by CI.
+
 ## Where things stand after 0.85.1
 
 Every batch above is verified by a green CI run (unit tests and a built APK). The latest is run 43304628317 for 0.85.1. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.

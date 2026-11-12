@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.Row
 import com.xemmy.mmbank.ui.navigation.NavChrome
 import com.xemmy.mmbank.ui.screens.search.SearchScreen
 import com.xemmy.mmbank.ui.screens.statement.StatementReconcileScreen
+import com.xemmy.mmbank.ui.screens.year.YearInReviewScreen
 import com.xemmy.mmbank.ui.screens.search.SearchTarget
 import com.xemmy.mmbank.ui.navigation.AdaptiveLayout
 import androidx.compose.ui.platform.LocalConfiguration
@@ -528,7 +529,13 @@ private fun AppNavHost(
         composable("categories") {
             CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)
         }
-        composable("monthly_report") { MonthlyReportScreen(onBack = { navController.popBackStack() }) }
+        composable("monthly_report") {
+            MonthlyReportScreen(
+                onBack = { navController.popBackStack() },
+                onOpenYear = { navController.navigate(Routes.YEAR_IN_REVIEW) },
+            )
+        }
+        composable(Routes.YEAR_IN_REVIEW) { YearInReviewScreen(onBack = { navController.popBackStack() }) }
         composable(
             route = Routes.MERCHANT_DETAIL_PATTERN,
             arguments = listOf(navArgument("merchant") { type = NavType.StringType }),

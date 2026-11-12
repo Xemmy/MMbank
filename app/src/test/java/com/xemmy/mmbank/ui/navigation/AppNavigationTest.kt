@@ -43,6 +43,10 @@ class AppNavigationTest {
         ).forEach { assertNull(it, TabRouting.tabFor(it)) }
     }
 
+    @Test fun yearInReviewLivesUnderInsights() {
+        assertEquals(AppTab.INSIGHTS, TabRouting.tabFor(Routes.YEAR_IN_REVIEW))
+    }
+
     @Test fun statementReconcileLivesUnderAccounts() {
         assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.STATEMENT_RECONCILE))
     }

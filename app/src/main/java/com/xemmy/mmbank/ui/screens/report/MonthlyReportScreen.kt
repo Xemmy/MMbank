@@ -248,6 +248,7 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
 @Composable
 fun MonthlyReportScreen(
     onBack: () -> Unit,
+    onOpenYear: () -> Unit = {},
     viewModel: MonthlyReportViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -274,6 +275,9 @@ fun MonthlyReportScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    androidx.compose.material3.TextButton(onClick = onOpenYear) { Text("Year in review") }
                 },
             )
         },

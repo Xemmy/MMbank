@@ -38,6 +38,7 @@ object SearchDestinations {
 
     private val tools = listOf(
         SearchDestination("Monthly report", "statement month export", Routes.MONTHLY_REPORT),
+        SearchDestination("Year in review", "annual yearly summary totals wrapped", Routes.YEAR_IN_REVIEW),
         SearchDestination("Copilot", "ask question chat assistant", Routes.COPILOT),
         SearchDestination("To review", "review uncategorized queue inbox", Routes.REVIEW_TRANSACTIONS),
         SearchDestination("Uncategorized", "categorize queue", Routes.UNCATEGORIZED_QUEUE),

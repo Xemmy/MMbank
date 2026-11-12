@@ -41,6 +41,7 @@ object Routes {
     const val SETTINGS_CAPTURE = "settings_capture"
     const val SEARCH = "search"
     const val STATEMENT_RECONCILE = "statement_reconcile"
+    const val YEAR_IN_REVIEW = "year_in_review"
 
     /** Activity, pre-filtered to transactions that belong to no account. */
     const val ACTIVITY_UNASSIGNED = "transactions?accountFilter=unassigned"
@@ -93,6 +94,7 @@ object TabRouting {
         "splits_group" to AppTab.PLAN,
         Routes.CATEGORIES to AppTab.PLAN,
         Routes.MONTHLY_REPORT to AppTab.INSIGHTS,
+        Routes.YEAR_IN_REVIEW to AppTab.INSIGHTS,
         Routes.ACCOUNTS to AppTab.ACCOUNTS,
         Routes.DEBT_PLANNER to AppTab.PLAN,
         Routes.INTEGRITY_CHECK to AppTab.ACCOUNTS,

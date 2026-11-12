@@ -21,6 +21,7 @@ import com.xemmy.mmbank.ui.screens.report.MonthlyReportViewModel
 import com.xemmy.mmbank.ui.screens.review.ReviewViewModel
 import com.xemmy.mmbank.ui.screens.search.SearchViewModel
 import com.xemmy.mmbank.ui.screens.statement.StatementReconcileViewModel
+import com.xemmy.mmbank.ui.screens.year.YearInReviewViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
 import com.xemmy.mmbank.ui.screens.settings.ImportMessagesViewModel
@@ -59,6 +60,7 @@ object AppViewModelProvider {
         initializer { GroupDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SearchViewModel(mmBankApp().container) }
         initializer { StatementReconcileViewModel(mmBankApp().container) }
+        initializer { YearInReviewViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =
