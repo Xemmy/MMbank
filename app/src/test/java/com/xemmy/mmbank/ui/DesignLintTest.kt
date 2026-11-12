@@ -39,7 +39,6 @@ class DesignLintTest {
             Regex("fontSize\\s*="),
             { !it.startsWith("ui/theme/") },
             mapOf(
-                "ui/screens/settings/BackupDiagnosticsSettings.kt" to 1,
                 "ui/util/AmountText.kt" to 1,
             ),
         ),
@@ -66,7 +65,6 @@ class DesignLintTest {
             mapOf(
                 "ui/screens/analytics/AnalyticsScreen.kt" to 2,
                 "ui/screens/insights/InsightsScreen.kt" to 8,
-                "ui/screens/settings/SettingsViewModel.kt" to 1,
             ),
         ),
         Rule(
@@ -77,7 +75,6 @@ class DesignLintTest {
                 "ui/components/AccountCarousel.kt" to 1,
                 "ui/components/GlassWalletCard.kt" to 1,
                 "ui/screens/analytics/SpendingHeatmap.kt" to 2,
-                "ui/screens/settings/AppearanceSettingsScreen.kt" to 1,
             ),
         ),
     )

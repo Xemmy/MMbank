@@ -110,9 +110,9 @@ import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent
 import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.theme.displayName
-import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -378,7 +378,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
         container.preferences.monthlySpendBudget = amount
-        statusMessage = "Monthly budget set to ${amount.asMoney(defaultCurrency)}"
+        statusMessage = "Monthly budget set to ${moneyLabel(amount, defaultCurrency)}"
     }
 
     /**

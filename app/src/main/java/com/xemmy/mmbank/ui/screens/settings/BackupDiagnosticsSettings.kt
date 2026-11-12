@@ -367,9 +367,8 @@ internal fun DiagnosticsLogCard(title: String, text: String, onClear: () -> Unit
             androidx.compose.foundation.text.selection.SelectionContainer {
                 Text(
                     text,
-                    style = MaterialTheme.typography.bodySmall.copy(
+                    style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontSize = MaterialTheme.typography.labelSmall.fontSize,
                     ),
                 )
             }

@@ -15,7 +15,6 @@ import com.xemmy.mmbank.domain.model.ThemeMode
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Card
@@ -33,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.theme.MMShapes
 import com.xemmy.mmbank.ui.theme.ambientBackground
 import com.xemmy.mmbank.ui.theme.description
 import com.xemmy.mmbank.ui.theme.displayName
@@ -122,7 +122,7 @@ private fun BackgroundStyleCard(
             Box(
                 Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(MMShapes.extraSmall)
                     .ambientBackground(style),
             )
             Column(Modifier.weight(1f)) {
