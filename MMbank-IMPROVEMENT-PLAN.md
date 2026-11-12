@@ -789,7 +789,9 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **C.2 categorySource / personSource** ✅ 0.92.0 (CI run 43323573510 green): schema v34 adds `categorySource` and `personSource` to transactions (explicit additive migration `MIGRATION_33_34_SQL`; every existing row with a category/person is marked `USER`, so history is never re-assigned on its own; backup format v12 carries them and restores old backups the same way). Capture records `LEARNED` / `KEYWORD` / `DEFAULT`; every manual pick, bulk edit and edit-form change records `USER`. Used now: (1) learning a merchant's category re-categorizes its earlier *guessed* rows (keyword/learned/AI) but never a `USER` one; (2) the person pattern reads only explicit user choices; (3) the edit form shows a plain "why" line ("Chosen by you", "Learned from your earlier choices", "Guessed from the merchant name"). Saving an edit form with the "Auto" category chip counts the guess as the user's (conservative). Still open in C.2: per-merchant counts/confidence, amount/card/sender signals. UI line not verified by CI.
 
-> **Phase 3 / B.4 one "To review" inbox** ✅ 0.93.0: the standalone Uncategorized queue is gone; its route (Activity banner, widget, notification) now opens the Review Transactions inbox, which already did everything it did (ranked one-tap suggestions, confidence, batch approve, pick any category) and now also has "Dismiss suggestion". The duplicate screen and view model were deleted. UI is not verified by CI.
+> **Phase 3 / B.4 one "To review" inbox** ✅ 0.93.0 (CI run 43325415417 green): the standalone Uncategorized queue is gone; its route (Activity banner, widget, notification) now opens the Review Transactions inbox, which already did everything it did (ranked one-tap suggestions, confidence, batch approve, pick any category) and now also has "Dismiss suggestion". The duplicate screen and view model were deleted. UI is not verified by CI.
+
+> **Phase 3 live status on Plan cards** ✅ 0.94.0: each Plan card shows one line of live status when there is something to say -- Budgets ("1 over budget · 2 near their cap" / "All 4 on track"), Bills ("1 overdue · 2 due this week" / "Next: Gym in 12 days"), Subscriptions ("5 active · AED 140.00/month", amounts honour hide-balances), Goals ("closest: Trip 80%") (`PlanStatus`, `PlanViewModel`). The budget numbers now come from one shared `BudgetStatusBuilder`, also used by the Budgets screen, so they cannot disagree. Debt/Splits/Rewards have no status yet. UI is not verified by CI.
 
 ## Where things stand after 0.91.0
 
@@ -798,7 +800,7 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 **Still open, grouped by what blocks it**
 
 *Needs UI work that CI cannot check (build it, then look at it on a device):*
-- Phase 3: nested nav graphs, Activity list-detail on tablets, live status on Plan cards, a Settings "Notifications" group, per-form Save.
+- Phase 3: nested nav graphs, Activity list-detail on tablets, a Settings "Notifications" group, per-form Save.
 - B.5: quick add (Quick Settings tile / notification action); month-over-month deltas on every headline number (#38).
 - B.4 consolidation: one Recurring model (bills + subscriptions + card dues), one People list, goals-only (drop the duplicate Home card), cashback onto user categories.
 - B5/B4 follow-ups: show and break the refund link on a transaction; "Also arrived by SMS" display and Split back out (these need the link/merge stored, so also a schema change).
