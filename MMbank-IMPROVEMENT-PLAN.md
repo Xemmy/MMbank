@@ -652,6 +652,8 @@ Plan debt payoff                   ›
 - No "cancelled / charge missing" state.
 - No "mark this as a subscription".
 
+> **C.1 subscription detection v2** ✅ 0.83.0 (runs for 0.79.0–0.82.0 green; this commit pending CI): `SubscriptionRadarEngine` now tolerates a missed cycle (one per three gaps) and skips extra purchases at the same merchant, as long as the chain explains ≥60% of the merchant's charges (so a daily coffee never reads as a subscription); adds bi-weekly, quarterly, semi-annual and yearly cadences; groups by brand (`MerchantNormalizer.key`); keeps the billing day of the month (and month-end billers) for next-due dates; and accepts two charges on a clean cadence when the message says subscription/renewal/auto-debit/اشتراك/تجديد. Still open from C.1: a "charge missing / cancelled" state, a manual "mark as subscription", and feeding the brand-grouped history into the per-merchant refresh (the capture-time refresh still sees one raw merchant spelling; the full Scan sees all).
+
 ### C.2 Smart auto-assignment, the design ("learns from your past")
 
 All on-device, pure Kotlin, JVM-testable, explainable. No model file and no network.

@@ -228,7 +228,11 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, o
 
 private fun cadenceLabel(cadence: SubscriptionCadence): String = when (cadence) {
     SubscriptionCadence.WEEKLY -> "Weekly"
+    SubscriptionCadence.BIWEEKLY -> "Every 2 weeks"
     SubscriptionCadence.MONTHLY -> "Monthly"
+    SubscriptionCadence.QUARTERLY -> "Quarterly"
+    SubscriptionCadence.SEMI_ANNUAL -> "Every 6 months"
+    SubscriptionCadence.YEARLY -> "Yearly"
 }
 
 /** "Renews today" / "Renews in N days" / "Renewal overdue" for the next-due timestamp, relative to today. */

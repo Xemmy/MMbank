@@ -470,7 +470,25 @@ sealed interface IngestResult {
 }
 
 /** Detected repeat-charge rhythm — see [com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine]. */
-enum class SubscriptionCadence(val nominalDays: Long) { WEEKLY(7L), MONTHLY(30L) }
+enum class SubscriptionCadence(val nominalDays: Long) {
+    WEEKLY(7L),
+    BIWEEKLY(14L),
+    MONTHLY(30L),
+    QUARTERLY(91L),
+    SEMI_ANNUAL(182L),
+    YEARLY(365L),
+    ;
+
+    /** Calendar months between charges for the month-based cadences, or null for the day-based ones. */
+    val months: Int?
+        get() = when (this) {
+            MONTHLY -> 1
+            QUARTERLY -> 3
+            SEMI_ANNUAL -> 6
+            YEARLY -> 12
+            WEEKLY, BIWEEKLY -> null
+        }
+}
 
 /**
  * One detected or manually confirmed salary/income event — see
