@@ -11,13 +11,15 @@ import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -35,6 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -85,6 +90,7 @@ import com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorScreen
 import com.xemmy.mmbank.ui.screens.rules.RulesScreen
 import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsScreen
+import com.xemmy.mmbank.ui.screens.plan.PlanScreen
 import com.xemmy.mmbank.ui.screens.settings.AiSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.AppearanceSettingsScreen
 import com.xemmy.mmbank.ui.screens.settings.BackupSettingsScreen
@@ -217,7 +223,7 @@ private fun AppTab.visual(): TabVisual = when (this) {
     AppTab.ACTIVITY -> TabVisual(Icons.AutoMirrored.Filled.ReceiptLong, Icons.AutoMirrored.Outlined.ReceiptLong)
     AppTab.INSIGHTS -> TabVisual(Icons.Filled.Insights, Icons.Outlined.Insights)
     AppTab.ACCOUNTS -> TabVisual(Icons.Filled.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet)
-    AppTab.SETTINGS -> TabVisual(Icons.Filled.Settings, Icons.Outlined.Settings)
+    AppTab.PLAN -> TabVisual(Icons.Filled.Checklist, Icons.Outlined.Checklist)
 }
 
 // Five destinations, Material 3's sweet spot. Route ownership (which tab stays
@@ -313,6 +319,14 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(12.dp),
                     )
+                }
+            }
+            // Settings lives behind the gear on every tab root, not in the bar.
+            if (NavTransitions.isTabRoot(currentRoute)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
                 }
             }
             AppNavHost(
@@ -430,6 +444,9 @@ private fun AppNavHost(
                 onOpenBills = { navController.navigate("bills") },
                 onOpenSplits = { navController.navigate("splits") },
             )
+        }
+        composable(Routes.PLAN) {
+            PlanScreen(onOpen = { route -> navController.navigate(route) })
         }
         composable("analytics") { AnalyticsScreen(onBack = { navController.popBackStack() }) }
         composable("accounts") {

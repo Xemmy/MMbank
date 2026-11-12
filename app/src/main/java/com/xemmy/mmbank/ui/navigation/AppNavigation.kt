@@ -13,6 +13,7 @@ object Routes {
     const val HOME = "home"
     const val ACTIVITY = "transactions"
     const val INSIGHTS = "insights"
+    const val PLAN = "plan"
     const val ACCOUNTS = "accounts"
     const val SETTINGS = "settings"
 
@@ -59,9 +60,9 @@ object Routes {
 enum class AppTab(val route: String, val label: String) {
     HOME(Routes.HOME, "Home"),
     ACTIVITY(Routes.ACTIVITY, "Activity"),
-    INSIGHTS(Routes.INSIGHTS, "Dashboard"),
+    INSIGHTS(Routes.INSIGHTS, "Insights"),
+    PLAN(Routes.PLAN, "Plan"),
     ACCOUNTS(Routes.ACCOUNTS, "Accounts"),
-    SETTINGS(Routes.SETTINGS, "Settings"),
 }
 
 object TabRouting {
@@ -81,31 +82,28 @@ object TabRouting {
         Routes.ACTIVITY to AppTab.ACTIVITY,
         Routes.UNCATEGORIZED_QUEUE to AppTab.ACTIVITY,
         Routes.INSIGHTS to AppTab.INSIGHTS,
-        Routes.CASHBACK to AppTab.INSIGHTS,
+        Routes.CASHBACK to AppTab.PLAN,
         Routes.ANALYTICS to AppTab.INSIGHTS,
-        Routes.SUBSCRIPTIONS to AppTab.INSIGHTS,
-        Routes.GOALS to AppTab.INSIGHTS,
-        Routes.BILLS to AppTab.INSIGHTS,
-        Routes.SPLITS to AppTab.INSIGHTS,
-        "splits_group" to AppTab.INSIGHTS,
-        Routes.CATEGORIES to AppTab.INSIGHTS,
+        Routes.SUBSCRIPTIONS to AppTab.PLAN,
+        Routes.GOALS to AppTab.PLAN,
+        Routes.BILLS to AppTab.PLAN,
+        Routes.SPLITS to AppTab.PLAN,
+        "splits_group" to AppTab.PLAN,
+        Routes.CATEGORIES to AppTab.PLAN,
         Routes.MONTHLY_REPORT to AppTab.INSIGHTS,
         Routes.ACCOUNTS to AppTab.ACCOUNTS,
-        Routes.DEBT_PLANNER to AppTab.ACCOUNTS,
+        Routes.DEBT_PLANNER to AppTab.PLAN,
         Routes.INTEGRITY_CHECK to AppTab.ACCOUNTS,
-        Routes.SETTINGS to AppTab.SETTINGS,
-        Routes.RULES to AppTab.SETTINGS,
-        "rule_editor" to AppTab.SETTINGS,
+        Routes.PLAN to AppTab.PLAN,
     )
 
     /**
      * Which tab owns [route], or null when none should be highlighted
-     * (merchant detail and Copilot are reached from several tabs). Every
-     * "settings_*" subpage belongs to Settings.
+     * (merchant detail, Copilot and everything under Settings, which is
+     * reached from the gear on each tab root rather than from the bar).
      */
     fun tabFor(route: String?): AppTab? {
         val base = baseRoute(route) ?: return null
-        if (base.startsWith("settings_")) return AppTab.SETTINGS
         return ownerByBaseRoute[base]
     }
 

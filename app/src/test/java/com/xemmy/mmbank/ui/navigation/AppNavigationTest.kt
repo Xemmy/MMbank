@@ -23,7 +23,7 @@ class AppNavigationTest {
 
     @Test fun tabOrderAndLabelsAreStable() {
         assertEquals(
-            listOf("Home", "Activity", "Dashboard", "Accounts", "Settings"),
+            listOf("Home", "Activity", "Insights", "Plan", "Accounts"),
             AppTab.values().map { it.label },
         )
         assertEquals(5, AppTab.values().map { it.route }.toSet().size)
@@ -36,22 +36,25 @@ class AppNavigationTest {
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.UNCATEGORIZED_QUEUE))
     }
 
-    @Test fun settingsSubpagesAndRulesBelongToSettings() {
+    @Test fun settingsAndItsSubpagesHighlightNoTab() {
         listOf(
-            Routes.SETTINGS_CAPTURE, "settings_backup", "settings_ai", Routes.RULES,
+            Routes.SETTINGS, Routes.SETTINGS_CAPTURE, "settings_backup", "settings_ai", Routes.RULES,
             Routes.RULE_EDITOR_PATTERN, Routes.ruleEditor(7),
-        ).forEach { assertEquals(it, AppTab.SETTINGS, TabRouting.tabFor(it)) }
+        ).forEach { assertNull(it, TabRouting.tabFor(it)) }
+    }
+
+    @Test fun planToolsHighlightPlan() {
+        listOf(
+            Routes.CASHBACK, Routes.SUBSCRIPTIONS, Routes.GOALS, Routes.BILLS, Routes.SPLITS,
+            Routes.SPLITS_GROUP_PATTERN, Routes.splitsGroup(3), Routes.CATEGORIES, Routes.DEBT_PLANNER,
+        ).forEach { assertEquals(it, AppTab.PLAN, TabRouting.tabFor(it)) }
     }
 
     @Test fun insightsAccountsAndHomeChildren() {
         listOf(
-            Routes.CASHBACK, Routes.ANALYTICS, Routes.SUBSCRIPTIONS, Routes.GOALS, Routes.BILLS,
-            Routes.SPLITS, Routes.SPLITS_GROUP_PATTERN, Routes.splitsGroup(3), Routes.CATEGORIES,
-            Routes.MONTHLY_REPORT,
+            Routes.ANALYTICS, Routes.MONTHLY_REPORT,
         ).forEach { assertEquals(it, AppTab.INSIGHTS, TabRouting.tabFor(it)) }
-        listOf(Routes.DEBT_PLANNER, Routes.INTEGRITY_CHECK).forEach {
-            assertEquals(it, AppTab.ACCOUNTS, TabRouting.tabFor(it))
-        }
+        assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.INTEGRITY_CHECK))
         assertEquals(AppTab.HOME, TabRouting.tabFor(Routes.REVIEW_TRANSACTIONS))
     }
 
@@ -89,13 +92,16 @@ class AppNavigationTest {
     @Test fun transitionKinds() {
         val k = { f: String?, t: String?, pop: Boolean, rm: Boolean -> NavTransitions.kind(f, t, pop, rm) }
         assertEquals(NavTransitionKind.TAB_SWITCH, k(Routes.HOME, Routes.ACTIVITY_PATTERN, false, false))
-        assertEquals(NavTransitionKind.TAB_SWITCH, k(Routes.SETTINGS, Routes.HOME, true, false))
+        assertEquals(NavTransitionKind.TAB_SWITCH, k(Routes.PLAN, Routes.HOME, true, false))
         assertEquals(NavTransitionKind.FORWARD, k(Routes.INSIGHTS, Routes.GOALS, false, false))
         assertEquals(NavTransitionKind.BACK, k(Routes.GOALS, Routes.INSIGHTS, true, false))
         assertEquals(NavTransitionKind.FORWARD, k(Routes.HOME, Routes.merchantDetail("Uber"), false, false))
         assertEquals(NavTransitionKind.NONE, k(Routes.HOME, Routes.ACTIVITY, false, true))
         assertEquals(NavTransitionKind.NONE, k(Routes.ACTIVITY_PATTERN, Routes.ACTIVITY_UNASSIGNED, false, false))
         assertEquals(NavTransitionKind.NONE, k(null, Routes.HOME, false, false))
+        assertEquals(NavTransitionKind.FORWARD, k(Routes.HOME, Routes.SETTINGS, false, false))
+        assertTrue(NavTransitions.isTabRoot(Routes.PLAN))
+        assertTrue(!NavTransitions.isTabRoot(Routes.SETTINGS))
         assertTrue(NavTransitions.isTabRoot(Routes.ACTIVITY_UNASSIGNED))
         assertTrue(!NavTransitions.isTabRoot(Routes.GOALS))
     }
