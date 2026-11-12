@@ -716,7 +716,7 @@ fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Bool
             )
         }
         MoneyText(
-            amount = tx.amount,
+            amount = tx.amount.toDouble(),
             currencyCode = tx.currencyCode,
             kind = homeRowKind(tx.direction),
             style = MaterialTheme.typography.bodyLarge,
