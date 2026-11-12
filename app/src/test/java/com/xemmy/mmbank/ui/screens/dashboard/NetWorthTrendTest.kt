@@ -48,7 +48,8 @@ class NetWorthTrendTest {
         accounts: List<Account> = listOf(current, card),
         rates: List<ExchangeRate> = emptyList(),
         excludeCards: Boolean = false,
-    ) = computeNetWorthTrend(accounts, rows, rates, "AED", excludeCards, zone, thisMonth, months = 4)
+        history: List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay> = emptyList(),
+    ) = computeNetWorthTrend(accounts, rows, rates, "AED", excludeCards, zone, thisMonth, months = 4, history = history)
 
     @Test
     fun `month-end values replay the ledger, null before history starts`() {
@@ -91,6 +92,43 @@ class NetWorthTrendTest {
         val t = trend(rows = emptyList())
         assertEquals(listOf(null, null, null, 1000.0), t.values)
         assertFalse(t.hasTrend)
+    }
+
+    @Test
+    fun `past months use the rates recorded for them, the current month uses today's`() {
+        val history = listOf(
+            com.xemmy.mmbank.domain.model.ExchangeRateOnDay("AED", "USD", LocalDate.of(2026, 10, 1), BigDecimal("0.5")),
+        )
+        val t = trend(
+            accounts = listOf(current, card, usd),
+            rates = listOf(ExchangeRate("AED", "USD", BigDecimal("0.25"), 0L)),
+            history = history,
+        )
+        // USD 100: 200 AED at the recorded 0.5 for Sep and Oct (Sep falls back to the earliest recording), 400 AED today.
+        assertEquals(listOf(null, 5600.0 + 200.0, 4600.0 + 200.0, 7600.0 + 400.0), t.values)
+        assertFalse(t.approximate)
+    }
+
+    @Test
+    fun `with no history every month still uses today's rate`() {
+        val t = trend(
+            accounts = listOf(current, card, usd),
+            rates = listOf(ExchangeRate("AED", "USD", BigDecimal("0.25"), 0L)),
+        )
+        assertEquals(listOf(null, 6000.0, 5000.0, 8000.0), t.values)
+    }
+
+    @Test
+    fun `a currency missing from history falls back to today's rate`() {
+        val history = listOf(
+            com.xemmy.mmbank.domain.model.ExchangeRateOnDay("AED", "EUR", LocalDate.of(2026, 10, 1), BigDecimal("0.25")),
+        )
+        val t = trend(
+            accounts = listOf(current, card, usd),
+            rates = listOf(ExchangeRate("AED", "USD", BigDecimal("0.25"), 0L)),
+            history = history,
+        )
+        assertEquals(listOf(null, 6000.0, 5000.0, 8000.0), t.values)
     }
 
     private fun accountRows(accounts: List<Account>, rows: List<Transaction>): List<AccountRow> {

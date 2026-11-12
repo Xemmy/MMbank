@@ -384,11 +384,13 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.accountRepository.observeActive(),
         container.transactionRepository.observeTransactions(),
         container.ratesRepository.observeRates(),
-    ) { accounts, transactions, rates ->
+        container.ratesRepository.observeHistory(container.preferences.defaultCurrency),
+    ) { accounts, transactions, rates, history ->
         computeNetWorthTrend(
             accounts = accounts,
             transactions = transactions,
             rates = rates,
+            history = history,
             baseCurrency = container.preferences.defaultCurrency,
             excludeCreditCardFromTotal = container.preferences.excludeCreditCardFromTotal,
         )
@@ -1122,8 +1124,10 @@ data class NetWorthTrend(
  * exactly: the same balances, the same [computeAccountsPresentation] total
  * (honouring "exclude credit cards from total"), so the last point is the
  * number on Home. Two deliberate simplifications, labelled on the card:
- * every month is converted at today's rates, and live Binance crypto (which
- * has no history) is left out. Months before the oldest kept transaction are
+ * live Binance crypto (which has no history) is left out, and a past month is
+ * converted at the rates recorded for its month-end ([RateHistory]) where
+ * there are any, falling back to today's rates for a currency with no
+ * recording -- the current month always uses today's. Months before the oldest kept transaction are
  * null: with retention pruning on, earlier rows live only in the opening
  * balance and can't be replayed.
  *
@@ -1138,17 +1142,12 @@ internal fun computeNetWorthTrend(
     zone: ZoneId = ZoneId.systemDefault(),
     thisMonth: YearMonth = YearMonth.now(zone),
     months: Int = 12,
+    history: List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay> = emptyList(),
 ): NetWorthTrend {
-    val ratesFromBase = rates
+    val todayRates = rates
         .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
-        .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
-    val fx = com.xemmy.mmbank.domain.account.LedgerFx(
-        baseCurrency = baseCurrency,
-        ratesFromBase = rates
-            .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
-            .associate { it.quoteCode.uppercase() to it.rate },
-        accountCurrencies = accounts.associate { it.id to it.currencyCode },
-    )
+        .associate { it.quoteCode.uppercase() to it.rate }
+    val accountCurrencies = accounts.associate { it.id to it.currencyCode }
     val start = BalanceHistory.historyStart(transactions, zone)
     var approximate = false
     val ends = BalanceHistory.monthEnds(thisMonth, months, zone)
@@ -1156,6 +1155,14 @@ internal fun computeNetWorthTrend(
         if (start == null || month < start) {
             if (month != thisMonth) return@map null
         }
+        // This month-end's rates: the recorded ones override today's, per currency.
+        val monthRates = if (month == thisMonth || history.isEmpty()) {
+            todayRates
+        } else {
+            todayRates + com.xemmy.mmbank.domain.account.RateHistory.ratesOn(history, month.atEndOfMonth())
+        }
+        val fx = com.xemmy.mmbank.domain.account.LedgerFx(baseCurrency, monthRates, accountCurrencies)
+        val ratesFromBase = monthRates.mapValues { it.value.toDouble() }
         val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis, fx)
         val rows = accounts.map { account ->
             val balance = balances.getValue(account.id).toDouble()
