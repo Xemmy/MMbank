@@ -89,6 +89,31 @@ interface TransactionDao {
     ): TransactionEntity?
 
     /**
+     * Every row [findDuplicateInWindow] would accept, nearest first, so the
+     * caller can apply [com.xemmy.mmbank.domain.ledger.CaptureDedupPolicy]
+     * (channel and card-ending vetoes) and pick the first genuine duplicate.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE amount = :amount
+          AND currencyCode = :currencyCode
+          AND direction = :direction
+          AND isDemo = 0
+          AND ABS(timestamp - :timestamp) <= :windowMillis
+        ORDER BY ABS(timestamp - :timestamp) ASC
+        LIMIT 20
+        """
+    )
+    suspend fun findDuplicateCandidatesInWindow(
+        amount: BigDecimal,
+        currencyCode: String,
+        direction: TransactionDirection,
+        timestamp: Long,
+        windowMillis: Long,
+    ): List<TransactionEntity>
+
+    /**
      * The row already captured from this exact message text, if any. Backs the
      * paste importer's "already imported" check: re-pasting the same backlog
      * must not double-record it, and unlike

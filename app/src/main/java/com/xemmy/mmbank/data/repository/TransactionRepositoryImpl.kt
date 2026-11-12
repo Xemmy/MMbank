@@ -9,6 +9,7 @@ import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.account.AccountNumberMatcher
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
+import com.xemmy.mmbank.domain.ledger.CaptureDedupPolicy
 import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
 import com.xemmy.mmbank.domain.ledger.TransferLegs
@@ -109,13 +110,19 @@ class TransactionRepositoryImpl(
         dedupWindow: Boolean,
     ): IngestResult = database.withTransaction {
         val existing = if (dedupWindow) {
-            dao.findDuplicateInWindow(
+            val incoming = CaptureDedupPolicy.Side(message.source, message.body, parsed.accountNumberSuffix)
+            dao.findDuplicateCandidatesInWindow(
                 amount = parsed.amount,
                 currencyCode = parsed.currencyCode,
                 direction = parsed.direction,
                 timestamp = message.timestampMillis,
                 windowMillis = DEDUP_WINDOW_MILLIS,
-            )
+            ).firstOrNull { row ->
+                CaptureDedupPolicy.isSameTransaction(
+                    CaptureDedupPolicy.Side(row.source, row.rawMessage, row.accountNumberSuffix),
+                    incoming,
+                )
+            }
         } else {
             null
         }

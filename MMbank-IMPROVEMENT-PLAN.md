@@ -553,6 +553,8 @@ Plan debt payoff                   ›
 - **Automatic backups:** today backup is manual-only. Add a scheduled encrypted `.mmb` to a chosen SAF folder, weekly plus before every migration (backlog #67). Subscriptions aren't in the backup (re-detected); say so in the UI.
 - **Retention prune deletes with no preview.** Show "This will delete 1,240 transactions from 2023" and require a fresh backup first (backlog #58).
 
+> **B4 dedup** ✅ 0.75.3 (CI pending): `CaptureDedupPolicy` — only cross-channel (SMS↔push) matches merge; two same-channel messages are two purchases unless the text is identical; differing known card endings never merge. Still ⬜: "Also arrived by SMS" merged-row display + Split back out.
+
 ### B.3 Capture loop (the growth loop for accuracy)
 
 - **Unmatched → rule in one tap:**
