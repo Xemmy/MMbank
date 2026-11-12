@@ -121,6 +121,7 @@ fun IntegrityScreen(
     onBack: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenUnassigned: () -> Unit,
+    onOpenStatement: () -> Unit,
     viewModel: IntegrityViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -157,6 +158,11 @@ fun IntegrityScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            item(key = "statement") {
+                androidx.compose.material3.OutlinedButton(onClick = onOpenStatement) {
+                    Text("Compare with a bank statement")
+                }
             }
             items(state.report.issues, key = { it.hashCode() }) { issue ->
                 val text = IntegrityWording.describe(

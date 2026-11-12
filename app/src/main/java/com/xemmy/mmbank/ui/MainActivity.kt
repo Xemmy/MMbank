@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import com.xemmy.mmbank.ui.navigation.NavChrome
 import com.xemmy.mmbank.ui.screens.search.SearchScreen
+import com.xemmy.mmbank.ui.screens.statement.StatementReconcileScreen
 import com.xemmy.mmbank.ui.screens.search.SearchTarget
 import com.xemmy.mmbank.ui.navigation.AdaptiveLayout
 import androidx.compose.ui.platform.LocalConfiguration
@@ -475,6 +476,7 @@ private fun AppNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenAccounts = { navController.navigate("accounts") },
                 onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
+                onOpenStatement = { navController.navigate(Routes.STATEMENT_RECONCILE) },
             )
         }
         composable("insights") {
@@ -538,6 +540,9 @@ private fun AppNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenActivity = { drill -> navController.navigate(Routes.activityDrill(Uri.encode(drill))) },
             )
+        }
+        composable(Routes.STATEMENT_RECONCILE) {
+            StatementReconcileScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.SEARCH) {
             SearchScreen(

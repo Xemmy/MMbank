@@ -41,6 +41,7 @@ object SearchDestinations {
         SearchDestination("Copilot", "ask question chat assistant", Routes.COPILOT),
         SearchDestination("To review", "review uncategorized queue inbox", Routes.REVIEW_TRANSACTIONS),
         SearchDestination("Uncategorized", "categorize queue", Routes.UNCATEGORIZED_QUEUE),
+        SearchDestination("Compare with a bank statement", "reconcile csv statement missing transactions", Routes.STATEMENT_RECONCILE),
     )
 
     val all: List<SearchDestination> by lazy {

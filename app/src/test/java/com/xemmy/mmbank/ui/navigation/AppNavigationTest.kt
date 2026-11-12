@@ -43,6 +43,10 @@ class AppNavigationTest {
         ).forEach { assertNull(it, TabRouting.tabFor(it)) }
     }
 
+    @Test fun statementReconcileLivesUnderAccounts() {
+        assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.STATEMENT_RECONCILE))
+    }
+
     @Test fun searchHighlightsNoTabAndIsNotATabRoot() {
         assertNull(TabRouting.tabFor(Routes.SEARCH))
         assertTrue(!NavTransitions.isTabRoot(Routes.SEARCH))

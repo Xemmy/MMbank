@@ -777,6 +777,8 @@ merchant_learning(merchantKey, field[CATEGORY|PERSON|ACCOUNT|KIND], value,
 > **B.5 #2 global search** ✅ 0.86.0: a search icon beside the gear on every tab root opens one search across screens and settings (by title or keyword, so "pin" finds App lock),
 merchants (brand-grouped, with counts), transactions (by merchant or an exact amount), accounts (name, bank, last four digits) and parsing rules (`GlobalSearch`, ranked exact > prefix > word-start > contains, capped per kind). UI is not verified by CI.
 
+> **B.5 #3 statement reconcile** ✅ 0.87.0: Integrity check → "Compare with a bank statement": paste a statement CSV (comma/semicolon/tab, header or not, signed or debit/credit columns, `(x)`/DR/CR amounts, UAE date formats), pick the account, and `StatementReconciler` pairs each line with a captured transaction (same signed amount, within 3 days, nearest date then closest description, one-to-one) and lists what is missing from MMbank and what is only in MMbank. Read-only; unreadable lines are counted, not hidden. UI is not verified by CI.
+
 ## Where things stand after 0.85.1
 
 Every batch above is verified by a green CI run (unit tests and a built APK). The latest is run 43304628317 for 0.85.1. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.

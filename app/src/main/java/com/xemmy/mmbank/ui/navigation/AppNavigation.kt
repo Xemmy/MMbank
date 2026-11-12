@@ -40,6 +40,7 @@ object Routes {
     const val RULES = "rules"
     const val SETTINGS_CAPTURE = "settings_capture"
     const val SEARCH = "search"
+    const val STATEMENT_RECONCILE = "statement_reconcile"
 
     /** Activity, pre-filtered to transactions that belong to no account. */
     const val ACTIVITY_UNASSIGNED = "transactions?accountFilter=unassigned"
@@ -95,6 +96,7 @@ object TabRouting {
         Routes.ACCOUNTS to AppTab.ACCOUNTS,
         Routes.DEBT_PLANNER to AppTab.PLAN,
         Routes.INTEGRITY_CHECK to AppTab.ACCOUNTS,
+        Routes.STATEMENT_RECONCILE to AppTab.ACCOUNTS,
         Routes.PLAN to AppTab.PLAN,
     )
 
