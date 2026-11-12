@@ -581,7 +581,7 @@ Plan debt payoff                   ›
 
 > **C.2 person learning** ✅ 0.85.0 (CI run 43303012219 green; first slice, no schema change): a new capture goes to the person the merchant's last two real rows were assigned to (`PersonLearner`), else the default person as before; two defaults in a row hand it back. Still open in C.2: `categorySource`/`personSource` columns (so USER choices are never re-assigned and the app can explain why), counts/confidence per merchant, amount/card/sender signals, keyword fixes.
 
-> **C.1 keyword misfires** ✅ 0.85.1: short, ambiguous keywords in `MerchantCategorizer` ("ace", "mart", "hala", "vat", "fee", "nol", "rta", "kfc"…) must now stand as a whole word, so Palace/Space/Acer are not shopping, Smart/Martini are not groceries, Halal is not a taxi and "Private" is not a VAT fee; "supermart"/"dmart" and "fees" are handled explicitly. Longer keywords still match inside larger strings ("carrefour" in "CARREFOUR-MAF", "shop" in "bookshop").
+> **C.1 keyword misfires** ✅ 0.85.1 (CI run 43304628317 green): short, ambiguous keywords in `MerchantCategorizer` ("ace", "mart", "hala", "vat", "fee", "nol", "rta", "kfc"…) must now stand as a whole word, so Palace/Space/Acer are not shopping, Smart/Martini are not groceries, Halal is not a taxi and "Private" is not a VAT fee; "supermart"/"dmart" and "fees" are handled explicitly. Longer keywords still match inside larger strings ("carrefour" in "CARREFOUR-MAF", "shop" in "bookshop").
 
 ### B.4 Consolidate overlapping features
 
@@ -771,3 +771,30 @@ merchant_learning(merchantKey, field[CATEGORY|PERSON|ACCOUNT|KIND], value,
   - `ColorContrastTest`, `GlassSpec` (API gate for the scrim blur), `FilterBarCollapse` (math), `TransactionFilterEngine`.
   - `CaptureHealthEvaluator` (feeds the Home AlertStack and the onboarding checklist), `NotificationPermission`, `DirhamSymbol`.
   - `dayPillLabel` → generalise into `DateFormats`.
+
+---
+
+## Where things stand after 0.85.1
+
+Every batch above is verified by a green CI run (unit tests and a built APK). The latest is run 43304628317 for 0.85.1. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+
+**Still open, grouped by what blocks it**
+
+*Needs UI work that CI cannot check (build it, then look at it on a device):*
+- Phase 3: nested nav graphs, Activity list-detail on tablets, one merged "To review" inbox, live status on Plan cards, a Settings "Notifications" group, per-form Save.
+- B.5: Quick Settings tile / notification quick-add, global search, statement reconcile (bank CSV diff), envelope budgets, year in review.
+- B.4 consolidation: one Recurring model (bills + subscriptions + card dues), one People list, goals-only (drop the duplicate Home card), cashback onto user categories.
+- B5 follow-ups: show the refund link on a transaction, a way to break it, "Also arrived by SMS" display and Split back out (B4).
+- B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings, per-sender stats, SMS inbox import at onboarding.
+- Phases 1/2/4/5/6 design track: Roborazzi screenshots, onboarding, notifications/widget/icon/splash, accessibility and localisation (Arabic/RTL, string resources).
+
+*Needs a schema change (so a v34 migration plus its test):*
+- C.2: `categorySource` / `personSource` columns so a USER choice is never re-assigned and the app can explain why; per-merchant counts and confidence; amount/card/sender signals.
+- B2 part 4: per-transaction historical conversion in Insights (only worth it once rate history has accumulated).
+
+*Needs a decision or a device from the owner:*
+- Scheduled automatic backups (#67) need a chosen folder (SAF) and a backup-key policy; "require a fresh backup before prune".
+- Swapping the Transactions list onto the design-system `TransactionRow`; a colour picker for `accentColor`; device checks 0.3 / 0.4.
+
+**Not covered by CI (to check on a device):** tab bar and gear placement, the tablet rail, AI notice look, the retention-preview refresh timing, predictive-back preview (Android 14+), transition feel, the "≈" note and the Budgets "not counted" notice as rendered, the real Room v32→v33 migration, and a live request to an online AI provider with redaction on.
+
