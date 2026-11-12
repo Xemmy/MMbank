@@ -34,6 +34,36 @@ object BalanceHistory {
         return AccountBalanceCalculator.balances(accounts, fx?.apply(entries) ?: entries)
     }
 
+    /**
+     * The balances a monthly report for [month] should show. The current (or a
+     * later) month is simply now, at today's rates. A past month is replayed to
+     * its last moment at the rates recorded for that month-end
+     * ([RateHistory.overlay]) -- it used to show today's balances under a past
+     * month's headline. Null when the ledger can't speak for [month] (before
+     * its oldest kept row, or empty), so the caller shows no net worth rather
+     * than a wrong one.
+     */
+    fun balancesForMonth(
+        accounts: List<Account>,
+        transactions: List<Transaction>,
+        month: YearMonth,
+        thisMonth: YearMonth,
+        zone: ZoneId,
+        baseCurrency: String,
+        todayRates: Map<String, BigDecimal>,
+        history: List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay>,
+    ): Map<Long, BigDecimal>? {
+        val currencies = accounts.associate { it.id to it.currencyCode }
+        if (month >= thisMonth) {
+            return balancesAt(accounts, transactions, Long.MAX_VALUE, LedgerFx(baseCurrency, todayRates, currencies))
+        }
+        val start = historyStart(transactions, zone) ?: return null
+        if (month < start) return null
+        val rates = RateHistory.overlay(todayRates, history, month.atEndOfMonth())
+        val endMillis = month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        return balancesAt(accounts, transactions, endMillis, LedgerFx(baseCurrency, rates, currencies))
+    }
+
     fun toLedgerEntry(tx: Transaction) = AccountBalanceCalculator.LedgerEntry(
         accountId = tx.accountId,
         amount = tx.amount,

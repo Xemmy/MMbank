@@ -41,7 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
-import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.BalanceHistory
 import com.xemmy.mmbank.domain.intelligence.FinancialHealthEngine
 import com.xemmy.mmbank.domain.intelligence.NetWorthAggregator
 import com.xemmy.mmbank.domain.ledger.LedgerMath
@@ -71,7 +71,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -100,17 +99,23 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
         val categoryNames: Map<Long, String>,
         val subscriptions: List<Subscription>,
         val goals: List<SavingsGoal>,
+        val rates: List<com.xemmy.mmbank.domain.model.ExchangeRate>,
+        val history: List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay>,
     )
 
     private val inputs = combine(
-        container.transactionRepository.observeTransactions(),
-        container.accountRepository.observeActive(),
-        container.categoryRepository.observeAll(),
-        container.subscriptionRepository.observeActive(),
-        container.savingsGoalRepository.observeActive(),
-    ) { transactions, accounts, categories, subscriptions, goals ->
-        ReportInputs(transactions, accounts, categories.associate { it.id to it.name }, subscriptions, goals)
-    }
+        combine(
+            container.transactionRepository.observeTransactions(),
+            container.accountRepository.observeActive(),
+            container.categoryRepository.observeAll(),
+            container.subscriptionRepository.observeActive(),
+            container.savingsGoalRepository.observeActive(),
+        ) { transactions, accounts, categories, subscriptions, goals ->
+            ReportInputs(transactions, accounts, categories.associate { it.id to it.name }, subscriptions, goals, emptyList(), emptyList())
+        },
+        container.ratesRepository.observeRates(),
+        container.ratesRepository.observeHistory(container.preferences.defaultCurrency),
+    ) { base, rates, history -> base.copy(rates = rates, history = history) }
 
     val uiState: StateFlow<MonthlyReportUiState> = combine(inputs, month) { bundle, selectedMonth ->
         val transactions = bundle.transactions
@@ -131,31 +136,39 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
         }
 
         val monthTransactions = slice(selectedMonth)
-        // The same formula the Accounts and Home screens use, so the report's
-        // net worth agrees with them. This deliberately does NOT filter
-        // excludeFromStats: that flag keeps balance corrections and transfer
-        // legs out of income/spend analytics (which `income`/`expenses` below
-        // still honour), but they are real movements and dropping them here is
-        // what used to make this figure disagree with the Accounts screen.
-        val rawEntries = transactions.map {
-            AccountBalanceCalculator.LedgerEntry(
-                accountId = it.accountId,
-                amount = it.amount,
-                currencyCode = it.currencyCode,
-                direction = it.direction,
-            )
-        }
-        val netByAccount = AccountBalanceCalculator.netByAccount(
-            container.ledgerFxFlow.first().apply(rawEntries),
+        // The same formula the Accounts and Home screens use for the current
+        // month, so the report's net worth agrees with them -- and a past month
+        // is replayed to its own month-end (BalanceHistory.balancesForMonth).
+        // This deliberately does NOT filter excludeFromStats: that flag keeps
+        // balance corrections and transfer legs out of income/spend analytics
+        // (which `income`/`expenses` below still honour), but they are real
+        // movements and dropping them here is what used to make this figure
+        // disagree with the Accounts screen.
+        val todayRates = bundle.rates
+            .filter { it.baseCode.equals(currency, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate }
+        val balanceMap = BalanceHistory.balancesForMonth(
+            accounts = accounts,
+            transactions = transactions,
+            month = selectedMonth,
+            thisMonth = YearMonth.now(zone),
+            zone = zone,
+            baseCurrency = currency,
+            todayRates = todayRates,
+            history = bundle.history,
         )
 
-        val balances = accounts.map { account ->
-            NetWorthAggregator.AccountBalance(
-                accountId = account.id,
-                type = account.type,
-                balance = AccountBalanceCalculator.balanceOf(account, netByAccount),
-                currencyCode = account.currencyCode,
-            )
+        val balances = if (balanceMap == null) {
+            emptyList()
+        } else {
+            accounts.map { account ->
+                NetWorthAggregator.AccountBalance(
+                    accountId = account.id,
+                    type = account.type,
+                    balance = balanceMap.getValue(account.id),
+                    currencyCode = account.currencyCode,
+                )
+            }
         }
 
         val liquid = balances

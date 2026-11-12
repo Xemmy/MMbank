@@ -94,4 +94,53 @@ class BalanceHistoryTest {
         assertEquals(YearMonth.of(2026, 9), BalanceHistory.historyStart(ledger, zone))
         assertNull(BalanceHistory.historyStart(emptyList(), zone))
     }
+
+    // -- balancesForMonth -------------------------------------------------------
+
+    private val noRates = emptyMap<String, BigDecimal>()
+    private val nov = YearMonth.of(2026, 11)
+
+    private fun forMonth(
+        month: YearMonth,
+        rows: List<Transaction> = ledger,
+        rates: Map<String, BigDecimal> = noRates,
+        history: List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay> = emptyList(),
+    ) = BalanceHistory.balancesForMonth(listOf(current, card), rows, month, nov, zone, "AED", rates, history)
+
+    @Test
+    fun `a past month is replayed to its own month-end, not today`() {
+        val sep = forMonth(YearMonth.of(2026, 9))!!
+        assertEquals(0, sep.getValue(1).compareTo(BigDecimal("6000")))
+        assertEquals(0, sep.getValue(2).compareTo(BigDecimal("-300")))
+    }
+
+    @Test
+    fun `the current month is today's balances including everything`() {
+        val now = forMonth(nov)!!
+        assertEquals(0, now.getValue(1).compareTo(BigDecimal("5500")))
+        assertEquals(0, now.getValue(2).compareTo(BigDecimal.ZERO))
+    }
+
+    @Test
+    fun `a month before the ledger starts, or an empty ledger, has no balances`() {
+        assertNull(forMonth(YearMonth.of(2026, 8)))
+        assertNull(forMonth(YearMonth.of(2026, 9), rows = emptyList()))
+    }
+
+    @Test
+    fun `a foreign charge in a past month converts at that month's recorded rate`() {
+        val rows = listOf(
+            tx(1, "10", LocalDate.of(2026, 9, 1), credit = true),
+            tx(1, "10", LocalDate.of(2026, 9, 15)).copy(currencyCode = "USD"),
+        )
+        val today = mapOf("USD" to BigDecimal("0.25"))
+        val history = listOf(
+            com.xemmy.mmbank.domain.model.ExchangeRateOnDay("AED", "USD", LocalDate.of(2026, 9, 1), BigDecimal("0.5")),
+        )
+        // 10 USD at the recorded 0.5 = 20 AED out; at today's 0.25 it would be 40.
+        val withHistory = forMonth(YearMonth.of(2026, 9), rows, today, history)!!
+        assertEquals(0, withHistory.getValue(1).compareTo(BigDecimal("990")))
+        val withoutHistory = forMonth(YearMonth.of(2026, 9), rows, today)!!
+        assertEquals(0, withoutHistory.getValue(1).compareTo(BigDecimal("970")))
+    }
 }

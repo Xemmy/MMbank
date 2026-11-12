@@ -52,6 +52,18 @@ object RateHistory {
     }
 
     /**
+     * The rates to value [day] with: today's [todayRates], overridden per
+     * currency by what was recorded for [day]. A null [day] (the current
+     * period) or an empty [history] leaves today's rates untouched.
+     */
+    fun overlay(
+        todayRates: Map<String, BigDecimal>,
+        history: List<ExchangeRateOnDay>,
+        day: LocalDate?,
+    ): Map<String, BigDecimal> =
+        if (day == null || history.isEmpty()) todayRates else todayRates + ratesOn(history, day)
+
+    /**
      * [rateOn] for every quote currency in [history], as the quote -> rate map
      * the converters take. A quote with no usable rate is simply absent.
      */

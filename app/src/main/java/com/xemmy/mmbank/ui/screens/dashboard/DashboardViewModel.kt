@@ -1156,11 +1156,9 @@ internal fun computeNetWorthTrend(
             if (month != thisMonth) return@map null
         }
         // This month-end's rates: the recorded ones override today's, per currency.
-        val monthRates = if (month == thisMonth || history.isEmpty()) {
-            todayRates
-        } else {
-            todayRates + com.xemmy.mmbank.domain.account.RateHistory.ratesOn(history, month.atEndOfMonth())
-        }
+        val monthRates = com.xemmy.mmbank.domain.account.RateHistory.overlay(
+            todayRates, history, if (month == thisMonth) null else month.atEndOfMonth(),
+        )
         val fx = com.xemmy.mmbank.domain.account.LedgerFx(baseCurrency, monthRates, accountCurrencies)
         val ratesFromBase = monthRates.mapValues { it.value.toDouble() }
         val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis, fx)
