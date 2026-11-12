@@ -4556,3 +4556,10 @@ Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lo
 ## Phase 18.27 — DesignLintTest ratchet (test only)
 - `DesignLintTest` counts hex `Color(0x…)`, `fontSize =`, `ObsidianTokens.`, `asMoney(` in screens and literal `RoundedCornerShape(n.dp)` per file under `ui/` and compares to a baseline. Counts can't rise, and must be lowered in the test when they fall, so the baseline only tightens as screens migrate.
 - No app behaviour change, so no version bump.
+
+## Phase 18.28 — Design-system components, first batch (0.64.0)
+- New `ui/designsystem/`: `MMCard`, `SectionHeader`, `ListRow` (+ switch/checkbox/radio rows, whole row selectable), `MMFilterChip`/`MMAssistChip`/`MMTag`, `StatTile`, `MMProgressBar`, `Banner`, `MoneyText` (+ `LocalHideBalances`, spoken description), `MoneyField`/`SearchField`, `EmptyState`/`LoadingState`/`ErrorState`, `MMDialog`, `MMBottomSheet`, `MMTopBar`/`MMScaffold`, `@MMPreviews`.
+- Theme now provides `MMSpacing` and `MMShapes` (M3 corner radii changed app-wide: 8/12/16/24/28).
+- No screen uses the components yet; they migrate in plan steps 6–11, with the DesignLintTest baselines tightening as they do.
+- Tests: tone, row density, progress, money format/input, dialog kind.
+- **Not covered by CI:** how any component renders, TalkBack output, previews, the corner-radius change.
