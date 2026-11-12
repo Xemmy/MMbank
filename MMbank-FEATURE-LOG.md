@@ -4570,3 +4570,8 @@ Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lo
 - `ui/navigation/AppNavigation.kt`: `Routes`, `AppTab`, `TabRouting` centralised and wired into `MainActivity`. Child screens (analytics, subscriptions, goals, bills, splits, categories, monthly report, integrity check, uncategorized queue, review) now keep their parent tab highlighted.
 - Tests: `ChartMathTest`, `TransactionRowTest`, `AppNavigationTest`.
 - **Not covered by CI:** rendering and TalkBack of charts and the row, bottom-bar highlighting per screen, deep links, tab state restore, crash-recovery launch.
+
+## Phase 18.30 — Screen migration batch 1 (0.66.0)
+Home, Insights, Analytics, Bills, Goals, Splits, GroupDetail and Categories now use `MMTheme` tokens, `MMCard`, `MoneyText` (hide-balances, AED glyph) and `MMFilterChip`. New pure helpers: `netTileKind`, `budgetTone`, `balanceDirection`, dashboard format helpers. DesignLintTest baselines lowered.
+
+Not covered by CI: Compose rendering of the new layouts, stat tiles lost their glow, Insights lost the ambient wash, TalkBack on money rows, charts still the old components.
