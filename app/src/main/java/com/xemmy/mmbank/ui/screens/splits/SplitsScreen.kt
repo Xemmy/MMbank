@@ -47,7 +47,6 @@ import com.xemmy.mmbank.domain.model.Friend
 import com.xemmy.mmbank.domain.model.SplitGroup
 import com.xemmy.mmbank.domain.split.GroupBalances
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.util.asMoney
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -195,17 +194,15 @@ fun SplitsScreen(
 
 @Composable
 private fun NetBalanceHeader(netOverall: BigDecimal, currency: String) {
-    val (label, color) = when {
-        netOverall.signum() > 0 -> "You are owed ${netOverall.asMoney(currency)}" to MaterialTheme.colorScheme.primary
-        netOverall.signum() < 0 -> "You owe ${netOverall.negate().asMoney(currency)}" to MaterialTheme.colorScheme.error
-        else -> "All settled up" to MaterialTheme.colorScheme.onSurfaceVariant
-    }
     Card(Modifier.fillMaxWidth().padding(16.dp)) {
-        Text(
-            label,
+        BalanceSentence(
+            balance = netOverall,
+            currency = currency,
+            owedPrefix = "You are owed ",
+            owesPrefix = "You owe ",
+            settledText = "All settled up",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            color = color,
             modifier = Modifier.padding(16.dp),
         )
     }
@@ -213,11 +210,6 @@ private fun NetBalanceHeader(netOverall: BigDecimal, currency: String) {
 
 @Composable
 private fun GroupRow(group: SplitGroup, balance: BigDecimal, currency: String, onClick: () -> Unit) {
-    val (balanceText, balanceColor) = when {
-        balance.signum() > 0 -> "You're owed ${balance.asMoney(currency)}" to MaterialTheme.colorScheme.primary
-        balance.signum() < 0 -> "You owe ${balance.negate().asMoney(currency)}" to MaterialTheme.colorScheme.error
-        else -> "Settled up" to MaterialTheme.colorScheme.onSurfaceVariant
-    }
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier.clickable(onClick = onClick).padding(16.dp).fillMaxWidth(),
@@ -233,7 +225,14 @@ private fun GroupRow(group: SplitGroup, balance: BigDecimal, currency: String, o
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(balanceText, style = MaterialTheme.typography.bodySmall, color = balanceColor)
+            BalanceSentence(
+                balance = balance,
+                currency = currency,
+                owedPrefix = "You're owed ",
+                owesPrefix = "You owe ",
+                settledText = "Settled up",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

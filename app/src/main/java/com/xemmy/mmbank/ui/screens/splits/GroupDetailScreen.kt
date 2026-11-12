@@ -59,7 +59,9 @@ import com.xemmy.mmbank.domain.split.DebtSimplifier
 import com.xemmy.mmbank.domain.split.GroupBalances
 import com.xemmy.mmbank.domain.split.SplitAllocator
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.theme.MMTheme
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -276,14 +278,16 @@ private fun BalancesCard(balances: Map<Long?, BigDecimal>, friends: List<Friend>
             val participants = (listOf<Long?>(null) + friends.map { it.id }).distinct()
             participants.forEach { id ->
                 val balance = balances[id] ?: BigDecimal.ZERO
-                val (text, color) = when {
-                    balance.signum() > 0 -> "is owed ${balance.asMoney(currency)}" to MaterialTheme.colorScheme.primary
-                    balance.signum() < 0 -> "owes ${balance.negate().asMoney(currency)}" to MaterialTheme.colorScheme.error
-                    else -> "settled up" to MaterialTheme.colorScheme.onSurfaceVariant
-                }
                 Row(Modifier.fillMaxWidth()) {
                     Text(friendName(id, friends), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Text(text, style = MaterialTheme.typography.bodySmall, color = color)
+                    BalanceSentence(
+                        balance = balance,
+                        currency = currency,
+                        owedPrefix = "is owed ",
+                        owesPrefix = "owes ",
+                        settledText = "settled up",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -302,12 +306,20 @@ private fun SettlementRow(
             Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "${friendName(settlement.from, friends)} pays ${friendName(settlement.to, friends)} " +
-                    settlement.amount.asMoney(currency),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
-            )
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${friendName(settlement.from, friends)} pays ${friendName(settlement.to, friends)} ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                MoneyText(
+                    amount = settlement.amount.toDouble(),
+                    currencyCode = currency,
+                    kind = TransactionKind.TRANSFER,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MMTheme.colors.textPrimary,
+                )
+            }
             TextButton(onClick = onRecord) { Text("Record") }
         }
     }
@@ -328,11 +340,20 @@ private fun ExpenseRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(expense.description, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${expense.amount.asMoney(currency)} · paid by ${friendName(expense.paidByFriendId, friends)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MoneyText(
+                        amount = expense.amount.toDouble(),
+                        currencyCode = currency,
+                        kind = TransactionKind.TRANSFER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textSecondary,
+                    )
+                    Text(
+                        " · paid by ${friendName(expense.paidByFriendId, friends)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textSecondary,
+                    )
+                }
             }
             // A settlement's one split is implicit in how it was recorded (see
             // recordSettlement) rather than something the split-type picker

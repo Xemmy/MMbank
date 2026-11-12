@@ -35,11 +35,13 @@ fun MoneyText(
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.titleMedium,
     hidden: Boolean = LocalHideBalances.current,
+    /** Overrides the tone colour, e.g. for "owes" / "is owed" sentences. */
+    color: Color? = null,
 ) {
     val description = moneyContentDescription(amount, currencyCode, kind, hidden)
     AmountText(
         display = moneyDisplayString(amount, currencyCode, kind, hidden),
-        color = moneyColor(moneyToneFor(kind)),
+        color = color ?: moneyColor(moneyToneFor(kind)),
         modifier = modifier.semantics { contentDescription = description },
         style = style,
     )

@@ -26,7 +26,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -55,7 +54,10 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.screens.dashboard.computeDashboardStats
 import com.xemmy.mmbank.ui.util.CurrencyMath
-import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.MMProgressBar
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.theme.MMTheme
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -198,11 +200,20 @@ fun GoalsScreen(
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text("Surplus this month", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                state.monthSurplus.asMoney(state.currency) + " available to allocate",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                MoneyText(
+                                    amount = state.monthSurplus,
+                                    currencyCode = state.currency,
+                                    kind = TransactionKind.TRANSFER,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MMTheme.colors.textSecondary,
+                                )
+                                Text(
+                                    " available to allocate",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MMTheme.colors.textSecondary,
+                                )
+                            }
                         }
                         TextButton(onClick = { allocateOpen = true }) { Text("Allocate") }
                     }
@@ -295,17 +306,30 @@ private fun GoalRow(goal: SavingsGoal, currency: String, forecast: GoalForecaste
                 }
             }
             Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { goal.progressFraction.toFloat() },
-                modifier = Modifier.fillMaxWidth().height(8.dp),
+            MMProgressBar(
+                fraction = goal.progressFraction.toFloat(),
+                tone = null,
+                modifier = Modifier.height(8.dp),
             )
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth()) {
-                Text(
-                    goal.currentAmount.asMoney(currency) + " of " + goal.targetAmount.asMoney(currency),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    MoneyText(
+                        amount = goal.currentAmount.toDouble(),
+                        currencyCode = currency,
+                        kind = TransactionKind.TRANSFER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textPrimary,
+                    )
+                    Text(" of ", style = MaterialTheme.typography.bodySmall)
+                    MoneyText(
+                        amount = goal.targetAmount.toDouble(),
+                        currencyCode = currency,
+                        kind = TransactionKind.TRANSFER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textPrimary,
+                    )
+                }
                 Text(
                     "${(goal.progressFraction * 100).toInt()}%",
                     style = MaterialTheme.typography.bodySmall,
@@ -395,10 +419,19 @@ private fun AllocateSurplusDialog(
         title = { Text("Auto-allocate surplus") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "This month's remaining surplus: ${surplus.asMoney(currency)}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "This month's remaining surplus: ",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    MoneyText(
+                        amount = surplus,
+                        currencyCode = currency,
+                        kind = TransactionKind.TRANSFER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textPrimary,
+                    )
+                }
                 Box {
                     Card(
                         Modifier.fillMaxWidth().clickable { expanded = true },

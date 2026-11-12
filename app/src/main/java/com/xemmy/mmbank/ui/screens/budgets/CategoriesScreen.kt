@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -48,10 +47,13 @@ import com.xemmy.mmbank.domain.budget.CategoryHierarchy
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.CategoryEditorDialog
-import com.xemmy.mmbank.ui.theme.ObsidianCard
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.MMProgressBar
+import com.xemmy.mmbank.ui.designsystem.MMTone
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
-import com.xemmy.mmbank.ui.util.asMoney
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.ZoneId
@@ -419,14 +421,14 @@ fun CategoryBudgetSummaryCard(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     if (state.statuses.isEmpty()) return
 
-    ObsidianCard(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    MMCard(modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Category budgets",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = ObsidianTokens.textPrimary,
+                    color = MMTheme.colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onOpenBudgets) { Text("Manage") }
@@ -437,26 +439,37 @@ fun CategoryBudgetSummaryCard(
                         Text(
                             "${status.category.icon} ${status.category.name}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = ObsidianTokens.textPrimary,
+                            color = MMTheme.colors.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        Text(
-                            "${status.spent.asMoney(state.currency)} / ${status.cap.asMoney(state.currency)}",
+                        val amountColor = amountColor(status.state)
+                        MoneyText(
+                            amount = status.spent.toDouble(),
+                            currencyCode = state.currency,
+                            kind = TransactionKind.TRANSFER,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (status.state == BudgetState.UNDER) {
-                                ObsidianTokens.textMeta
-                            } else {
-                                barColor(status.state)
-                            },
+                            color = amountColor,
+                        )
+                        Text(
+                            " / ",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = amountColor,
+                        )
+                        MoneyText(
+                            amount = status.cap.toDouble(),
+                            currencyCode = state.currency,
+                            kind = TransactionKind.TRANSFER,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = amountColor,
                         )
                     }
                     Spacer(Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { status.fraction.toFloat().coerceIn(0f, 1f) },
-                        color = barColor(status.state),
-                        modifier = Modifier.fillMaxWidth().height(6.dp),
+                    MMProgressBar(
+                        fraction = status.fraction.toFloat(),
+                        tone = budgetTone(status.state),
+                        modifier = Modifier.height(6.dp),
                     )
                 }
             }
@@ -464,12 +477,19 @@ fun CategoryBudgetSummaryCard(
     }
 }
 
-/** Bar color by state: normal, approaching the cap, and past it. */
+/** Bar tone by state: accent while under, warning near the cap, danger past it. */
+internal fun budgetTone(state: BudgetState): MMTone? = when (state) {
+    BudgetState.UNDER -> null
+    BudgetState.NEAR -> MMTone.WARNING
+    BudgetState.OVER -> MMTone.DANGER
+}
+
+/** Spent/cap text colour: quiet while under budget, otherwise the bar's warning/danger colour. */
 @Composable
-private fun barColor(state: BudgetState): Color = when (state) {
-    BudgetState.UNDER -> MaterialTheme.colorScheme.primary
-    BudgetState.NEAR -> ObsidianTokens.debit
-    BudgetState.OVER -> MaterialTheme.colorScheme.error
+private fun amountColor(state: BudgetState): Color = when (state) {
+    BudgetState.UNDER -> MMTheme.colors.textTertiary
+    BudgetState.NEAR -> MMTheme.colors.warning
+    BudgetState.OVER -> MMTheme.colors.danger
 }
 
 /**
@@ -487,8 +507,8 @@ private fun CategoryRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ObsidianCard(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    MMCard(modifier.fillMaxWidth()) {
+        Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(category.icon, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(10.dp))
@@ -496,7 +516,7 @@ private fun CategoryRow(
                     category.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = ObsidianTokens.textPrimary,
+                    color = MMTheme.colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -505,31 +525,44 @@ private fun CategoryRow(
             }
             if (status != null) {
                 Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { status.fraction.toFloat().coerceIn(0f, 1f) },
-                    color = barColor(status.state),
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                MMProgressBar(
+                    fraction = status.fraction.toFloat(),
+                    tone = budgetTone(status.state),
+                    modifier = Modifier.height(8.dp),
                 )
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    buildString {
-                        append(status.spent.asMoney(currency))
-                        append(" of ")
-                        append(status.cap.asMoney(currency))
-                        append(
-                            when (status.state) {
-                                BudgetState.OVER -> " · over budget"
-                                else -> " · ${status.remaining.asMoney(currency)} left"
-                            }
-                        )
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (status.state == BudgetState.UNDER) {
-                        ObsidianTokens.textMeta
+                val amountColor = amountColor(status.state)
+                val labelStyle = MaterialTheme.typography.labelSmall
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MoneyText(
+                        amount = status.spent.toDouble(),
+                        currencyCode = currency,
+                        kind = TransactionKind.TRANSFER,
+                        style = labelStyle,
+                        color = amountColor,
+                    )
+                    Text(" of ", style = labelStyle, color = amountColor)
+                    MoneyText(
+                        amount = status.cap.toDouble(),
+                        currencyCode = currency,
+                        kind = TransactionKind.TRANSFER,
+                        style = labelStyle,
+                        color = amountColor,
+                    )
+                    if (status.state == BudgetState.OVER) {
+                        Text(" · over budget", style = labelStyle, color = amountColor)
                     } else {
-                        barColor(status.state)
-                    },
-                )
+                        Text(" · ", style = labelStyle, color = amountColor)
+                        MoneyText(
+                            amount = status.remaining.toDouble(),
+                            currencyCode = currency,
+                            kind = TransactionKind.TRANSFER,
+                            style = labelStyle,
+                            color = amountColor,
+                        )
+                        Text(" left", style = labelStyle, color = amountColor)
+                    }
+                }
             }
         }
     }

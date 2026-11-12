@@ -50,7 +50,9 @@ import com.xemmy.mmbank.domain.intelligence.BillReminders
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.util.asMoney
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.theme.MMTheme
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.SharingStarted
@@ -210,12 +212,21 @@ private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onDelete: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(bill.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${bill.amount.asMoney(bill.currencyCode)} · $whenText" +
-                        (bill.recurrence?.let { " · ${it.name.lowercase().replaceFirstChar(Char::uppercase)}" } ?: " · One-off"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MoneyText(
+                        amount = bill.amount.toDouble(),
+                        currencyCode = bill.currencyCode,
+                        kind = TransactionKind.TRANSFER,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textSecondary,
+                    )
+                    Text(
+                        " · $whenText" +
+                            (bill.recurrence?.let { " · ${it.name.lowercase().replaceFirstChar(Char::uppercase)}" } ?: " · One-off"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MMTheme.colors.textSecondary,
+                    )
+                }
             }
             IconButton(onClick = onMarkPaid) {
                 Icon(Icons.Filled.CheckCircle, contentDescription = "Mark ${bill.name} paid")
