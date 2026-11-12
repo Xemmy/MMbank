@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -98,6 +99,7 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.data.ai.AiCallLogStore
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.ai.AiEndpointNormalizer
+import com.xemmy.mmbank.domain.ai.AiPrivacyStatus
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
@@ -183,7 +185,7 @@ fun SettingsScreen(
                             )
                             SettingsEntry.AI -> MenuRowSpec(
                                 Icons.Filled.AutoAwesome, "Local AI parsing",
-                                if (viewModel.aiParsingEnabled) "On · on-device server" else "Off · read messages the rules miss",
+                                AiPrivacyStatus.menuSubtitle(viewModel.aiParsingEnabled, viewModel.aiProviderMode),
                             )
                             SettingsEntry.APPEARANCE -> MenuRowSpec(
                                 Icons.Filled.Palette, "Appearance & Backgrounds", backgroundStyle.displayName,
@@ -825,6 +827,25 @@ fun AiSettingsScreen(
     }
 
     SettingsSubpage(title = "AI parsing", onBack = onBack) {
+        if (AiPrivacyStatus.sendsTextOffDevice(viewModel.aiParsingEnabled, viewModel.aiProviderMode)) {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        AiPrivacyStatus.ONLINE_BANNER_TITLE,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        AiPrivacyStatus.ONLINE_BANNER_BODY,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+        }
         Text(
             "When the built-in rules can't read a bank message, MMbank can ask an AI to extract the " +
                 "transaction. AI suggestions never write to the ledger directly — they appear as disabled " +

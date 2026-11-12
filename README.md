@@ -59,6 +59,13 @@ ui/        Jetpack Compose + Navigation, manual DI (AppContainer), StateFlow vie
 - **Async**: Kotlin Coroutines + Flow; both capture services hand work to IO dispatchers immediately.
 - **Amounts** are `BigDecimal`, persisted as normalized plain-decimal TEXT — exact for fiat and 8-decimal crypto alike.
 
+### AI and privacy
+
+AI parsing is off by default. In **On-device** mode (loopback server only) no
+message text leaves the phone. In **Online** mode the text of messages the
+rules cannot read IS sent to the provider you configure; Settings → AI parsing
+shows a persistent "Online AI is on" notice while that is active.
+
 ### Smart, and entirely on the phone (0.54–0.60)
 
 None of these needs an AI model, a network call or a new permission. Each
