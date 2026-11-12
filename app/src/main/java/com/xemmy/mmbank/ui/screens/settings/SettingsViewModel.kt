@@ -91,6 +91,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xemmy.mmbank.domain.ai.RetentionBackupGate
 import com.xemmy.mmbank.domain.ai.RetentionPreview
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -512,7 +513,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             retentionPreview = runCatching {
                 val rows = container.transactionRepository.getAllReal()
                 val plan = TransactionRetentionPlanner.plan(rows, months, System.currentTimeMillis())
-                RetentionPreview.describe(RetentionPreview.summarize(plan, rows))
+                val now = System.currentTimeMillis()
+                val last = container.preferences.lastBackupAt
+                RetentionPreview.describe(
+                    RetentionPreview.summarize(plan, rows),
+                    RetentionPreview.BackupContext(RetentionBackupGate.status(last, now), last, now),
+                )
             }.getOrNull()
         }
     }
@@ -779,6 +785,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val blob = container.backupManager.export(backupPassword.toCharArray())
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeBytes(blob) }
             }.onSuccess {
+                // A restorable backup now exists, which is what lets the retention prune run.
+                container.preferences.lastBackupAt = System.currentTimeMillis()
+                refreshRetentionPreview()
                 statusMessage = "Backup exported (encrypted)"
             }.onFailure {
                 statusMessage = "Export failed: ${it.message}"

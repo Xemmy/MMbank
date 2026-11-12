@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.domain.ai.RetentionBackupGate
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 
 /**
@@ -46,7 +47,11 @@ class TransactionRetentionWorker(
                 retentionMonths = retentionMonths,
                 nowMillis = System.currentTimeMillis(),
             )
-            if (plan.transactionIdsToDelete.isNotEmpty()) {
+            // Deleting is permanent, so it needs a recent encrypted backup to fall back on;
+            // without one this run does nothing and the Settings preview says why.
+            val now = System.currentTimeMillis()
+            val backup = RetentionBackupGate.status(container.preferences.lastBackupAt, now)
+            if (plan.transactionIdsToDelete.isNotEmpty() && RetentionBackupGate.allowsPrune(backup)) {
                 // Not a plain deleteMany: balances are derived from these rows,
                 // so deleting them would silently shift every balance they fed.
                 // RetentionPruner folds that net into the accounts' opening

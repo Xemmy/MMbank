@@ -50,4 +50,26 @@ class RetentionPreviewTest {
         assertEquals(3, s.count)
         assertEquals(mapOf(2021 to 2, 2023 to 1), s.countByYear)
     }
+
+    @Test fun describeWithBackupContextReplacesTheGenericAdvice() {
+        val s = RetentionPreview.Summary(10, mapOf(2023 to 10))
+        val day = 24L * 60 * 60 * 1000
+        val now = 1_700_000_000_000L
+        val never = RetentionPreview.describe(s, RetentionPreview.BackupContext(RetentionBackupGate.Status.NEVER, 0L, now))
+        assertTrue(never, never.startsWith("This would delete 10 transactions from 2023."))
+        assertTrue(never, never.contains("paused") && !never.contains("Back up first"))
+        val stale = RetentionPreview.describe(
+            s, RetentionPreview.BackupContext(RetentionBackupGate.Status.STALE, now - 50 * day, now),
+        )
+        assertTrue(stale, stale.contains("50 days old"))
+        val fresh = RetentionPreview.describe(
+            s, RetentionPreview.BackupContext(RetentionBackupGate.Status.FRESH, now - day, now),
+        )
+        assertTrue(fresh, fresh.contains("will run"))
+    }
+
+    @Test fun nothingToPruneIgnoresTheBackupContext() {
+        val ctx = RetentionPreview.BackupContext(RetentionBackupGate.Status.NEVER, 0L, 1L)
+        assertEquals("Nothing would be pruned right now.", RetentionPreview.describe(RetentionPreview.Summary(0, emptyMap()), ctx))
+    }
 }
