@@ -83,6 +83,7 @@ fun MMbankTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = ObsidianTypography,
+            shapes = MMShapes,
         ) {
             // The app root Scaffold (MainActivity) uses a transparent
             // container so the ambient background shows through; that
