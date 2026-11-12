@@ -15,9 +15,9 @@ import java.math.BigDecimal
  * this one measures *per-category* spend against that category's own cap. The
  * two answer different questions and are configured independently.
  *
- * Amounts are scoped to a single [currencyCode] throughout, mirroring how the
- * existing pacing check reads `sumDebitsInRange(transaction.currencyCode, ...)`:
- * a cap is denominated in one currency, so summing mixed-currency rows into it
+ * A cap is denominated in the base currency. Spend in another currency is
+ * converted at the stored rates ([converter]); with no rate it is reported as
+ * uncounted ([MonthSpend]) instead of being summed in at face value, which
  * would silently compare dirhams against dollars.
  *
  * Pure state-in/state-out, decoupled from Room and from the wall clock (the
@@ -44,7 +44,39 @@ object CategoryBudgetCalculator {
     }
 
     /**
-     * Month-to-date spend per `categoryId`, in [currencyCode].
+     * Month-to-date budget spend, in the base currency, plus what could not be
+     * counted. [uncountedByCurrency] holds spend (net of refunds, never
+     * negative) in currencies with no usable rate -- shown to the user as
+     * "not counted" rather than silently ignored, so a cap that looks safe
+     * while foreign spend is missing doesn't mislead.
+     */
+    data class MonthSpend(
+        val byCategory: Map<Long, BigDecimal>,
+        val uncountedByCurrency: Map<String, BigDecimal> = emptyMap(),
+    ) {
+        val hasUncounted: Boolean get() = uncountedByCurrency.isNotEmpty()
+    }
+
+    /**
+     * A converter into [baseCurrency] for [monthSpend]: an amount in `quote`
+     * currency divided by its rate (quote per 1 base), or null when there is
+     * no positive rate for it. Rounded to 2 places, half-even.
+     */
+    fun converter(
+        baseCurrency: String,
+        ratesFromBase: Map<String, BigDecimal>,
+    ): (String, BigDecimal) -> BigDecimal? = { code, amount ->
+        if (code.equals(baseCurrency, ignoreCase = true)) {
+            amount
+        } else {
+            ratesFromBase[code.uppercase()]
+                ?.takeIf { it.signum() > 0 }
+                ?.let { amount.divide(it, 2, java.math.RoundingMode.HALF_EVEN) }
+        }
+    }
+
+    /**
+     * Month-to-date spend per `categoryId`, in [baseCurrency].
      *
      * Net spending as [LedgerMath] defines it: purchases add, refunds give
      * the money back to the category's envelope, and transfers, card
@@ -52,26 +84,64 @@ object CategoryBudgetCalculator {
      * every other spend total in the app. Transactions with no dynamic
      * category are skipped -- they belong to no budget.
      *
+     * A row in another currency is converted with [convert] (see
+     * [converter]); when that returns null the row goes into
+     * [MonthSpend.uncountedByCurrency] instead of being dropped. The default
+     * [convert] converts nothing, which is the original same-currency-only
+     * behaviour, with the skipped spend now reported.
+     *
      * The window is half-open, `[startMillis, endMillisExclusive)`, so a
      * transaction landing exactly on the next month's first millisecond counts
      * toward that month and not this one.
      */
+    fun monthSpend(
+        transactions: List<Transaction>,
+        baseCurrency: String,
+        startMillis: Long,
+        endMillisExclusive: Long,
+        convert: (String, BigDecimal) -> BigDecimal? = converter(baseCurrency, emptyMap()),
+    ): MonthSpend {
+        val sums = mutableMapOf<Long, BigDecimal>()
+        val uncounted = mutableMapOf<String, BigDecimal>()
+        for (tx in transactions) {
+            if (!LedgerMath.affectsSpend(tx)) continue
+            if (tx.timestampMillis < startMillis || tx.timestampMillis >= endMillisExclusive) continue
+            val categoryId = tx.categoryId ?: continue
+            val delta = LedgerMath.spendDelta(tx)
+            val inBase = convert(tx.currencyCode, delta)
+            if (inBase == null) {
+                val code = tx.currencyCode.uppercase()
+                uncounted[code] = (uncounted[code] ?: BigDecimal.ZERO) + delta
+            } else {
+                sums[categoryId] = (sums[categoryId] ?: BigDecimal.ZERO) + inBase
+            }
+        }
+        return MonthSpend(
+            byCategory = sums.mapValues { (_, v) -> v.max(BigDecimal.ZERO) },
+            uncountedByCurrency = uncounted.filterValues { it.signum() > 0 },
+        )
+    }
+
+    /**
+     * "Not counted: USD 45.00, EUR 12.00 (no exchange rate)" -- or null when
+     * nothing was left out. Currencies are listed alphabetically so the line
+     * doesn't reorder between refreshes.
+     */
+    fun uncountedNotice(uncountedByCurrency: Map<String, BigDecimal>): String? {
+        if (uncountedByCurrency.isEmpty()) return null
+        val parts = uncountedByCurrency.toSortedMap().entries
+            .joinToString(", ") { (code, amount) -> "$code ${amount.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString()}" }
+        return "Not counted toward caps: $parts (no exchange rate)"
+    }
+
+    /** Same-currency month-to-date spend per `categoryId`; see [monthSpend]. */
     fun monthToDateByCategory(
         transactions: List<Transaction>,
         currencyCode: String,
         startMillis: Long,
         endMillisExclusive: Long,
-    ): Map<Long, BigDecimal> {
-        val sums = mutableMapOf<Long, BigDecimal>()
-        for (tx in transactions) {
-            if (!LedgerMath.affectsSpend(tx)) continue
-            if (!tx.currencyCode.equals(currencyCode, ignoreCase = true)) continue
-            if (tx.timestampMillis < startMillis || tx.timestampMillis >= endMillisExclusive) continue
-            val categoryId = tx.categoryId ?: continue
-            sums[categoryId] = (sums[categoryId] ?: BigDecimal.ZERO) + LedgerMath.spendDelta(tx)
-        }
-        return sums.mapValues { (_, v) -> v.max(BigDecimal.ZERO) }
-    }
+    ): Map<Long, BigDecimal> =
+        monthSpend(transactions, currencyCode, startMillis, endMillisExclusive).byCategory
 
     /**
      * The status of one category, or null when it carries no usable cap --

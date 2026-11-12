@@ -741,6 +741,12 @@ class AppContainer(context: Context) {
      * envelope. Both hang off the same post-insert hook and both are
      * fire-and-forget -- neither may affect the ingest result.
      */
+    /** Stored forex rates quoted per 1 [base], exact -- the shape [CategoryBudgetCalculator.converter] takes. */
+    private suspend fun ratesFromBaseExact(base: String): Map<String, java.math.BigDecimal> =
+        ratesRepository.observeRates().first()
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate }
+
     private fun checkCategoryBudget(transaction: Transaction) {
         if (!LedgerMath.isSpend(transaction)) return
         val categoryId = transaction.categoryId ?: return
@@ -756,9 +762,17 @@ class AppContainer(context: Context) {
                 val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
                 val endMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
-                val spent = database.transactionDao()
-                    .sumDebitsInRangeForCategory(transaction.currencyCode, categoryId, startMillis, endMillis)
-                    .toBigDecimal()
+                // The cap is in the base currency, so this month's spend in every
+                // currency is converted into it (as the Budgets screen does);
+                // spend with no rate is left out rather than added at face value.
+                val base = preferences.defaultCurrency
+                val spent = CategoryBudgetCalculator.monthSpend(
+                    transactions = transactionRepository.getAllReal().filter { it.categoryId == categoryId },
+                    baseCurrency = base,
+                    startMillis = startMillis,
+                    endMillisExclusive = endMillis,
+                    convert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base)),
+                ).byCategory[categoryId] ?: java.math.BigDecimal.ZERO
 
                 val status = CategoryBudgetCalculator.statusFor(category, spent) ?: return@runCatching
                 // Locale.US explicitly: the default locale would render these
@@ -770,7 +784,7 @@ class AppContainer(context: Context) {
 
                 // Keep only this month's keys, so the set can't grow without bound.
                 preferences.categoryBudgetAlerts = alerted.filterTo(mutableSetOf()) { it.contains(":$monthKey:") } + key
-                CategoryBudgetNotificationHelper.postCapAlert(appContext, status, transaction.currencyCode)
+                CategoryBudgetNotificationHelper.postCapAlert(appContext, status, base)
             }.onFailure { recordError("AppContainer.checkCategoryBudget", it) }
         }
     }
@@ -959,6 +973,7 @@ class AppContainer(context: Context) {
             today = LocalDate.now(),
             nowMillis = now,
             captureQuietDays = health.takeIf { it.state == CaptureHealthEvaluator.State.QUIET }?.quietDays,
+            capConvert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base)),
         )
     }
 

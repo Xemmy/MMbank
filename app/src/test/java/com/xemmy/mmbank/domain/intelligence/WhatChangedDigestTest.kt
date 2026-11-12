@@ -152,4 +152,21 @@ class WhatChangedDigestTest {
         )!!.items
         assertTrue(items.first() is WhatChangedDigest.CategoryCap)
     }
+
+    @Test
+    fun `foreign spend is converted toward a category cap when a converter is given`() {
+        val usd = spend("100", today.minusDays(1), categoryId = 2).copy(currencyCode = "USD")
+        val local = spend("300", today.minusDays(2), categoryId = 2)
+        // 100 USD at 0.25 USD per AED = 400 AED; with 300 AED that is 700 > the 500 cap.
+        val converted = WhatChangedDigest.build(
+            listOf(usd, local), categories, emptyList(), emptyList(), emptyList(), toBase, "AED", today, zone, now,
+            capConvert = com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator.converter("AED", mapOf("USD" to BigDecimal("0.25"))),
+        )!!
+        val cap = converted.items.filterIsInstance<WhatChangedDigest.CategoryCap>().single()
+        assertEquals(0, cap.spent.compareTo(BigDecimal("700.00")))
+        assertTrue(cap.over)
+        // Without a converter the USD charge is left out, so 300 of 500 is under the 80% line.
+        val plain = build(listOf(usd, local))!!
+        assertTrue(plain.items.filterIsInstance<WhatChangedDigest.CategoryCap>().isEmpty())
+    }
 }

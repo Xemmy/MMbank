@@ -265,4 +265,68 @@ class CategoryBudgetCalculatorTest {
         assertTrue(result.getValue(1L).signum() >= 0)
         assertTrue(result.getValue(2L).signum() >= 0)
     }
+
+    // -- monthSpend: other currencies -----------------------------------------
+
+    private val usdRate = mapOf("USD" to BigDecimal("0.2723")) // quote per 1 AED
+
+    private fun monthSpend(rates: Map<String, BigDecimal>, vararg transactions: Transaction) =
+        CategoryBudgetCalculator.monthSpend(
+            transactions.toList(), "AED", monthStart, monthEnd,
+            CategoryBudgetCalculator.converter("AED", rates),
+        )
+
+    @Test
+    fun `converter divides by the quote rate and rounds half-even`() {
+        val convert = CategoryBudgetCalculator.converter("AED", usdRate)
+        assertEquals(0, convert("USD", BigDecimal("27.23"))!!.compareTo(BigDecimal("100.00")))
+        assertEquals(0, convert("aed", BigDecimal("5.5"))!!.compareTo(BigDecimal("5.5")))
+    }
+
+    @Test
+    fun `converter returns null for unknown or non-positive rates`() {
+        val convert = CategoryBudgetCalculator.converter("AED", mapOf("EUR" to BigDecimal.ZERO))
+        assertNull(convert("USD", BigDecimal.TEN))
+        assertNull(convert("EUR", BigDecimal.TEN))
+    }
+
+    @Test
+    fun `foreign spend with a rate counts toward the category`() {
+        val result = monthSpend(usdRate, tx("30.00"), tx("27.23", currencyCode = "USD"))
+        assertEquals(0, result.byCategory.getValue(1L).compareTo(BigDecimal("130.00")))
+        assertTrue(!result.hasUncounted)
+    }
+
+    @Test
+    fun `foreign spend with no rate is reported not dropped`() {
+        val result = monthSpend(emptyMap(), tx("30.00"), tx("45.00", currencyCode = "usd"))
+        assertEquals(0, result.byCategory.getValue(1L).compareTo(BigDecimal("30.00")))
+        assertEquals(setOf("USD"), result.uncountedByCurrency.keys)
+        assertEquals(0, result.uncountedByCurrency.getValue("USD").compareTo(BigDecimal("45.00")))
+        assertTrue(result.hasUncounted)
+    }
+
+    @Test
+    fun `uncounted foreign spend is net of refunds and never negative`() {
+        val refund = tx("50.00", currencyCode = "USD", direction = TransactionDirection.CREDIT)
+            .copy(kind = com.xemmy.mmbank.domain.model.TransactionKind.REFUND)
+        val result = monthSpend(emptyMap(), tx("45.00", currencyCode = "USD"), refund)
+        assertTrue(!result.hasUncounted)
+    }
+
+    @Test
+    fun `uncategorised and out-of-window foreign spend is not reported`() {
+        val result = monthSpend(
+            emptyMap(),
+            tx("45.00", currencyCode = "USD", categoryId = null),
+            tx("45.00", currencyCode = "USD", at = monthEnd),
+        )
+        assertTrue(!result.hasUncounted)
+    }
+
+    @Test
+    fun `monthToDateByCategory still ignores other currencies`() {
+        val result = spend(tx("30.00"), tx("999.00", currencyCode = "USD"))
+        assertEquals(0, result.getValue(1L).compareTo(BigDecimal("30.00")))
+    }
 }

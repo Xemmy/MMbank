@@ -71,7 +71,12 @@ data class CategoriesUiState(
     val categories: List<Category> = emptyList(),
     /** Transaction count per category id -- drives whether deleting one needs a reassign picker. */
     val transactionCounts: Map<Long, Int> = emptyMap(),
+    /** Month-to-date spend in currencies with no forex rate -- left out of every cap, so say so. */
+    val uncountedByCurrency: Map<String, BigDecimal> = emptyMap(),
 ) {
+    /** One line for the "not counted" notice, or null when every currency was converted. */
+    val uncountedNotice: String? get() = CategoryBudgetCalculator.uncountedNotice(uncountedByCurrency)
+
     /** Transactions filed directly on [categoryId] -- the rows a delete would actually move. */
     fun directCount(categoryId: Long): Int = transactionCounts[categoryId] ?: 0
 
@@ -91,20 +96,26 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
     val uiState: StateFlow<CategoriesUiState> = combine(
         container.categoryRepository.observeAll(),
         container.transactionRepository.observeTransactions(),
-    ) { categories, transactions ->
+        container.ratesRepository.observeRates(),
+    ) { categories, transactions, rates ->
         val currency = container.preferences.defaultCurrency
         val zone = ZoneId.systemDefault()
         val monthStart = LocalDate.now(zone).withDayOfMonth(1)
         val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
         val endMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
-        val directSpend = CategoryBudgetCalculator.monthToDateByCategory(
+        val monthSpend = CategoryBudgetCalculator.monthSpend(
             transactions = transactions,
-            currencyCode = currency,
+            baseCurrency = currency,
             startMillis = startMillis,
             endMillisExclusive = endMillis,
+            convert = CategoryBudgetCalculator.converter(
+                currency,
+                rates.filter { it.baseCode.equals(currency, ignoreCase = true) }
+                    .associate { it.quoteCode.uppercase() to it.rate },
+            ),
         )
-        val rolledUpSpend = CategoryBudgetCalculator.rollUpSpend(categories, directSpend)
+        val rolledUpSpend = CategoryBudgetCalculator.rollUpSpend(categories, monthSpend.byCategory)
         val transactionCounts = transactions.mapNotNull { it.categoryId }
             .groupingBy { it }
             .eachCount()
@@ -113,6 +124,7 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
             currency = currency,
             categories = categories,
             transactionCounts = transactionCounts,
+            uncountedByCurrency = monthSpend.uncountedByCurrency,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoriesUiState())
 
@@ -216,6 +228,15 @@ fun CategoriesTabContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        state.uncountedNotice?.let { notice ->
+            item(key = "uncounted_notice") {
+                Text(
+                    notice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         if (state.categories.isEmpty()) {
             item {
                 Text(

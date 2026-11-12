@@ -103,6 +103,8 @@ object WhatChangedDigest {
         zone: ZoneId = ZoneId.systemDefault(),
         nowMillis: Long = System.currentTimeMillis(),
         captureQuietDays: Int? = null,
+        /** Converts other-currency spend toward category caps; default counts base-currency spend only. */
+        capConvert: ((String, BigDecimal) -> BigDecimal?)? = null,
     ): Digest? {
         val thisWeek = DateWindow(today.minusDays(6), today)
         val lastWeek = DateWindow(today.minusDays(13), today.minusDays(7))
@@ -118,8 +120,11 @@ object WhatChangedDigest {
         // Category caps, month to date, in the base currency (as the budgets screen does).
         val monthStart = today.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
         val monthEnd = today.withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val direct = CategoryBudgetCalculator.monthToDateByCategory(transactions, baseCurrency, monthStart, monthEnd)
-        CategoryBudgetCalculator.statuses(categories, CategoryBudgetCalculator.rollUpSpend(categories, direct))
+        val monthSpend = CategoryBudgetCalculator.monthSpend(
+            transactions, baseCurrency, monthStart, monthEnd,
+            capConvert ?: CategoryBudgetCalculator.converter(baseCurrency, emptyMap()),
+        )
+        CategoryBudgetCalculator.statuses(categories, CategoryBudgetCalculator.rollUpSpend(categories, monthSpend.byCategory))
             .filter { it.state != CategoryBudgetCalculator.BudgetState.UNDER }
             .forEach { s ->
                 items += CategoryCap(
