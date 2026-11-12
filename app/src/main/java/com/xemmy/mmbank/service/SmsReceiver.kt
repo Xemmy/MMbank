@@ -8,7 +8,9 @@ import android.util.Log
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.diagnostics.Diagnostics
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.parser.CaptureLogFormatter
+import com.xemmy.mmbank.domain.parser.UnmatchedExplainer
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +50,8 @@ class SmsReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 val result = container.ingestCapturedMessage(message)
-                CaptureLogFormatter.outcome(result, CaptureLogFormatter.looksFinancial(body))?.let {
+                val why = if (result == IngestResult.NoMatch) UnmatchedExplainer.explain(null, body)?.headline else null
+                CaptureLogFormatter.outcome(result, CaptureLogFormatter.looksFinancial(body), why)?.let {
                     Diagnostics.recordCapture(context, CaptureLogFormatter.line("SMS", sender, null, body, it))
                 }
             } catch (t: Throwable) {

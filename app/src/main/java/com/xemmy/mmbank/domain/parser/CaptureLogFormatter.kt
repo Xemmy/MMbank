@@ -46,12 +46,20 @@ object CaptureLogFormatter {
             }
         }
 
-    /** Short outcome label for a result; null means "not worth a line" (no-match that doesn't look financial). */
-    fun outcome(result: IngestResult, looksFinancial: Boolean): String? = when (result) {
+    /**
+     * Short outcome label for a result; null means "not worth a line" (no-match
+     * that doesn't look financial). [why], when given, is the
+     * [UnmatchedExplainer] reason, appended to a no-match so the log says why.
+     */
+    fun outcome(result: IngestResult, looksFinancial: Boolean, why: String? = null): String? = when (result) {
         is IngestResult.Inserted -> "SAVED tx#${result.transactionId}"
         is IngestResult.Duplicate -> "DUPLICATE of tx#${result.existingTransactionId}"
         IngestResult.Ignored -> "IGNORED (muted template)"
-        IngestResult.NoMatch -> if (looksFinancial) "NO MATCH (no rule parsed it)" else null
+        IngestResult.NoMatch -> when {
+            !looksFinancial -> null
+            why.isNullOrBlank() -> "NO MATCH (no rule parsed it)"
+            else -> "NO MATCH (no rule parsed it): ${maskShortCodes(LogRedactor.redactSensitiveData(why))}"
+        }
     }
 
     fun line(

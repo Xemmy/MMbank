@@ -12,6 +12,7 @@ import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.CaptureLogFormatter
+import com.xemmy.mmbank.domain.parser.UnmatchedExplainer
 import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +93,8 @@ class BankNotificationListener : NotificationListenerService() {
     private fun logCapture(message: CapturedMessage, result: IngestResult) {
         val financial = CaptureLogFormatter.looksFinancial(message.body) ||
             message.title?.let(CaptureLogFormatter::looksFinancial) == true
-        val outcome = CaptureLogFormatter.outcome(result, financial) ?: return
+        val why = if (result == IngestResult.NoMatch) UnmatchedExplainer.explain(message.title, message.body)?.headline else null
+        val outcome = CaptureLogFormatter.outcome(result, financial, why) ?: return
         Diagnostics.recordCapture(
             applicationContext,
             CaptureLogFormatter.line("PUSH", message.sender, message.title, message.body, outcome),

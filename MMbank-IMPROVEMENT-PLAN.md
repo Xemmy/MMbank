@@ -577,6 +577,8 @@ Plan debt payoff                   ›
 - **SMS inbox import** at onboarding (#11). It's the single biggest day-one win, because a new install starts with months of history instead of an empty ledger.
 - **Per-sender stats** ("ADCB: 212 captured, 3 unmatched") make capture quality visible (#17).
 
+> **B.3 why-unmatched (#13)** ✅ 0.84.0: `UnmatchedExplainer` says why a financial-looking message produced nothing -- declined/OTP wording skipped on purpose, an unknown currency code ("THB is not a currency MMbank reads yet"), no amount next to a currency, or a clear amount with no matching rule (with a money-in/out cue) -- and the Diagnostics capture log now prints it on every NO MATCH line (redacted like the rest of the line). Still open in B.3: a one-tap "create rule from this" button wired to `AiSelfHealingRuleGenerator`, corpus testing surfaced in the rule editor, shadow warnings, SMS inbox import, per-sender stats.
+
 ### B.4 Consolidate overlapping features
 
 | Overlap today | Merge into |
@@ -652,7 +654,7 @@ Plan debt payoff                   ›
 - No "cancelled / charge missing" state.
 - No "mark this as a subscription".
 
-> **C.1 subscription detection v2** ✅ 0.83.0 (runs for 0.79.0–0.82.0 green; this commit pending CI): `SubscriptionRadarEngine` now tolerates a missed cycle (one per three gaps) and skips extra purchases at the same merchant, as long as the chain explains ≥60% of the merchant's charges (so a daily coffee never reads as a subscription); adds bi-weekly, quarterly, semi-annual and yearly cadences; groups by brand (`MerchantNormalizer.key`); keeps the billing day of the month (and month-end billers) for next-due dates; and accepts two charges on a clean cadence when the message says subscription/renewal/auto-debit/اشتراك/تجديد. Still open from C.1: a "charge missing / cancelled" state, a manual "mark as subscription", and feeding the brand-grouped history into the per-merchant refresh (the capture-time refresh still sees one raw merchant spelling; the full Scan sees all).
+> **C.1 subscription detection v2** ✅ 0.83.0 (CI run 43299353575 green: unit tests + APK build): `SubscriptionRadarEngine` now tolerates a missed cycle (one per three gaps) and skips extra purchases at the same merchant, as long as the chain explains ≥60% of the merchant's charges (so a daily coffee never reads as a subscription); adds bi-weekly, quarterly, semi-annual and yearly cadences; groups by brand (`MerchantNormalizer.key`); keeps the billing day of the month (and month-end billers) for next-due dates; and accepts two charges on a clean cadence when the message says subscription/renewal/auto-debit/اشتراك/تجديد. Still open from C.1: a "charge missing / cancelled" state, a manual "mark as subscription", and feeding the brand-grouped history into the per-merchant refresh (the capture-time refresh still sees one raw merchant spelling; the full Scan sees all).
 
 ### C.2 Smart auto-assignment, the design ("learns from your past")
 
