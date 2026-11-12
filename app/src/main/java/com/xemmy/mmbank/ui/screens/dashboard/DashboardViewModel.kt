@@ -21,6 +21,7 @@ import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.domain.ledger.PeriodComparison
+import com.xemmy.mmbank.domain.onboarding.OnboardingChecklist
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.model.WalletBalance
@@ -401,6 +402,41 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     /** Called on every resume with the current permission state. */
     fun refreshCaptureAccess(notificationAccess: Boolean, sms: Boolean, batteryExempt: Boolean) {
         captureAccess.value = CaptureAccessSnapshot(notificationAccess, sms, batteryExempt, System.currentTimeMillis())
+    }
+
+    private val onboardingDismissed = MutableStateFlow(container.preferences.onboardingDismissed)
+
+    /**
+     * Home's "finish setting up" checklist (see [OnboardingChecklist]): null
+     * when there is nothing to show -- dismissed, all done, demo mode, or
+     * permissions not yet known. Re-evaluated on every resume, since the
+     * steps can be completed on other screens.
+     */
+    val onboarding: StateFlow<OnboardingChecklist.Checklist?> = combine(
+        container.accountRepository.observeActive(),
+        container.transactionRepository.observeTransactions(),
+        captureAccess,
+        onboardingDismissed,
+    ) { accounts, transactions, access, dismissed ->
+        if (dismissed || access == null || container.preferences.demoModeEnabled) {
+            null
+        } else {
+            OnboardingChecklist.build(
+                OnboardingChecklist.Inputs(
+                    captureAllowed = access.notificationAccess || access.sms,
+                    accountCount = accounts.size,
+                    transactionCount = transactions.size,
+                    hasBackedUp = container.preferences.lastBackupAt > 0L,
+                ),
+            ).takeIf { OnboardingChecklist.shouldShow(dismissed = false, checklist = it) }
+        }
+    }.flowOn(Dispatchers.Default)
+        .recoverAndRetry("DashboardViewModel.onboarding", container) { null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun dismissOnboarding() {
+        container.preferences.onboardingDismissed = true
+        onboardingDismissed.value = true
     }
 
     /** "Snooze 24h" on the capture-health banner. */

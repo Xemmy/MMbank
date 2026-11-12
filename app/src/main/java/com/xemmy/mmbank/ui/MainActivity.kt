@@ -439,6 +439,8 @@ private fun AppNavHost(
                 onOpenReview = { navController.navigate("review_transactions") },
                 onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
                 onOpenCaptureSettings = { navController.navigate("settings_capture") },
+                onOpenAccounts = { navController.navigate("accounts") },
+                onOpenBackup = { navController.navigate("settings_backup") },
             )
         }
         // The optional args let Home and Accounts deep-link straight into the

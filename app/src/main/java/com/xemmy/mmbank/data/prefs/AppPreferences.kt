@@ -30,6 +30,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_HIDE_ZERO_BALANCES, true)
         set(value) = prefs.edit().putBoolean(KEY_HIDE_ZERO_BALANCES, value).apply()
 
+    /** The user waved the Home "finish setting up" checklist away; it never returns. */
+    var onboardingDismissed: Boolean
+        get() = prefs.getBoolean(KEY_ONBOARDING_DISMISSED, false)
+        set(value) = prefs.edit().putBoolean(KEY_ONBOARDING_DISMISSED, value).apply()
+
     /** When an encrypted backup was last exported (millis; 0 = never). The retention prune needs a recent one. */
     var lastBackupAt: Long
         get() = prefs.getLong(KEY_LAST_BACKUP_AT, 0L)
@@ -427,6 +432,7 @@ class AppPreferences(context: Context) {
         const val KEY_HIDE_ZERO_BALANCES = "hide_zero_balances"
         const val KEY_BUDGET_ROLLOVER = "budget_rollover"
         const val KEY_LAST_BACKUP_AT = "last_backup_at"
+        const val KEY_ONBOARDING_DISMISSED = "onboarding_dismissed"
         const val KEY_HIDE_CRYPTO_BALANCE = "hide_crypto_balance"
         const val KEY_EXCLUDE_CRYPTO_FROM_TOTAL = "exclude_crypto_from_total"
         const val KEY_HIDE_CREDIT_CARD_BALANCE = "hide_credit_card_balance"

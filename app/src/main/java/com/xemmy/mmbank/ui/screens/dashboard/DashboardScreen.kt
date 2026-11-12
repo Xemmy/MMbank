@@ -55,6 +55,7 @@ import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.domain.intelligence.CashFlowForecaster
 import com.xemmy.mmbank.domain.model.BankNames
+import com.xemmy.mmbank.domain.onboarding.OnboardingChecklist
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
@@ -91,10 +92,13 @@ fun DashboardScreen(
     onOpenUnassigned: () -> Unit = {},
     /** Capture & permissions, where the capture-health banner's "Fix" leads. */
     onOpenCaptureSettings: () -> Unit = {},
+    onOpenAccounts: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val captureHealth by viewModel.captureHealth.collectAsStateWithLifecycle()
+    val onboarding by viewModel.onboarding.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // Permissions can change in system settings while we're away.
     LifecycleResumeEffect(Unit) {
@@ -140,6 +144,23 @@ fun DashboardScreen(
                         health = health,
                         onFix = onOpenCaptureSettings,
                         onSnooze = viewModel::snoozeCaptureHealth,
+                    )
+                }
+            }
+
+            onboarding?.let { checklist ->
+                item(key = "onboarding") {
+                    OnboardingCard(
+                        checklist = checklist,
+                        onAct = { step ->
+                            when (step) {
+                                OnboardingChecklist.StepId.ALLOW_CAPTURE -> onOpenCaptureSettings()
+                                OnboardingChecklist.StepId.ADD_ACCOUNT -> onOpenAccounts()
+                                OnboardingChecklist.StepId.BACK_UP -> onOpenBackup()
+                                OnboardingChecklist.StepId.FIRST_TRANSACTION -> Unit
+                            }
+                        },
+                        onDismiss = viewModel::dismissOnboarding,
                     )
                 }
             }
@@ -335,6 +356,48 @@ private fun CaptureHealthBanner(
             TextButton(onClick = onFix) { Text("Fix") }
         },
     )
+}
+
+/**
+ * "Finish setting up": the four first-run steps, ticked off from real state,
+ * with a button for the next one. Dismissable for good; disappears on its own
+ * when everything is done (see [OnboardingChecklist]).
+ */
+@Composable
+private fun OnboardingCard(
+    checklist: OnboardingChecklist.Checklist,
+    onAct: (OnboardingChecklist.StepId) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    MMCard(Modifier.fillMaxWidth(), tone = MMTone.INFO) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "Finish setting up · ${checklist.doneCount} of ${checklist.steps.size}",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            checklist.steps.forEach { step ->
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (step.done) "✓" else "○", style = MaterialTheme.typography.bodyMedium)
+                    Column(Modifier.weight(1f)) {
+                        Text(step.title, style = MaterialTheme.typography.bodyMedium)
+                        if (!step.done && step.id == checklist.next?.id) {
+                            Text(
+                                step.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+                checklist.next?.takeIf { it.id != OnboardingChecklist.StepId.FIRST_TRANSACTION }?.let { next ->
+                    TextButton(onClick = { onAct(next.id) }) { Text("Do this") }
+                }
+            }
+        }
+    }
 }
 
 /** "N items to review" entry point into the High-Detail Review Transactions screen; hidden by the caller when count is 0. */
