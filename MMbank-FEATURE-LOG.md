@@ -4563,3 +4563,10 @@ Edge-to-edge insets on Android 15 (gesture and 3-button nav), TalkBack on the lo
 - No screen uses the components yet; they migrate in plan steps 6–11, with the DesignLintTest baselines tightening as they do.
 - Tests: tone, row density, progress, money format/input, dialog kind.
 - **Not covered by CI:** how any component renders, TalkBack output, previews, the corner-radius change.
+
+## Phase 18.29 — Charts, TransactionRow, navigation model (0.65.0)
+- New design-system charts (`BarChart`, `DonutChart`, `Sparkline`, `Heatmap`, `PacingGauge`, pure logic in `ChartMath`) with spoken summaries, tap-to-read values and flat hidden-balance rendering. Series colours come from existing semantic tokens until `chart1…8` tokens exist. No screen uses them yet.
+- New `TransactionRow` (one spoken sentence, pending/uncategorised/transfer/excluded states).
+- `ui/navigation/AppNavigation.kt`: `Routes`, `AppTab`, `TabRouting` centralised and wired into `MainActivity`. Child screens (analytics, subscriptions, goals, bills, splits, categories, monthly report, integrity check, uncategorized queue, review) now keep their parent tab highlighted.
+- Tests: `ChartMathTest`, `TransactionRowTest`, `AppNavigationTest`.
+- **Not covered by CI:** rendering and TalkBack of charts and the row, bottom-bar highlighting per screen, deep links, tab state restore, crash-recovery launch.
