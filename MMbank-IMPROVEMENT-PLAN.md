@@ -494,7 +494,7 @@ Plan debt payoff                   ›
 | Step | PR | Size | Version (per CLAUDE.md) | Depends on |
 |---|---|---|---|---|
 | 1 | Phase 0 hotfixes | S | 0.62.16 (patch) | — |
-| 2 | File splits (no behaviour change) | M | — (refactor; bump only if APK behaviour changes) | — |
+| 2 | File splits (no behaviour change) | M | — (refactor; bump only if APK behaviour changes) | — | 🟡 TransactionsScreen split (VM + editor dialogs); SettingsScreen, AccountsScreen pending |
 | 3 | Tokens 2.0 + ThemeMode + merge Classic/Premium + DesignLintTest + contrast tests | L | 0.63.0 | 1 |
 | 4 | Designsystem components + previews + Roborazzi | L | 0.64.0 | 3 |
 | 5 | Navigation & structure (tabs, Plan hub, nested graphs, Settings regroup, transitions, predictive back, adaptive) | M | 0.65.0 | 4 |
