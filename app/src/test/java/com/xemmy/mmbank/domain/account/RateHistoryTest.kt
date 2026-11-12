@@ -85,4 +85,20 @@ class RateHistoryTest {
         assertEquals(BigDecimal("0.272"), result.getValue("USD"))
         assertEquals(BigDecimal("0.250"), result.getValue("EUR"))
     }
+
+    @Test
+    fun `forBase drops recordings quoted against another base currency`() {
+        val mixed = listOf(row("USD", "2026-10-01", "0.27"), row("USD", "2026-10-01", "3.67", base = "EUR"))
+        assertEquals(listOf(BigDecimal("0.27")), RateHistory.forBase(mixed, "aed").map { it.rate })
+    }
+
+    @Test
+    fun `overlay keeps today's rates for a null day or empty history and overrides per currency otherwise`() {
+        val today = mapOf("USD" to BigDecimal("0.25"), "EUR" to BigDecimal("0.23"))
+        assertEquals(today, RateHistory.overlay(today, history, null))
+        assertEquals(today, RateHistory.overlay(today, emptyList(), LocalDate.parse("2026-10-20")))
+        val past = RateHistory.overlay(today, history, LocalDate.parse("2026-10-20"))
+        assertEquals(BigDecimal("0.272"), past.getValue("USD"))
+        assertEquals(BigDecimal("0.250"), past.getValue("EUR"))
+    }
 }

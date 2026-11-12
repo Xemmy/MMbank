@@ -51,6 +51,10 @@ object RateHistory {
         return rows.minByOrNull { it.day }?.rate
     }
 
+    /** Only the recordings quoted against [base] -- after a change of default currency the others mean nothing. */
+    fun forBase(history: List<ExchangeRateOnDay>, base: String): List<ExchangeRateOnDay> =
+        history.filter { it.baseCode.equals(base, ignoreCase = true) }
+
     /**
      * The rates to value [day] with: today's [todayRates], overridden per
      * currency by what was recorded for [day]. A null [day] (the current

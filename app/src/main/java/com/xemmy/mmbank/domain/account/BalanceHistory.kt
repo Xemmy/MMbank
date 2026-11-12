@@ -59,7 +59,7 @@ object BalanceHistory {
         }
         val start = historyStart(transactions, zone) ?: return null
         if (month < start) return null
-        val rates = RateHistory.overlay(todayRates, history, month.atEndOfMonth())
+        val rates = RateHistory.overlay(todayRates, RateHistory.forBase(history, baseCurrency), month.atEndOfMonth())
         val endMillis = month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
         return balancesAt(accounts, transactions, endMillis, LedgerFx(baseCurrency, rates, currencies))
     }
