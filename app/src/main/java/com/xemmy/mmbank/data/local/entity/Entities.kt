@@ -291,6 +291,19 @@ data class ExchangeRateEntity(
     val fetchedAt: Long,
 )
 
+/**
+ * One day's closing forex rate (quote per 1 base), written on each refresh
+ * for the currencies the user actually holds -- see [RateHistory]. [day] is
+ * an ISO local date (yyyy-MM-dd) so it never shifts with the time zone.
+ */
+@Entity(tableName = "exchange_rates_history", primaryKeys = ["baseCode", "quoteCode", "day"])
+data class ExchangeRateHistoryEntity(
+    val baseCode: String,
+    val quoteCode: String,
+    val day: String,
+    @ColumnInfo(name = "rate") val rate: BigDecimal,
+)
+
 @Entity(
     tableName = "subscriptions",
     indices = [Index(value = ["merchant"], unique = true)],
@@ -544,6 +557,10 @@ fun AssetBalanceEntity.toDomain() = AssetBalance(asset, free, locked, priceUsd, 
 fun WalletBalanceEntity.toDomain() = WalletBalance(walletName, balanceBtc, valueUsd, updatedAt)
 
 fun ExchangeRateEntity.toDomain() = ExchangeRate(baseCode, quoteCode, rate, fetchedAt)
+
+fun ExchangeRateHistoryEntity.toDomain() = ExchangeRateOnDay(baseCode, quoteCode, java.time.LocalDate.parse(day), rate)
+
+fun ExchangeRateOnDay.toEntity() = ExchangeRateHistoryEntity(baseCode, quoteCode, day.toString(), rate)
 
 fun SubscriptionEntity.toDomain() = Subscription(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,

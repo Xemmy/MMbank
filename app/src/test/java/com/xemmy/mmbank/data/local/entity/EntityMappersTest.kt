@@ -750,4 +750,17 @@ class EntityMappersTest {
         val entity = mapping.toEntity()
         assertEquals(entity, entity.toDomain().toEntity())
     }
+
+    @Test
+    fun `exchange rate history round-trips through its entity`() {
+        val domain = com.xemmy.mmbank.domain.model.ExchangeRateOnDay(
+            baseCode = "AED",
+            quoteCode = "USD",
+            day = java.time.LocalDate.parse("2026-11-12"),
+            rate = BigDecimal("0.272300"),
+        )
+        val entity = domain.toEntity()
+        assertEquals("2026-11-12", entity.day)
+        assertEquals(domain, entity.toDomain())
+    }
 }

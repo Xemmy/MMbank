@@ -187,6 +187,8 @@ interface PortfolioRepository {
 
 interface RatesRepository {
     fun observeRates(): Flow<List<ExchangeRate>>
+    /** Daily rate recordings (quote per 1 [baseCurrency]) for the currencies the user holds, oldest first. */
+    fun observeHistory(baseCurrency: String): Flow<List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay>>
     /** Refreshes Forex rates for [baseCurrency]. Returns the number of rates stored. */
     suspend fun refresh(baseCurrency: String): Result<Int>
 }

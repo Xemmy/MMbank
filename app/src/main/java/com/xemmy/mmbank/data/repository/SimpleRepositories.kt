@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.repository
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
+import com.xemmy.mmbank.data.local.dao.ExchangeRateHistoryDao
 import com.xemmy.mmbank.data.local.dao.FriendDao
 import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
 import com.xemmy.mmbank.data.local.dao.IgnoredKeywordDao
@@ -171,10 +172,16 @@ class IgnoredKeywordRepositoryImpl(
 class RatesRepositoryImpl(
     private val api: ForexApi,
     private val dao: ExchangeRateDao,
+    private val historyDao: ExchangeRateHistoryDao,
+    private val today: () -> java.time.LocalDate = { java.time.LocalDate.now() },
 ) : RatesRepository {
 
     override fun observeRates(): Flow<List<ExchangeRate>> =
         dao.observeAll().map { list -> list.map(ExchangeRateEntity::toDomain) }
+
+    override fun observeHistory(baseCurrency: String): Flow<List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay>> =
+        historyDao.observeForBase(baseCurrency.trim().uppercase())
+            .map { list -> list.map { it.toDomain() } }
 
     override suspend fun refresh(baseCurrency: String): Result<Int> = runCatching {
         val response = api.latest(baseCurrency.trim().uppercase())
@@ -193,6 +200,19 @@ class RatesRepositoryImpl(
                 )
             }
         dao.upsertAll(entities)
+        // Keep today's rates for the currencies in use, so a later look at this
+        // day uses this day's rate (see RateHistory). A failure here must not
+        // fail the refresh itself: the latest rates are already stored.
+        runCatching {
+            historyDao.upsertAll(
+                com.xemmy.mmbank.domain.account.RateHistory.snapshot(
+                    base = response.baseCode,
+                    ratesFromBase = entities.associate { it.quoteCode to it.rate },
+                    heldCodes = historyDao.heldCurrencyCodes(),
+                    day = today(),
+                ).map { it.toEntity() },
+            )
+        }
         entities.size
     }
 }

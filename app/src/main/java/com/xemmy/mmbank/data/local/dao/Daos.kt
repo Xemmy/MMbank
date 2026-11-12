@@ -10,6 +10,7 @@ import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
+import com.xemmy.mmbank.data.local.entity.ExchangeRateHistoryEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
@@ -619,6 +620,21 @@ interface ExchangeRateDao {
 
     @Query("SELECT * FROM exchange_rates")
     fun observeAll(): Flow<List<ExchangeRateEntity>>
+}
+
+@Dao
+interface ExchangeRateHistoryDao {
+
+    /** One row per (base, quote, day): a later refresh the same day replaces the earlier one. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<ExchangeRateHistoryEntity>)
+
+    @Query("SELECT * FROM exchange_rates_history WHERE baseCode = :baseCode ORDER BY day ASC")
+    fun observeForBase(baseCode: String): Flow<List<ExchangeRateHistoryEntity>>
+
+    /** Every currency an account or a transaction is in -- the only ones worth keeping a history for. */
+    @Query("SELECT DISTINCT currencyCode FROM accounts UNION SELECT DISTINCT currencyCode FROM transactions")
+    suspend fun heldCurrencyCodes(): List<String>
 }
 
 @Dao

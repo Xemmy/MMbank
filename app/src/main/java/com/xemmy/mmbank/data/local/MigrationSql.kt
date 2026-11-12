@@ -61,6 +61,13 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
 
+    /** v33: daily forex-rate history. Purely additive: one new table, no existing data touched. */
+    val MIGRATION_32_33_SQL: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS `exchange_rates_history` (" +
+            "`baseCode` TEXT NOT NULL, `quoteCode` TEXT NOT NULL, `day` TEXT NOT NULL, `rate` TEXT NOT NULL, " +
+            "PRIMARY KEY(`baseCode`, `quoteCode`, `day`))",
+    )
+
     /** v32: optional per-account accent colour (ARGB int). Purely additive: one nullable column. */
     val MIGRATION_31_32_SQL: List<String> = listOf(
         "ALTER TABLE `accounts` ADD COLUMN `accentColor` INTEGER",

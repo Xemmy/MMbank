@@ -446,6 +446,14 @@ data class ExchangeRate(
     val fetchedAt: Long,
 )
 
+/** A stored forex rate for one calendar day (quote per 1 base); see [com.xemmy.mmbank.domain.account.RateHistory]. */
+data class ExchangeRateOnDay(
+    val baseCode: String,
+    val quoteCode: String,
+    val day: java.time.LocalDate,
+    val rate: BigDecimal,
+)
+
 /** Result of pushing a captured message through parse + dedup + insert. */
 sealed interface IngestResult {
     data class Inserted(val transactionId: Long) : IngestResult

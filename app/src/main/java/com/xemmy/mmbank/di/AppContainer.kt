@@ -505,7 +505,7 @@ class AppContainer(context: Context) {
         )
     }
     val ratesRepository: RatesRepository by lazy {
-        RatesRepositoryImpl(forexApi, database.exchangeRateDao())
+        RatesRepositoryImpl(forexApi, database.exchangeRateDao(), database.exchangeRateHistoryDao())
     }
 
     val backupManager: BackupManager by lazy {
