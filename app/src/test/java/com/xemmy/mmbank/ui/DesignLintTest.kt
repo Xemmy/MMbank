@@ -48,8 +48,6 @@ class DesignLintTest {
             Regex("ObsidianTokens\\."),
             { true },
             mapOf(
-                "ui/auth/LockScreen.kt" to 5,
-                "ui/auth/PinPad.kt" to 4,
                 "ui/components/CanvasCharts.kt" to 5,
                 "ui/components/DonutChart.kt" to 2,
                 "ui/theme/Glass.kt" to 5,

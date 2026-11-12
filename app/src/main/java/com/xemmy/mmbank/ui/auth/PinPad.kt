@@ -29,7 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
 import com.xemmy.mmbank.domain.auth.PinHasher
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.MMTheme
 
 /**
  * A numeric keypad for the app PIN: dots for what's typed, 0-9, delete and
@@ -53,7 +53,7 @@ fun PinPad(
     }
 
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = ObsidianTokens.textPrimary)
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MMTheme.colors.textPrimary)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             repeat(maxOf(digits.length, PinHasher.MIN_LENGTH)) { i ->
@@ -61,7 +61,7 @@ fun PinPad(
                     Modifier
                         .size(12.dp)
                         .background(
-                            if (i < digits.length) ObsidianTokens.textPrimary else ObsidianTokens.hairline,
+                            if (i < digits.length) MMTheme.colors.textPrimary else MMTheme.colors.borderStrong,
                             CircleShape,
                         ),
                 )
@@ -71,7 +71,7 @@ fun PinPad(
         Text(
             message.orEmpty(),
             style = MaterialTheme.typography.bodySmall,
-            color = if (messageIsError) MaterialTheme.colorScheme.error else ObsidianTokens.textMeta,
+            color = if (messageIsError) MaterialTheme.colorScheme.error else MMTheme.colors.textTertiary,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
         Spacer(Modifier.height(8.dp))

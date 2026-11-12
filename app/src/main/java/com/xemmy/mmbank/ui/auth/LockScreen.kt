@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.auth
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,8 +27,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.xemmy.mmbank.domain.auth.AppPinGate
 import com.xemmy.mmbank.domain.auth.PinCheck
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
-import com.xemmy.mmbank.ui.theme.obsidianCanvas
+import com.xemmy.mmbank.ui.theme.MMTheme
 import kotlinx.coroutines.launch
 
 /**
@@ -95,7 +95,7 @@ fun LockScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .obsidianCanvas()
+            .background(MMTheme.colors.canvas)
             // Swallow every touch so the (state-preserved) app underneath is
             // unreachable while locked.
             .pointerInput(Unit) {
@@ -113,12 +113,12 @@ fun LockScreen(
             Icons.Filled.Lock,
             contentDescription = null,
             modifier = Modifier.size(48.dp),
-            tint = ObsidianTokens.textMeta,
+            tint = MMTheme.colors.textTertiary,
         )
         Text(
             "MMbank is locked",
             style = MaterialTheme.typography.titleLarge,
-            color = ObsidianTokens.textPrimary,
+            color = MMTheme.colors.textPrimary,
             modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
         )
         if (usePin) {
@@ -139,15 +139,15 @@ fun LockScreen(
             Text(
                 "Unlock with your fingerprint, face, or device PIN.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = ObsidianTokens.textMeta,
+                color = MMTheme.colors.textTertiary,
                 modifier = Modifier.padding(bottom = 24.dp),
             )
             Button(
                 onClick = { tryUnlock() },
                 enabled = !prompting,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = ObsidianTokens.textPrimary,
-                    contentColor = ObsidianTokens.canvas,
+                    containerColor = MMTheme.colors.textPrimary,
+                    contentColor = MMTheme.colors.canvas,
                 ),
             ) {
                 Text("Unlock")
