@@ -785,6 +785,8 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.2 fresh backup before prune** ✅ 0.90.0 (CI run 43317469306 green): the weekly retention prune now only deletes when an *encrypted* backup was exported in the last 30 days (`RetentionBackupGate`; each export stamps `lastBackupAt`; a CSV export doesn't count). Otherwise that run does nothing, and the retention preview under the history chips says so ("Pruning is paused until you export an encrypted backup" / "your last backup is N days old"). Existing installs have no stamp yet, so pruning stays paused until their first export after this version. Still open in B.2: scheduled automatic backups (#67).
 
+> **B.3 per-sender stats (#17)** ✅ 0.91.0: Settings → Diagnostics shows "Capture by sender" above the capture log -- per sender, how many messages were saved, duplicate, ignored, unmatched or failed (`CaptureSenderStats`, read from the rolling capture log, unmatched-heavy senders first and highlighted). Covers what the log still holds, not all time. UI is not verified by CI.
+
 ## Where things stand after 0.90.0
 
 Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest is run 43317469306 for 0.90.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
@@ -796,7 +798,7 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 - B.5: quick add (Quick Settings tile / notification action); month-over-month deltas on every headline number (#38).
 - B.4 consolidation: one Recurring model (bills + subscriptions + card dues), one People list, goals-only (drop the duplicate Home card), cashback onto user categories.
 - B5/B4 follow-ups: show and break the refund link on a transaction; "Also arrived by SMS" display and Split back out (these need the link/merge stored, so also a schema change).
-- B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings, per-sender stats.
+- B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings.
 - Phases 1/2/4/5/6 design track: Roborazzi screenshots, onboarding, notifications/widget/icon/splash, accessibility and localisation (Arabic/RTL, string resources).
 
 *Needs a schema change (so a v34 migration plus its test):*

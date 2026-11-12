@@ -103,6 +103,7 @@ import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.parser.CaptureSenderStats
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
@@ -339,6 +340,28 @@ private fun DiagnosticsSection() {
                 refreshKey++
             },
         )
+    }
+    captureText?.let { log ->
+        val senders = remember(log) { CaptureSenderStats.fromLog(log) }
+        if (senders.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Capture by sender", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "From the log below. A sender with unmatched messages needs a parsing rule.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    senders.take(8).forEach { stat ->
+                        Text(
+                            CaptureSenderStats.describe(stat),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (stat.unmatched > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+        }
     }
     captureText?.let {
         DiagnosticsLogCard(
