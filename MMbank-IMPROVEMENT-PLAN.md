@@ -7,7 +7,7 @@
 
 | Phase | Done | Notes |
 |---|---|---|
-| Phase 0 — Hotfixes | 0/13 | target 0.62.16 |
+| Phase 0 — Hotfixes | 13/13 coded (11 ✅, 2 📱 pending device check: 0.3, 0.4) | shipped 0.62.16, CI green |
 | Phase 1 — Design system 2.0 | 0 | 0.63.0 |
 | Phase 2 — Component library | 0 | 0.64.0 |
 | Phase 3 — Navigation & IA | 0 | 0.65.0 |
@@ -83,19 +83,19 @@ These are small, safe and visible. Ship them before the redesign.
 
 | # | Fix | Where | How | Status |
 |---|---|---|---|---|
-| 0.1 | **Pin dark theme for now.** This removes every light-mode breakage at once until Phase 1 makes tokens theme-aware. | `ui/MainActivity.kt:113`, `res/values/themes.xml` | `MMbankTheme(darkTheme = true, …)`. Set `windowBackground` to `#0B0E14` (not pure black). | 🟡 |
-| 0.2 | **Raise the type floor.** | `ui/theme/Typography.kt`, `ObsidianTokens.kt` | `labelSmall` 8 → **11sp**, `labelMedium` 9 → **12sp**, `MetaLabel` 9 → **11sp** with tracking 0.14em → 0.06em, currency code 8.5 → **max(11sp, 0.7em)**. Add `lineHeight` to every style. Bottom-nav labels use `labelMedium`. | 🟡 |
-| 0.3 | **Handle edge-to-edge.** | `MainActivity.onCreate` + inner Scaffolds | Call `enableEdgeToEdge()` before `setContent`. Root Scaffold: `contentWindowInsets = WindowInsets(0)` for the top, and let each screen's top bar own the status-bar inset; *or* apply `Modifier.consumeWindowInsets(innerPadding)` on the NavHost column. Nested Scaffolds: `contentWindowInsets = WindowInsets(0)`. **Test on an API 35 device** with gesture nav and 3-button nav. | 📱 |
-| 0.4 | **Lock screen privacy.** | `MainActivity.kt:122-140`, `auth/LockScreen.kt` | While locked, wrap `MMbankApp` in `Modifier.clearAndSetSemantics {}`. When app lock is on: `setRecentsScreenshotEnabled(false)` on API 33+, and `FLAG_SECURE` below 33. Give the ⌫ key `contentDescription="Delete digit"`, make the wrong-PIN text `liveRegion = Polite`, and add haptics plus a shake on a wrong PIN. | 📱 |
-| 0.5 | **Show the Security status messages.** | `screens/settings/SettingsScreen.kt:1418-1432` | Render `statusMessage`, as the other subpages already do (`:1407`). | 🟡 |
-| 0.6 | **Notification toggles respect denial.** | `screens/settings/SmartAlertsSection.kt:35,76-77` | Turn the toggle on only in the permission result callback. Show a "Blocked — Open settings" row when `NotificationPermission.granted` is false. | 🟡 |
-| 0.7 | **Back exits bulk mode.** | `TransactionsScreen.kt` (bulk state ~495) | `BackHandler(enabled = bulkMode) { exitBulkMode() }`. | 🟡 |
-| 0.8 | **Day labels stay correct across midnight.** | `TransactionsScreen.kt:1048` | Replace `remember { LocalDate.now() }` with a `currentDate` StateFlow that ticks at midnight and on resume. | 🟡 |
-| 0.9 | **Transfer editor shows only fields that apply.** | `TransactionsScreen.kt:2829-2877` | Hide Category, Exclude and Currency when `transferMode`. Add `KeyboardType.Decimal` to the amount fields (2693, 2761). | 🟡 |
-| 0.10 | **Crypto amounts aren't rounded to 0.00.** | `ui/util/Format.kt:12-13` | Take fraction digits from `Currency.getInstance(code).defaultFractionDigits`, with a crypto override (up to 8 significant decimals). Unit-test it in `FormatTest`. | 🟡 |
-| 0.11 | **Wallet-card contrast.** | `ui/components/GlassWalletCard.kt:35-42` | Darken the end stops: mixing 45% `#0B0E14` gives white ≥4.5:1 (Cash `#8C7400` 4.55, Savings `#1F8345` 4.78, Crypto `#856F2A` 4.88). Add a contrast assertion to `WalletCardTest`. | 🟡 |
-| 0.12 | **The review highlight is readable.** | `screens/review/components/TransactionDetailReviewCard.kt:218` | Give the highlight `SpanStyle` an explicit dark `color`. Today it is #F1F5F9 on #FFF59D, about 1.02:1. | 🟡 |
-| 0.13 | **Bold → SemiBold.** | 9 call sites (e.g. `TransactionsScreen.kt:2284`, `GlassWalletCard.kt:115`) | Bold renders as SemiBold today anyway; say so in code. Drop the Inter *Light* request in `AmountText.kt:75`. | 🟡 |
+| 0.1 | **Pin dark theme for now.** This removes every light-mode breakage at once until Phase 1 makes tokens theme-aware. | `ui/MainActivity.kt:113`, `res/values/themes.xml` | `MMbankTheme(darkTheme = true, …)`. Set `windowBackground` to `#0B0E14` (not pure black). | ✅ 0.62.16 |
+| 0.2 | **Raise the type floor.** | `ui/theme/Typography.kt`, `ObsidianTokens.kt` | `labelSmall` 8 → **11sp**, `labelMedium` 9 → **12sp**, `MetaLabel` 9 → **11sp** with tracking 0.14em → 0.06em, currency code 8.5 → **max(11sp, 0.7em)**. Add `lineHeight` to every style. Bottom-nav labels use `labelMedium`. | ✅ 0.62.16 |
+| 0.3 | **Handle edge-to-edge.** | `MainActivity.onCreate` + inner Scaffolds | Call `enableEdgeToEdge()` before `setContent`. Root Scaffold: `contentWindowInsets = WindowInsets(0)` for the top, and let each screen's top bar own the status-bar inset; *or* apply `Modifier.consumeWindowInsets(innerPadding)` on the NavHost column. Nested Scaffolds: `contentWindowInsets = WindowInsets(0)`. **Test on an API 35 device** with gesture nav and 3-button nav. | 📱 0.62.16 |
+| 0.4 | **Lock screen privacy.** | `MainActivity.kt:122-140`, `auth/LockScreen.kt` | While locked, wrap `MMbankApp` in `Modifier.clearAndSetSemantics {}`. When app lock is on: `setRecentsScreenshotEnabled(false)` on API 33+, and `FLAG_SECURE` below 33. Give the ⌫ key `contentDescription="Delete digit"`, make the wrong-PIN text `liveRegion = Polite`, and add haptics plus a shake on a wrong PIN. | 📱 0.62.16 |
+| 0.5 | **Show the Security status messages.** | `screens/settings/SettingsScreen.kt:1418-1432` | Render `statusMessage`, as the other subpages already do (`:1407`). | ✅ 0.62.16 |
+| 0.6 | **Notification toggles respect denial.** | `screens/settings/SmartAlertsSection.kt:35,76-77` | Turn the toggle on only in the permission result callback. Show a "Blocked — Open settings" row when `NotificationPermission.granted` is false. | ✅ 0.62.16 |
+| 0.7 | **Back exits bulk mode.** | `TransactionsScreen.kt` (bulk state ~495) | `BackHandler(enabled = bulkMode) { exitBulkMode() }`. | ✅ 0.62.16 |
+| 0.8 | **Day labels stay correct across midnight.** | `TransactionsScreen.kt:1048` | Replace `remember { LocalDate.now() }` with a `currentDate` StateFlow that ticks at midnight and on resume. | ✅ 0.62.16 |
+| 0.9 | **Transfer editor shows only fields that apply.** | `TransactionsScreen.kt:2829-2877` | Hide Category, Exclude and Currency when `transferMode`. Add `KeyboardType.Decimal` to the amount fields (2693, 2761). | ✅ 0.62.16 |
+| 0.10 | **Crypto amounts aren't rounded to 0.00.** | `ui/util/Format.kt:12-13` | Take fraction digits from `Currency.getInstance(code).defaultFractionDigits`, with a crypto override (up to 8 significant decimals). Unit-test it in `FormatTest`. | ✅ 0.62.16 |
+| 0.11 | **Wallet-card contrast.** | `ui/components/GlassWalletCard.kt:35-42` | Darken the end stops: mixing 45% `#0B0E14` gives white ≥4.5:1 (Cash `#8C7400` 4.55, Savings `#1F8345` 4.78, Crypto `#856F2A` 4.88). Add a contrast assertion to `WalletCardTest`. | ✅ 0.62.16 |
+| 0.12 | **The review highlight is readable.** | `screens/review/components/TransactionDetailReviewCard.kt:218` | Give the highlight `SpanStyle` an explicit dark `color`. Today it is #F1F5F9 on #FFF59D, about 1.02:1. | ✅ 0.62.16 |
+| 0.13 | **Bold → SemiBold.** | 9 call sites (e.g. `TransactionsScreen.kt:2284`, `GlassWalletCard.kt:115`) | Bold renders as SemiBold today anyway; say so in code. Drop the Inter *Light* request in `AmountText.kt:75`. | ✅ 0.62.16 |
 
 ---
 
