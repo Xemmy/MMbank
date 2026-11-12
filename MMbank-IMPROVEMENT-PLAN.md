@@ -795,6 +795,8 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **Phase 3 Settings "Notifications" group** ✅ 0.95.0 (CI run 43328478115 green): the four phone-notification switches (subscription renewals, bill due dates, unusual charges, weekly digest) moved out of the middle of Preferences into their own Settings → Notifications page, with an "N of 4 on" summary on the menu row and a search entry. Nothing changed about what they do. UI is not verified by CI.
 
+> **B.5 #1 quick add** ✅ 0.96.0: long-press the launcher icon for "Add a cash spend", or add the "Add spend" tile to Quick Settings (the tile makes the phone unlock first). Both open a small sheet -- amount plus an optional "where" -- that records one manual SPEND (`QuickAdd`: amount rules, decimal comma, ≤2 decimals, lands on a cash account in the same currency, else any cash account, else unassigned). The sheet only adds an entry and shows no ledger data. Not done: a notification action. Launcher shortcut, tile and sheet are not verified by CI.
+
 ## Where things stand after 0.95.0
 
 Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43328478115 for 0.95.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
@@ -803,7 +805,7 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 
 *Needs UI work that CI cannot check (build it, then look at it on a device):*
 - Phase 3: nested nav graphs, Activity list-detail on tablets, per-form Save.
-- B.5: quick add (Quick Settings tile / notification action); month-over-month deltas on every headline number (#38).
+- B.5: a quick-add notification action; month-over-month deltas on every headline number (#38).
 - B.4 consolidation: one Recurring model (bills + subscriptions + card dues), one People list, goals-only (drop the duplicate Home card), cashback onto user categories.
 - B5/B4 follow-ups: show and break the refund link on a transaction; "Also arrived by SMS" display and Split back out (these need the link/merge stored, so also a schema change).
 - B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings.

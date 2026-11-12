@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MMbank</string>
+    <string name="quick_add_label">Add spend</string>
+    <string name="quick_add_long_label">Add a cash spend</string>
     <string name="notification_listener_label">MMbank transaction capture</string>
     <string name="daily_budget_widget_description">Today\'s safe-to-spend allowance, with a shortcut to review uncategorized transactions.</string>
 </resources>
