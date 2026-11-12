@@ -787,6 +787,8 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.3 per-sender stats (#17)** ✅ 0.91.0 (CI run 43320300934 green): Settings → Diagnostics shows "Capture by sender" above the capture log -- per sender, how many messages were saved, duplicate, ignored, unmatched or failed (`CaptureSenderStats`, read from the rolling capture log, unmatched-heavy senders first and highlighted). Covers what the log still holds, not all time. UI is not verified by CI.
 
+> **C.2 categorySource / personSource** ✅ 0.92.0: schema v34 adds `categorySource` and `personSource` to transactions (explicit additive migration `MIGRATION_33_34_SQL`; every existing row with a category/person is marked `USER`, so history is never re-assigned on its own; backup format v12 carries them and restores old backups the same way). Capture records `LEARNED` / `KEYWORD` / `DEFAULT`; every manual pick, bulk edit and edit-form change records `USER`. Used now: (1) learning a merchant's category re-categorizes its earlier *guessed* rows (keyword/learned/AI) but never a `USER` one; (2) the person pattern reads only explicit user choices; (3) the edit form shows a plain "why" line ("Chosen by you", "Learned from your earlier choices", "Guessed from the merchant name"). Saving an edit form with the "Auto" category chip counts the guess as the user's (conservative). Still open in C.2: per-merchant counts/confidence, amount/card/sender signals. UI line not verified by CI.
+
 ## Where things stand after 0.91.0
 
 Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43320300934 for 0.91.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
@@ -802,7 +804,7 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 - Phases 1/2/4/5/6 design track: Roborazzi screenshots, onboarding, notifications/widget/icon/splash, accessibility and localisation (Arabic/RTL, string resources).
 
 *Needs a schema change (so a v34 migration plus its test):*
-- C.2: `categorySource` / `personSource` columns so a USER choice is never re-assigned and the app can explain why; per-merchant counts and confidence; amount/card/sender signals.
+- C.2: per-merchant counts and confidence; amount/card/sender signals (the source columns are done).
 - B2 part 4: per-transaction historical conversion in Insights (only worth it once rate history has accumulated).
 
 *Needs a decision or a device from the owner:*
