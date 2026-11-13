@@ -7,6 +7,9 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountChange
+import com.xemmy.mmbank.domain.model.AccountChangeSource
+import com.xemmy.mmbank.domain.model.AccountChangeType
 import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
@@ -68,6 +71,33 @@ data class AccountEntity(
     val cardEndings: String? = null,
     /** See [Account.accentColor]. */
     val accentColor: Int? = null,
+)
+
+/**
+ * One row of an account's change log; see [AccountChange]. No foreign key on
+ * purpose: the log must outlive a deleted account, so [accountName] is a
+ * snapshot. The index backs the per-account history query.
+ */
+@Entity(
+    tableName = "account_changes",
+    indices = [Index(value = ["accountId", "timestamp"])],
+)
+data class AccountChangeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val accountId: Long,
+    val accountName: String,
+    val timestamp: Long,
+    val type: AccountChangeType,
+    val source: AccountChangeSource,
+    val field: String? = null,
+    val oldValue: String? = null,
+    val newValue: String? = null,
+    val balanceDelta: BigDecimal? = null,
+    val currencyCode: String? = null,
+    val transactionId: Long? = null,
+    val reason: String? = null,
+    val note: String? = null,
+    val isDemo: Boolean = false,
 )
 
 @Entity(tableName = "sender_labels")
@@ -451,6 +481,42 @@ fun Account.toEntity() = AccountEntity(
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
     statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings, accentColor,
+)
+
+fun AccountChangeEntity.toDomain() = AccountChange(
+    id = id,
+    accountId = accountId,
+    accountName = accountName,
+    timestampMillis = timestamp,
+    type = type,
+    source = source,
+    field = field,
+    oldValue = oldValue,
+    newValue = newValue,
+    balanceDelta = balanceDelta,
+    currencyCode = currencyCode,
+    transactionId = transactionId,
+    reason = reason,
+    note = note,
+    isDemo = isDemo,
+)
+
+fun AccountChange.toEntity() = AccountChangeEntity(
+    id = id,
+    accountId = accountId,
+    accountName = accountName,
+    timestamp = timestampMillis,
+    type = type,
+    source = source,
+    field = field,
+    oldValue = oldValue,
+    newValue = newValue,
+    balanceDelta = balanceDelta,
+    currencyCode = currencyCode,
+    transactionId = transactionId,
+    reason = reason,
+    note = note,
+    isDemo = isDemo,
 )
 
 fun SenderLabelEntity.toDomain() = com.xemmy.mmbank.domain.model.SenderLabel(sender, label)

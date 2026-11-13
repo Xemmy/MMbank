@@ -74,7 +74,7 @@ New table `account_changes`, with `MIGRATION_35_36` in raw SQL (`MigrationSql.kt
 | `id`, `accountId`, `accountName` | No foreign key and a name snapshot, so the log survives account deletion |
 | `timestamp`, `type`, `source` | `source`: USER, CAPTURE_SUGGESTION, RETENTION, BACKUP_RESTORE |
 | `field`, `oldValue`, `newValue` | For detail edits; one row per changed field |
-| `balanceDelta` | Exact `BigDecimal`, computed from the change itself (no balance query needed) |
+| `balanceDelta`, `currencyCode` | Exact `BigDecimal` effect on the balance, in `currencyCode`, computed from the change itself (no balance query needed) |
 | `transactionId`, `reason`, `note`, `isDemo` | |
 
 `type`: CREATED, DETAILS_EDITED, OPENING_BALANCE_CHANGED, BALANCE_ADJUSTED, ARCHIVED, RESTORED, DELETED, TRANSACTION_EDITED, TRANSACTION_MOVED_IN, TRANSACTION_MOVED_OUT, TRANSACTION_DELETED, RETENTION_FOLDED, BACKUP_RESTORED.
@@ -104,7 +104,7 @@ New route `account_history/{id}` (`AppNavigation.kt`), opened from the account c
 
 | # | Version | Delivers | Pure-JVM tests | Status |
 |---|---|---|---|---|
-| 1 | 0.100.0, schema v36 | `account_changes` table, migration, mappers, diff builders, all write points, backup | `MigrationSqlTest` v35→v36, mapper round-trip, `AccountChangeDiffTest`, `LedgerChangeDiffTest`, backup round-trip | ⏳ |
+| 1 | 0.100.0, schema v36 | `account_changes` table, migration, mappers, diff builders, all write points, backup | `MigrationSqlTest` v35→v36, mapper round-trip, `AccountChangeDiffTest`, `LedgerChangeDiffTest`, backup round-trip | ✅ built, CI pending |
 | 2 | 0.101.0 | History screen, `AccountTimeline`, reason on balance adjustment | `AccountTimelineTest` (running balance, ordering, wording) | ⏳ |
 | 3 | 0.102.0 | `AccountUpsertResolver`, `AccountMerge`, quick add sheet, duplicate guard in the full form | `AccountUpsertResolverTest` (IBAN, suffix, tie, archived, weak), `AccountMergeTest` | ⏳ |
 | 4 | 0.103.0 | `UnknownAccountSuggestions`, `OpeningBalanceSolver`, backfill; "Whose account is it?" on one-sided transfers | Suggestion grouping, solver, `TransferLegsTest` additions | ⏳ |

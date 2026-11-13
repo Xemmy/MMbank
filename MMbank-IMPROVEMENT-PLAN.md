@@ -809,11 +809,13 @@ Full design in **MMbank-ACCOUNTS-PLAN.md**. Planned, not started.
 
 | # | Item | Target | Status |
 |---|---|---|---|
-| D1 | `account_changes` log table (schema v36), diff builders, write points, backup | 0.100.0 | ⏳ |
+| D1 | `account_changes` log table (schema v36), diff builders, write points, backup | 0.100.0 | ✅ 0.100.0 (CI pending) |
 | D2 | Account history screen with running balance; reason on balance adjustments | 0.101.0 | ⏳ |
 | D3 | Quick add sheet with update-if-exists (`AccountUpsertResolver`, `AccountMerge`) | 0.102.0 | ⏳ |
 | D4 | Account suggestions from unknown card numbers; "Whose account is it?" on one-sided transfers | 0.103.0 | ⏳ |
 | D5 | Drift explainer (`DriftWindow`) on the Integrity screen | 0.104.0 | ⏳ |
+
+> **D1 account change log** ✅ 0.100.0: schema v36 adds `account_changes` (explicit additive `MIGRATION_35_36`, backup format v14). Every balance-moving event that used to leave no trace now writes an entry in the same Room transaction as the change: account create / edit (one entry per changed field, opening-balance edits with the exact delta) / archive / restore / delete; transaction amount, direction, currency or date edits; moves between accounts (an out-entry and an in-entry); deletes; balance adjustments; retention folds (opening balance moves, balance effect zero); and a marker per account on backup restore. Pure builders `AccountChangeDiff` and `LedgerChangeDiff` decide what is recorded (merchant, category and person edits are deliberately not). Retention also trims log rows older than its cutoff. Added a `currencyCode` column to the plan's table, so `balanceDelta` always has a unit. Bulk moves (a rule or learned-merchant backfill) log one entry per transaction; Phase 2's timeline should group them. Nothing is shown in the UI yet. **Not covered by CI:** the real Room v35→v36 migration on a device (only the SQL is run, on sqlite-jdbc), the atomic write under Room's `withTransaction`, and the retention and restore paths end to end.
 
 ## Where things stand after 0.99.0
 

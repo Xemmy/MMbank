@@ -79,6 +79,9 @@ class TransactionRepositoryImpl(
 ) : TransactionRepository, LedgerRepository {
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    /** Writes the account change log for edits that can move a balance; see [AccountChangeRecorder]. */
+    private val changeLog = AccountChangeRecorder(database)
+
     override fun observeTransactions(): Flow<List<Transaction>> =
         demoMode.flatMapLatest { demo -> dao.observeAll(demo) }
             .map { list -> list.map(TransactionEntity::toDomain) }
@@ -356,7 +359,10 @@ class TransactionRepositoryImpl(
      */
     private suspend fun deleteAndRelease(ids: List<Long>): Int = database.withTransaction {
         val partners = dao.getLinkedPartners(ids)
+        // Read first: once the rows are gone there is nothing left to say what the balance lost.
+        val doomed = ids.chunked(SQL_ID_CHUNK).flatMap { dao.getByIds(it) }.map(TransactionEntity::toDomain)
         val deleted = dao.deleteMany(ids)
+        changeLog.recordDeletes(doomed)
         if (partners.isNotEmpty()) {
             val accountTypes = accountTypes()
             partners.forEach { partner ->
@@ -367,13 +373,18 @@ class TransactionRepositoryImpl(
     }
 
     /** Whatever the user typed in is their choice: a category or person on a manual row is `USER`. */
-    override suspend fun recordManual(transaction: Transaction): Long =
-        dao.insert(
+    override suspend fun recordManual(transaction: Transaction): Long = database.withTransaction {
+        val id = dao.insert(
             transaction.copy(
                 categorySource = if (transaction.categoryId != null) AssignmentSource.USER else transaction.categorySource,
                 personSource = if (!transaction.person.isNullOrBlank()) AssignmentSource.USER else transaction.personSource,
             ).toEntity(),
         )
+        // An ordinary new row is the ledger itself and needs no log entry; a balance adjustment
+        // is the one manual row whose whole purpose is to move a balance, so it gets one.
+        if (transaction.kind == TransactionKind.ADJUSTMENT) changeLog.recordAdjustment(transaction.copy(id = id))
+        id
+    }
 
     // --- LedgerRepository ---
 
@@ -444,14 +455,24 @@ class TransactionRepositoryImpl(
     override fun observeMerchantKinds(): Flow<List<com.xemmy.mmbank.domain.model.MerchantKindMapping>> =
         database.merchantKindDao().observeAll().map { rows -> rows.map { it.toDomain() } }
 
-    override suspend fun update(transaction: Transaction) =
+    override suspend fun update(transaction: Transaction) = database.withTransaction {
+        val old = dao.getById(transaction.id)?.toDomain()
         dao.update(transaction.toEntity())
+        if (old != null) changeLog.recordEdits(listOf(old to transaction))
+    }
 
-    override suspend fun assignAccount(transactionId: Long, accountId: Long?) =
+    override suspend fun assignAccount(transactionId: Long, accountId: Long?) = database.withTransaction {
+        val old = dao.getById(transactionId)?.toDomain()
         dao.assignAccount(transactionId, accountId)
+        if (old != null) changeLog.recordEdits(listOf(old to old.copy(accountId = accountId)))
+    }
 
-    override suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int =
-        dao.assignAccountByRuleName(ruleName, accountId)
+    override suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int = database.withTransaction {
+        val moving = dao.getUnassignedByRuleName(ruleName).map(TransactionEntity::toDomain)
+        val moved = dao.assignAccountByRuleName(ruleName, accountId)
+        changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) })
+        moved
+    }
 
     override suspend fun setPerson(transactionId: Long, person: String?) =
         dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })
@@ -478,8 +499,12 @@ class TransactionRepositoryImpl(
 
     override suspend fun deleteMany(ids: List<Long>): Int = deleteAndRelease(ids)
 
-    override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int =
-        dao.bulkAssignAccount(ids, accountId)
+    override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int = database.withTransaction {
+        val moving = ids.chunked(SQL_ID_CHUNK).flatMap { dao.getByIds(it) }.map(TransactionEntity::toDomain)
+        val moved = dao.bulkAssignAccount(ids, accountId)
+        changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) })
+        moved
+    }
 
     override suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int =
         dao.bulkSetPerson(ids, person?.trim()?.takeIf { it.isNotBlank() })
@@ -523,5 +548,8 @@ class TransactionRepositoryImpl(
 
         /** matchedRuleName on both legs of a transfer the user entered by hand. */
         const val MANUAL_TRANSFER_LABEL = "Manual transfer"
+
+        /** Well under SQLite's bound-variable limit, for `id IN (...)` reads of a big selection. */
+        private const val SQL_ID_CHUNK = 500
     }
 }

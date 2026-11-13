@@ -61,6 +61,32 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
 
+    /**
+     * v36: the account change log. Purely additive: one new table and its index,
+     * no existing data touched. Column order and types mirror what Room exports
+     * for AccountChangeEntity (MigrationSqlTest compares them).
+     */
+    val MIGRATION_35_36_SQL: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS `account_changes` (" +
+            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+            "`accountId` INTEGER NOT NULL, " +
+            "`accountName` TEXT NOT NULL, " +
+            "`timestamp` INTEGER NOT NULL, " +
+            "`type` TEXT NOT NULL, " +
+            "`source` TEXT NOT NULL, " +
+            "`field` TEXT, " +
+            "`oldValue` TEXT, " +
+            "`newValue` TEXT, " +
+            "`balanceDelta` TEXT, " +
+            "`currencyCode` TEXT, " +
+            "`transactionId` INTEGER, " +
+            "`reason` TEXT, " +
+            "`note` TEXT, " +
+            "`isDemo` INTEGER NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS `index_account_changes_accountId_timestamp` " +
+            "ON `account_changes` (`accountId`, `timestamp`)",
+    )
+
     /** v35: the purchase a refund gave money back for. Purely additive: one nullable column. */
     val MIGRATION_34_35_SQL: List<String> = listOf(
         "ALTER TABLE `transactions` ADD COLUMN `refundOfId` INTEGER",

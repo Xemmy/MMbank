@@ -56,7 +56,10 @@ class TransactionRetentionWorker(
                 // so deleting them would silently shift every balance they fed.
                 // RetentionPruner folds that net into the accounts' opening
                 // balances in the same Room transaction as the delete.
-                container.retentionPruner.prune(plan.transactionIdsToDelete)
+                container.retentionPruner.prune(
+                    plan.transactionIdsToDelete,
+                    logCutoffMillis = TransactionRetentionPlanner.cutoffMillis(now, retentionMonths),
+                )
             }
         }.onFailure { container.recordError("TransactionRetentionWorker", it) }
 

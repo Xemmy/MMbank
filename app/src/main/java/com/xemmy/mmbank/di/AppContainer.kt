@@ -191,6 +191,7 @@ class AppContainer(context: Context) {
         database.withTransaction {
             // Fresh batch each time: clear any leftover demo rows first.
             database.transactionDao().deleteDemo()
+            database.accountChangeDao().deleteDemo()
             database.accountDao().deleteDemo()
             database.parsingRuleDao().deleteDemo()
 
@@ -228,6 +229,7 @@ class AppContainer(context: Context) {
         preferences.demoPersonsBackup = ""
         database.withTransaction {
             database.transactionDao().deleteDemo()
+            database.accountChangeDao().deleteDemo()
             database.accountDao().deleteDemo()
             database.parsingRuleDao().deleteDemo()
         }
@@ -448,7 +450,13 @@ class AppContainer(context: Context) {
     val transactionRepository: TransactionRepository get() = transactionRepositoryImpl
     val ledgerRepository: LedgerRepository get() = transactionRepositoryImpl
     val accountRepository: AccountRepository by lazy {
-        AccountRepositoryImpl(database.accountDao(), database.parsingRuleDao(), demoModeEnabled)
+        AccountRepositoryImpl(
+            dao = database.accountDao(),
+            parsingRuleDao = database.parsingRuleDao(),
+            demoMode = demoModeEnabled,
+            changes = database.accountChangeDao(),
+            database = database,
+        )
     }
     val categoryRepository: CategoryRepository by lazy {
         CategoryRepositoryImpl(database)

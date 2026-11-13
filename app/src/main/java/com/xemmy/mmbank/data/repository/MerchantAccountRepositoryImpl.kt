@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.repository
 import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
+import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.domain.model.MerchantAccountMapping
 import com.xemmy.mmbank.domain.parser.AccountMatcher
@@ -16,6 +17,8 @@ class MerchantAccountRepositoryImpl(
 ) : MerchantAccountRepository {
 
     private val dao get() = database.merchantAccountDao()
+
+    private val changeLog = AccountChangeRecorder(database)
 
     override fun observeMappings(): Flow<List<MerchantAccountMapping>> =
         dao.observeAll().map { rows -> rows.map { it.toDomain() } }
@@ -48,7 +51,15 @@ class MerchantAccountRepositoryImpl(
             val candidates = database.transactionDao().getUnassignedWithMerchant()
                 .map { MerchantAccountLearner.Candidate(id = it.id, merchant = it.merchant) }
             val ids = MerchantAccountLearner.idsToBackfill(candidates, trimmed)
-            if (ids.isEmpty()) 0 else database.transactionDao().bulkAssignAccount(ids, accountId)
+            if (ids.isEmpty()) {
+                0
+            } else {
+                // Moving history onto an account moves that account's balance: log it like any other move.
+                val moving = ids.chunked(500).flatMap { database.transactionDao().getByIds(it) }.map(TransactionEntity::toDomain)
+                val moved = database.transactionDao().bulkAssignAccount(ids, accountId)
+                changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) })
+                moved
+            }
         }
     }
 

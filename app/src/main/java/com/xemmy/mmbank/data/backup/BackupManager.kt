@@ -3,7 +3,10 @@ package com.xemmy.mmbank.data.backup
 import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
+import com.xemmy.mmbank.data.local.entity.AccountChangeEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
+import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.data.local.entity.CategoryEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
@@ -20,6 +23,9 @@ import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
+import com.xemmy.mmbank.domain.account.AccountChangeDiff
+import com.xemmy.mmbank.domain.model.AccountChangeSource
+import com.xemmy.mmbank.domain.model.AccountChangeType
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.BillRecurrence
@@ -198,6 +204,10 @@ data class BackupPayload(
      * rules. Gated the same way: a pre-v5 backup never held them, so restoring
      * one must not erase what this device has learned.
      *
+     * 14 = adds [accountChanges], the per-account change log. Always replaced on
+     * restore (log rows are keyed to account ids, which a restore re-issues), so an
+     * older backup simply restores an empty log -- plus one marker per account.
+     *
      * 13 = adds [BackupTransaction.refundOfId]. No gate: absent means no link.
      *
      * 12 = adds [BackupTransaction.categorySource]/[BackupTransaction.personSource].
@@ -239,6 +249,7 @@ data class BackupPayload(
     val merchantKindMappings: List<BackupMerchantKindMapping> = emptyList(),
     val ignoredKeywords: List<BackupIgnoredKeyword> = emptyList(),
     val extras: BackupExtras? = null,
+    val accountChanges: List<BackupAccountChange> = emptyList(),
 )
 
 /**
@@ -309,6 +320,25 @@ data class BackupMerchantAccountMapping(
     val createdAt: Long,
 )
 
+/** One account change-log entry; see [BackupPayload.formatVersion] 14. `isDemo` is never carried, as on [BackupAccount]. */
+@Serializable
+data class BackupAccountChange(
+    val id: Long,
+    val accountId: Long,
+    val accountName: String,
+    val timestamp: Long,
+    val type: String,
+    val source: String,
+    val field: String? = null,
+    val oldValue: String? = null,
+    val newValue: String? = null,
+    val balanceDelta: String? = null,
+    val currencyCode: String? = null,
+    val transactionId: Long? = null,
+    val reason: String? = null,
+    val note: String? = null,
+)
+
 @Serializable
 data class BackupIgnoredKeyword(
     val id: Long,
@@ -342,7 +372,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 13,
+            formatVersion = 14,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -357,6 +387,7 @@ class BackupManager(
             merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
             merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
             ignoredKeywords = database.ignoredKeywordDao().getAll().map { it.toBackup() },
+            accountChanges = database.accountChangeDao().getAll().map { it.toBackup() },
             extras = BackupExtras(
                 bills = database.billDao().getAll().map { it.toBackup() },
                 goals = database.savingsGoalDao().getAll().map { it.toBackup() },
@@ -441,6 +472,16 @@ class BackupManager(
             database.senderLabelDao().clearAll()
 
             database.accountDao().insertAll(payload.accounts.map { it.toEntity() })
+            // The change log is keyed to account ids, which a restore re-issues, so it is always replaced:
+            // the backup's own log (format 14+), then one marker per account saying where it came from.
+            database.accountChangeDao().clearAll()
+            if (payload.formatVersion >= 14) {
+                database.accountChangeDao().insertAll(payload.accountChanges.map { it.toEntity() })
+            }
+            val restoredAt = System.currentTimeMillis()
+            database.accountChangeDao().insertAll(
+                payload.accounts.map { AccountChangeDiff.backupRestored(it.toEntity().toDomain(), restoredAt).toEntity() },
+            )
             // Only consulted for pre-v6 rows, which carry no kind: a reconciled
             // leg on (or paired with) a credit card was a card payment.
             val cardAccountIds = payload.accounts.filter { it.type == AccountType.CREDIT_CARD.name }.map { it.id }.toSet()
@@ -809,6 +850,41 @@ internal fun BackupIgnoredMessagePattern.toEntity() = IgnoredMessagePatternEntit
     fingerprint = fingerprint,
     sample = sample,
     createdAt = createdAt,
+)
+
+internal fun AccountChangeEntity.toBackup() = BackupAccountChange(
+    id = id,
+    accountId = accountId,
+    accountName = accountName,
+    timestamp = timestamp,
+    type = type.name,
+    source = source.name,
+    field = field,
+    oldValue = oldValue,
+    newValue = newValue,
+    balanceDelta = balanceDelta?.toPlainString(),
+    currencyCode = currencyCode,
+    transactionId = transactionId,
+    reason = reason,
+    note = note,
+)
+
+internal fun BackupAccountChange.toEntity() = AccountChangeEntity(
+    id = id,
+    accountId = accountId,
+    accountName = accountName,
+    timestamp = timestamp,
+    type = AccountChangeType.parse(type),
+    source = AccountChangeSource.parse(source),
+    field = field,
+    oldValue = oldValue,
+    newValue = newValue,
+    balanceDelta = balanceDelta?.toBigDecimalOrNull(),
+    currencyCode = currencyCode,
+    transactionId = transactionId,
+    reason = reason,
+    note = note,
+    isDemo = false,
 )
 
 internal fun IgnoredKeywordEntity.toBackup() = BackupIgnoredKeyword(

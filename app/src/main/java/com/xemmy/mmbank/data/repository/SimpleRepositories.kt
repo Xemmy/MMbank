@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.data.repository
 
+import com.xemmy.mmbank.data.local.dao.AccountChangeDao
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.BillDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
@@ -13,6 +14,8 @@ import com.xemmy.mmbank.data.local.dao.SavingsGoalDao
 import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.dao.SplitGroupDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
+import androidx.room.withTransaction
+import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
@@ -23,9 +26,11 @@ import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.data.remote.forex.ForexApi
+import com.xemmy.mmbank.domain.account.AccountChangeDiff
 import com.xemmy.mmbank.domain.intelligence.BillAdvancer
 import com.xemmy.mmbank.domain.intelligence.SubscriptionMerge
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountChange
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ExpenseSplit
@@ -62,7 +67,22 @@ class AccountRepositoryImpl(
     private val parsingRuleDao: ParsingRuleDao,
     /** Whether "Demo mode" is on; see TransactionRepositoryImpl. */
     private val demoMode: StateFlow<Boolean>,
+    /**
+     * Where the account change log is written (see [AccountChange]). Null
+     * disables logging, which keeps the hand-written test fakes working as before.
+     */
+    private val changes: AccountChangeDao? = null,
+    /** When given, each change and its log entry commit in one Room transaction. */
+    private val database: AppDatabase? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : AccountRepository {
+
+    private suspend fun <T> atomically(block: suspend () -> T): T =
+        if (database != null) database.withTransaction { block() } else block()
+
+    private suspend fun log(vararg entries: AccountChange) {
+        if (changes != null && entries.isNotEmpty()) changes.insertAll(entries.map { it.toEntity() })
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeActive(): Flow<List<Account>> =
@@ -72,24 +92,37 @@ class AccountRepositoryImpl(
     override fun observeActiveReal(): Flow<List<Account>> =
         dao.observeActive(false).map { list -> list.map(AccountEntity::toDomain) }
 
-    override suspend fun save(account: Account): Long =
+    override suspend fun save(account: Account): Long = atomically {
         if (account.id == 0L) {
-            dao.insert(account.toEntity())
+            val id = dao.insert(account.toEntity())
+            log(AccountChangeDiff.created(account.copy(id = id), clock()))
+            id
         } else {
+            val old = dao.getById(account.id)?.toDomain()
             dao.update(account.toEntity())
+            if (old != null) log(*AccountChangeDiff.diff(old, account, clock()).toTypedArray())
             account.id
         }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeArchived(): Flow<List<Account>> =
         demoMode.flatMapLatest { demo -> dao.observeArchived(demo) }
             .map { list -> list.map(AccountEntity::toDomain) }
 
-    override suspend fun archive(account: Account) = dao.update(account.copy(archived = true).toEntity())
+    override suspend fun archive(account: Account) = atomically {
+        dao.update(account.copy(archived = true).toEntity())
+        log(AccountChangeDiff.archived(account, clock()))
+    }
 
-    override suspend fun unarchive(account: Account) = dao.update(account.copy(archived = false).toEntity())
+    override suspend fun unarchive(account: Account) = atomically {
+        dao.update(account.copy(archived = false).toEntity())
+        log(AccountChangeDiff.restored(account, clock()))
+    }
 
-    override suspend fun delete(account: Account) {
+    override suspend fun delete(account: Account) = atomically {
+        // Logged first, as a snapshot: the account row (and the link on its transactions) is about to go.
+        log(AccountChangeDiff.deleted(account, clock()))
         parsingRuleDao.clearAssignAccountId(account.id)
         dao.delete(account.toEntity())
     }

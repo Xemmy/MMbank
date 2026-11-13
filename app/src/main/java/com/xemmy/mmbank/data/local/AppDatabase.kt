@@ -9,6 +9,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.xemmy.mmbank.data.local.dao.MerchantAccountDao
 import com.xemmy.mmbank.data.local.dao.MerchantKindDao
+import com.xemmy.mmbank.data.local.dao.AccountChangeDao
 import com.xemmy.mmbank.data.local.dao.AccountDao
 import com.xemmy.mmbank.data.local.dao.AssetBalanceDao
 import com.xemmy.mmbank.data.local.dao.ExchangeRateHistoryDao
@@ -29,6 +30,7 @@ import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.dao.WalletBalanceDao
 import com.xemmy.mmbank.data.local.entity.MerchantAccountMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
+import com.xemmy.mmbank.data.local.entity.AccountChangeEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
@@ -75,8 +77,9 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         ExpenseSplitEntity::class,
         IgnoredMessagePatternEntity::class,
         IgnoredKeywordEntity::class,
+        AccountChangeEntity::class,
     ],
-    version = 35,
+    version = 36,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -103,6 +106,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun groupExpenseDao(): GroupExpenseDao
     abstract fun ignoredMessagePatternDao(): IgnoredMessagePatternDao
     abstract fun ignoredKeywordDao(): IgnoredKeywordDao
+    abstract fun accountChangeDao(): AccountChangeDao
 
     companion object {
         /**
@@ -800,6 +804,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_29_30_SQL.forEach(db::execSQL)
         }
 
+        /** v35 -> v36: the account change log (see [MigrationSql.MIGRATION_35_36_SQL]). */
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_35_36_SQL.forEach(db::execSQL)
+        }
+
         /** v34 -> v35: the purchase a refund gave money back for (see [MigrationSql.MIGRATION_34_35_SQL]). */
         val MIGRATION_34_35 = object : Migration(34, 35) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_34_35_SQL.forEach(db::execSQL)
@@ -842,6 +851,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                     MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
+                    MIGRATION_35_36,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

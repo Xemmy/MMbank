@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.xemmy.mmbank.data.local.entity.AccountChangeEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
@@ -435,6 +436,14 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getById(id: Long): TransactionEntity?
+
+    /** The rows behind [ids], read before a bulk edit or delete so the account change log can say what moved. */
+    @Query("SELECT * FROM transactions WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<TransactionEntity>
+
+    /** The rows [assignAccountByRuleName] is about to move. */
+    @Query("SELECT * FROM transactions WHERE matchedRuleName = :ruleName AND accountId IS NULL")
+    suspend fun getUnassignedByRuleName(ruleName: String): List<TransactionEntity>
 
     /**
      * Real rows a learned merchant -> kind rule may re-classify: never one
@@ -894,4 +903,33 @@ interface IgnoredKeywordDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<IgnoredKeywordEntity>)
+}
+
+@Dao
+interface AccountChangeDao {
+
+    @Insert
+    suspend fun insert(entity: AccountChangeEntity): Long
+
+    @Insert
+    suspend fun insertAll(entities: List<AccountChangeEntity>)
+
+    /** Newest first; [id] breaks ties so same-instant entries keep the order they were written in. */
+    @Query("SELECT * FROM account_changes WHERE accountId = :accountId ORDER BY timestamp DESC, id DESC")
+    fun observeForAccount(accountId: Long): Flow<List<AccountChangeEntity>>
+
+    // Backups carry only real rows -- demo data must never leak into an export.
+    @Query("SELECT * FROM account_changes WHERE isDemo = 0 ORDER BY id")
+    suspend fun getAll(): List<AccountChangeEntity>
+
+    @Query("DELETE FROM account_changes")
+    suspend fun clearAll()
+
+    /** Log rows older than [cutoffMillis] go with the transactions they describe (retention clean-up). */
+    @Query("DELETE FROM account_changes WHERE timestamp < :cutoffMillis AND isDemo = 0")
+    suspend fun deleteOlderThan(cutoffMillis: Long): Int
+
+    /** Removes the log of demo accounts when Demo mode is switched off. */
+    @Query("DELETE FROM account_changes WHERE isDemo = 1")
+    suspend fun deleteDemo(): Int
 }

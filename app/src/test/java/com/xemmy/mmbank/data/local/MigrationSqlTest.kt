@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v35 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v36 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v35
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v36
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../35.json`), so
+ *     compiler exports during this same build (`app/schemas/.../36.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/35.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/35.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/36.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/36.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 35.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 36.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -69,7 +69,7 @@ class MigrationSqlTest {
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor"),
         "bills" to listOf("dueDayAnchor"),
     )
-    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history")
+    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes")
 
     @Before
     fun setUp() {
@@ -105,7 +105,8 @@ class MigrationSqlTest {
                 MigrationSql.MIGRATION_27_28_SQL + MigrationSql.MIGRATION_28_29_SQL +
                 MigrationSql.MIGRATION_29_30_SQL + MigrationSql.MIGRATION_30_31_SQL +
                 MigrationSql.MIGRATION_31_32_SQL + MigrationSql.MIGRATION_32_33_SQL +
-                MigrationSql.MIGRATION_33_34_SQL + MigrationSql.MIGRATION_34_35_SQL
+                MigrationSql.MIGRATION_33_34_SQL + MigrationSql.MIGRATION_34_35_SQL +
+                MigrationSql.MIGRATION_35_36_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -146,7 +147,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v35 install table for table`() {
+    fun `an upgraded database matches a fresh v36 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -204,6 +205,38 @@ class MigrationSqlTest {
             11 to Triple("SPEND", 0, 0),
         )
         assertEquals(expected, rows)
+    }
+
+    @Test
+    fun `the account change log starts empty and takes the rows the app writes`() {
+        migrated.exec("INSERT INTO accounts (id, name, type, currencyCode, openingBalance, archived, createdAt, isDemo, hiddenFromDashboard) VALUES (1, 'Current', 'CHECKING', 'AED', '0', 0, 0, 0, 0)")
+        migrate()
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT COUNT(*) FROM account_changes").use { rs ->
+                assertTrue(rs.next())
+                assertEquals(0, rs.getInt(1))
+            }
+        }
+        migrated.exec(
+            "INSERT INTO account_changes (accountId, accountName, timestamp, type, source, balanceDelta, isDemo) " +
+                "VALUES (1, 'Current', 5, 'TRANSACTION_DELETED', 'USER', '-12.40', 0)"
+        )
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT id, balanceDelta, field FROM account_changes").use { rs ->
+                assertTrue(rs.next())
+                assertEquals(1, rs.getInt(1))
+                assertEquals("-12.40", rs.getString(2))
+                assertEquals(null, rs.getString(3))
+            }
+        }
+        // No foreign key: the entry outlives the account.
+        migrated.exec("DELETE FROM accounts WHERE id = 1")
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT COUNT(*) FROM account_changes").use { rs ->
+                assertTrue(rs.next())
+                assertEquals(1, rs.getInt(1))
+            }
+        }
     }
 
     @Test
