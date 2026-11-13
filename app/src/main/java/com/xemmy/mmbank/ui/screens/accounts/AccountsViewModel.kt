@@ -99,6 +99,7 @@ import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.account.AccountUpsertResolver
 import com.xemmy.mmbank.domain.account.BalanceChangeReason
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.account.UnknownAccountSuggestions
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 import com.xemmy.mmbank.domain.ledger.IntegrityChecker
 import com.xemmy.mmbank.domain.account.CreditCardStatusCalculator
@@ -106,6 +107,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -138,6 +140,8 @@ data class AccountsUiState(
     val archived: List<AccountWithBalance> = emptyList(),
     /** Books vs the bank's own printed balances; see [IntegrityChecker]. */
     val integrity: IntegrityChecker.Report = IntegrityChecker.Report(emptyList(), emptyMap()),
+    /** Account/card endings seen in captured messages that match none of the user's accounts. */
+    val suggestions: List<UnknownAccountSuggestions.Suggestion> = emptyList(),
 )
 
 class AccountsViewModel(private val container: AppContainer) : ViewModel() {
@@ -165,6 +169,7 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         )
         AccountsUiState(
             integrity = integrity,
+            suggestions = UnknownAccountSuggestions.suggest(transactions, accounts + archived),
             rows = accounts.map { account ->
                 AccountWithBalance(
                     account = account,
@@ -250,6 +255,51 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
             QuickAddPlanner.updateOf(existing, matchedOn, typed, entered = null, balances = balancesById()),
             updateBalance = false,
         )
+    }
+
+    /**
+     * "Add as new account" from captured messages: creates the account with an
+     * opening balance that reconciles it with the bank's printed balance, then
+     * files every matching unassigned row into it.
+     */
+    fun addFromSuggestion(
+        suggestion: UnknownAccountSuggestions.Suggestion,
+        name: String,
+        type: AccountType,
+        creditLimit: BigDecimal?,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                val rows = unassignedRows(suggestion)
+                val account = UnknownAccountSuggestions.newAccountFor(suggestion, rows, name, type, creditLimit)
+                val id = container.accountRepository.save(account)
+                container.transactionRepository.bulkAssignAccount(rows.map { it.id }, id)
+            }.onFailure {
+                container.recordError("AccountsViewModel.addFromSuggestion", it)
+                lastError.value = "Couldn't add account: ${it.message}"
+            }
+        }
+    }
+
+    /** "It's my existing account": remember the ending on [existing] and file the rows into it. */
+    fun linkSuggestion(suggestion: UnknownAccountSuggestions.Suggestion, existing: Account) {
+        viewModelScope.launch {
+            runCatching {
+                val rows = unassignedRows(suggestion)
+                container.accountRepository.save(UnknownAccountSuggestions.linkTo(existing, suggestion))
+                container.transactionRepository.bulkAssignAccount(rows.map { it.id }, existing.id)
+            }.onFailure {
+                container.recordError("AccountsViewModel.linkSuggestion", it)
+                lastError.value = "Couldn't link account: ${it.message}"
+            }
+        }
+    }
+
+    /** The rows of [suggestion] that are still unassigned right now (they may have been filed since). */
+    private suspend fun unassignedRows(suggestion: UnknownAccountSuggestions.Suggestion): List<Transaction> {
+        val ids = suggestion.transactionIds.toSet()
+        return container.transactionRepository.observeTransactions().first()
+            .filter { it.id in ids && it.accountId == null }
     }
 
     fun unarchive(account: Account) {

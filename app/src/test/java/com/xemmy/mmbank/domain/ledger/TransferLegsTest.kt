@@ -84,4 +84,42 @@ class TransferLegsTest {
         assertEquals("Received amount must be positive", TransferLegs.validate(draft(current, usd, toAmount = "-1")))
         assertNull(TransferLegs.validate(draft(current, savings)))
     }
+
+    @Test
+    fun `my other account keeps a one-sided move a transfer`() {
+        val (out, inn) = TransferLegs.build(draft(current, null), label = "x")
+        assertNull(inn)
+        assertEquals(TransactionKind.TRANSFER, out!!.kind)
+        assertEquals("Transfer to outside", out.merchant)
+        assertEquals(0, BigDecimal.ZERO.compareTo(LedgerMath.netSpendExact(listOf(out))))
+    }
+
+    @Test
+    fun `someone else's account turns a one-sided move into Spent or Received`() {
+        val sent = TransferLegs.build(
+            draft(current, null).copy(outside = TransferLegs.OutsideParty.SOMEONE_ELSE, person = "Sara"),
+            label = "x",
+        ).first!!
+        assertEquals(TransactionKind.SPEND, sent.kind)
+        assertEquals("Sent to Sara", sent.merchant)
+        assertEquals("Sara", sent.person)
+        assertEquals(0, BigDecimal("2000").compareTo(LedgerMath.netSpendExact(listOf(sent))))
+
+        val got = TransferLegs.build(
+            draft(null, savings).copy(outside = TransferLegs.OutsideParty.SOMEONE_ELSE),
+            label = "x",
+        ).second!!
+        assertEquals(TransactionKind.INCOME, got.kind)
+        assertEquals("Received from someone else", got.merchant)
+        assertEquals(0, BigDecimal("2000").compareTo(LedgerMath.incomeExact(listOf(got))))
+    }
+
+    @Test
+    fun `the outside choice is ignored when both sides are accounts`() {
+        val d = draft(current, savings).copy(outside = TransferLegs.OutsideParty.SOMEONE_ELSE)
+        assertEquals(false, TransferLegs.isPaymentToPerson(d))
+        val (out, inn) = TransferLegs.build(d, label = "x")
+        assertEquals(TransactionKind.TRANSFER, out!!.kind)
+        assertEquals(TransactionKind.TRANSFER, inn!!.kind)
+    }
 }

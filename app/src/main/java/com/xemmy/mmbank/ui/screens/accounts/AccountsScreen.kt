@@ -130,6 +130,31 @@ fun AccountsScreen(
     // The quick-add sheet, and the full form's "this already exists" prompt (typed account + what matched).
     var quickAdding by remember { mutableStateOf(false) }
     var duplicate by remember { mutableStateOf<Pair<Account, AccountUpsertResolver.Result>?>(null) }
+    // The unknown-ending suggestion being added as a new account / linked to an existing one.
+    var addingSuggestion by remember { mutableStateOf<com.xemmy.mmbank.domain.account.UnknownAccountSuggestions.Suggestion?>(null) }
+    var linkingSuggestion by remember { mutableStateOf<com.xemmy.mmbank.domain.account.UnknownAccountSuggestions.Suggestion?>(null) }
+
+    addingSuggestion?.let { suggestion ->
+        AddFromSuggestionDialog(
+            suggestion = suggestion,
+            onDismiss = { addingSuggestion = null },
+            onConfirm = { name, type, limit ->
+                viewModel.addFromSuggestion(suggestion, name, type, limit)
+                addingSuggestion = null
+            },
+        )
+    }
+    linkingSuggestion?.let { suggestion ->
+        LinkToExistingDialog(
+            suggestion = suggestion,
+            accounts = rows.map { it.account },
+            onDismiss = { linkingSuggestion = null },
+            onPick = { account ->
+                viewModel.linkSuggestion(suggestion, account)
+                linkingSuggestion = null
+            },
+        )
+    }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
@@ -183,6 +208,14 @@ fun AccountsScreen(
                 item(key = "debt_planner") {
                     DebtPlannerEntryCard(debts = owedDebts, onClick = onOpenDebtPlanner)
                 }
+            }
+            items(state.suggestions, key = { "suggest_${it.digits}_${it.currencyCode}" }) { suggestion ->
+                UnknownAccountSuggestionCard(
+                    suggestion = suggestion,
+                    hidden = hidden,
+                    onAddNew = { addingSuggestion = suggestion },
+                    onLinkExisting = { linkingSuggestion = suggestion },
+                )
             }
             if (!state.unassigned.isEmpty) {
                 item(key = "unassigned_total") {

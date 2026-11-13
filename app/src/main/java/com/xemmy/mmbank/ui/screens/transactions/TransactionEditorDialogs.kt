@@ -257,6 +257,7 @@ internal fun TransactionEditorDialog(
     var fromAccountId by remember { mutableStateOf<Long?>(null) }
     var toAccountId by remember { mutableStateOf<Long?>(null) }
     var toAmount by remember { mutableStateOf("") }
+    var outsideParty by remember { mutableStateOf(TransferLegs.OutsideParty.MY_OTHER_ACCOUNT) }
     var fromMenuOpen by remember { mutableStateOf(false) }
     var toMenuOpen by remember { mutableStateOf(false) }
     var merchant by remember { mutableStateOf(existing?.merchant.orEmpty()) }
@@ -298,6 +299,7 @@ internal fun TransactionEditorDialog(
             timestampMillis = 0,
             note = merchant,
             person = person,
+            outside = outsideParty,
         )
     } else {
         null
@@ -480,6 +482,31 @@ internal fun TransactionEditorDialog(
                             isError = toAmount.isNotBlank() && toAmountValue == null,
                             colors = glassFieldColors(),
                             modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (fromAccount == null || toAccount == null) {
+                        // One side is outside the app: is it the user's own money or someone else's?
+                        MetaLabel("Whose account is the other side?")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MMFilterChip(
+                                selected = outsideParty == TransferLegs.OutsideParty.MY_OTHER_ACCOUNT,
+                                onClick = { outsideParty = TransferLegs.OutsideParty.MY_OTHER_ACCOUNT },
+                                label = "Mine, not tracked",
+                            )
+                            MMFilterChip(
+                                selected = outsideParty == TransferLegs.OutsideParty.SOMEONE_ELSE,
+                                onClick = { outsideParty = TransferLegs.OutsideParty.SOMEONE_ELSE },
+                                label = "Someone else's",
+                            )
+                        }
+                        Text(
+                            if (outsideParty == TransferLegs.OutsideParty.SOMEONE_ELSE) {
+                                "Counted as Spent or Received, so it shows in your totals."
+                            } else {
+                                "A move of your own money: not counted as spent or received."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     transferError?.let {
