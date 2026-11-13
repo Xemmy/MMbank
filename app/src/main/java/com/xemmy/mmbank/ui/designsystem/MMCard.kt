@@ -1,21 +1,16 @@
 package com.xemmy.mmbank.ui.designsystem
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.dp
 import com.xemmy.mmbank.ui.theme.MMSpacing
 import com.xemmy.mmbank.ui.theme.MMTheme
@@ -39,17 +34,24 @@ fun MMCard(
     )
     val border = BorderStroke(1.dp, colors.borderSubtle)
     val body: @Composable ColumnScope.() -> Unit = {
-        Row(Modifier.height(IntrinsicSize.Min)) {
-            if (tone != null) {
-                Box(
-                    Modifier
-                        .width(MMSpacing.xs)
-                        .fillMaxHeight()
-                        .background(colors.toneColor(tone)),
+        // No IntrinsicSize here: a card may hold a lazy list or other subcomposing
+        // layout, which throws when asked for intrinsic measurements. The accent bar
+        // is drawn behind the content instead of being sized against it.
+        val accent = tone?.let { colors.toneColor(it) }
+        val barWidth = if (tone != null) MMSpacing.xs else 0.dp
+        Column(
+            Modifier
+                .then(
+                    if (accent != null) {
+                        Modifier.drawBehind { drawRect(accent, size = Size(barWidth.toPx(), size.height)) }
+                    } else {
+                        Modifier
+                    },
                 )
-            }
-            Column(Modifier.padding(MMSpacing.cardPadding), content = content)
-        }
+                .padding(start = barWidth)
+                .padding(MMSpacing.cardPadding),
+            content = content,
+        )
     }
     if (onClick != null) {
         Card(
