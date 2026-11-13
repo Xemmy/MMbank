@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.Row
 import com.xemmy.mmbank.ui.navigation.NavChrome
 import com.xemmy.mmbank.ui.screens.search.SearchScreen
 import com.xemmy.mmbank.ui.screens.statement.StatementReconcileScreen
+import com.xemmy.mmbank.ui.screens.upcoming.UpcomingPaymentsScreen
 import com.xemmy.mmbank.ui.screens.year.YearInReviewScreen
 import com.xemmy.mmbank.ui.screens.search.SearchTarget
 import com.xemmy.mmbank.ui.navigation.AdaptiveLayout
@@ -537,6 +538,12 @@ private fun AppNavHost(
             MonthlyReportScreen(
                 onBack = { navController.popBackStack() },
                 onOpenYear = { navController.navigate(Routes.YEAR_IN_REVIEW) },
+            )
+        }
+        composable(Routes.UPCOMING) {
+            UpcomingPaymentsScreen(
+                onBack = { navController.popBackStack() },
+                onOpen = { route -> navController.navigate(route) },
             )
         }
         composable(Routes.YEAR_IN_REVIEW) { YearInReviewScreen(onBack = { navController.popBackStack() }) }

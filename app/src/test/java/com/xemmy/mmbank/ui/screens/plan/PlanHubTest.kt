@@ -15,9 +15,9 @@ class PlanHubTest {
         assertEquals(PlanEntry.entries.size, PlanEntry.entries.map { it.title }.toSet().size)
     }
 
-    @Test fun listsTheSevenPlannedTools() {
+    @Test fun listsThePlannedTools() {
         assertEquals(
-            listOf("Budgets", "Bills", "Subscriptions", "Goals", "Debt payoff", "Splits", "Rewards"),
+            listOf("Upcoming payments", "Budgets", "Bills", "Subscriptions", "Goals", "Debt payoff", "Splits", "Rewards"),
             PlanEntry.entries.map { it.title },
         )
     }

@@ -4,6 +4,7 @@ import com.xemmy.mmbank.ui.navigation.Routes
 
 /** One tool on the Plan hub. [route] is the NavHost destination it opens. */
 enum class PlanEntry(val route: String, val title: String, val subtitle: String) {
+    UPCOMING(Routes.UPCOMING, "Upcoming payments", "Bills, subscriptions and card dues in one list"),
     BUDGETS(Routes.CATEGORIES, "Budgets", "Category caps and how much of each you've used"),
     BILLS(Routes.BILLS, "Bills", "Recurring bills and what's due soon"),
     SUBSCRIPTIONS(Routes.SUBSCRIPTIONS, "Subscriptions", "Recurring charges the app has detected"),

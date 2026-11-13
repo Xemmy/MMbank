@@ -42,6 +42,7 @@ object Routes {
     const val SEARCH = "search"
     const val STATEMENT_RECONCILE = "statement_reconcile"
     const val YEAR_IN_REVIEW = "year_in_review"
+    const val UPCOMING = "upcoming_payments"
 
     /** Activity, pre-filtered to transactions that belong to no account. */
     const val ACTIVITY_UNASSIGNED = "transactions?accountFilter=unassigned"
@@ -95,6 +96,7 @@ object TabRouting {
         Routes.CATEGORIES to AppTab.PLAN,
         Routes.MONTHLY_REPORT to AppTab.INSIGHTS,
         Routes.YEAR_IN_REVIEW to AppTab.INSIGHTS,
+        Routes.UPCOMING to AppTab.PLAN,
         Routes.ACCOUNTS to AppTab.ACCOUNTS,
         Routes.DEBT_PLANNER to AppTab.PLAN,
         Routes.INTEGRITY_CHECK to AppTab.ACCOUNTS,
