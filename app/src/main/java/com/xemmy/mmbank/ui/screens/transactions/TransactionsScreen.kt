@@ -357,7 +357,7 @@ fun TransactionsScreen(
                             .layout { measurable, constraints ->
                                 val placeable = measurable.measure(constraints)
                                 heroScrollBehavior.state.heightOffsetLimit = -placeable.height.toFloat()
-                                val heroFraction = heroScrollBehavior.state.collapsedFraction
+                                val heroFraction = heroScrollBehavior.state.collapsedFraction.coerceIn(0f, 1f)
                                 val visibleHeight = (placeable.height * (1f - heroFraction)).roundToInt()
                                 layout(placeable.width, visibleHeight) {
                                     placeable.placeRelative(0, visibleHeight - placeable.height)
@@ -374,7 +374,7 @@ fun TransactionsScreen(
                         .layout { measurable, constraints ->
                             val placeable = measurable.measure(constraints)
                             collapse.updateRange(placeable.height.toFloat())
-                            val visibleHeight = (placeable.height * (1f - collapseFraction)).roundToInt()
+                            val visibleHeight = (placeable.height * (1f - collapseFraction.coerceIn(0f, 1f))).roundToInt()
                             layout(placeable.width, visibleHeight) {
                                 placeable.placeRelative(0, visibleHeight - placeable.height)
                             }
