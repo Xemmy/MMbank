@@ -105,11 +105,7 @@ object UnknownAccountSuggestions {
     fun linkTo(existing: Account, suggestion: Suggestion): Account =
         AccountMerge.merge(
             existing,
-            AccountUpsertResolver.Draft(
-                type = existing.type,
-                name = existing.name,
-                currencyCode = existing.currencyCode,
-                cardEndings = suggestion.digits,
-            ),
+            // Only the ending is offered; merge appends it to the card endings and touches nothing else.
+            existing.copy(accountNumber = null, cardEndings = suggestion.digits, bankName = null, notes = null, iban = null, swift = null, accountTitle = null),
         ).account
 }
