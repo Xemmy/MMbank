@@ -61,6 +61,11 @@ object MigrationSql {
         "ALTER TABLE transactions ADD COLUMN reportedBalanceKind TEXT",
     )
 
+    /** v35: the purchase a refund gave money back for. Purely additive: one nullable column. */
+    val MIGRATION_34_35_SQL: List<String> = listOf(
+        "ALTER TABLE `transactions` ADD COLUMN `refundOfId` INTEGER",
+    )
+
     /**
      * v34: who decided each transaction's category and person (see
      * AssignmentSource). Existing rows can't say, so every one that has a

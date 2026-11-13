@@ -241,6 +241,8 @@ internal fun TransactionEditorDialog(
     ) -> Unit,
     /** Add mode only: saves a transfer/card payment as two linked legs. */
     onSaveTransfer: ((TransferLegs.Draft) -> Unit)? = null,
+    /** Edit mode: breaks a refund's link to the purchase it gave money back for ("Not a refund"). */
+    onUnlinkRefund: ((Transaction) -> Unit)? = null,
 ) {
     val zone = java.time.ZoneId.systemDefault()
     val isEdit = existing != null
@@ -531,6 +533,18 @@ internal fun TransactionEditorDialog(
                                 onClick = { personMenuOpen = false; person = name },
                             )
                         }
+                    }
+                }
+                // A refund that was matched to an earlier purchase says so, and can be un-matched.
+                if (existing != null && existing.refundOfId != null && existing.kind == TransactionKind.REFUND && onUnlinkRefund != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Matched to an earlier purchase from this merchant",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { onUnlinkRefund(existing); onDismiss() }) { Text("Not a refund") }
                     }
                 }
                 // Why this person is what it is -- only while it is still what the app stored.

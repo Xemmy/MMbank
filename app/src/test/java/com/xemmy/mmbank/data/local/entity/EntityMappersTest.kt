@@ -777,4 +777,15 @@ class EntityMappersTest {
         assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.LEARNED, entity.personSource)
         assertEquals(domain, entity.toDomain())
     }
+
+    @Test
+    fun `a refund's link to its purchase round-trips through the entity`() {
+        val domain = com.xemmy.mmbank.domain.model.Transaction(
+            amount = BigDecimal("10.00"), currencyCode = "AED", direction = TransactionDirection.CREDIT,
+            source = TransactionSource.SMS, timestampMillis = 1L, refundOfId = 42L,
+        )
+        assertEquals(42L, domain.toEntity().refundOfId)
+        assertEquals(domain, domain.toEntity().toDomain())
+        assertNull(domain.copy(refundOfId = null).toEntity().refundOfId)
+    }
 }

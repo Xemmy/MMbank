@@ -129,6 +129,8 @@ data class BackupTransaction(
      */
     val categorySource: String? = null,
     val personSource: String? = null,
+    /** Absent (null) on backups from before format v13. */
+    val refundOfId: Long? = null,
 )
 
 @Serializable
@@ -195,6 +197,8 @@ data class BackupPayload(
      * 5 = adds [merchantAccountMappings], the learned merchant -> account
      * rules. Gated the same way: a pre-v5 backup never held them, so restoring
      * one must not erase what this device has learned.
+     *
+     * 13 = adds [BackupTransaction.refundOfId]. No gate: absent means no link.
      *
      * 12 = adds [BackupTransaction.categorySource]/[BackupTransaction.personSource].
      * No gate: an older row's sources are derived on restore.
@@ -338,7 +342,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 12,
+            formatVersion = 13,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -622,6 +626,7 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     reportedBalanceKind = reportedBalanceKind?.name,
     categorySource = categorySource.name,
     personSource = personSource.name,
+    refundOfId = refundOfId,
 )
 
 /**
@@ -679,6 +684,7 @@ internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): Transact
         reportedBalanceKind = reportedBalanceKind?.let { n -> ReportedBalanceKind.entries.firstOrNull { it.name == n } },
         categorySource = restoreSource(categorySource, hasValue = categoryId != null),
         personSource = restoreSource(personSource, hasValue = !person.isNullOrBlank()),
+        refundOfId = refundOfId,
     )
 }
 

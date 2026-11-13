@@ -317,6 +317,14 @@ data class Transaction(
     val categorySource: AssignmentSource = AssignmentSource.DEFAULT,
     /** Who decided [person]; see [categorySource]. */
     val personSource: AssignmentSource = AssignmentSource.DEFAULT,
+    /**
+     * For a [TransactionKind.REFUND]: the id of the earlier purchase this
+     * credit gave money back for, when capture could tell (see
+     * [com.xemmy.mmbank.domain.ledger.RefundMatcher]). Null for everything
+     * else, and when the user broke the link. Informational only -- totals
+     * never depend on it, so a deleted original leaves it dangling harmlessly.
+     */
+    val refundOfId: Long? = null,
 )
 
 /**

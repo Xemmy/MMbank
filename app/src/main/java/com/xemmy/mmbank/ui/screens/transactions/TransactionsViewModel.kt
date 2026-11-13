@@ -761,6 +761,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 categorySource = com.xemmy.mmbank.domain.model.AssignmentSource.afterEdit(
                     original.categorySource, original.categoryId, categoryId,
                 ),
+                // Changing it away from a refund breaks the link to the purchase it gave money back for.
+                refundOfId = if (kind == TransactionKind.REFUND) original.refundOfId else null,
                 personSource = com.xemmy.mmbank.domain.model.AssignmentSource.afterEdit(
                     original.personSource, original.person?.takeIf { it.isNotBlank() }, person?.takeIf { it.isNotBlank() },
                 ),
@@ -775,6 +777,16 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         // A new kind goes through the ledger so transfer links are made or
         // released consistently.
         if (kind != original.kind) container.ledgerRepository.setKind(original.id, kind, rememberForMerchant = false)
+    }
+
+    /**
+     * "Not a refund": breaks the link and makes the credit plain income again,
+     * as a choice the user made (so automation never turns it back).
+     */
+    fun unlinkRefund(transaction: Transaction) = safeWrite("unlinkRefund") {
+        container.transactionRepository.update(
+            transaction.copy(refundOfId = null, kind = TransactionKind.INCOME, kindUserSet = true),
+        )
     }
 
     fun setSenderLabel(sender: String, label: String) =

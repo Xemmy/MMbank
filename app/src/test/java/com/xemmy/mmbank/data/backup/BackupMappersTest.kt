@@ -69,6 +69,7 @@ class BackupMappersTest {
         reportedBalanceKind = com.xemmy.mmbank.domain.model.ReportedBalanceKind.AVAILABLE_CREDIT,
         categorySource = com.xemmy.mmbank.domain.model.AssignmentSource.LEARNED,
         personSource = com.xemmy.mmbank.domain.model.AssignmentSource.USER,
+        refundOfId = 77,
     )
 
     private val fullAccount = AccountEntity(

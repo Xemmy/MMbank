@@ -26,6 +26,7 @@ import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.parser.AiConfidenceScorer
 import com.xemmy.mmbank.domain.parser.CaptureAccountResolver
 import com.xemmy.mmbank.domain.parser.CaptureCategoryResolver
@@ -206,9 +207,13 @@ class TransactionRepositoryImpl(
             // A credit the bank didn't label as a refund can still be one: same
             // merchant, earlier purchase, no larger. Never second-guesses a kind
             // a rule or the user's own teaching already decided.
-            val kind = if (detectedKind == TransactionKind.INCOME && parsed.kindOverride == null && learnedKind == null &&
-                !parsed.merchant.isNullOrBlank()
-            ) {
+            // A refund -- whether the wording said so or the matcher recognised it -- remembers
+            // which purchase it gave money back for, so the link can be shown and broken.
+            var refundOfId: Long? = null
+            val canBeRefund = !parsed.merchant.isNullOrBlank() && parsed.direction == TransactionDirection.CREDIT &&
+                (detectedKind == TransactionKind.REFUND ||
+                    (detectedKind == TransactionKind.INCOME && parsed.kindOverride == null && learnedKind == null))
+            val kind = if (canBeRefund) {
                 val credit = Transaction(
                     amount = parsed.amount,
                     currencyCode = parsed.currencyCode,
@@ -217,7 +222,9 @@ class TransactionRepositoryImpl(
                     source = message.source,
                     timestampMillis = message.timestampMillis,
                 )
-                RefundMatcher.refine(detectedKind, credit, spendHistoryForMerchant(parsed.merchant!!))
+                val original = RefundMatcher.findOriginal(credit, spendHistoryForMerchant(parsed.merchant!!))
+                refundOfId = original?.id
+                if (detectedKind == TransactionKind.INCOME && original != null) TransactionKind.REFUND else detectedKind
             } else {
                 detectedKind
             }
@@ -252,6 +259,7 @@ class TransactionRepositoryImpl(
                 category = parsed.category,
                 person = person,
                 personSource = personSource,
+                refundOfId = refundOfId,
                 categorySource = when {
                     categoryId == null -> AssignmentSource.DEFAULT
                     categoryId == confirmedCategoryId -> AssignmentSource.LEARNED

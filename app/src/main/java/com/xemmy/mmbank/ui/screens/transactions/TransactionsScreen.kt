@@ -515,6 +515,7 @@ fun TransactionsScreen(
             categories = state.categories,
             defaultCurrency = state.defaultCurrency,
             onCreateCategory = viewModel::createCategory,
+            onUnlinkRefund = viewModel::unlinkRefund,
             onDismiss = { editing = null },
             onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
                 viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
