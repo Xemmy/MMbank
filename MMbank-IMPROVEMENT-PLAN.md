@@ -799,11 +799,11 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **Onboarding (first-run checklist)** ✅ 0.97.0 (CI run 43332109175 green): Home shows a "Finish setting up · N of 4" card -- allow notification/SMS capture, add an account, see a first transaction, make an encrypted backup -- each ticked off from real state (`OnboardingChecklist`), with a "Do this" button for the next step (capture settings, Accounts, Backup & restore) and a permanent Dismiss. It hides itself when everything is done, in demo mode, and until permissions are known; long-time users with only "make a backup" left see it too, and can dismiss it. Not done: a guided multi-screen first-run walkthrough. UI is not verified by CI.
 
-> **B5 refund link, stored and breakable** ✅ 0.98.0: schema v35 adds `refundOfId` (explicit additive migration, backup format v13). When a credit is recognised as a refund -- by its wording or by `RefundMatcher` -- capture now remembers which earlier purchase it gave money back for. The edit form shows "Matched to an earlier purchase from this merchant" with a **Not a refund** button that breaks the link and makes it plain income (a user choice, never auto-reverted); changing the kind away from Refund also clears it. The link is informational: totals never depend on it. Still open from B5: pairing *existing* rows, pending→posted, showing the original purchase's details, partial-refund tracking. Editor line not verified by CI.
+> **B5 refund link, stored and breakable** ✅ 0.98.0 (CI run 43333819390 green): schema v35 adds `refundOfId` (explicit additive migration, backup format v13). When a credit is recognised as a refund -- by its wording or by `RefundMatcher` -- capture now remembers which earlier purchase it gave money back for. The edit form shows "Matched to an earlier purchase from this merchant" with a **Not a refund** button that breaks the link and makes it plain income (a user choice, never auto-reverted); changing the kind away from Refund also clears it. The link is informational: totals never depend on it. Still open from B5: pairing *existing* rows, pending→posted, showing the original purchase's details, partial-refund tracking. Editor line not verified by CI.
 
-## Where things stand after 0.97.0
+## Where things stand after 0.98.0
 
-Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43332109175 for 0.97.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43333819390 for 0.98.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
 
 **Still open, grouped by what blocks it**
 
