@@ -803,6 +803,18 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.4 Recurring, first step: one "Upcoming payments" list** ✅ 0.99.0 (CI run 43335508720 green): Plan → Upcoming payments merges manually tracked bills, detected subscriptions and credit-card dues into one date-ordered list, grouped Overdue / Due this week / Later, tapping an item opens its own screen (`UpcomingPayments`). It is a read-only view over the three existing models, so nothing moves and nothing can be lost; a detected subscription more than 3 days past its projected date is treated as stopped and left out. This is *not* the full "one Recurring model" -- the three kinds still have separate data, editors and reminder pipelines (that part needs a design decision and a data migration). Not verified on a device.
 
+## Part D — Accounts: quick add, update-if-exists, change log
+
+Full design in **MMbank-ACCOUNTS-PLAN.md**. Planned, not started.
+
+| # | Item | Target | Status |
+|---|---|---|---|
+| D1 | `account_changes` log table (schema v36), diff builders, write points, backup | 0.100.0 | ⏳ |
+| D2 | Account history screen with running balance; reason on balance adjustments | 0.101.0 | ⏳ |
+| D3 | Quick add sheet with update-if-exists (`AccountUpsertResolver`, `AccountMerge`) | 0.102.0 | ⏳ |
+| D4 | Account suggestions from unknown card numbers; "Whose account is it?" on one-sided transfers | 0.103.0 | ⏳ |
+| D5 | Drift explainer (`DriftWindow`) on the Integrity screen | 0.104.0 | ⏳ |
+
 ## Where things stand after 0.99.0
 
 Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43335508720 for 0.99.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
