@@ -29,6 +29,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.account.AccountTimeline
+import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
+import com.xemmy.mmbank.domain.ledger.DriftWindow
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -53,6 +55,10 @@ data class AccountHistoryUiState(
     val result: AccountTimeline.Result? = null,
     val filter: AccountTimeline.Filter = AccountTimeline.Filter.ALL,
     val loaded: Boolean = false,
+    /** Opened from "See what changed": the difference to explain (null window = nothing to explain now). */
+    val driftRequested: Boolean = false,
+    val driftWindow: DriftWindow.Window? = null,
+    val driftSummary: DriftWindow.Summary? = null,
 )
 
 /** One account's transactions and change log, merged; see [AccountTimeline]. */
@@ -62,6 +68,8 @@ class AccountHistoryViewModel(
 ) : ViewModel() {
 
     private val accountId: Long = savedStateHandle.get<Long>("accountId") ?: -1L
+    private val driftRequested: Boolean = savedStateHandle.get<Boolean>("drift") ?: false
+    private val retentionMonths = container.preferences.transactionRetentionMonths
 
     private val filter = MutableStateFlow(AccountTimeline.Filter.ALL)
 
@@ -75,11 +83,25 @@ class AccountHistoryViewModel(
         filter,
     ) { active, archived, transactions, changes, selected ->
         val account = (active + archived).firstOrNull { it.id == accountId }
+        val now = System.currentTimeMillis()
+        val window = if (driftRequested && account != null) {
+            DriftWindow.find(
+                account,
+                transactions,
+                if (retentionMonths > 0) TransactionRetentionPlanner.cutoffMillis(now, retentionMonths) else null,
+            )
+        } else {
+            null
+        }
+        val built = account?.let { AccountTimeline.build(it, transactions, changes, selected) }
         AccountHistoryUiState(
             account = account,
-            result = account?.let { AccountTimeline.build(it, transactions, changes, selected) },
+            result = if (built != null && window != null) AccountTimeline.restrictTo(built, window) else built,
             filter = selected,
             loaded = true,
+            driftRequested = driftRequested,
+            driftWindow = window,
+            driftSummary = window?.let { DriftWindow.summarize(it, transactions, changes) },
         )
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountHistoryUiState())
@@ -135,8 +157,12 @@ fun AccountHistoryScreen(
             return@Column
         }
 
+        if (state.driftRequested) {
+            DriftBanner(state.driftWindow, state.driftSummary, hidden)
+        }
         SummaryCard(result, hidden)
-        FilterRow(selected = state.filter, onSelect = viewModel::setFilter)
+        // Narrowed to the drift window, the filters would only confuse; they come back on the full history.
+        if (state.driftWindow == null) FilterRow(selected = state.filter, onSelect = viewModel::setFilter)
 
         if (result.items.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.TopCenter) {
@@ -181,6 +207,38 @@ private fun SummaryCard(result: AccountTimeline.Result, hidden: Boolean) {
             if (result.mixedCurrency) {
                 Text(
                     "Some transactions are in another currency and are added at face value here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MMTheme.colors.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+/** Says what the list below is narrowed to: when the books and the bank's balance parted ways. */
+@Composable
+private fun DriftBanner(window: DriftWindow.Window?, summary: DriftWindow.Summary?, hidden: Boolean) {
+    MMCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            MetaLabel("What changed")
+            Text(
+                if (window == null || summary == null) {
+                    "No difference to explain right now: the books match the bank's last balance, or there isn't a bank balance to compare."
+                } else {
+                    DriftWindow.describe(
+                        window = window,
+                        summary = summary,
+                        hidden = hidden,
+                        money = { v, c -> moneyLabel(v, c, hidden) },
+                        date = { it.asDateTime() },
+                    )
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MMTheme.colors.textPrimary,
+            )
+            if (window != null) {
+                Text(
+                    "Showing only what could explain it. Edits made before the last matching balance can't have caused it.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MMTheme.colors.textSecondary,
                 )

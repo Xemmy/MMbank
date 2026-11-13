@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.account
 
+import com.xemmy.mmbank.domain.ledger.DriftWindow
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountChange
 import com.xemmy.mmbank.domain.model.AccountChangeType
@@ -133,6 +134,20 @@ object AccountTimeline {
             changeCount = changes.count { it.accountId == account.id },
         )
     }
+
+    /**
+     * Narrows [result] to what could explain a [DriftWindow]: the transactions dated
+     * inside it and the balance-moving changes made since its start. Running balances
+     * on the rows are untouched, so they still read as the statement view.
+     */
+    fun restrictTo(result: Result, window: DriftWindow.Window): Result = result.copy(
+        items = result.items.filter { item ->
+            when (item) {
+                is TransactionItem -> window.containsEvent(item.timestampMillis)
+                is ChangeItem -> DriftWindow.relevant(window, item.change)
+            }
+        },
+    )
 
     private fun sortId(item: Item): Long = when (item) {
         is TransactionItem -> item.transaction.id

@@ -22,7 +22,7 @@ object Routes {
     const val MERCHANT_DETAIL_PATTERN = "merchant_detail/{merchant}"
     const val SPLITS_GROUP_PATTERN = "splits_group/{groupId}"
     const val RULE_EDITOR_PATTERN = "rule_editor?ruleId={ruleId}"
-    const val ACCOUNT_HISTORY_PATTERN = "account_history/{accountId}"
+    const val ACCOUNT_HISTORY_PATTERN = "account_history/{accountId}?drift={drift}"
 
     // Plain destinations
     const val UNCATEGORIZED_QUEUE = "uncategorized_queue"
@@ -55,7 +55,9 @@ object Routes {
 
     fun splitsGroup(groupId: Long) = "splits_group/$groupId"
 
-    fun accountHistory(accountId: Long) = "account_history/$accountId"
+    /** [drift] opens it narrowed to when the account's balance difference appeared (see DriftWindow). */
+    fun accountHistory(accountId: Long, drift: Boolean = false) =
+        "account_history/$accountId" + if (drift) "?drift=true" else ""
 
     /** [encodedDrill] must already be URI-encoded. */
     fun activityDrill(encodedDrill: String) = "transactions?drill=$encodedDrill"

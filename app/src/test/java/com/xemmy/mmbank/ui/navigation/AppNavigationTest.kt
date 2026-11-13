@@ -52,6 +52,8 @@ class AppNavigationTest {
         assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.ACCOUNT_HISTORY_PATTERN))
         assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.accountHistory(12)))
         assertEquals("account_history/12", Routes.accountHistory(12))
+        assertEquals("account_history/12?drift=true", Routes.accountHistory(12, drift = true))
+        assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.accountHistory(12, drift = true)))
         assertTrue(Routes.ACCOUNT_HISTORY_PATTERN.startsWith("account_history/"))
         assertTrue(Routes.ACCOUNT_HISTORY_PATTERN.contains("{accountId}"))
     }

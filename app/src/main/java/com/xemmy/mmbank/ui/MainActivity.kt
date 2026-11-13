@@ -484,6 +484,7 @@ private fun AppNavHost(
                 onOpenAccounts = { navController.navigate("accounts") },
                 onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
                 onOpenStatement = { navController.navigate(Routes.STATEMENT_RECONCILE) },
+                onOpenDrift = { accountId -> navController.navigate(Routes.accountHistory(accountId, drift = true)) },
             )
         }
         composable("insights") {
@@ -513,7 +514,10 @@ private fun AppNavHost(
         }
         composable(
             route = Routes.ACCOUNT_HISTORY_PATTERN,
-            arguments = listOf(navArgument("accountId") { type = NavType.LongType }),
+            arguments = listOf(
+                navArgument("accountId") { type = NavType.LongType },
+                navArgument("drift") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) {
             AccountHistoryScreen(onBack = { navController.popBackStack() })
         }

@@ -122,6 +122,7 @@ fun IntegrityScreen(
     onOpenAccounts: () -> Unit,
     onOpenUnassigned: () -> Unit,
     onOpenStatement: () -> Unit,
+    onOpenDrift: (Long) -> Unit = {},
     viewModel: IntegrityViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -183,6 +184,7 @@ fun IntegrityScreen(
                         onMakeOrdinary = { viewModel.makeOrdinary(issue) },
                         onOpenAccounts = onOpenAccounts,
                         onOpenUnassigned = onOpenUnassigned,
+                        onSeeWhatChanged = { issue.accountId?.let(onOpenDrift) },
                     )
                 }
             }
@@ -218,9 +220,13 @@ private fun IssueActions(
     onMakeOrdinary: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenUnassigned: () -> Unit,
+    onSeeWhatChanged: () -> Unit,
 ) {
     when (issue.type) {
-        Type.BALANCE_DRIFT -> Button(onClick = onRecordDifference) { Text("Record the difference") }
+        Type.BALANCE_DRIFT -> {
+            Button(onClick = onRecordDifference) { Text("Record the difference") }
+            OutlinedButton(onClick = onSeeWhatChanged) { Text("See what changed") }
+        }
         Type.UNPAIRED_MOVE -> {
             OutlinedButton(onClick = onMarkCorrect) { Text("It's correct") }
             OutlinedButton(onClick = onMakeOrdinary) { Text("It's an ordinary one") }

@@ -108,7 +108,7 @@ New route `account_history/{id}` (`AppNavigation.kt`), opened from the account c
 | 2 | 0.101.0 | History screen, `AccountTimeline`, reason on balance adjustment | `AccountTimelineTest` (running balance, ordering, wording) | ✅ 0.101.0, CI run 43389467494 green |
 | 3 | 0.102.0 | `AccountUpsertResolver`, `AccountMerge`, quick add sheet, duplicate guard in the full form | `AccountUpsertResolverTest` (IBAN, suffix, tie, archived, weak), `AccountMergeTest` | ✅ 0.102.0, CI run 43394048775 green |
 | 4 | 0.103.0 | `UnknownAccountSuggestions`, `OpeningBalanceSolver`, backfill; "Whose account is it?" on one-sided transfers | Suggestion grouping, solver, `TransferLegsTest` additions | ✅ 0.103.0 (CI run 43397688441 green) |
-| 5 | 0.104.0 | `DriftWindow` + "See what changed" on Integrity | `DriftWindowTest` | ⏳ |
+| 5 | 0.104.0 | `DriftWindow` + "See what changed" on Integrity | `DriftWindowTest` | ✅ 0.104.0 |
 
 Each phase bumps `versionCode` by 1 (from 152), marks its tracker row ✅, and adds a feature-log entry.
 
