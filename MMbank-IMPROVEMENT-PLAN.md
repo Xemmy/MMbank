@@ -797,11 +797,11 @@ merchants (brand-grouped, with counts), transactions (by merchant or an exact am
 
 > **B.5 #1 quick add** ✅ 0.96.0 (CI run 43330234097 green): long-press the launcher icon for "Add a cash spend", or add the "Add spend" tile to Quick Settings (the tile makes the phone unlock first). Both open a small sheet -- amount plus an optional "where" -- that records one manual SPEND (`QuickAdd`: amount rules, decimal comma, ≤2 decimals, lands on a cash account in the same currency, else any cash account, else unassigned). The sheet only adds an entry and shows no ledger data. Not done: a notification action. Launcher shortcut, tile and sheet are not verified by CI.
 
-> **Onboarding (first-run checklist)** ✅ 0.97.0: Home shows a "Finish setting up · N of 4" card -- allow notification/SMS capture, add an account, see a first transaction, make an encrypted backup -- each ticked off from real state (`OnboardingChecklist`), with a "Do this" button for the next step (capture settings, Accounts, Backup & restore) and a permanent Dismiss. It hides itself when everything is done, in demo mode, and until permissions are known; long-time users with only "make a backup" left see it too, and can dismiss it. Not done: a guided multi-screen first-run walkthrough. UI is not verified by CI.
+> **Onboarding (first-run checklist)** ✅ 0.97.0 (CI run 43332109175 green): Home shows a "Finish setting up · N of 4" card -- allow notification/SMS capture, add an account, see a first transaction, make an encrypted backup -- each ticked off from real state (`OnboardingChecklist`), with a "Do this" button for the next step (capture settings, Accounts, Backup & restore) and a permanent Dismiss. It hides itself when everything is done, in demo mode, and until permissions are known; long-time users with only "make a backup" left see it too, and can dismiss it. Not done: a guided multi-screen first-run walkthrough. UI is not verified by CI.
 
-## Where things stand after 0.96.0
+## Where things stand after 0.97.0
 
-Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43330234097 for 0.96.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43332109175 for 0.97.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
 
 **Still open, grouped by what blocks it**
 
