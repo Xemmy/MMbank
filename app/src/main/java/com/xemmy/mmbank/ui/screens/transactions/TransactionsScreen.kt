@@ -358,7 +358,7 @@ fun TransactionsScreen(
                                 val placeable = measurable.measure(constraints)
                                 heroScrollBehavior.state.heightOffsetLimit = -placeable.height.toFloat()
                                 val heroFraction = heroScrollBehavior.state.collapsedFraction.coerceIn(0f, 1f)
-                                val visibleHeight = (placeable.height * (1f - heroFraction)).roundToInt()
+                                val visibleHeight = collapsedVisibleHeight(placeable.height, heroFraction)
                                 layout(placeable.width, visibleHeight) {
                                     placeable.placeRelative(0, visibleHeight - placeable.height)
                                 }
@@ -374,7 +374,7 @@ fun TransactionsScreen(
                         .layout { measurable, constraints ->
                             val placeable = measurable.measure(constraints)
                             collapse.updateRange(placeable.height.toFloat())
-                            val visibleHeight = (placeable.height * (1f - collapseFraction.coerceIn(0f, 1f))).roundToInt()
+                            val visibleHeight = collapsedVisibleHeight(placeable.height, collapseFraction)
                             layout(placeable.width, visibleHeight) {
                                 placeable.placeRelative(0, visibleHeight - placeable.height)
                             }
@@ -1511,4 +1511,10 @@ private fun MetaChip(
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+/** Visible height of a collapsing section; never negative (Compose rejects negative layout sizes). */
+internal fun collapsedVisibleHeight(fullHeight: Int, fraction: Float): Int {
+    val f = if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
+    return (fullHeight * (1f - f)).roundToInt().coerceIn(0, fullHeight.coerceAtLeast(0))
 }
