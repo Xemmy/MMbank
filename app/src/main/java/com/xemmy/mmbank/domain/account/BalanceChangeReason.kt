@@ -25,6 +25,13 @@ enum class BalanceChangeReason(val label: String) {
         fun labelFor(stored: String?): String? =
             parse(stored)?.label ?: stored?.trim()?.takeIf { it.isNotEmpty() }
 
+        /** The reason recorded when a balance is set through quick add, where no dialog asks for one. */
+        fun forQuickAdd(type: AccountType): BalanceChangeReason = when (type) {
+            AccountType.CASH -> CASH_COUNT
+            AccountType.INVESTMENT, AccountType.CRYPTO_SPOT -> MARKET_VALUE
+            else -> STATEMENT_CORRECTION
+        }
+
         /**
          * Every reason, the likeliest ones for [type] first: a cash wallet is
          * usually a count, an investment a market move, a loan interest.

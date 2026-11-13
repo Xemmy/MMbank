@@ -46,4 +46,13 @@ class BalanceChangeReasonTest {
         assertEquals(BalanceChangeReason.MISSED_TRANSACTION, BalanceChangeReason.orderedFor(AccountType.CHECKING).first())
         assertTrue(BalanceChangeReason.OTHER == BalanceChangeReason.orderedFor(AccountType.CHECKING).last())
     }
+
+    @Test
+    fun `quick add picks a sensible reason per type`() {
+        assertEquals(BalanceChangeReason.CASH_COUNT, BalanceChangeReason.forQuickAdd(AccountType.CASH))
+        assertEquals(BalanceChangeReason.MARKET_VALUE, BalanceChangeReason.forQuickAdd(AccountType.INVESTMENT))
+        assertEquals(BalanceChangeReason.MARKET_VALUE, BalanceChangeReason.forQuickAdd(AccountType.CRYPTO_SPOT))
+        assertEquals(BalanceChangeReason.STATEMENT_CORRECTION, BalanceChangeReason.forQuickAdd(AccountType.CHECKING))
+        assertEquals(BalanceChangeReason.STATEMENT_CORRECTION, BalanceChangeReason.forQuickAdd(AccountType.CREDIT_CARD))
+    }
 }

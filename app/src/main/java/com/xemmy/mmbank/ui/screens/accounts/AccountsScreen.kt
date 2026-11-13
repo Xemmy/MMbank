@@ -96,6 +96,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.AccountUpsertResolver
 import com.xemmy.mmbank.domain.account.BalanceChangeReason
 import com.xemmy.mmbank.ui.designsystem.MMFilterChip
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
@@ -126,11 +127,14 @@ fun AccountsScreen(
     // The account row whose balance is being corrected; null = dialog closed.
     var adjusting by remember { mutableStateOf<AccountWithBalance?>(null) }
     var showArchived by remember { mutableStateOf(false) }
+    // The quick-add sheet, and the full form's "this already exists" prompt (typed account + what matched).
+    var quickAdding by remember { mutableStateOf(false) }
+    var duplicate by remember { mutableStateOf<Pair<Account, AccountUpsertResolver.Result>?>(null) }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = Account(name = "", type = AccountType.CHECKING, currencyCode = viewModel.defaultCurrency) }) {
+            FloatingActionButton(onClick = { quickAdding = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add account")
             }
         },
@@ -159,8 +163,8 @@ fun AccountsScreen(
                 item {
                     Text(
                         "No accounts yet. Add your checking accounts, credit cards and loans, " +
-                            "then assign captured transactions to them. Tap “+” to add one, or use " +
-                            "“Paste bank details” to import an account from a copied statement.",
+                            "then assign captured transactions to them. Tap “+” to add one with just a name and today's balance; adding something " +
+                            "you already have updates it instead of duplicating it.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -224,10 +228,66 @@ fun AccountsScreen(
             existing = account,
             onDismiss = { editing = null },
             onSave = { saved ->
-                viewModel.save(saved)
-                editing = null
+                val dup = viewModel.duplicateOf(saved)
+                if (dup == null) {
+                    viewModel.save(saved)
+                    editing = null
+                } else {
+                    duplicate = saved to dup
+                }
             },
         )
+    }
+
+    if (quickAdding) {
+        QuickAddAccountSheet(
+            defaultCurrency = viewModel.defaultCurrency,
+            hidden = hidden,
+            plan = viewModel::planQuickAdd,
+            onCreate = viewModel::save,
+            onUpdate = viewModel::applyUpdate,
+            planUpdateOf = viewModel::planUpdateOf,
+            onMoreDetails = { draft ->
+                quickAdding = false
+                editing = draft
+            },
+            onDismiss = { quickAdding = false },
+        )
+    }
+
+    duplicate?.let { (saved, result) ->
+        val isNew = saved.id == 0L
+        val saveAnyway = DuplicateAction(if (isNew) "Create a separate account" else "Save anyway") {
+            viewModel.save(saved)
+            duplicate = null
+            editing = null
+        }
+        fun updateIt(existing: Account, matchedOn: AccountUpsertResolver.MatchedOn) = DuplicateAction(
+            (if (existing.archived) "Restore and update " else "Update ") + existing.name,
+            primary = true,
+        ) {
+            viewModel.mergeInto(existing, matchedOn, saved)
+            duplicate = null
+            editing = null
+        }
+        when (result) {
+            is AccountUpsertResolver.Result.Existing -> DuplicateAccountDialog(
+                title = "You already have “${result.account.name}”",
+                lines = listOf(
+                    "Matched on ${result.matchedOn.label}.",
+                    if (isNew) "Updating fills in its missing details; its balance is left as it is (use Adjust balance for that)." else "Saving would leave two accounts with the same details.",
+                ),
+                actions = listOfNotNull(if (isNew) updateIt(result.account, result.matchedOn) else null, saveAnyway),
+                onCancel = { duplicate = null },
+            )
+            is AccountUpsertResolver.Result.Ambiguous -> DuplicateAccountDialog(
+                title = "Which one is it?",
+                lines = listOf("Several accounts match the ${result.matchedOn.label}."),
+                actions = (if (isNew) result.accounts.map { updateIt(it, result.matchedOn) } else emptyList()) + saveAnyway,
+                onCancel = { duplicate = null },
+            )
+            AccountUpsertResolver.Result.New -> Unit
+        }
     }
 
     adjusting?.let { row ->

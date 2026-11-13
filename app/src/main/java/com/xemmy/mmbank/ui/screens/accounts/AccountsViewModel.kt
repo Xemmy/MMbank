@@ -96,6 +96,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.AccountUpsertResolver
 import com.xemmy.mmbank.domain.account.BalanceChangeReason
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
@@ -190,6 +191,66 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** New accounts start in the user's own currency rather than a hard-coded one. */
     val defaultCurrency: String get() = container.preferences.defaultCurrency
+
+    /** Every account, active and archived, with what the app computes for each. */
+    private fun allAccounts(): List<Account> = uiState.value.let { s -> (s.rows + s.archived).map { it.account } }
+
+    private fun balancesById(): Map<Long, BigDecimal> =
+        uiState.value.let { s -> (s.rows + s.archived).associate { it.account.id to it.balance } }
+
+    /** Decides what a quick add does with what was typed; see [QuickAddPlanner]. */
+    internal fun planQuickAdd(input: QuickAddInput): QuickAddPlan =
+        QuickAddPlanner.plan(input, allAccounts(), balancesById())
+
+    /** The plan for the account the user picked from an ambiguous list. */
+    internal fun planUpdateOf(choose: QuickAddPlan.Choose, picked: Account, entered: BigDecimal?): QuickAddPlan.Update =
+        QuickAddPlanner.updateOf(picked, choose.matchedOn, choose.draft, entered, balancesById())
+
+    /** Duplicate guard for the full form's Save; null = write it as it is. */
+    internal fun duplicateOf(saved: Account) = QuickAddPlanner.guardFullForm(saved, allAccounts())
+
+    /**
+     * Applies an "it already exists" decision: restores it if archived, fills
+     * its blank details from what was typed, and (when [updateBalance]) posts
+     * the adjustment that makes its balance what the user entered, with a
+     * reason, so the history explains it. Never creates a second account.
+     */
+    internal fun applyUpdate(plan: QuickAddPlan.Update, updateBalance: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                var account = plan.existing
+                if (plan.archived) {
+                    container.accountRepository.unarchive(account)
+                    account = account.copy(archived = false)
+                }
+                if (plan.merge.changed) {
+                    account = plan.merge.account.copy(archived = false)
+                    container.accountRepository.save(account)
+                }
+                val target = plan.enteredBalance
+                if (updateBalance && plan.balanceDiffers && target != null) {
+                    buildBalanceAdjustment(account, plan.currentBalance, target)?.let { adjustment ->
+                        container.transactionRepository.recordAdjustment(
+                            adjustment,
+                            BalanceChangeReason.forQuickAdd(account.type).name,
+                            "Set from quick add",
+                        )
+                    }
+                }
+            }.onFailure {
+                container.recordError("AccountsViewModel.applyUpdate", it)
+                lastError.value = "Couldn't update account: ${it.message}"
+            }
+        }
+    }
+
+    /** Full-form "update it": the typed details are folded into [existing]; its balance is left alone. */
+    internal fun mergeInto(existing: Account, matchedOn: AccountUpsertResolver.MatchedOn, typed: Account) {
+        applyUpdate(
+            QuickAddPlanner.updateOf(existing, matchedOn, typed, entered = null, balances = balancesById()),
+            updateBalance = false,
+        )
+    }
 
     fun unarchive(account: Account) {
         viewModelScope.launch {

@@ -463,7 +463,7 @@ private fun CompactActionButton(
 }
 
 @Composable
-private fun PasteDetailsDialog(
+internal fun PasteDetailsDialog(
     onDismiss: () -> Unit,
     onParsed: (com.xemmy.mmbank.domain.model.ParsedBankDetails) -> Unit,
 ) {
