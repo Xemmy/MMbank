@@ -98,6 +98,7 @@ import com.xemmy.mmbank.ui.screens.report.MonthlyReportScreen
 import com.xemmy.mmbank.ui.screens.bills.BillsScreen
 import com.xemmy.mmbank.ui.screens.goals.GoalsScreen
 import com.xemmy.mmbank.ui.screens.insights.InsightsScreen
+import com.xemmy.mmbank.ui.screens.accounts.AccountHistoryScreen
 import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailScreen
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsScreen
 import com.xemmy.mmbank.ui.screens.review.ReviewTransactionsScreen
@@ -507,7 +508,14 @@ private fun AppNavHost(
                 onOpenUnassigned = { navController.navigate(Routes.ACTIVITY_UNASSIGNED) },
                 onOpenIntegrity = { navController.navigate("integrity_check") },
                 onOpenDebtPlanner = { navController.navigate("debt_planner") },
+                onOpenHistory = { accountId -> navController.navigate(Routes.accountHistory(accountId)) },
             )
+        }
+        composable(
+            route = Routes.ACCOUNT_HISTORY_PATTERN,
+            arguments = listOf(navArgument("accountId") { type = NavType.LongType }),
+        ) {
+            AccountHistoryScreen(onBack = { navController.popBackStack() })
         }
         composable("debt_planner") { DebtPlannerScreen(onBack = { navController.popBackStack() }) }
         composable("cashback") { CashbackScreen() }

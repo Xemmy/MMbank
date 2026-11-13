@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
@@ -95,6 +96,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.BalanceChangeReason
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 import com.xemmy.mmbank.domain.ledger.IntegrityChecker
@@ -111,6 +114,7 @@ fun AccountsScreen(
     onOpenUnassigned: () -> Unit = {},
     onOpenIntegrity: () -> Unit = {},
     onOpenDebtPlanner: () -> Unit = {},
+    onOpenHistory: (Long) -> Unit = {},
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -192,6 +196,7 @@ fun AccountsScreen(
                     hidden = hidden,
                     onEdit = { editing = row.account },
                     onAdjust = { adjusting = row },
+                    onHistory = { onOpenHistory(row.account.id) },
                     onArchive = { viewModel.archive(row.account) },
                     onDelete = { viewModel.delete(row.account) },
                 )
@@ -229,8 +234,8 @@ fun AccountsScreen(
         AdjustBalanceDialog(
             row = row,
             onDismiss = { adjusting = null },
-            onConfirm = { target ->
-                viewModel.adjustBalance(row.account, row.balance, target)
+            onConfirm = { target, reason, note ->
+                viewModel.adjustBalance(row.account, row.balance, target, reason, note)
                 adjusting = null
             },
         )
@@ -244,6 +249,7 @@ private fun AccountCard(
     hidden: Boolean,
     onEdit: () -> Unit,
     onAdjust: () -> Unit,
+    onHistory: () -> Unit,
     onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -314,6 +320,11 @@ private fun AccountCard(
                     color = if (!hidden && row.balance.signum() < 0) MMTheme.colors.danger else MMTheme.colors.textPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+            }
+
+            TextButton(onClick = onHistory, modifier = Modifier.padding(top = 2.dp)) {
+                Icon(Icons.Filled.History, contentDescription = null, tint = MMTheme.colors.textSecondary)
+                Text("History", color = MMTheme.colors.textSecondary, modifier = Modifier.padding(start = 6.dp))
             }
 
             if (row.approximate && !hidden) {
@@ -574,13 +585,17 @@ private fun UnassignedCard(
  * when the numbers already match.
  */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun AdjustBalanceDialog(
     row: AccountWithBalance,
     onDismiss: () -> Unit,
-    onConfirm: (BigDecimal) -> Unit,
+    onConfirm: (BigDecimal, BalanceChangeReason, String?) -> Unit,
 ) {
     val account = row.account
     var text by remember { mutableStateOf(row.balance.setScale(2, RoundingMode.HALF_UP).toPlainString()) }
+    // The reason is required: it is what the account's history says about this correction.
+    var reason by remember { mutableStateOf<BalanceChangeReason?>(null) }
+    var note by remember { mutableStateOf("") }
     val target = parseMoneyInput(text)
     val current = row.balance.setScale(2, RoundingMode.HALF_UP)
     val delta = target?.setScale(2, RoundingMode.HALF_UP)?.subtract(current)
@@ -617,6 +632,28 @@ private fun AdjustBalanceDialog(
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                MetaLabel("Why is it different?")
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    BalanceChangeReason.orderedFor(account.type).forEach { option ->
+                        MMFilterChip(label = option.label, selected = reason == option, onClick = { reason = option })
+                    }
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { MetaLabel("Note (optional)") },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MMTheme.colors.surface,
+                        focusedContainerColor = MMTheme.colors.surface,
+                        unfocusedBorderColor = MMTheme.colors.borderSubtle,
+                        focusedBorderColor = MMTheme.colors.borderStrong,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 when {
                     delta == null -> Unit
                     delta.signum() == 0 -> Text(
@@ -638,8 +675,8 @@ private fun AdjustBalanceDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = delta != null && delta.signum() != 0,
-                onClick = { target?.let(onConfirm) },
+                enabled = delta != null && delta.signum() != 0 && reason != null,
+                onClick = { if (target != null) reason?.let { onConfirm(target, it, note.trim().ifEmpty { null }) } },
             ) { Text("Adjust") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

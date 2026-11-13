@@ -22,6 +22,7 @@ object Routes {
     const val MERCHANT_DETAIL_PATTERN = "merchant_detail/{merchant}"
     const val SPLITS_GROUP_PATTERN = "splits_group/{groupId}"
     const val RULE_EDITOR_PATTERN = "rule_editor?ruleId={ruleId}"
+    const val ACCOUNT_HISTORY_PATTERN = "account_history/{accountId}"
 
     // Plain destinations
     const val UNCATEGORIZED_QUEUE = "uncategorized_queue"
@@ -53,6 +54,8 @@ object Routes {
     fun merchantDetail(encodedMerchant: String) = "merchant_detail/$encodedMerchant"
 
     fun splitsGroup(groupId: Long) = "splits_group/$groupId"
+
+    fun accountHistory(accountId: Long) = "account_history/$accountId"
 
     /** [encodedDrill] must already be URI-encoded. */
     fun activityDrill(encodedDrill: String) = "transactions?drill=$encodedDrill"
@@ -98,6 +101,7 @@ object TabRouting {
         Routes.YEAR_IN_REVIEW to AppTab.INSIGHTS,
         Routes.UPCOMING to AppTab.PLAN,
         Routes.ACCOUNTS to AppTab.ACCOUNTS,
+        "account_history" to AppTab.ACCOUNTS,
         Routes.DEBT_PLANNER to AppTab.PLAN,
         Routes.INTEGRITY_CHECK to AppTab.ACCOUNTS,
         Routes.STATEMENT_RECONCILE to AppTab.ACCOUNTS,

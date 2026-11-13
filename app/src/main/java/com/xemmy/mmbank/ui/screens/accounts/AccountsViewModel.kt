@@ -96,6 +96,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.BalanceChangeReason
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 import com.xemmy.mmbank.domain.ledger.IntegrityChecker
@@ -236,12 +237,19 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
      * computed balance and the real one, pinned to this account. It's an ordinary
      * row, so the fix is visible in Activity and reversible (just delete it).
      */
-    fun adjustBalance(account: Account, computedBalance: BigDecimal, targetBalance: BigDecimal) {
+    fun adjustBalance(
+        account: Account,
+        computedBalance: BigDecimal,
+        targetBalance: BigDecimal,
+        reason: BalanceChangeReason? = null,
+        note: String? = null,
+    ) {
         viewModelScope.launch {
             runCatching {
                 val adjustment = buildBalanceAdjustment(account, computedBalance, targetBalance)
                     ?: return@runCatching
-                container.transactionRepository.recordManual(adjustment)
+                // The reason and note go to the account's change log with the adjustment.
+                container.transactionRepository.recordAdjustment(adjustment, reason?.name, note)
             }.onFailure {
                 container.recordError("AccountsViewModel.adjustBalance", it)
                 lastError.value = "Couldn't adjust balance: ${it.message}"

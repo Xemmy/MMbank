@@ -47,6 +47,15 @@ class AppNavigationTest {
         assertEquals(AppTab.INSIGHTS, TabRouting.tabFor(Routes.YEAR_IN_REVIEW))
     }
 
+    @Test fun accountHistoryLivesUnderAccounts() {
+        assertEquals("account_history", TabRouting.baseRoute(Routes.ACCOUNT_HISTORY_PATTERN))
+        assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.ACCOUNT_HISTORY_PATTERN))
+        assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.accountHistory(12)))
+        assertEquals("account_history/12", Routes.accountHistory(12))
+        assertTrue(Routes.ACCOUNT_HISTORY_PATTERN.startsWith("account_history/"))
+        assertTrue(Routes.ACCOUNT_HISTORY_PATTERN.contains("{accountId}"))
+    }
+
     @Test fun statementReconcileLivesUnderAccounts() {
         assertEquals(AppTab.ACCOUNTS, TabRouting.tabFor(Routes.STATEMENT_RECONCILE))
     }

@@ -13,6 +13,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -146,5 +147,23 @@ class AccountRepositoryImplChangeLogTest {
         val id = plain.save(draft())
         plain.archive(accounts.getById(id)!!.toDomain())
         assertTrue(log.rows.isEmpty())
+    }
+
+    @Test
+    fun `a single account's log can be observed, and only that account's`() = runBlocking {
+        val id = repo.save(draft("500"))
+        repo.archive(accounts.getById(id)!!.toDomain())
+        val other = repo.save(draft("1"))
+
+        val mine = repo.observeChanges(id).first()
+        assertEquals(listOf(AccountChangeType.CREATED, AccountChangeType.ARCHIVED), mine.map { it.type })
+        assertTrue(mine.all { it.accountId == id })
+        assertEquals(listOf(AccountChangeType.CREATED), repo.observeChanges(other).first().map { it.type })
+    }
+
+    @Test
+    fun `without a change dao there is nothing to observe`() = runBlocking {
+        val plain = AccountRepositoryImpl(accounts, NoRulesDao(), MutableStateFlow(false))
+        assertTrue(plain.observeChanges(1).first().isEmpty())
     }
 }

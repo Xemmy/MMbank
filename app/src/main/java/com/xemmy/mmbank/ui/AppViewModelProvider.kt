@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.ui.screens.accounts.AccountHistoryViewModel
 import com.xemmy.mmbank.ui.screens.accounts.AccountsViewModel
 import com.xemmy.mmbank.ui.screens.accounts.DebtPlannerViewModel
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsViewModel
@@ -40,6 +41,7 @@ object AppViewModelProvider {
         initializer { DashboardViewModel(mmBankApp().container) }
         initializer { TransactionsViewModel(mmBankApp().container) }
         initializer { AccountsViewModel(mmBankApp().container) }
+        initializer { AccountHistoryViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { DebtPlannerViewModel(mmBankApp().container) }
         initializer { CashbackViewModel(mmBankApp().container) }
         initializer { RulesViewModel(mmBankApp().container) }

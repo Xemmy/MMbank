@@ -64,6 +64,13 @@ interface TransactionRepository {
     suspend fun spendHistoryForMerchant(merchant: String): List<Transaction> = emptyList()
     /** Inserts a user-entered transaction (no dedup — a manual entry is intentional). */
     suspend fun recordManual(transaction: Transaction): Long
+    /**
+     * Inserts a "Balance adjustment" row and logs it with the user's [reason]
+     * (a [com.xemmy.mmbank.domain.account.BalanceChangeReason] name) and [note].
+     * Defaults to a plain [recordManual] so test fakes needn't implement it.
+     */
+    suspend fun recordAdjustment(transaction: Transaction, reason: String?, note: String?): Long =
+        recordManual(transaction)
     /** Updates an existing transaction's editable fields (manual edit flow). */
     suspend fun update(transaction: Transaction)
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
@@ -123,6 +130,8 @@ interface AccountRepository {
     suspend fun archive(account: Account)
     suspend fun unarchive(account: Account)
     suspend fun delete(account: Account)
+    /** The change log of one account, newest first; empty by default so test fakes needn't implement it. */
+    fun observeChanges(accountId: Long): Flow<List<com.xemmy.mmbank.domain.model.AccountChange>> = kotlinx.coroutines.flow.flowOf(emptyList())
 }
 
 interface ParsingRuleRepository {

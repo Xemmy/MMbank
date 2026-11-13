@@ -373,18 +373,26 @@ class TransactionRepositoryImpl(
     }
 
     /** Whatever the user typed in is their choice: a category or person on a manual row is `USER`. */
-    override suspend fun recordManual(transaction: Transaction): Long = database.withTransaction {
-        val id = dao.insert(
-            transaction.copy(
-                categorySource = if (transaction.categoryId != null) AssignmentSource.USER else transaction.categorySource,
-                personSource = if (!transaction.person.isNullOrBlank()) AssignmentSource.USER else transaction.personSource,
-            ).toEntity(),
-        )
-        // An ordinary new row is the ledger itself and needs no log entry; a balance adjustment
-        // is the one manual row whose whole purpose is to move a balance, so it gets one.
-        if (transaction.kind == TransactionKind.ADJUSTMENT) changeLog.recordAdjustment(transaction.copy(id = id))
-        id
-    }
+    override suspend fun recordManual(transaction: Transaction): Long = insertManual(transaction, reason = null, note = null)
+
+    override suspend fun recordAdjustment(transaction: Transaction, reason: String?, note: String?): Long =
+        insertManual(transaction, reason, note)
+
+    private suspend fun insertManual(transaction: Transaction, reason: String?, note: String?): Long =
+        database.withTransaction {
+            val id = dao.insert(
+                transaction.copy(
+                    categorySource = if (transaction.categoryId != null) AssignmentSource.USER else transaction.categorySource,
+                    personSource = if (!transaction.person.isNullOrBlank()) AssignmentSource.USER else transaction.personSource,
+                ).toEntity(),
+            )
+            // An ordinary new row is the ledger itself and needs no log entry; a balance adjustment
+            // is the one manual row whose whole purpose is to move a balance, so it gets one.
+            if (transaction.kind == TransactionKind.ADJUSTMENT) {
+                changeLog.recordAdjustment(transaction.copy(id = id), reason, note?.trim()?.takeIf { it.isNotEmpty() })
+            }
+            id
+        }
 
     // --- LedgerRepository ---
 

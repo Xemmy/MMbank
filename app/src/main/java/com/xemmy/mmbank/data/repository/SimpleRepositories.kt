@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class AccountRepositoryImpl(
@@ -126,6 +127,9 @@ class AccountRepositoryImpl(
         parsingRuleDao.clearAssignAccountId(account.id)
         dao.delete(account.toEntity())
     }
+
+    override fun observeChanges(accountId: Long): Flow<List<AccountChange>> =
+        changes?.observeForAccount(accountId)?.map { rows -> rows.map { it.toDomain() } } ?: flowOf(emptyList())
 }
 
 class ParsingRuleRepositoryImpl(
