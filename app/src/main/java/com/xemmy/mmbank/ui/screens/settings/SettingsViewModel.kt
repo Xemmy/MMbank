@@ -107,6 +107,7 @@ import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.ThemeMode
+import com.xemmy.mmbank.domain.people.PersonBackfill
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
@@ -220,6 +221,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         private set
     private var transactionPersons: List<String> = emptyList()
 
+    /** Transactions with no person at all -- what the one-tap fill would assign (see [PersonBackfill]). */
+    var noPersonIds by mutableStateOf<List<Long>>(emptyList())
+        private set
+
     /**
      * Transaction count per person (keys normalized by [PersonCounts]) -- drives
      * the reassign-on-delete prompt. Compose state, not a plain field, so a
@@ -243,6 +248,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                         .filter { it.isNotEmpty() }
                         .distinctBy { PersonCounts.key(it) }
                     personCounts = PersonCounts.countByName(names)
+                    noPersonIds = PersonBackfill.idsWithoutPerson(txs)
                     personCountsLoaded = true
                     recomputeUnlisted()
                 }
@@ -264,6 +270,28 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         unlistedPersons = transactionPersons
             .filter { p -> persons.none { it.equals(p, ignoreCase = true) } }
             .sorted()
+    }
+
+    /** Gives [name] to every transaction that has no person. Moves no balance. */
+    fun fillMissingPerson(name: String) {
+        val clean = name.trim()
+        val ids = noPersonIds
+        if (busy || clean.isEmpty() || ids.isEmpty()) return
+        viewModelScope.launch {
+            busy = true
+            runCatching {
+                container.preferences.addPerson(clean)
+                // Chunked: one statement binds every id, and old SQLite builds cap that at 999.
+                ids.chunked(500).sumOf { container.transactionRepository.bulkSetPerson(it, clean) }
+            }.onSuccess { changed ->
+                persons = container.preferences.persons
+                statusMessage = "Assigned $clean to $changed transaction${if (changed == 1) "" else "s"}"
+            }.onFailure {
+                container.recordError("SettingsViewModel.fillMissingPerson", it)
+                statusMessage = "Failed: ${it.message}"
+            }
+            busy = false
+        }
     }
 
     fun addPersonToList(name: String) {

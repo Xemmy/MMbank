@@ -76,7 +76,7 @@ Setting a **person** never touches a balance; that side is only a tidy-up.
 
 ### Phase 3 — Fill old rows with no person (0.107.0, versionCode 163)
 
-- New pure `domain/ledger/PersonBackfill.kt`: selects rows with a blank person (respecting demo mode).
+- New pure `domain/people/PersonBackfill.kt`: selects rows with a blank person, skipping balance adjustments.
 - Settings → Persons: "212 transactions have no person" → **Assign to…** picks a saved person (default person preselected), shows the count, then calls the existing `bulkSetPerson`.
 - No balance effect, so no log row.
 
@@ -85,7 +85,7 @@ Setting a **person** never touches a balance; that side is only a tidy-up.
 Persons are a saved name list in `AppPreferences.persons`; one list (`TransactionsUiState.knownPersons`) feeds both the assignment menus and the Activity filter today.
 
 - **Storage:** new `AppPreferences.inactivePersons` (same newline format as `persons`), included in backup export/import (`BackupManager`) and in the demo-mode swap (`AppContainer`). Rename, merge and delete in `SettingsViewModel` keep it in step.
-- **New pure `domain/ledger/PersonLists.kt`:**
+- **New pure `domain/people/PersonLists.kt`:**
   - `assignable(saved, inactive, default, current)` → active names only, sorted, case-insensitive dedupe. A row that already carries an inactive person still shows that name in its own menu, so opening it never loses the value.
   - `filterable(saved, default)` → everyone, so old transactions of an inactive person remain findable.
 - **Settings → People:** an Active switch on each person, with inactive ones grouped below under "Inactive". The default person can't be made inactive; the switch explains why.

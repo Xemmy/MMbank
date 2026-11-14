@@ -106,6 +106,7 @@ import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.people.PersonBackfill
 import com.xemmy.mmbank.domain.people.PersonCounts
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
@@ -1204,6 +1205,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
     var newPerson by remember { mutableStateOf("") }
     var renaming by remember { mutableStateOf<String?>(null) }
     var confirmingDelete by remember { mutableStateOf<String?>(null) }
+    var fillingMissing by remember { mutableStateOf(false) }
 
     Text(
         "This list feeds the person menu on transactions and is included in backups. " +
@@ -1271,6 +1273,39 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                 newPerson = ""
             },
         ) { Text("Add") }
+    }
+
+    if (viewModel.noPersonIds.isNotEmpty()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                PersonBackfill.summary(viewModel.noPersonIds.size),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(
+                enabled = viewModel.persons.isNotEmpty(),
+                onClick = { fillingMissing = true },
+            ) { Text("Assign to…") }
+        }
+        if (viewModel.persons.isEmpty()) {
+            Text(
+                "Add a person above first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (fillingMissing) {
+        FillMissingPersonDialog(
+            count = viewModel.noPersonIds.size,
+            choices = viewModel.persons,
+            defaultPerson = viewModel.defaultPerson,
+            onDismiss = { fillingMissing = false },
+            onConfirm = { name ->
+                viewModel.fillMissingPerson(name)
+                fillingMissing = false
+            },
+        )
     }
 
     if (viewModel.unlistedPersons.isNotEmpty()) {
@@ -1425,6 +1460,51 @@ private fun PersonReassignDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(selected) }) { Text("Remove") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** One-tap fill: picks who gets every transaction that has no person. Balances are not affected. */
+@Composable
+private fun FillMissingPersonDialog(
+    count: Int,
+    choices: List<String>,
+    defaultPerson: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var selected by remember { mutableStateOf(PersonBackfill.preselect(choices, defaultPerson)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Assign a person") },
+        text = {
+            Column {
+                Text(
+                    "${PersonBackfill.summary(count)}. Choose who to give ${if (count == 1) "it" else "them"} to. " +
+                        "Balances don't change, and you can still change any one of them later.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    items(choices) { name ->
+                        PersonReassignOptionRow(
+                            label = name,
+                            selected = selected == name,
+                            onClick = { selected = name },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selected != null,
+                onClick = { selected?.let(onConfirm) },
+            ) { Text("Assign") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
