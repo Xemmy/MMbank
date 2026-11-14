@@ -825,6 +825,17 @@ Full design in **MMbank-ACCOUNTS-PLAN.md**. Planned, not started.
 
 > **D5 drift explainer** ✅ 0.104.0 (CI run 43402851466 green): a balance-difference issue on the Integrity screen now has **See what changed** next to *Record the difference*. It opens that account's History narrowed to when the difference appeared. `DriftWindow` walks the account's bank-printed balances backwards from the newest: the run of consecutive mismatches ends at the first one that doesn't match, and the window is (last balance that matched, first that didn't]; it uses the same accepted balance kinds, currency rule, card-owed maths and retention cutoff as `IntegrityChecker`, and a test pins the two to the same figure. A banner says, for example, "A difference of −120.00 appeared between 3 Nov 14:02 and 5 Nov 09:10: 4 transactions in that time, 1 change made since", with the sign hidden while balances are hidden. The list keeps the transactions dated inside the window and the balance-moving changes made since the last match (an edit made before it cannot have caused a later difference), with the running balances untouched. A difference present from the first printed balance has no lower bound, and the banner says so. The history route gained an optional `drift` argument. **Not covered by CI:** how the button, banner and narrowed list look, the navigation from Integrity to History with the argument, and hide-balances masking in the banner. Limits to know: the check uses today's books at each older point, so a deleted transaction appears as a change, not as a row; and mixed-currency accounts and cards without a credit limit get no window.
 
+## Part E — Old unassigned transactions and people
+
+Full design in **MMbank-UNASSIGNED-PLAN.md**.
+
+| # | Item | Target | Status |
+|---|---|---|---|
+| E1 | Balance-neutral filing: an old row filed into (or moved out of) an account keeps its corrected balance (`BalanceNeutralFiling`) | 0.105.0 | Planned |
+| E2 | "History only" for old unassigned rows (schema v37) | 0.106.0 | Planned |
+| E3 | One-tap person fill for rows with no person | 0.107.0 | Planned |
+| E4 | Active / inactive people; assignment menus show active only | 0.108.0 | Planned |
+
 ## Where things stand after 0.99.0
 
 Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43335508720 for 0.99.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
