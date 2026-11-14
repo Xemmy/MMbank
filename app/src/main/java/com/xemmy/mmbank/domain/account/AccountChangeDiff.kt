@@ -94,6 +94,22 @@ object AccountChangeDiff {
             note = "Folded the net of old transactions: ${money(adjustment.foldedNet)}",
         )
 
+    /**
+     * Old transactions were filed into (or moved out of) the account and the
+     * opening balance was shifted so the balance on screen stayed put (see
+     * [BalanceNeutralFiling]). [balanceDelta] is the shift itself: it cancels the
+     * deltas of the TRANSACTION_MOVED_IN / _OUT entries written beside it.
+     */
+    fun historyFiled(account: Account, kept: BalanceNeutralFiling.Kept, nowMillis: Long): AccountChange =
+        base(account, nowMillis, AccountChangeType.OPENING_BALANCE_CHANGED, AccountChangeSource.HISTORY_FILING).copy(
+            field = "openingBalance",
+            oldValue = money(kept.previousOpeningBalance),
+            newValue = money(kept.newOpeningBalance),
+            balanceDelta = kept.newOpeningBalance - kept.previousOpeningBalance,
+            currencyCode = account.currencyCode,
+            note = BalanceNeutralFiling.summary(kept.rowCount),
+        )
+
     /** A backup replaced the data; one marker per restored account. */
     fun backupRestored(account: Account, nowMillis: Long): AccountChange =
         base(account, nowMillis, AccountChangeType.BACKUP_RESTORED, AccountChangeSource.BACKUP_RESTORE).copy(

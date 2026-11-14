@@ -171,6 +171,12 @@ class MainActivity : FragmentActivity() {
             }
             val secureScreen by container.secureScreen.collectAsStateWithLifecycle()
             LaunchedEffect(secureScreen) { applySecureScreen(secureScreen) }
+            // The ledger's own one-off notices ("... balance was kept"), whichever screen is open.
+            LaunchedEffect(Unit) {
+                container.ledgerNotices.collect { notice ->
+                    android.widget.Toast.makeText(this@MainActivity, notice, android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
             MMbankTheme(darkTheme = darkTheme) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()

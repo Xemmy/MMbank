@@ -76,11 +76,13 @@ class TransactionRepositoryImpl(
      * entries at face value, so hand-written test fakes behave as before.
      */
     private val ledgerFx: Flow<LedgerFx>? = null,
+    /** Told when filing old rows left a corrected balance where it was; see [AccountChangeRecorder]. */
+    onBalanceKept: (String) -> Unit = {},
 ) : TransactionRepository, LedgerRepository {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     /** Writes the account change log for edits that can move a balance; see [AccountChangeRecorder]. */
-    private val changeLog = AccountChangeRecorder(database)
+    private val changeLog = AccountChangeRecorder(database, onBalanceKept = onBalanceKept)
 
     override fun observeTransactions(): Flow<List<Transaction>> =
         demoMode.flatMapLatest { demo -> dao.observeAll(demo) }
@@ -507,10 +509,15 @@ class TransactionRepositoryImpl(
 
     override suspend fun deleteMany(ids: List<Long>): Int = deleteAndRelease(ids)
 
-    override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int = database.withTransaction {
+    override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int = bulkAssign(ids, accountId, keepBalance = true)
+
+    override suspend fun bulkAssignAccountCounted(ids: List<Long>, accountId: Long): Int =
+        bulkAssign(ids, accountId, keepBalance = false)
+
+    private suspend fun bulkAssign(ids: List<Long>, accountId: Long?, keepBalance: Boolean): Int = database.withTransaction {
         val moving = ids.chunked(SQL_ID_CHUNK).flatMap { dao.getByIds(it) }.map(TransactionEntity::toDomain)
-        val moved = dao.bulkAssignAccount(ids, accountId)
-        changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) })
+        val moved = ids.chunked(SQL_ID_CHUNK).sumOf { dao.bulkAssignAccount(it, accountId) }
+        changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) }, keepBalance = keepBalance)
         moved
     }
 

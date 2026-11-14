@@ -43,7 +43,7 @@ Setting a **person** never touches a balance; that side is only a tidy-up.
   - Row filed **into** an account and dated before that account's cutoff → opening balance shifts by the opposite of the row's signed amount.
   - Row moved **out of** an account and dated before its cutoff → the mirror shift, so a wrongly filed old row can be moved without breaking the account it leaves.
   - Rows dated on or after the cutoff are untouched: they are not in the corrected figure, so they must move the balance.
-  - The signed amount comes from the same code `AccountBalanceCalculator` uses (including `LedgerFx`), so the offset can never disagree with the balance.
+  - Only rows in the account's own currency are kept neutral. A foreign-currency row reaches the balance through today's exchange rate (`LedgerFx`), which moves, so a fixed offset would not hold; those rows still move the balance. (Changed during build from the first draft, which proposed converting them.)
 
 **One apply point.** A private helper in `TransactionRepositoryImpl` runs inside the existing `database.withTransaction` of each path: `assignAccount`, `bulkAssignAccount`, `assignAccountForRule`, `update` (when `accountId` changed), plus `MerchantAccountRepositoryImpl.learnMapping`. It reads the affected accounts, a new DAO query for the last `ADJUSTMENT` timestamp per account, applies the offsets, and writes one change-log row per account through `AccountChangeRecorder`: type `OPENING_BALANCE_CHANGED`, new source `AccountChangeSource.HISTORY_FILING`, note "Balance kept: N older transactions filed".
 

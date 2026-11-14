@@ -46,6 +46,12 @@ data class LedgerEntryRow(
     val direction: TransactionDirection,
 )
 
+/** When an account's balance was last corrected by hand: its newest "Balance adjustment" row. */
+data class LastAdjustmentRow(
+    val accountId: Long,
+    val atMillis: Long,
+)
+
 /** [LedgerEntryRow] plus its row id, for pruning (which must delete by id). */
 data class IdentifiedLedgerEntryRow(
     val id: Long,
@@ -223,6 +229,17 @@ interface TransactionDao {
     /** Multi-select edit: assigns (or clears, when null) the account on every row in [ids] at once. Returns affected count. */
     @Query("UPDATE transactions SET accountId = :accountId WHERE id IN (:ids)")
     suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
+
+    /**
+     * The newest balance adjustment per account, for
+     * [com.xemmy.mmbank.domain.account.BalanceNeutralFiling]: rows dated before it
+     * are already inside the corrected balance.
+     */
+    @Query(
+        "SELECT accountId AS accountId, MAX(timestampMillis) AS atMillis FROM transactions " +
+            "WHERE kind = 'ADJUSTMENT' AND accountId IN (:accountIds) GROUP BY accountId"
+    )
+    suspend fun lastAdjustmentAt(accountIds: List<Long>): List<LastAdjustmentRow>
 
     /** Multi-select edit: assigns (or clears, when null) the person on every row in [ids] at once. Returns affected count. */
     @Query(

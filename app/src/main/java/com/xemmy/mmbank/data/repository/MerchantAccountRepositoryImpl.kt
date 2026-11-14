@@ -14,11 +14,13 @@ import kotlinx.coroutines.flow.map
 
 class MerchantAccountRepositoryImpl(
     private val database: AppDatabase,
+    /** Told when backfilled history left a corrected balance where it was; see [AccountChangeRecorder]. */
+    onBalanceKept: (String) -> Unit = {},
 ) : MerchantAccountRepository {
 
     private val dao get() = database.merchantAccountDao()
 
-    private val changeLog = AccountChangeRecorder(database)
+    private val changeLog = AccountChangeRecorder(database, onBalanceKept = onBalanceKept)
 
     override fun observeMappings(): Flow<List<MerchantAccountMapping>> =
         dao.observeAll().map { rows -> rows.map { it.toDomain() } }

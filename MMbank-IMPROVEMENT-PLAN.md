@@ -831,10 +831,12 @@ Full design in **MMbank-UNASSIGNED-PLAN.md**.
 
 | # | Item | Target | Status |
 |---|---|---|---|
-| E1 | Balance-neutral filing: an old row filed into (or moved out of) an account keeps its corrected balance (`BalanceNeutralFiling`) | 0.105.0 | Planned |
+| E1 | Balance-neutral filing: an old row filed into (or moved out of) an account keeps its corrected balance (`BalanceNeutralFiling`) | 0.105.0 | ✅ 0.105.0 |
 | E2 | "History only" for old unassigned rows (schema v37) | 0.106.0 | Planned |
 | E3 | One-tap person fill for rows with no person | 0.107.0 | Planned |
 | E4 | Active / inactive people; assignment menus show active only | 0.108.0 | Planned |
+
+> **E1 balance-neutral filing** ✅ 0.105.0: filing a transaction dated before an account's last balance update (its newest "Balance adjustment" row, or the account's creation when it has none) no longer moves that account's balance. Such a row is already inside the corrected figure, so `BalanceNeutralFiling` shifts the opening balance by the opposite amount in the same Room transaction; moving an old row out is the mirror. Rows dated on or after the update still move the balance. It runs in one place, `AccountChangeRecorder.recordEdits`, so it covers single assign, the editor's account change, bulk assign, rule assignment, the merchant-learning backfill and "It's an account I have". The history shows one line, "12 older transactions filed, balance kept · by MMbank, to keep your balance" (an `OPENING_BALANCE_CHANGED` entry with the new source `HISTORY_FILING`, whose delta cancels the moved-in entries beside it), and a short message appears after the filing. "Add as new account" from a suggestion is exempt (`bulkAssignAccountCounted`): its opening balance is solved to expect those rows. **Limits:** only rows in the account's own currency are kept neutral (a foreign-currency row reaches the balance through today's rate, so it still moves it); balances already thrown off by earlier filing are not repaired, one more Update balance fixes each; deleting or re-pricing an old row still moves the balance. **Not covered by CI:** the message on screen, the extra sentence in the "Which account is…" dialog, how the history line renders, and the whole path on a real database (the SQL for the last adjustment, the opening-balance write inside the transaction).
 
 ## Where things stand after 0.99.0
 

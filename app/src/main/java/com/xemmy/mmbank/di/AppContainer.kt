@@ -429,6 +429,14 @@ class AppContainer(context: Context) {
         }
     }
 
+    /**
+     * Short one-off messages about something the ledger did on the user's behalf
+     * (today: "Filed 12 older transactions. X's balance was kept."). Shown by
+     * MainActivity whichever screen is open; a missed one is harmless, the same
+     * fact is in the account's history.
+     */
+    val ledgerNotices = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8)
+
     /** One instance behind both [transactionRepository] and [ledgerRepository]: they share transfer linking. */
     private val transactionRepositoryImpl: TransactionRepositoryImpl by lazy {
         TransactionRepositoryImpl(
@@ -439,6 +447,7 @@ class AppContainer(context: Context) {
             defaultPersonProvider = { preferences.defaultPerson },
             categoryRepository = categoryRepository,
             merchantAccountRepository = merchantAccountRepository,
+            onBalanceKept = { ledgerNotices.tryEmit(it) },
             onTransactionRecorded = { transaction ->
                 checkDailyBudgetPacing(transaction)
                 checkCategoryBudget(transaction)
@@ -469,7 +478,7 @@ class AppContainer(context: Context) {
      * [transactionRepository].
      */
     val merchantAccountRepository: MerchantAccountRepository by lazy {
-        MerchantAccountRepositoryImpl(database)
+        MerchantAccountRepositoryImpl(database, onBalanceKept = { ledgerNotices.tryEmit(it) })
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao(), demoModeEnabled)

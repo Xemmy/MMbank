@@ -94,6 +94,15 @@ interface TransactionRepository {
     suspend fun deleteMany(ids: List<Long>): Int
     /** Multi-select edit: assigns (or clears, when null) the account on every id in [ids] at once. Returns affected count. */
     suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
+
+    /**
+     * Like [bulkAssignAccount], but every row counts toward [accountId]'s balance
+     * even when it is dated before the account existed. Only for a brand-new
+     * account whose opening balance was worked out to expect exactly these rows
+     * (`OpeningBalanceSolver`); everywhere else, old rows must not move a balance
+     * that was already corrected (see `BalanceNeutralFiling`).
+     */
+    suspend fun bulkAssignAccountCounted(ids: List<Long>, accountId: Long): Int = bulkAssignAccount(ids, accountId)
     /** Multi-select edit: assigns (or clears, when null) the person on every id in [ids] at once. Returns affected count. */
     suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int
     /**

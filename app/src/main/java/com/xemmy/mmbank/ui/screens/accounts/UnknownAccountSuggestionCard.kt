@@ -149,7 +149,8 @@ internal fun LinkToExistingDialog(
                     )
                 } else {
                     Text(
-                        "The ending ${suggestion.digits} is remembered on it, so future messages file themselves.",
+                        "The ending ${suggestion.digits} is remembered on it, so future messages file themselves. " +
+                            "Messages from before its last balance update are filed without changing its balance.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MMTheme.colors.textSecondary,
                     )

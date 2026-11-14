@@ -39,6 +39,9 @@ enum class AccountChangeSource {
     CAPTURE_SUGGESTION,
     RETENTION,
     BACKUP_RESTORE,
+
+    /** The app shifted an opening balance so filing old transactions did not move a corrected balance. */
+    HISTORY_FILING,
     ;
 
     companion object {

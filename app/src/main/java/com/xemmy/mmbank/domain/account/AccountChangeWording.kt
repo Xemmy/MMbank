@@ -63,6 +63,7 @@ object AccountChangeWording {
         AccountChangeSource.CAPTURE_SUGGESTION -> "a suggestion from your messages"
         AccountChangeSource.RETENTION -> "retention clean-up"
         AccountChangeSource.BACKUP_RESTORE -> "a backup restore"
+        AccountChangeSource.HISTORY_FILING -> "MMbank, to keep your balance"
     }
 
     /** "amount", "amount and date", "amount, direction and date". */
@@ -94,7 +95,19 @@ object AccountChangeWording {
             }
 
             AccountChangeType.OPENING_BALANCE_CHANGED ->
-                Line("Opening balance changed", from = change.oldValue, to = change.newValue, sensitive = true, by = who)
+                if (change.source == AccountChangeSource.HISTORY_FILING) {
+                    // The balance did not move; the opening balance underneath it did. Lead with the reason.
+                    Line(
+                        merchant ?: "Older transactions filed, balance kept",
+                        from = change.oldValue,
+                        to = change.newValue,
+                        extra = "Opening balance",
+                        sensitive = true,
+                        by = who,
+                    )
+                } else {
+                    Line("Opening balance changed", from = change.oldValue, to = change.newValue, sensitive = true, by = who)
+                }
 
             AccountChangeType.BALANCE_ADJUSTED -> Line(
                 "Balance adjusted",

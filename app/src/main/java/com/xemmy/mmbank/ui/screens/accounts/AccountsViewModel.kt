@@ -273,7 +273,8 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
                 val rows = unassignedRows(suggestion)
                 val account = UnknownAccountSuggestions.newAccountFor(suggestion, rows, name, type, creditLimit)
                 val id = container.accountRepository.save(account)
-                container.transactionRepository.bulkAssignAccount(rows.map { it.id }, id)
+                // The opening balance above was solved to expect these rows, so they must count.
+                container.transactionRepository.bulkAssignAccountCounted(rows.map { it.id }, id)
             }.onFailure {
                 container.recordError("AccountsViewModel.addFromSuggestion", it)
                 lastError.value = "Couldn't add account: ${it.message}"
