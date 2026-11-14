@@ -44,6 +44,7 @@ data class LedgerEntryRow(
     val amount: BigDecimal,
     val currencyCode: String,
     val direction: TransactionDirection,
+    val historyOnly: Boolean = false,
 )
 
 /** When an account's balance was last corrected by hand: its newest "Balance adjustment" row. */
@@ -149,7 +150,7 @@ interface TransactionDao {
      *
      * Rows with no account are included -- see [LedgerEntryRow.accountId].
      */
-    @Query("SELECT accountId, amount, currencyCode, direction FROM transactions WHERE isDemo = :demo")
+    @Query("SELECT accountId, amount, currencyCode, direction, historyOnly FROM transactions WHERE isDemo = :demo")
     fun observeLedgerEntries(demo: Boolean): Flow<List<LedgerEntryRow>>
 
     /**
@@ -162,7 +163,7 @@ interface TransactionDao {
      * normalized key (see MerchantNormalizer), which SQL cannot express; the
      * candidate set is small by construction.
      */
-    @Query("SELECT id, merchant FROM transactions WHERE accountId IS NULL AND merchant IS NOT NULL AND isDemo = 0")
+    @Query("SELECT id, merchant FROM transactions WHERE accountId IS NULL AND historyOnly = 0 AND merchant IS NOT NULL AND isDemo = 0")
     suspend fun getUnassignedWithMerchant(): List<UnassignedMerchantRow>
 
     /** The balance-relevant fields of specific rows, for a retention prune. */
@@ -178,7 +179,11 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE isDemo = 1")
     suspend fun countDemo(): Int
 
-    @Query("UPDATE transactions SET accountId = :accountId WHERE id = :transactionId")
+    /** Filing a row into an account clears "history only": the flag only means something without one. */
+    @Query(
+        "UPDATE transactions SET accountId = :accountId, " +
+            "historyOnly = CASE WHEN :accountId IS NULL THEN historyOnly ELSE 0 END WHERE id = :transactionId"
+    )
     suspend fun assignAccount(transactionId: Long, accountId: Long?)
 
     /**
@@ -188,7 +193,7 @@ interface TransactionDao {
      */
     @Query(
         "UPDATE transactions SET accountId = :accountId " +
-            "WHERE matchedRuleName = :ruleName AND accountId IS NULL"
+            "WHERE matchedRuleName = :ruleName AND accountId IS NULL AND historyOnly = 0"
     )
     suspend fun assignAccountByRuleName(ruleName: String, accountId: Long): Int
 
@@ -227,8 +232,19 @@ interface TransactionDao {
     suspend fun deleteMany(ids: List<Long>): Int
 
     /** Multi-select edit: assigns (or clears, when null) the account on every row in [ids] at once. Returns affected count. */
-    @Query("UPDATE transactions SET accountId = :accountId WHERE id IN (:ids)")
+    @Query(
+        "UPDATE transactions SET accountId = :accountId, " +
+            "historyOnly = CASE WHEN :accountId IS NULL THEN historyOnly ELSE 0 END WHERE id IN (:ids)"
+    )
     suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
+
+    /**
+     * Sets or clears "history only" on the rows in [ids] that are in no account
+     * (see `Transaction.historyOnly`). A row that has an account is left alone:
+     * the flag means nothing there. Returns the number of rows changed.
+     */
+    @Query("UPDATE transactions SET historyOnly = :historyOnly WHERE id IN (:ids) AND accountId IS NULL")
+    suspend fun setHistoryOnly(ids: List<Long>, historyOnly: Boolean): Int
 
     /**
      * The newest balance adjustment per account, for
@@ -459,7 +475,7 @@ interface TransactionDao {
     suspend fun getByIds(ids: List<Long>): List<TransactionEntity>
 
     /** The rows [assignAccountByRuleName] is about to move. */
-    @Query("SELECT * FROM transactions WHERE matchedRuleName = :ruleName AND accountId IS NULL")
+    @Query("SELECT * FROM transactions WHERE matchedRuleName = :ruleName AND accountId IS NULL AND historyOnly = 0")
     suspend fun getUnassignedByRuleName(ruleName: String): List<TransactionEntity>
 
     /**

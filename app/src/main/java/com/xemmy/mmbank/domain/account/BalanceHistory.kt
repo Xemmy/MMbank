@@ -69,6 +69,7 @@ object BalanceHistory {
         amount = tx.amount,
         currencyCode = tx.currencyCode,
         direction = tx.direction,
+        historyOnly = tx.historyOnly,
     )
 
     /**

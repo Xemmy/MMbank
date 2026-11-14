@@ -87,6 +87,11 @@ object MigrationSql {
             "ON `account_changes` (`accountId`, `timestamp`)",
     )
 
+    /** v37: "history only" on transactions (see Transaction.historyOnly). Purely additive; every existing row is false. */
+    val MIGRATION_36_37_SQL: List<String> = listOf(
+        "ALTER TABLE `transactions` ADD COLUMN `historyOnly` INTEGER NOT NULL DEFAULT 0",
+    )
+
     /** v35: the purchase a refund gave money back for. Purely additive: one nullable column. */
     val MIGRATION_34_35_SQL: List<String> = listOf(
         "ALTER TABLE `transactions` ADD COLUMN `refundOfId` INTEGER",

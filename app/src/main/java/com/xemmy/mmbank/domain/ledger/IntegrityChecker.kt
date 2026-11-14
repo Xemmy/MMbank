@@ -167,7 +167,8 @@ object IntegrityChecker {
             }
         }
 
-        val unassigned = transactions.filter { it.accountId == null }
+        // Rows set aside as "history only" are unassigned on purpose, not a problem to fix.
+        val unassigned = transactions.filter { it.needsAccount }
         if (unassigned.isNotEmpty()) {
             issues += Issue(
                 type = Type.UNASSIGNED,

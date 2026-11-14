@@ -48,7 +48,16 @@ object AccountBalanceCalculator {
         val direction: TransactionDirection,
         /** True when [amount] was converted from another currency (or couldn't be): show it as "≈". See [LedgerFx]. */
         val approximate: Boolean = false,
-    )
+        /**
+         * "Before I started tracking" (see `Transaction.historyOnly`): a row with
+         * no account that the user set aside on purpose, so it is left out of
+         * [unassignedTotals] and [unassignedCount]. Never true on a filed row.
+         */
+        val historyOnly: Boolean = false,
+    ) {
+        /** In no account and not set aside: money the user is still being asked to sort. */
+        val needsAccount: Boolean get() = accountId == null && !historyOnly
+    }
 
     /** Signed contribution of one entry: credits add, debits subtract. */
     private fun LedgerEntry.signedAmount(): BigDecimal =
@@ -85,7 +94,8 @@ object AccountBalanceCalculator {
     }
 
     /**
-     * Signed net of every entry that belongs to no account, grouped by its own
+     * Signed net of every entry that belongs to no account (and was not set
+     * aside as [LedgerEntry.historyOnly]), grouped by its own
      * currency. This money is in the ledger but in no balance, so without
      * surfacing it a mis-captured transaction is simply invisible.
      *
@@ -96,7 +106,7 @@ object AccountBalanceCalculator {
     fun unassignedTotals(entries: List<LedgerEntry>): Map<String, BigDecimal> {
         val totals = LinkedHashMap<String, BigDecimal>()
         for (entry in entries) {
-            if (entry.accountId != null) continue
+            if (!entry.needsAccount) continue
             val code = entry.currencyCode.uppercase()
             totals[code] = (totals[code] ?: BigDecimal.ZERO) + entry.signedAmount()
         }
@@ -111,6 +121,6 @@ object AccountBalanceCalculator {
     fun approximateAccounts(entries: List<LedgerEntry>): Set<Long> =
         entries.filter { it.approximate }.mapNotNull { it.accountId }.toSet()
 
-    /** How many entries belong to no account. */
-    fun unassignedCount(entries: List<LedgerEntry>): Int = entries.count { it.accountId == null }
+    /** How many entries belong to no account and were not set aside as history only. */
+    fun unassignedCount(entries: List<LedgerEntry>): Int = entries.count { it.needsAccount }
 }

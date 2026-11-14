@@ -70,7 +70,7 @@ Setting a **person** never touches a balance; that side is only a tidy-up.
 
 **How you mark rows.**
 
-- Unassigned card → **"Before I started tracking…"**: a date (default: the oldest last-balance-update among your accounts) and a live count, "148 transactions before 3 Nov 2026".
+- Unassigned card → **"Before I started tracking…"**: three choices, each with its count: before your earliest balance update (the default), older than 30 days, or all of them. (Built as fixed choices instead of a free date picker; exact rows can be picked with the bulk selection below.)
 - Activity bulk selection → **Mark as history only**.
 - Transaction detail shows "History only" with **Undo**.
 

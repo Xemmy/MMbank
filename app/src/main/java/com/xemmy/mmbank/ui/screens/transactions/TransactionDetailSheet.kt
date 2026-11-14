@@ -85,6 +85,8 @@ fun TransactionDetailSheet(
     onKindChange: ((TransactionKind, Boolean) -> Unit)? = null,
     /** Set when this charge is far above the merchant's usual (see [SpendAnomalyDetector]). */
     anomaly: SpendAnomalyDetector.Anomaly? = null,
+    /** Sets or clears "history only" on a row with no account. Null hides the action. */
+    onHistoryOnlyChange: ((Boolean) -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -158,7 +160,14 @@ fun TransactionDetailSheet(
                     "Category",
                     assignedCategory?.let { "${it.icon}  ${it.name}" } ?: "🏷️  Uncategorized",
                 )
-                DetailRow("Account", accountName ?: "Unassigned")
+                DetailRow("Account", accountName ?: if (transaction.historyOnly) "History only" else "Unassigned")
+                if (onHistoryOnlyChange != null && transaction.accountId == null) {
+                    TextButton(onClick = { onHistoryOnlyChange(!transaction.historyOnly) }) {
+                        Text(
+                            if (transaction.historyOnly) "Undo history only" else "Before I started tracking: mark as history only",
+                        )
+                    }
+                }
                 DetailRow(
                     "Type",
                     transaction.kind.label + if (transaction.linkedTransactionId != null) " · linked" else "",

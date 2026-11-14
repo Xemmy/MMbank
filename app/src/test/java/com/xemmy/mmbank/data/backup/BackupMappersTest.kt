@@ -410,4 +410,17 @@ class BackupMappersTest {
         assertEquals(emptyList<BackupMerchantAccountMapping>(), decoded.merchantAccountMappings)
         assertEquals(4, decoded.formatVersion)
     }
+
+    @Test
+    fun `history only survives a backup on a row with no account`() {
+        val unassigned = fullTransaction.copy(accountId = null, historyOnly = true)
+        assertTrue(unassigned.toBackup().historyOnly)
+        assertTrue(unassigned.toBackup().toEntity().historyOnly)
+    }
+
+    @Test
+    fun `history only is dropped on restore for a row that has an account`() {
+        // The flag only means something without an account; a hand-edited backup must not smuggle it in.
+        assertFalse(fullTransaction.copy(historyOnly = true).toBackup().toEntity().historyOnly)
+    }
 }

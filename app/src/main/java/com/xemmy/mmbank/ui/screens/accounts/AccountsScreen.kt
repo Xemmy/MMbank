@@ -96,6 +96,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.HistoryOnlyPlanner
 import com.xemmy.mmbank.domain.account.AccountUpsertResolver
 import com.xemmy.mmbank.domain.account.BalanceChangeReason
 import com.xemmy.mmbank.ui.designsystem.MMFilterChip
@@ -133,6 +134,7 @@ fun AccountsScreen(
     // The unknown-ending suggestion being added as a new account / linked to an existing one.
     var addingSuggestion by remember { mutableStateOf<com.xemmy.mmbank.domain.account.UnknownAccountSuggestions.Suggestion?>(null) }
     var linkingSuggestion by remember { mutableStateOf<com.xemmy.mmbank.domain.account.UnknownAccountSuggestions.Suggestion?>(null) }
+    var historyDialogOpen by remember { mutableStateOf(false) }
 
     addingSuggestion?.let { suggestion ->
         AddFromSuggestionDialog(
@@ -141,6 +143,16 @@ fun AccountsScreen(
             onConfirm = { name, type, limit ->
                 viewModel.addFromSuggestion(suggestion, name, type, limit)
                 addingSuggestion = null
+            },
+        )
+    }
+    if (historyDialogOpen) {
+        HistoryOnlyDialog(
+            options = state.historyOptions,
+            onDismiss = { historyDialogOpen = false },
+            onConfirm = { ids ->
+                viewModel.markHistoryOnly(ids)
+                historyDialogOpen = false
             },
         )
     }
@@ -223,6 +235,7 @@ fun AccountsScreen(
                         unassigned = state.unassigned,
                         hidden = hidden,
                         onClick = onOpenUnassigned,
+                        onHistoryOnly = { historyDialogOpen = true },
                     )
                 }
             }
@@ -644,6 +657,7 @@ private fun UnassignedCard(
     unassigned: UnassignedTotal,
     hidden: Boolean,
     onClick: () -> Unit,
+    onHistoryOnly: () -> Unit,
 ) {
     MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -668,8 +682,69 @@ private fun UnassignedCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MMTheme.colors.textSecondary,
             )
+            TextButton(onClick = onHistoryOnly) { Text("Before I started tracking…") }
         }
     }
+}
+
+/**
+ * Sets old unassigned transactions aside as "history only": they stay in
+ * Activity and in spending reports but stop being reported as unassigned.
+ * The choices and their counts come from [HistoryOnlyPlanner].
+ */
+@Composable
+private fun HistoryOnlyDialog(
+    options: List<HistoryOnlyPlanner.Option>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<Long>) -> Unit,
+) {
+    var picked by remember { mutableStateOf(HistoryOnlyPlanner.default(options)?.scope) }
+    val chosen = options.firstOrNull { it.scope == picked }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Before I started tracking") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Transactions you mark stay in Activity and in spending reports, in no account. " +
+                        "The app stops asking you to assign them. You can undo it from the transaction.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MMTheme.colors.textSecondary,
+                )
+                options.forEach { option ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { picked = option.scope },
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = picked == option.scope,
+                            onClick = { picked = option.scope },
+                        )
+                        Text(historyOptionLabel(option), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { chosen?.let { onConfirm(it.transactionIds) } },
+                enabled = (chosen?.count ?: 0) > 0,
+            ) { Text("Mark as history only") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun historyOptionLabel(option: HistoryOnlyPlanner.Option): String {
+    val which = when (option.scope) {
+        HistoryOnlyPlanner.Scope.BEFORE_TRACKING ->
+            "Before ${option.beforeMillis?.asDate().orEmpty()}, your earliest balance update"
+        HistoryOnlyPlanner.Scope.OLDER_THAN_30_DAYS -> "Older than 30 days"
+        HistoryOnlyPlanner.Scope.ALL -> "All of them"
+    }
+    return "$which (${option.count})"
 }
 
 /**

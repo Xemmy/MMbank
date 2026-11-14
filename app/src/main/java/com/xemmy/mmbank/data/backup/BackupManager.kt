@@ -137,6 +137,8 @@ data class BackupTransaction(
     val personSource: String? = null,
     /** Absent (null) on backups from before format v13. */
     val refundOfId: Long? = null,
+    /** Absent (false) on backups from before format v15. */
+    val historyOnly: Boolean = false,
 )
 
 @Serializable
@@ -207,6 +209,8 @@ data class BackupPayload(
      * 14 = adds [accountChanges], the per-account change log. Always replaced on
      * restore (log rows are keyed to account ids, which a restore re-issues), so an
      * older backup simply restores an empty log -- plus one marker per account.
+     *
+     * 15 = adds [BackupTransaction.historyOnly]. No gate: absent means false.
      *
      * 13 = adds [BackupTransaction.refundOfId]. No gate: absent means no link.
      *
@@ -372,7 +376,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 14,
+            formatVersion = 15,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -668,6 +672,7 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     categorySource = categorySource.name,
     personSource = personSource.name,
     refundOfId = refundOfId,
+    historyOnly = historyOnly,
 )
 
 /**
@@ -726,6 +731,8 @@ internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): Transact
         categorySource = restoreSource(categorySource, hasValue = categoryId != null),
         personSource = restoreSource(personSource, hasValue = !person.isNullOrBlank()),
         refundOfId = refundOfId,
+        // The flag only means something on a row with no account.
+        historyOnly = historyOnly && accountId == null,
     )
 }
 

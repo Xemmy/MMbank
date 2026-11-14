@@ -512,6 +512,16 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         bulkMode.value = BulkModeState()
     }
 
+    /** "Before I started tracking": the selected rows that are in no account stop being reported as unassigned. */
+    fun bulkSetHistoryOnly() = safeWrite("bulkSetHistoryOnly") {
+        container.transactionRepository.setHistoryOnly(bulkMode.value.selectedIds.toList(), true)
+        bulkMode.value = BulkModeState()
+    }
+
+    fun setHistoryOnly(transaction: Transaction, historyOnly: Boolean) = safeWrite("setHistoryOnly") {
+        container.transactionRepository.setHistoryOnly(listOf(transaction.id), historyOnly)
+    }
+
     fun bulkSetPerson(person: String?) = safeWrite("bulkSetPerson") {
         container.bulkUpdateTransactions(bulkMode.value.selectedIds.toList(), BulkTransactionPatch(person = FieldUpdate.Set(person)))
         bulkMode.value = BulkModeState()

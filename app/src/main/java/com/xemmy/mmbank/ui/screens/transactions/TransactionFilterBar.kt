@@ -136,6 +136,7 @@ internal fun TransactionFilterBar(
                     val accountLabel = when (val a = f.account) {
                         AccountFilter.Any -> "Account"
                         AccountFilter.Unassigned -> "Unassigned"
+                        AccountFilter.HistoryOnly -> "History only"
                         is AccountFilter.Specific ->
                             state.accounts.firstOrNull { it.id == a.id }?.name ?: "Account"
                     }
@@ -153,6 +154,10 @@ internal fun TransactionFilterBar(
                         DropdownMenuItem(
                             text = { Text("Unassigned") },
                             onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.Unassigned) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("History only") },
+                            onClick = { accountMenuOpen = false; onAccountFilter(AccountFilter.HistoryOnly) },
                         )
                         state.accounts.forEach { account ->
                             DropdownMenuItem(

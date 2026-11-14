@@ -332,6 +332,7 @@ fun TransactionsScreen(
                     onAssignAccount = { accountId -> viewModel.bulkAssignAccount(accountId) },
                     onAssignPerson = { person -> viewModel.bulkSetPerson(person) },
                     onExclude = { viewModel.bulkSetExcludeFromStats(true) },
+                    onHistoryOnly = { viewModel.bulkSetHistoryOnly() },
                     onDelete = { viewModel.bulkDelete() },
                     onDeleteIgnoreSimilar = { viewModel.bulkDeleteAndIgnoreSimilar() },
                     onClose = { viewModel.exitBulkMode() },
@@ -593,6 +594,10 @@ fun TransactionsScreen(
                 viewModel.setKind(tx, kind, remember)
                 selectedTransaction = null
             },
+            onHistoryOnlyChange = { historyOnly ->
+                viewModel.setHistoryOnly(tx, historyOnly)
+                selectedTransaction = null
+            },
         )
     }
 }
@@ -708,6 +713,7 @@ private fun BulkModeBar(
     onAssignAccount: (Long?) -> Unit,
     onAssignPerson: (String?) -> Unit,
     onExclude: () -> Unit,
+    onHistoryOnly: () -> Unit,
     onDelete: () -> Unit,
     onDeleteIgnoreSimilar: () -> Unit,
     onClose: () -> Unit,
@@ -786,6 +792,10 @@ private fun BulkModeBar(
                     DropdownMenuItem(
                         text = { Text("Exclude from analytics") },
                         onClick = { moreMenuOpen = false; onExclude() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Mark as history only") },
+                        onClick = { moreMenuOpen = false; onHistoryOnly() },
                     )
                     DropdownMenuItem(
                         text = { Text("Delete") },

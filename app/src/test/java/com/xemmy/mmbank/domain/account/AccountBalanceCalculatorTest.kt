@@ -199,4 +199,21 @@ class AccountBalanceCalculatorTest {
         assertEquals(setOf(2L, 3L), result)
         assertEquals(emptySet<Long>(), AccountBalanceCalculator.approximateAccounts(emptyList()))
     }
+
+    @Test
+    fun `history only entries are left out of the unassigned totals and count`() {
+        val entries = listOf(
+            debit("100", accountId = null),
+            debit("40", accountId = null).copy(historyOnly = true),
+        )
+        assertEquals(1, AccountBalanceCalculator.unassignedCount(entries))
+        assertEquals(0, BigDecimal("-100").compareTo(AccountBalanceCalculator.unassignedTotals(entries).getValue("AED")))
+    }
+
+    @Test
+    fun `when every unassigned entry is history only there is nothing to report`() {
+        val entries = listOf(debit("40", accountId = null).copy(historyOnly = true))
+        assertEquals(0, AccountBalanceCalculator.unassignedCount(entries))
+        assertTrue(AccountBalanceCalculator.unassignedTotals(entries).isEmpty())
+    }
 }

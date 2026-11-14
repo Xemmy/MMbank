@@ -788,4 +788,26 @@ class EntityMappersTest {
         assertEquals(domain, domain.toEntity().toDomain())
         assertNull(domain.copy(refundOfId = null).toEntity().refundOfId)
     }
+
+    @Test
+    fun `history only round-trips through the entity`() {
+        val domain = com.xemmy.mmbank.domain.model.Transaction(
+            amount = BigDecimal("10.00"), currencyCode = "AED", direction = TransactionDirection.DEBIT,
+            source = TransactionSource.SMS, timestampMillis = 1L, historyOnly = true,
+        )
+        assertTrue(domain.toEntity().historyOnly)
+        assertEquals(domain, domain.toEntity().toDomain())
+        assertFalse(domain.copy(historyOnly = false).toEntity().historyOnly)
+    }
+
+    @Test
+    fun `a row needs an account only when it has none and is not history only`() {
+        val base = com.xemmy.mmbank.domain.model.Transaction(
+            amount = BigDecimal("10.00"), currencyCode = "AED", direction = TransactionDirection.DEBIT,
+            source = TransactionSource.SMS, timestampMillis = 1L,
+        )
+        assertTrue(base.needsAccount)
+        assertFalse(base.copy(historyOnly = true).needsAccount)
+        assertFalse(base.copy(accountId = 3).needsAccount)
+    }
 }

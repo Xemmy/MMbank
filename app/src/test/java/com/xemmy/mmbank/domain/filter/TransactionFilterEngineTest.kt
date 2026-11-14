@@ -439,4 +439,30 @@ class TransactionFilterEngineTest {
             ),
         )
     }
+
+    // ---- history only ------------------------------------------------------
+
+    @Test
+    fun `the unassigned filter leaves out rows set aside as history only`() {
+        val pending = tx()
+        val history = tx().copy(historyOnly = true)
+        val filed = tx(accountId = 1)
+        val out = filter(listOf(pending, history, filed), ActivityFilters(account = AccountFilter.Unassigned))
+        assertEquals(listOf(pending.id), out.map { it.id })
+    }
+
+    @Test
+    fun `the history only filter shows exactly the rows set aside`() {
+        val pending = tx()
+        val history = tx().copy(historyOnly = true)
+        val filed = tx(accountId = 1)
+        val out = filter(listOf(pending, history, filed), ActivityFilters(account = AccountFilter.HistoryOnly))
+        assertEquals(listOf(history.id), out.map { it.id })
+    }
+
+    @Test
+    fun `with no account filter history only rows are still listed`() {
+        val history = tx().copy(historyOnly = true)
+        assertEquals(1, filter(listOf(history), ActivityFilters()).size)
+    }
 }

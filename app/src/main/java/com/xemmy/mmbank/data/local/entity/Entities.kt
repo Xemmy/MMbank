@@ -201,6 +201,8 @@ data class TransactionEntity(
     val personSource: AssignmentSource = AssignmentSource.DEFAULT,
     /** The purchase a refund gave money back for; see [Transaction.refundOfId]. */
     val refundOfId: Long? = null,
+    /** "Before I started tracking": unassigned on purpose; see [Transaction.historyOnly]. */
+    val historyOnly: Boolean = false,
 )
 
 @Entity(tableName = "categories")
@@ -554,7 +556,7 @@ fun TransactionEntity.toDomain() = Transaction(
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
     extractedMerchant, aiConfidence, kind, kindUserSet, reportedBalance, reportedBalanceKind,
-    categorySource, personSource, refundOfId,
+    categorySource, personSource, refundOfId, historyOnly,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -591,6 +593,7 @@ fun Transaction.toEntity() = TransactionEntity(
     categorySource = categorySource,
     personSource = personSource,
     refundOfId = refundOfId,
+    historyOnly = historyOnly,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)

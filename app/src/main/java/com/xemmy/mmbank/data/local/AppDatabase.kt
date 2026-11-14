@@ -79,7 +79,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         IgnoredKeywordEntity::class,
         AccountChangeEntity::class,
     ],
-    version = 36,
+    version = 37,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -804,6 +804,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_29_30_SQL.forEach(db::execSQL)
         }
 
+        /** v36 -> v37: "history only" on transactions (see [MigrationSql.MIGRATION_36_37_SQL]). */
+        val MIGRATION_36_37 = object : Migration(36, 37) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_36_37_SQL.forEach(db::execSQL)
+        }
+
         /** v35 -> v36: the account change log (see [MigrationSql.MIGRATION_35_36_SQL]). */
         val MIGRATION_35_36 = object : Migration(35, 36) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_35_36_SQL.forEach(db::execSQL)
@@ -851,7 +856,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                     MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
-                    MIGRATION_35_36,
+                    MIGRATION_35_36, MIGRATION_36_37,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

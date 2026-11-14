@@ -325,7 +325,18 @@ data class Transaction(
      * never depend on it, so a deleted original leaves it dangling harmlessly.
      */
     val refundOfId: Long? = null,
-)
+    /**
+     * "This happened before I started tracking." Only meaningful on a row with
+     * no account: it stays in Activity, search and spending reports, but is no
+     * longer reported as unassigned (the Accounts and Home notices, the
+     * Integrity check, account suggestions) and the automatic merchant / rule
+     * backfills leave it alone. Filing the row into an account clears it.
+     */
+    val historyOnly: Boolean = false,
+) {
+    /** In no account and not set aside as history: the rows the app still asks the user to sort. */
+    val needsAccount: Boolean get() = accountId == null && !historyOnly
+}
 
 /**
  * Where a transaction's category or person came from (backlog Part C.2), so

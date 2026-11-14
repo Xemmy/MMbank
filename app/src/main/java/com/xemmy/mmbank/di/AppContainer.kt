@@ -1060,6 +1060,7 @@ class AppContainer(context: Context) {
                 amount = it.amount,
                 currencyCode = it.currencyCode,
                 direction = it.direction,
+                historyOnly = it.historyOnly,
             )
         }
         return com.xemmy.mmbank.domain.account.CardPaymentReminders.build(

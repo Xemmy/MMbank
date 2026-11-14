@@ -39,7 +39,10 @@ sealed interface DateRangeFilter {
 /** Account dimension of the Activity filter: any / only unassigned / one account. */
 sealed interface AccountFilter {
     data object Any : AccountFilter
+    /** In no account and still to be sorted; rows set aside as "history only" are not included. */
     data object Unassigned : AccountFilter
+    /** In no account on purpose: "before I started tracking" (see `Transaction.historyOnly`). */
+    data object HistoryOnly : AccountFilter
     data class Specific(val id: Long) : AccountFilter
 }
 
@@ -193,7 +196,8 @@ object TransactionFilterEngine {
         if (f.direction != null && tx.direction != f.direction) return false
         when (val a = f.account) {
             AccountFilter.Any -> Unit
-            AccountFilter.Unassigned -> if (tx.accountId != null) return false
+            AccountFilter.Unassigned -> if (!tx.needsAccount) return false
+            AccountFilter.HistoryOnly -> if (tx.accountId != null || !tx.historyOnly) return false
             is AccountFilter.Specific -> if (tx.accountId != a.id) return false
         }
         when (val p = f.person) {

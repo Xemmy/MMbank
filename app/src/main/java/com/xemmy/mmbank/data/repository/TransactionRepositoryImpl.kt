@@ -103,6 +103,7 @@ class TransactionRepositoryImpl(
                         amount = it.amount,
                         currencyCode = it.currencyCode,
                         direction = it.direction,
+                        historyOnly = it.historyOnly,
                     )
                 }
             }
@@ -467,9 +468,14 @@ class TransactionRepositoryImpl(
 
     override suspend fun update(transaction: Transaction) = database.withTransaction {
         val old = dao.getById(transaction.id)?.toDomain()
-        dao.update(transaction.toEntity())
-        if (old != null) changeLog.recordEdits(listOf(old to transaction))
+        // "History only" means something only without an account: filing the row clears it.
+        val saved = if (transaction.accountId != null && transaction.historyOnly) transaction.copy(historyOnly = false) else transaction
+        dao.update(saved.toEntity())
+        if (old != null) changeLog.recordEdits(listOf(old to saved))
     }
+
+    override suspend fun setHistoryOnly(ids: List<Long>, historyOnly: Boolean): Int =
+        ids.chunked(SQL_ID_CHUNK).sumOf { dao.setHistoryOnly(it, historyOnly) }
 
     override suspend fun assignAccount(transactionId: Long, accountId: Long?) = database.withTransaction {
         val old = dao.getById(transactionId)?.toDomain()

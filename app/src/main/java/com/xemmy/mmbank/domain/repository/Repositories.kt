@@ -103,6 +103,13 @@ interface TransactionRepository {
      * that was already corrected (see `BalanceNeutralFiling`).
      */
     suspend fun bulkAssignAccountCounted(ids: List<Long>, accountId: Long): Int = bulkAssignAccount(ids, accountId)
+
+    /**
+     * Marks (or unmarks) the rows in [ids] that are in no account as "history
+     * only" -- before the user started tracking -- so they stop being reported
+     * as unassigned. Moves no balance. Returns the number of rows changed.
+     */
+    suspend fun setHistoryOnly(ids: List<Long>, historyOnly: Boolean): Int = 0
     /** Multi-select edit: assigns (or clears, when null) the person on every id in [ids] at once. Returns affected count. */
     suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int
     /**

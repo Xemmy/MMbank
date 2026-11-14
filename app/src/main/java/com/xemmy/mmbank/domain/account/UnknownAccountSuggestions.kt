@@ -47,7 +47,8 @@ object UnknownAccountSuggestions {
 
         return transactions
             .asSequence()
-            .filter { it.accountId == null }
+            // "History only" rows were set aside on purpose: no account is wanted for them.
+            .filter { it.needsAccount }
             .mapNotNull { tx ->
                 val digits = tx.accountNumberSuffix?.filter(Char::isDigit).orEmpty()
                 if (digits.length < AccountNumberMatcher.MIN_DIGITS) return@mapNotNull null

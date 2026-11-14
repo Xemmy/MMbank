@@ -140,4 +140,14 @@ class UnknownAccountSuggestionsTest {
         // The ending is now known, so the suggestion disappears.
         assertTrue(UnknownAccountSuggestions.suggest(listOf(tx(1, "4543")), listOf(linked)).isEmpty())
     }
+
+    @Test
+    fun `rows set aside as history only are not suggested as an account`() {
+        val out = UnknownAccountSuggestions.suggest(
+            listOf(tx(1, "4543").copy(historyOnly = true), tx(2, "4543")),
+            accounts = emptyList(),
+        )
+        assertEquals(listOf(2L), out.single().transactionIds)
+        assertTrue(UnknownAccountSuggestions.suggest(listOf(tx(1, "4543").copy(historyOnly = true)), emptyList()).isEmpty())
+    }
 }

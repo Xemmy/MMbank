@@ -99,6 +99,7 @@ import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.account.AccountUpsertResolver
 import com.xemmy.mmbank.domain.account.BalanceChangeReason
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.account.HistoryOnlyPlanner
 import com.xemmy.mmbank.domain.account.UnknownAccountSuggestions
 import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
 import com.xemmy.mmbank.domain.ledger.IntegrityChecker
@@ -142,6 +143,8 @@ data class AccountsUiState(
     val integrity: IntegrityChecker.Report = IntegrityChecker.Report(emptyList(), emptyMap()),
     /** Account/card endings seen in captured messages that match none of the user's accounts. */
     val suggestions: List<UnknownAccountSuggestions.Suggestion> = emptyList(),
+    /** "Before I started tracking…": which unassigned rows can be set aside as history only. */
+    val historyOptions: List<HistoryOnlyPlanner.Option> = emptyList(),
 )
 
 class AccountsViewModel(private val container: AppContainer) : ViewModel() {
@@ -170,6 +173,7 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         AccountsUiState(
             integrity = integrity,
             suggestions = UnknownAccountSuggestions.suggest(transactions, accounts + archived),
+            historyOptions = HistoryOnlyPlanner.options(transactions, accounts, now),
             rows = accounts.map { account ->
                 AccountWithBalance(
                     account = account,
@@ -296,11 +300,23 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** "Before I started tracking": sets [ids] aside as history only, so they stop being reported as unassigned. */
+    fun markHistoryOnly(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { container.transactionRepository.setHistoryOnly(ids, true) }
+                .onFailure {
+                    container.recordError("AccountsViewModel.markHistoryOnly", it)
+                    lastError.value = "Couldn't mark them as history: ${it.message}"
+                }
+        }
+    }
+
     /** The rows of [suggestion] that are still unassigned right now (they may have been filed since). */
     private suspend fun unassignedRows(suggestion: UnknownAccountSuggestions.Suggestion): List<Transaction> {
         val ids = suggestion.transactionIds.toSet()
         return container.transactionRepository.observeTransactions().first()
-            .filter { it.id in ids && it.accountId == null }
+            .filter { it.id in ids && it.needsAccount }
     }
 
     fun unarchive(account: Account) {

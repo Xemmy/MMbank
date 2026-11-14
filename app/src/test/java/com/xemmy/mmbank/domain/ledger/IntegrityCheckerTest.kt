@@ -301,4 +301,13 @@ class IntegrityCheckerTest {
         assertTrue(report.issues.isEmpty())
         assertNull(report.reconciliations.getValue(1).drift)
     }
+
+    @Test
+    fun `rows set aside as history only are not reported as unassigned`() {
+        val history = tx(account = null, amount = "5").copy(historyOnly = true)
+        assertTrue(check(listOf(current), listOf(history)).issues.isEmpty())
+
+        val report = check(listOf(current), listOf(history, tx(account = null, amount = "6")))
+        assertEquals(1, report.issues.single().count)
+    }
 }
