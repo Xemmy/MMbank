@@ -19,9 +19,20 @@ object PersonLearner {
     /** How many recent rows the pattern is read from. */
     const val WINDOW = 2
 
-    fun pick(recentPersonsNewestFirst: List<String>, defaultPerson: String?): String? {
+    /**
+     * @param inactivePersons people marked inactive in Settings: a pattern that
+     *   points at one of them is ignored, so new captures stop going to someone
+     *   the user has retired, and the default person applies instead.
+     */
+    fun pick(
+        recentPersonsNewestFirst: List<String>,
+        defaultPerson: String?,
+        inactivePersons: Collection<String> = emptyList(),
+    ): String? {
         val recent = recentPersonsNewestFirst.map { it.trim() }.filter { it.isNotEmpty() }.take(WINDOW)
-        if (recent.size == WINDOW && recent.all { it.equals(recent.first(), ignoreCase = true) }) {
+        if (recent.size == WINDOW && recent.all { it.equals(recent.first(), ignoreCase = true) } &&
+            inactivePersons.none { it.trim().equals(recent.first(), ignoreCase = true) }
+        ) {
             return recent.first()
         }
         return defaultPerson?.takeIf { it.isNotBlank() }

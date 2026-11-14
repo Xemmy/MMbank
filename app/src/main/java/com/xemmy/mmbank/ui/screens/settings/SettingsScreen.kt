@@ -80,6 +80,8 @@ import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -108,6 +110,7 @@ import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.people.PersonBackfill
 import com.xemmy.mmbank.domain.people.PersonCounts
+import com.xemmy.mmbank.domain.people.PersonLists
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
@@ -1209,7 +1212,9 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
 
     Text(
         "This list feeds the person menu on transactions and is included in backups. " +
-            "Renaming updates every transaction that carries the old name.",
+            "Renaming updates every transaction that carries the old name. " +
+            "Switch someone off to stop offering them when you assign a person; " +
+            "their transactions keep their name and they stay in filters.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -1217,15 +1222,34 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
     if (viewModel.persons.isNotEmpty()) {
         Card(Modifier.fillMaxWidth()) {
             Column {
-                viewModel.persons.forEachIndexed { index, person ->
+                val ordered = PersonLists.activeFirst(viewModel.persons, viewModel.inactivePersons)
+                val firstInactive = ordered.indexOfFirst { !viewModel.isPersonActive(it) }
+                ordered.forEachIndexed { index, person ->
+                    val active = viewModel.isPersonActive(person)
+                    if (index == firstInactive) {
+                        Text(
+                            "Inactive: not offered when assigning",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp),
+                        )
+                    }
                     Row(
                         Modifier.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            person,
+                            if (viewModel.isDefaultPerson(person)) "$person · default" else person,
                             style = MaterialTheme.typography.bodyMedium,
+                            color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = active,
+                            onCheckedChange = { viewModel.setPersonActive(person, it) },
+                            modifier = Modifier.semantics {
+                                contentDescription = if (active) "$person is active" else "$person is inactive"
+                            },
                         )
                         IconButton(onClick = { renaming = person }) {
                             Icon(
@@ -1250,7 +1274,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                             )
                         }
                     }
-                    if (index < viewModel.persons.lastIndex) {
+                    if (index < ordered.lastIndex) {
                         HorizontalDivider(Modifier.padding(start = 16.dp))
                     }
                 }
@@ -1298,7 +1322,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
     if (fillingMissing) {
         FillMissingPersonDialog(
             count = viewModel.noPersonIds.size,
-            choices = viewModel.persons,
+            choices = PersonLists.assignable(viewModel.persons, viewModel.inactivePersons, viewModel.defaultPerson),
             defaultPerson = viewModel.defaultPerson,
             onDismiss = { fillingMissing = false },
             onConfirm = { name ->

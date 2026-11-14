@@ -114,6 +114,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.people.PersonLists
 import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.AccountFilter
@@ -326,7 +327,7 @@ fun TransactionsScreen(
                 BulkModeBar(
                     selectedCount = state.selectedTransactionIds.size,
                     accounts = state.accounts,
-                    knownPersons = state.knownPersons,
+                    knownPersons = state.assignablePersons,
                     onSelectAll = { viewModel.selectAll(state.transactions.map { it.id }) },
                     onCategorize = { bulkCategoryPickerOpen = true },
                     onAssignAccount = { accountId -> viewModel.bulkAssignAccount(accountId) },
@@ -451,7 +452,8 @@ fun TransactionsScreen(
                                     TransactionCard(
                                         tx = tx,
                                         accounts = state.accounts,
-                                        knownPersons = state.knownPersons,
+                                        // Active people only, plus this row's own person if it is an inactive one.
+                                        knownPersons = PersonLists.withCurrent(state.assignablePersons, tx.person),
                                         categories = state.categories,
                                         bankName = viewModel.bankNameFor(tx.sender, state.senderLabels),
                                         accountFilterTint = activeAccountGlow,
@@ -490,7 +492,7 @@ fun TransactionsScreen(
         TransactionEditorDialog(
             existing = null,
             accounts = state.accounts,
-            knownPersons = state.knownPersons,
+            knownPersons = state.assignablePersons,
             categories = state.categories,
             defaultCurrency = state.defaultCurrency,
             aiEnabled = viewModel.aiParsingConfigured,
@@ -512,7 +514,7 @@ fun TransactionsScreen(
         TransactionEditorDialog(
             existing = tx,
             accounts = state.accounts,
-            knownPersons = state.knownPersons,
+            knownPersons = PersonLists.withCurrent(state.assignablePersons, tx.person),
             categories = state.categories,
             defaultCurrency = state.defaultCurrency,
             onCreateCategory = viewModel::createCategory,

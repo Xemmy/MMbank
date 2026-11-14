@@ -109,6 +109,7 @@ import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.people.PersonBackfill
 import com.xemmy.mmbank.domain.people.PersonCounts
+import com.xemmy.mmbank.domain.people.PersonLists
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
@@ -216,6 +217,29 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     var persons by mutableStateOf(container.preferences.persons)
         private set
 
+    /** Saved people marked inactive: kept in filters and on old rows, not offered when assigning (see [PersonLists]). */
+    var inactivePersons by mutableStateOf(container.preferences.inactivePersons)
+        private set
+
+    fun isPersonActive(name: String): Boolean = !PersonLists.isInactive(name, inactivePersons)
+
+    /** The default person receives every new capture, so it has to stay active. */
+    fun isDefaultPerson(name: String): Boolean {
+        // The saved default, not the text field being typed into.
+        val saved = container.preferences.defaultPerson ?: return false
+        return PersonCounts.key(name) == PersonCounts.key(saved)
+    }
+
+    fun setPersonActive(name: String, active: Boolean) {
+        if (!active && isDefaultPerson(name)) {
+            statusMessage = "$name is the default person, so they stay active"
+            return
+        }
+        container.preferences.setPersonActive(name, active)
+        inactivePersons = container.preferences.inactivePersons
+        statusMessage = if (active) "$name is offered when assigning again" else "$name is no longer offered when assigning"
+    }
+
     /** Names still on transactions but absent from the saved list (old data / deletions). */
     var unlistedPersons by mutableStateOf<List<String>>(emptyList())
         private set
@@ -299,6 +323,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         if (clean.isEmpty()) return
         container.preferences.addPerson(clean)
         persons = container.preferences.persons
+        inactivePersons = container.preferences.inactivePersons
         recomputeUnlisted()
     }
 
@@ -326,7 +351,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 container.transactionRepository.renamePerson(from, clean)
                 container.preferences.persons =
                     container.preferences.persons.map { if (it == from) clean else it }
+                // The inactive mark follows the person to their new name.
+                val wasInactive = PersonLists.isInactive(from, container.preferences.inactivePersons)
+                container.preferences.inactivePersons =
+                    PersonLists.renamed(container.preferences.inactivePersons, from, clean)
                 container.preferences.addPerson(clean)
+                if (wasInactive) container.preferences.setPersonActive(clean, false)
+                inactivePersons = container.preferences.inactivePersons
                 if (container.preferences.defaultPerson == from) {
                     container.preferences.defaultPerson = clean
                     defaultPerson = clean
@@ -380,6 +411,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun saveDefaultPerson() {
         container.preferences.defaultPerson = defaultPerson
         defaultPerson = container.preferences.defaultPerson.orEmpty()
+        // The default person gets every new capture: make sure it is not left marked inactive.
+        if (defaultPerson.isNotBlank() && PersonLists.isInactive(defaultPerson, container.preferences.inactivePersons)) {
+            container.preferences.setPersonActive(defaultPerson, true)
+        }
+        inactivePersons = container.preferences.inactivePersons
         statusMessage = if (defaultPerson.isBlank()) {
             "New transactions start unassigned"
         } else {

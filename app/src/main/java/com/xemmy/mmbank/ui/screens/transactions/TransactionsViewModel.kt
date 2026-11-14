@@ -116,6 +116,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.people.PersonLists
 import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.AccountFilter
@@ -191,6 +192,8 @@ data class TransactionsUiState(
     val filters: ActivityFilters = ActivityFilters(),
     /** Every person seen so far, for the quick-assign menu. */
     val knownPersons: List<String> = emptyList(),
+    /** People offered when *assigning* a person: [knownPersons] minus those marked inactive (see [PersonLists]). */
+    val assignablePersons: List<String> = emptyList(),
     /** True when the filter (not an empty ledger) hid everything. */
     val hasAnyTransactions: Boolean = false,
     /** Currency a new manual entry defaults to. */
@@ -320,18 +323,20 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         // The menu is fed ONLY by the saved list (Settings > Preferences >
         // People) so removing a person there really removes it here. Names
         // dedupe case-insensitively to avoid "Ahmed" vs "ahmed" doubles.
-        val persons = buildList {
-            addAll(container.preferences.persons)
-            container.preferences.defaultPerson?.let(::add)
-        }.map { it.trim() }.filter { it.isNotEmpty() }
-            .distinctBy { it.lowercase() }
-            .sorted()
+        val persons = PersonLists.filterable(container.preferences.persons, container.preferences.defaultPerson)
+        // Assignment menus leave out people marked inactive in Settings; the filter above keeps everyone.
+        val assignable = PersonLists.assignable(
+            container.preferences.persons,
+            container.preferences.inactivePersons,
+            container.preferences.defaultPerson,
+        )
         TransactionsUiState(
             transactions = visible,
             accounts = accounts,
             senderLabels = senderLabels,
             filters = f,
             knownPersons = persons,
+            assignablePersons = assignable,
             hasAnyTransactions = transactions.isNotEmpty(),
             defaultCurrency = container.preferences.defaultCurrency,
             categories = categories,

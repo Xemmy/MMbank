@@ -210,6 +210,8 @@ data class BackupPayload(
      * restore (log rows are keyed to account ids, which a restore re-issues), so an
      * older backup simply restores an empty log -- plus one marker per account.
      *
+     * 16 = adds [inactivePersonsRaw]. No gate: absent means everyone is active.
+     *
      * 15 = adds [BackupTransaction.historyOnly]. No gate: absent means false.
      *
      * 13 = adds [BackupTransaction.refundOfId]. No gate: absent means no link.
@@ -242,6 +244,8 @@ data class BackupPayload(
     val cashbackSpendRaw: String,
     /** Saved people list (newline-separated); default keeps old backups importable. */
     val personsRaw: String = "",
+    /** Saved people marked inactive (newline-separated); absent on backups from before format v16 = everyone active. */
+    val inactivePersonsRaw: String = "",
     val accounts: List<BackupAccount>,
     val transactions: List<BackupTransaction>,
     val rules: List<BackupRule>,
@@ -376,11 +380,12 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 15,
+            formatVersion = 16,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
             personsRaw = preferences.personsRaw,
+            inactivePersonsRaw = preferences.inactivePersonsRaw,
             accounts = database.accountDao().getAll().map { it.toBackup() },
             transactions = database.transactionDao().getAll().map { it.toBackup() },
             rules = database.parsingRuleDao().getAll().map { it.toBackup() },
@@ -563,6 +568,7 @@ class BackupManager(
         preferences.defaultCurrency = payload.defaultCurrency
         preferences.cashbackSpendRaw = payload.cashbackSpendRaw
         preferences.personsRaw = payload.personsRaw
+        preferences.inactivePersonsRaw = payload.inactivePersonsRaw
         extras?.let {
             it.goalTargetAmount?.let { v -> preferences.goalTargetAmount = v }
             it.goalMonthlySaving?.let { v -> preferences.goalMonthlySaving = v }

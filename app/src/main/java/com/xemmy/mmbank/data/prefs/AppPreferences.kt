@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.data.prefs
 
+import com.xemmy.mmbank.domain.people.PersonLists
 import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.model.BackgroundStyle
@@ -132,12 +133,35 @@ class AppPreferences(context: Context) {
             personsRaw = value.map(String::trim).filter(String::isNotEmpty).distinct().joinToString("\n")
         }
 
-    /** Adds [name] to the saved people if it isn't there yet (case-insensitive). */
+    /**
+     * Adds [name] to the saved people if it isn't there yet (case-insensitive).
+     * Naming someone again also makes them active: you just used them.
+     */
     fun addPerson(name: String) {
         val clean = name.trim()
         if (clean.isEmpty()) return
         val current = persons
         if (current.none { it.equals(clean, ignoreCase = true) }) persons = current + clean
+        if (PersonLists.isInactive(clean, inactivePersons)) setPersonActive(clean, true)
+    }
+
+    /**
+     * Saved people marked inactive, newline-separated: kept on their old
+     * transactions and in filters, but not offered when assigning (see
+     * [PersonLists]). Included in backups.
+     */
+    var inactivePersonsRaw: String
+        get() = prefs.getString(KEY_INACTIVE_PERSONS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_INACTIVE_PERSONS, value).apply()
+
+    var inactivePersons: List<String>
+        get() = inactivePersonsRaw.split('\n').map(String::trim).filter(String::isNotEmpty).distinct()
+        set(value) {
+            inactivePersonsRaw = value.map(String::trim).filter(String::isNotEmpty).distinct().joinToString("\n")
+        }
+
+    fun setPersonActive(name: String, active: Boolean) {
+        inactivePersons = PersonLists.setActive(inactivePersons, persons, name, active)
     }
 
     /**
@@ -439,6 +463,7 @@ class AppPreferences(context: Context) {
         const val KEY_EXCLUDE_CREDIT_CARD_FROM_TOTAL = "exclude_credit_card_from_total"
         const val KEY_DEFAULT_PERSON = "default_person"
         const val KEY_PERSONS = "persons"
+        const val KEY_INACTIVE_PERSONS = "inactive_persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
         const val KEY_DEMO_MODE_ENABLED = "demo_mode_enabled"
         const val KEY_DEMO_PERSONS_BACKUP = "demo_persons_backup"

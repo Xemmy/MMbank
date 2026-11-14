@@ -445,6 +445,7 @@ class AppContainer(context: Context) {
             demoMode = demoModeEnabled,
             ledgerFx = ledgerFxFlow,
             defaultPersonProvider = { preferences.defaultPerson },
+            inactivePersonsProvider = { preferences.inactivePersons },
             categoryRepository = categoryRepository,
             merchantAccountRepository = merchantAccountRepository,
             onBalanceKept = { ledgerNotices.tryEmit(it) },

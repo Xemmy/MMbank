@@ -47,4 +47,19 @@ class PersonLearnerTest {
         assertNull(PersonLearner.pick(emptyList(), "  "))
         assertNull(PersonLearner.pick(emptyList(), null))
     }
+
+    @Test
+    fun `a pattern that points at an inactive person falls back to the default`() {
+        assertEquals("Me", PersonLearner.pick(listOf("Sara", "Sara"), "Me", inactivePersons = listOf(" sara ")))
+    }
+
+    @Test
+    fun `an inactive person with no default leaves the capture unassigned`() {
+        assertNull(PersonLearner.pick(listOf("Sara", "Sara"), null, inactivePersons = listOf("Sara")))
+    }
+
+    @Test
+    fun `other people being inactive does not disturb a pattern`() {
+        assertEquals("Sara", PersonLearner.pick(listOf("Sara", "Sara"), "Me", inactivePersons = listOf("Omar")))
+    }
 }

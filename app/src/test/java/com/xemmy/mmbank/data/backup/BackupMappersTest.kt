@@ -423,4 +423,24 @@ class BackupMappersTest {
         // The flag only means something without an account; a hand-edited backup must not smuggle it in.
         assertFalse(fullTransaction.copy(historyOnly = true).toBackup().toEntity().historyOnly)
     }
+
+    @Test
+    fun `a backup from before inactive people decodes with everyone active`() {
+        val v15 = """
+            {"formatVersion":15,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+             "personsRaw":"Sara\nOmar","accounts":[],"transactions":[],"rules":[],"senderLabels":[]}
+        """.trimIndent()
+        assertEquals("", json.decodeFromString(BackupPayload.serializer(), v15).inactivePersonsRaw)
+    }
+
+    @Test
+    fun `the inactive people list survives a payload round trip`() {
+        val v16 = """
+            {"formatVersion":16,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+             "personsRaw":"Sara\nOmar","inactivePersonsRaw":"Omar","accounts":[],"transactions":[],"rules":[],"senderLabels":[]}
+        """.trimIndent()
+        val decoded = json.decodeFromString(BackupPayload.serializer(), v16)
+        val again = json.decodeFromString(BackupPayload.serializer(), json.encodeToString(BackupPayload.serializer(), decoded))
+        assertEquals("Omar", again.inactivePersonsRaw)
+    }
 }

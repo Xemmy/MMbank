@@ -84,12 +84,12 @@ Setting a **person** never touches a balance; that side is only a tidy-up.
 
 Persons are a saved name list in `AppPreferences.persons`; one list (`TransactionsUiState.knownPersons`) feeds both the assignment menus and the Activity filter today.
 
-- **Storage:** new `AppPreferences.inactivePersons` (same newline format as `persons`), included in backup export/import (`BackupManager`) and in the demo-mode swap (`AppContainer`). Rename, merge and delete in `SettingsViewModel` keep it in step.
+- **Storage:** new `AppPreferences.inactivePersons` (same newline format as `persons`), included in backup export/import (`BackupManager`). Rename keeps the mark; a deleted person drops out of the list the next time it is written. Demo mode needs no swap: the demo people have other names, so the real marks simply don't match them.
 - **New pure `domain/people/PersonLists.kt`:**
   - `assignable(saved, inactive, default, current)` → active names only, sorted, case-insensitive dedupe. A row that already carries an inactive person still shows that name in its own menu, so opening it never loses the value.
   - `filterable(saved, default)` → everyone, so old transactions of an inactive person remain findable.
 - **Settings → People:** an Active switch on each person, with inactive ones grouped below under "Inactive". The default person can't be made inactive; the switch explains why.
-- **Where only active people show:** the transaction row and detail person menus, the editor dialog, bulk "Set person", the review card, and the Phase 3 "Assign to…" picker.
+- **Where only active people show:** the transaction row person menu, the editor dialog, bulk "assign person", and the Phase 3 "Assign to…" picker. (The review card has no person menu.)
 - **Where everyone still shows:** the Activity person filter and reports. Capture is unchanged; `PersonLearner` stops suggesting a person once marked inactive and falls back to the default.
 
 ## Delivery — one push per phase, wait for CI between pushes

@@ -54,6 +54,8 @@ class TransactionRepositoryImpl(
     private val demoMode: StateFlow<Boolean>,
     /** Person newly captured transactions default to (Settings > Default person). */
     private val defaultPersonProvider: () -> String? = { null },
+    /** People marked inactive in Settings; a learned pattern never assigns a new capture to one. */
+    private val inactivePersonsProvider: () -> List<String> = { emptyList() },
     /** Dynamic category lookup for newly captured transactions (see [CategoryMatcher]). */
     private val categoryRepository: CategoryRepository? = null,
     /**
@@ -241,6 +243,7 @@ class TransactionRepositoryImpl(
             val person = PersonLearner.pick(
                 parsed.merchant?.takeIf { it.isNotBlank() }?.let { dao.lastUserPersonsForMerchant(it) }.orEmpty(),
                 defaultPerson,
+                inactivePersonsProvider(),
             )
             // Learned only when the pattern chose someone other than the default.
             val personSource = if (person != null && !person.equals(defaultPerson?.trim(), ignoreCase = true)) {
