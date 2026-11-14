@@ -20,14 +20,14 @@ object GenericExtractors {
     // Same restricted currency vocabulary as BuiltInRules: known ISO codes,
     // symbols and Arabic abbreviations only, so stray 3-letter words are never
     // mistaken for a currency under IGNORE_CASE.
-    private const val CUR =
+    internal const val CUR =
         "USD|USDT|EUR|GBP|SAR|AED|EGP|KWD|QAR|OMR|BHD|JOD|LBP|IQD|TRY|INR|PKR|JPY|CNY|CHF|CAD|AUD" +
             "|[$€£₹₺¥]|ر\\.\\s?س|د\\.\\s?إ|ج\\.\\s?م|د\\.\\s?ك|ر\\.\\s?ق|ر\\.\\s?ع|د\\.\\s?ب|د\\.\\s?ا|ل\\.\\s?ل|ريال|درهم|جنيه"
 
     // "Plausible" number: optional thousands separators, at most 2 decimals.
     // The (?!\.?\d) guard after each use rejects longer decimal tails
     // (46.123) instead of silently truncating them to 46.12.
-    private const val NUM = "\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?"
+    internal const val NUM = "\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?"
 
     // One flexible pattern for every currency-adjacent layout seen in the
     // reference notifications: "AED 46.12", "AED229.59" (non-spaced),
@@ -58,8 +58,11 @@ object GenericExtractors {
         return null
     }
 
-    private val CREDIT_DIRECTION_KEYWORDS = Regex("\\b(?:received|incoming|deposited)\\b", RegexOption.IGNORE_CASE)
-    private val DEBIT_DIRECTION_KEYWORDS = Regex("\\b(?:paid|purchased|sent|spent)\\b", RegexOption.IGNORE_CASE)
+    private val CREDIT_DIRECTION_KEYWORDS = Regex(
+        "(?<!will be\\s)(?<!to be\\s)(?<!be\\s)\\b(?:received|incoming|deposited)\\b(?!\\s+by\\b)",
+        RegexOption.IGNORE_CASE,
+    )
+    private val DEBIT_DIRECTION_KEYWORDS = Regex("\\b(?:paid|purchased|sent|spent|debited|withdrawn|charged)\\b", RegexOption.IGNORE_CASE)
 
     /**
      * Direction implied by explicit wording in [text], for signature-routed

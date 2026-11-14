@@ -58,13 +58,13 @@ object ObsidianTokens {
 
     // -- Type -----------------------------------------------------------------
     /** Uppercase meta label letter-spacing, e.g. category/account rows. */
-    val metaTracking: TextUnit = 0.14.em
+    val metaTracking: TextUnit = 0.06.em
     val displayTracking: TextUnit = (-0.01).em
     val pillTracking: TextUnit = 0.18.em
     val currencyTracking: TextUnit = 0.1.em
 
-    val metaFontSize = 9.sp
-    val currencyFontSize = 8.5.sp
+    val metaFontSize = 11.sp
+    val currencyFontSize = 11.sp
     val amountFontSize = 14.5.sp
     val titleFontSize = 21.sp
     val bodyFontSize = 13.sp

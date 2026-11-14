@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.ui.screens.transactions
 
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.ui.designsystem.MoneyTone
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -39,5 +40,12 @@ class AmountToneTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `tones map onto the design-system money tones`() {
+        assertEquals(MoneyTone.OUT, AmountTone.NEGATIVE.toMoneyTone())
+        assertEquals(MoneyTone.IN, AmountTone.POSITIVE.toMoneyTone())
+        assertEquals(MoneyTone.NEUTRAL, AmountTone.NEUTRAL.toMoneyTone())
     }
 }

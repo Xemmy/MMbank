@@ -1,7 +1,6 @@
 package com.xemmy.mmbank.ui.screens.insights
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,16 +14,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.PieChart
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -32,7 +44,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,45 +54,65 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
-import com.xemmy.mmbank.ui.components.DonutChart
+import com.xemmy.mmbank.ui.screens.dashboard.NetWorthTrend
+import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetSummaryCard
+import com.xemmy.mmbank.ui.screens.dashboard.DashboardDateRange
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.GoalState
+import com.xemmy.mmbank.ui.screens.dashboard.InsightTone
+import com.xemmy.mmbank.ui.screens.dashboard.SmartInsight
 import com.xemmy.mmbank.ui.screens.dashboard.netFlow
-import com.xemmy.mmbank.ui.theme.GlowPalette
-import com.xemmy.mmbank.ui.theme.GlowTone
-import com.xemmy.mmbank.ui.theme.GlowTones
-import com.xemmy.mmbank.ui.theme.ObsidianCard
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
-import com.xemmy.mmbank.ui.theme.glowBackdrop
-import com.xemmy.mmbank.ui.theme.obsidianCanvas
-import com.xemmy.mmbank.ui.util.AmountText
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.ui.designsystem.DonutChart
+import com.xemmy.mmbank.ui.designsystem.DonutSlice
+import com.xemmy.mmbank.ui.designsystem.LocalHideBalances
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.Sparkline
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.designsystem.chartSeries
+import com.xemmy.mmbank.ui.theme.MMTheme
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
- * The Dashboard tab: this-month stat tiles, savings goal, cash-flow chart,
- * per-person spend, and the doorway to cashback rewards. Reuses
- * [DashboardViewModel], which already assembles stats/goal/hide state.
+ * The Dashboard tab: a date-filterable period with stat tiles, smart-analysis
+ * insights, savings goal, a 6-month cash-flow chart, and per-category/person
+ * spend, plus the doorway to cashback rewards. Reuses [DashboardViewModel],
+ * which already assembles stats/goal/hide state.
  */
 @Composable
 fun InsightsScreen(
     onOpenRewards: () -> Unit,
+    onOpenSubscriptions: () -> Unit = {},
+    onOpenAnalytics: () -> Unit = {},
+    onOpenGoals: () -> Unit = {},
+    onOpenBudgets: () -> Unit = {},
+    onOpenReport: () -> Unit = {},
+    onOpenCopilot: () -> Unit = {},
+    onOpenBills: () -> Unit = {},
+    onOpenSplits: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val netWorthTrend by viewModel.netWorthTrend.collectAsStateWithLifecycle()
     val hasData = state.stats.monthly.any { it.income > 0.0 || it.spend > 0.0 }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().obsidianCanvas(),
+        modifier = Modifier.fillMaxSize().background(MMTheme.colors.canvas),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -97,15 +131,15 @@ fun InsightsScreen(
                         Icon(
                             Icons.Outlined.Info,
                             contentDescription = "What is Raw ledger?",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = MMTheme.colors.textSecondary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
                     Spacer(Modifier.width(4.dp))
-                    FilterChip(
+                    MMFilterChip(
+                        label = "Raw ledger",
                         selected = state.showAllLedgerTransactions,
                         onClick = viewModel::toggleShowAllLedgerTransactions,
-                        label = { Text("Raw ledger") },
                         leadingIcon = {
                             Icon(
                                 Icons.Filled.VisibilityOff,
@@ -121,15 +155,30 @@ fun InsightsScreen(
                         "Includes all transactions, like balance adjustments and cashback, " +
                             "which are normally hidden from spending totals.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MMTheme.colors.textSecondary,
                     )
                 }
             }
         }
 
-        item(key = "month_tiles") { MonthTiles(state) }
+        item(key = "date_filter_row") {
+            DateRangeFilterRow(selected = state.dateRange, onSelect = viewModel::setDateRange)
+        }
+
+        item(key = "period_tiles") { PeriodTiles(state) }
+
+        if (state.stats.insights.isNotEmpty()) {
+            item(key = "insights_card") { SmartInsightsCard(state) }
+        }
+
+        netWorthTrend?.takeIf { it.hasTrend }?.let { trend ->
+            item(key = "net_worth_trend") { NetWorthTrendCard(trend, state.baseCurrency, state.hideBalances) }
+        }
 
         item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
+
+        // Renders nothing until at least one category carries a monthly cap.
+        item(key = "category_budgets_card") { CategoryBudgetSummaryCard(onOpenBudgets = onOpenBudgets) }
 
         if (hasData) {
             item(key = "cashflow_card") { CashFlowCard(state) }
@@ -144,97 +193,371 @@ fun InsightsScreen(
                 Text(
                     "Charts appear here once transactions are captured.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
         }
 
+        item(key = "analytics_row") {
+            NavigationRow(
+                icon = Icons.Outlined.Insights,
+                title = "Spending analytics",
+                subtitle = "Heatmap, category donut and pacing gauge",
+                onClick = onOpenAnalytics,
+            )
+        }
+        item(key = "subscriptions_row") {
+            NavigationRow(
+                icon = Icons.Filled.Repeat,
+                title = "Subscriptions radar",
+                subtitle = "Detected recurring charges and renewal dates",
+                onClick = onOpenSubscriptions,
+            )
+        }
+        item(key = "bills_row") {
+            NavigationRow(
+                icon = Icons.Filled.Receipt,
+                title = "Upcoming bills",
+                subtitle = "Manually tracked bills, due dates and reminders",
+                onClick = onOpenBills,
+            )
+        }
+        item(key = "goals_row") {
+            NavigationRow(
+                icon = Icons.Filled.Savings,
+                title = "Savings goals",
+                subtitle = "Progress bars, debt payoff and surplus allocation",
+                onClick = onOpenGoals,
+            )
+        }
+        item(key = "splits_row") {
+            NavigationRow(
+                icon = Icons.Filled.Groups,
+                title = "Splits & groups",
+                subtitle = "Shared expenses, balances and settle-up suggestions",
+                onClick = onOpenSplits,
+            )
+        }
+        item(key = "budgets_row") {
+            NavigationRow(
+                icon = Icons.Outlined.PieChart,
+                title = "Categories",
+                subtitle = "Manage categories and hierarchy, with monthly caps and alerts at 80% and 100%",
+                onClick = onOpenBudgets,
+            )
+        }
+        item(key = "report_row") {
+            NavigationRow(
+                icon = Icons.Outlined.Description,
+                title = "Monthly report",
+                subtitle = "A month's statement, shareable as a file",
+                onClick = onOpenReport,
+            )
+        }
+        item(key = "copilot_row") {
+            NavigationRow(
+                icon = Icons.Filled.SmartToy,
+                title = "Financial Copilot",
+                subtitle = "Ask questions about your spending in plain English",
+                onClick = onOpenCopilot,
+            )
+        }
         item(key = "rewards_row") { RewardsRow(onOpenRewards) }
     }
 }
 
-/** Income / Spent / Net for the current month as three stat tiles. */
+/** Generic doorway row into a secondary screen, sharing [RewardsRow]'s layout with a swappable icon/label. */
 @Composable
-private fun MonthTiles(state: DashboardUiState) {
-    val month = state.stats.monthly.lastOrNull()
-    val income = month?.income ?: 0.0
-    val spend = month?.spend ?: 0.0
-    val net = netFlow(income, spend)
-    val hidden = state.hideBalances
+private fun NavigationRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    MMCard(Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = MMTheme.colors.accent)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MMTheme.colors.textSecondary,
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MMTheme.colors.textSecondary,
+            )
+        }
+    }
+}
 
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        StatTile(
-            "Income", income.asMoneyOrMask(state.baseCurrency, hidden), ObsidianTokens.credit,
-            Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = true),
-        )
-        StatTile(
-            "Spent", spend.asMoneyOrMask(state.baseCurrency, hidden), ObsidianTokens.debit,
-            Modifier.weight(1f), glow = GlowTones.forDirection(isCredit = false),
-        )
-        StatTile(
-            "Net",
-            net.asMoneyOrMask(state.baseCurrency, hidden),
-            if (net < 0) ObsidianTokens.debit else MaterialTheme.colorScheme.primary,
-            Modifier.weight(1f),
+/**
+ * Chips for the Dashboard's own date filter (month-oriented, unlike the
+ * Activity tab's day-oriented presets) — drives [DashboardUiState.stats]'s
+ * period-scoped fields: the stat tiles, category/person breakdowns, and the
+ * smart-analysis insights. The 6-month cash-flow trend chart is unaffected.
+ */
+@Composable
+private fun DateRangeFilterRow(selected: DashboardDateRange, onSelect: (DashboardDateRange) -> Unit) {
+    var customOpen by remember { mutableStateOf(false) }
+    val presets = listOf(
+        "This month" to DashboardDateRange.ThisMonth,
+        "3mo" to DashboardDateRange.Last3Months,
+        "6mo" to DashboardDateRange.Last6Months,
+        "YTD" to DashboardDateRange.YearToDate,
+        "1Y" to DashboardDateRange.Last12Months,
+        "All" to DashboardDateRange.AllTime,
+    )
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(presets) { (label, range) ->
+            MMFilterChip(
+                label = label,
+                selected = selected == range,
+                onClick = { onSelect(range) },
+            )
+        }
+        item {
+            val isCustom = selected is DashboardDateRange.Custom
+            MMFilterChip(
+                label = if (isCustom) {
+                    val custom = selected as DashboardDateRange.Custom
+                    "${custom.start.format(chipDateFormat)} – ${custom.end.format(chipDateFormat)}"
+                } else {
+                    "Custom"
+                },
+                selected = isCustom,
+                onClick = { customOpen = true },
+                leadingIcon = {
+                    Icon(Icons.Outlined.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
+                },
+            )
+        }
+    }
+
+    if (customOpen) {
+        DashboardCustomDateRangeDialog(
+            initial = selected as? DashboardDateRange.Custom,
+            onDismiss = { customOpen = false },
+            onSelect = { start, end ->
+                onSelect(DashboardDateRange.Custom(start, end))
+                customOpen = false
+            },
         )
     }
 }
 
+private val chipDateFormat = DateTimeFormatter.ofPattern("d MMM")
+
+/** Twin-calendar picker for the Dashboard's custom date range. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StatTile(
-    label: String,
-    value: String,
-    valueColor: Color,
-    modifier: Modifier = Modifier,
-    glow: GlowTone? = null,
+private fun DashboardCustomDateRangeDialog(
+    initial: DashboardDateRange.Custom?,
+    onDismiss: () -> Unit,
+    onSelect: (LocalDate, LocalDate) -> Unit,
 ) {
-    ObsidianCard(modifier) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .glowBackdrop(glow, GlowPalette.DIRECTION_ALPHA)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
+    // The Material picker works in UTC day-millis, so conversions stay in UTC.
+    fun LocalDate.toUtcMillis() = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    fun Long.toUtcDate() = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
+
+    val pickerState = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = initial?.start?.toUtcMillis(),
+        initialSelectedEndDateMillis = initial?.end?.toUtcMillis(),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = pickerState.selectedStartDateMillis != null && pickerState.selectedEndDateMillis != null,
+                onClick = {
+                    val start = pickerState.selectedStartDateMillis
+                    val end = pickerState.selectedEndDateMillis
+                    if (start != null && end != null) onSelect(start.toUtcDate(), end.toUtcDate())
+                },
+            ) { Text("Apply") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DateRangePicker(state = pickerState, modifier = Modifier.weight(1f), showModeToggle = false)
+    }
+}
+
+/** Smart analysis of the selected period's money flow: trend, savings rate, top mover, standouts. */
+@Composable
+private fun SmartInsightsCard(state: DashboardUiState) {
+    val hidden = state.hideBalances
+    val currency = state.baseCurrency
+
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Smart insights", style = MaterialTheme.typography.titleSmall)
+            state.stats.insights.forEach { insight ->
+                Row(verticalAlignment = Alignment.Top) {
+                    val dotColor = when (insight.tone) {
+                        InsightTone.POSITIVE -> MMTheme.colors.moneyIn
+                        InsightTone.NEGATIVE -> MMTheme.colors.moneyOut
+                        InsightTone.NEUTRAL -> MMTheme.colors.textSecondary
+                    }
+                    Box(
+                        Modifier
+                            .padding(top = 5.dp)
+                            .size(6.dp)
+                            .background(dotColor, CircleShape),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        insightText(insight, currency, hidden),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Renders one [SmartInsight] into plain English, applying money formatting and the hide-balances mask. */
+private fun insightText(insight: SmartInsight, currency: String, hidden: Boolean): String = when (insight) {
+    is SmartInsight.SpendTrend -> {
+        val direction = if (insight.percentChange > 0) "up" else "down"
+        "Spending is ${abs(insight.percentChange).roundToInt()}% $direction vs. the previous period"
+    }
+    is SmartInsight.SavingsRate ->
+        if (insight.ratePercent >= 0) {
+            "You saved ${insight.ratePercent.roundToInt()}% of your income this period"
+        } else {
+            "You spent ${(-insight.ratePercent).roundToInt()}% more than you earned this period"
+        }
+    is SmartInsight.TopCategory ->
+        "${insight.category.name} is your biggest expense at ${insight.sharePercent.roundToInt()}% " +
+            "(${moneyLabel(insight.amount, currency, hidden)})"
+    is SmartInsight.CategorySpike ->
+        "${insight.category.name} spending jumped ${insight.percentChange.roundToInt()}% to " +
+            moneyLabel(insight.amount, currency, hidden)
+    is SmartInsight.NoIncomeSpend ->
+        "No income recorded this period — ${moneyLabel(insight.spend, currency, hidden)} went out"
+    is SmartInsight.BiggestExpense ->
+        "Your biggest expense was ${moneyLabel(insight.amount, currency, hidden)} at ${insight.merchant}"
+    is SmartInsight.UnusualCharge ->
+        "Unusual: ${moneyLabel(insight.amount, insight.currencyCode, hidden)} at ${insight.merchant} is " +
+            "${String.format(java.util.Locale.US, "%.1f", insight.ratio)}× your usual " +
+            "(about ${moneyLabel(insight.usual, insight.currencyCode, hidden)})"
+}
+
+/** Income / Spent / Net for the selected period as three stat tiles. */
+@Composable
+private fun PeriodTiles(state: DashboardUiState) {
+    val income = state.stats.periodIncome
+    val spend = state.stats.periodSpend
+    val net = netFlow(income, spend)
+    val hidden = state.hideBalances
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        PeriodStatTile(
+            label = "Income",
+            amount = income,
+            kind = TransactionKind.INCOME,
+            currency = state.baseCurrency,
+            hidden = hidden,
+            modifier = Modifier.weight(1f),
+        )
+        PeriodStatTile(
+            label = "Spent",
+            amount = spend,
+            kind = TransactionKind.SPEND,
+            currency = state.baseCurrency,
+            hidden = hidden,
+            modifier = Modifier.weight(1f),
+            caption = spendChangeCaption(state.stats.spendChangePercent, state.stats.previousLabel),
+        )
+        PeriodStatTile(
+            label = "Net",
+            amount = abs(net),
+            kind = netTileKind(net),
+            currency = state.baseCurrency,
+            hidden = hidden,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** Net tile reads as money out when the period lost money, money in otherwise. */
+internal fun netTileKind(net: Double): TransactionKind =
+    if (net < 0) TransactionKind.SPEND else TransactionKind.INCOME
+
+@Composable
+private fun PeriodStatTile(
+    label: String,
+    amount: Double,
+    kind: TransactionKind,
+    currency: String,
+    hidden: Boolean,
+    modifier: Modifier = Modifier,
+    caption: String? = null,
+) {
+    MMCard(modifier) {
+        Column(Modifier.fillMaxWidth()) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MMTheme.colors.textSecondary,
             )
             Spacer(Modifier.height(2.dp))
-            AmountText(
-                display = value,
-                color = valueColor,
+            MoneyText(
+                amount = amount,
+                currencyCode = currency,
+                kind = kind,
                 style = MaterialTheme.typography.titleSmall,
+                hidden = hidden,
             )
+            caption?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MMTheme.colors.textSecondary,
+                )
+            }
         }
     }
+}
+
+/** "↑18% vs this point last month"; null when there's nothing to compare with. */
+internal fun spendChangeCaption(percent: Double?, previousLabel: String?): String? {
+    if (percent == null || previousLabel == null) return null
+    val rounded = kotlin.math.abs(percent).roundToInt()
+    if (rounded == 0) return "≈ same $previousLabel"
+    return "${if (percent > 0) "↑" else "↓"}$rounded% $previousLabel"
 }
 
 /** Card row that opens the full cashback Rewards screen. */
 @Composable
 private fun RewardsRow(onOpenRewards: () -> Unit) {
-    ObsidianCard(Modifier.fillMaxWidth()) {
+    MMCard(Modifier.fillMaxWidth(), onClick = onOpenRewards) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onOpenRewards)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Redeem, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Redeem, contentDescription = null, tint = MMTheme.colors.accent)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Cashback rewards", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Earned cashback and category planner",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
             Icon(
                 Icons.Filled.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MMTheme.colors.textSecondary,
             )
         }
     }
@@ -252,8 +575,8 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
     val hidden = state.hideBalances
     val currency = state.baseCurrency
 
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 14.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Savings goal",
@@ -264,7 +587,7 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
                     Icon(
                         Icons.Filled.Edit,
                         contentDescription = "Edit goal",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MMTheme.colors.textSecondary,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -275,7 +598,7 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
                     "Set a target amount and how much you plan to save each month — " +
                         "progress and the estimated finish date will show here.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
                 TextButton(onClick = { editOpen = true }) { Text("Set a goal") }
             } else {
@@ -286,23 +609,35 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
 
                 LinearProgressIndicator(
                     progress = { progress },
+                    color = MMTheme.colors.accent,
+                    trackColor = MMTheme.colors.borderSubtle,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 8.dp)
                         .height(8.dp),
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.padding(end = 8.dp)) {
-                    Text(
-                        saved.asMoneyOrMask(currency, hidden) + " of " +
-                            goal.targetAmount.asMoneyOrMask(currency, hidden),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
+                Row(Modifier.fillMaxWidth()) {
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        MoneyText(
+                            amount = saved,
+                            currencyCode = currency,
+                            kind = TransactionKind.ADJUSTMENT,
+                            style = MaterialTheme.typography.bodySmall,
+                            hidden = hidden,
+                        )
+                        Text(" of ", style = MaterialTheme.typography.bodySmall)
+                        MoneyText(
+                            amount = goal.targetAmount,
+                            currencyCode = currency,
+                            kind = TransactionKind.TRANSFER,
+                            style = MaterialTheme.typography.bodySmall,
+                            hidden = hidden,
+                        )
+                    }
                     Text(
                         "${(progress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MMTheme.colors.accent,
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -314,14 +649,14 @@ private fun GoalCard(state: DashboardUiState, onSaveGoal: (Double, Double) -> Un
                             .format(DateTimeFormatter.ofPattern("MMM yyyy", Locale.US))
                         val paceLabel = if (goal.monthlySaving > 0.0) "planned" else "recent average"
                         "≈ $months month${if (months == 1) "" else "s"} to go (by $eta, " +
-                            "saving ${pace.asMoneyOrMask(currency, hidden)}/month $paceLabel)"
+                            "saving ${moneyLabel(pace, currency, hidden)}/month $paceLabel)"
                     }
                     else -> "Set a monthly saving (or build up history) to estimate the finish date."
                 }
                 Text(
                     etaLine,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
         }
@@ -383,6 +718,74 @@ private fun GoalEditDialog(
     )
 }
 
+/**
+ * Net worth at each of the last 12 month-ends, rebuilt from the ledger (see
+ * [com.xemmy.mmbank.ui.screens.dashboard.computeNetWorthTrend]): today's
+ * figure, how it moved, and a sparkline.
+ */
+@Composable
+private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Boolean) {
+    val current = trend.current ?: return
+    val sixMonths = trend.changeSince(6)
+    val twelveMonths = trend.changeSince(trend.values.size - 1)
+    val firstKnownIndex = trend.values.indexOfFirst { it != null }
+    val sinceStart = trend.values.getOrNull(firstKnownIndex)?.let { current - it }
+    val up = (sixMonths ?: sinceStart ?: 0.0) >= 0.0
+
+    fun delta(value: Double): String {
+        val sign = if (value >= 0) "▲" else "▼"
+        return "$sign ${moneyLabel(kotlin.math.abs(value), currency, hidden)}"
+    }
+
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
+            Text("Net worth — 12 months", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MoneyText(
+                    amount = current,
+                    currencyCode = currency,
+                    kind = TransactionKind.ADJUSTMENT,
+                    style = MaterialTheme.typography.titleLarge,
+                    hidden = hidden,
+                )
+                if (trend.approximate) {
+                    Text(" ≈", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            val lines = buildList {
+                sixMonths?.let { add("${delta(it)} vs 6 months ago") }
+                twelveMonths?.let { add("${delta(it)} vs a year ago") }
+                if (sixMonths == null && twelveMonths == null && sinceStart != null) {
+                    add("${delta(sinceStart)} since ${trend.months[firstKnownIndex].month.getDisplayName(TextStyle.SHORT, Locale.US)}")
+                }
+            }
+            if (lines.isNotEmpty()) {
+                Text(
+                    lines.joinToString("  ·  "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (up) MMTheme.colors.moneyIn else MMTheme.colors.moneyOut,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            CompositionLocalProvider(LocalHideBalances provides hidden) {
+                Sparkline(
+                    values = trend.values.filterNotNull(),
+                    title = "Net worth, 12 months",
+                    valueLabel = { moneyLabel(it, currency, hidden) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Rebuilt from your ledger at today's exchange rates. Excludes Binance crypto.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MMTheme.colors.textSecondary,
+            )
+        }
+    }
+}
+
 /** Six months of income vs spend as paired columns, base-currency valued. */
 @Composable
 private fun CashFlowCard(state: DashboardUiState) {
@@ -390,8 +793,8 @@ private fun CashFlowCard(state: DashboardUiState) {
     val hidden = state.hideBalances
     val maxValue = monthly.maxOf { maxOf(it.income, it.spend) }.takeIf { it > 0.0 } ?: 1.0
 
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
             Text("Cash flow — last 6 months", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(12.dp))
             Row(
@@ -406,14 +809,14 @@ private fun CashFlowCard(state: DashboardUiState) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                            ChartBar(fraction = (month.income / maxValue).toFloat(), color = ObsidianTokens.credit)
-                            ChartBar(fraction = (month.spend / maxValue).toFloat(), color = ObsidianTokens.debit)
+                            ChartBar(fraction = (month.income / maxValue).toFloat(), color = MMTheme.colors.moneyIn)
+                            ChartBar(fraction = (month.spend / maxValue).toFloat(), color = MMTheme.colors.moneyOut)
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
                             month.label,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MMTheme.colors.textSecondary,
                         )
                     }
                 }
@@ -421,22 +824,30 @@ private fun CashFlowCard(state: DashboardUiState) {
             Spacer(Modifier.height(10.dp))
             val current = monthly.last()
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LegendDot(ObsidianTokens.credit)
-                Text(
-                    "In " + current.income.asMoneyOrMask(state.baseCurrency, hidden),
+                LegendDot(MMTheme.colors.moneyIn)
+                Text("In", style = MaterialTheme.typography.labelSmall)
+                MoneyText(
+                    amount = current.income,
+                    currencyCode = state.baseCurrency,
+                    kind = TransactionKind.TRANSFER,
                     style = MaterialTheme.typography.labelSmall,
+                    hidden = hidden,
                 )
                 Spacer(Modifier.width(8.dp))
-                LegendDot(ObsidianTokens.debit)
-                Text(
-                    "Out " + current.spend.asMoneyOrMask(state.baseCurrency, hidden),
+                LegendDot(MMTheme.colors.moneyOut)
+                Text("Out", style = MaterialTheme.typography.labelSmall)
+                MoneyText(
+                    amount = current.spend,
+                    currencyCode = state.baseCurrency,
+                    kind = TransactionKind.TRANSFER,
                     style = MaterialTheme.typography.labelSmall,
+                    hidden = hidden,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     "this month",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MMTheme.colors.textSecondary,
                 )
             }
         }
@@ -451,7 +862,7 @@ private fun ChartBar(fraction: Float, color: Color) {
             .width(12.dp)
             .height(maxOf(barHeight, 2.dp))
             .background(
-                if (barHeight > 2.dp) color else MaterialTheme.colorScheme.surfaceVariant,
+                if (barHeight > 2.dp) color else MMTheme.colors.borderSubtle,
                 RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
             ),
     )
@@ -466,48 +877,25 @@ private fun LegendDot(color: Color) {
     )
 }
 
-/** This month's spend per category as a donut chart with a legend, biggest first. */
+/** This month's spend per category as a donut chart; the legend names every slice with its share. */
 @Composable
 private fun CategorySpendCard(state: DashboardUiState) {
     val slices = state.stats.categorySlices
     val hidden = state.hideBalances
     val total = slices.sumOf { it.amount }
 
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("This month by category", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Text(
-                    total.asMoneyOrMask(state.baseCurrency, hidden),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("${state.stats.periodLabel} by category", style = MaterialTheme.typography.titleSmall)
+            CompositionLocalProvider(LocalHideBalances provides hidden) {
+                DonutChart(
+                    slices = slices.map { DonutSlice(it.name, it.amount) },
+                    title = "${state.stats.periodLabel} by category",
+                    centerLabel = moneyLabel(total, state.baseCurrency, hidden),
+                    valueLabel = { moneyLabel(it, state.baseCurrency, hidden) },
+                    modifier = Modifier.fillMaxWidth(),
+                    centerCaption = "total",
                 )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DonutChart(slices = slices, modifier = Modifier.size(120.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    slices.forEach { slice ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(12.dp)
-                                    .background(Color(slice.color), RoundedCornerShape(3.dp)),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(slice.name, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.width(16.dp))
-                            Text(
-                                slice.amount.asMoneyOrMask(state.baseCurrency, hidden),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-                    }
-                }
             }
         }
     }
@@ -519,16 +907,11 @@ private fun PersonSpendCard(state: DashboardUiState) {
     val spends = state.stats.personSpends
     val hidden = state.hideBalances
     val maxAmount = spends.maxOf { it.amount }.takeIf { it > 0.0 } ?: 1.0
-    val barColors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.secondary,
-        MaterialTheme.colorScheme.error,
-    )
+    val barColors = MMTheme.colors.chartSeries()
 
-    ObsidianCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("This month by person", style = MaterialTheme.typography.titleSmall)
+    MMCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("${state.stats.periodLabel} by person", style = MaterialTheme.typography.titleSmall)
             spends.forEachIndexed { index, entry ->
                 Column {
                     Row {
@@ -537,9 +920,12 @@ private fun PersonSpendCard(state: DashboardUiState) {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
                         )
-                        Text(
-                            entry.amount.asMoneyOrMask(state.baseCurrency, hidden),
+                        MoneyText(
+                            amount = entry.amount,
+                            currencyCode = state.baseCurrency,
+                            kind = TransactionKind.TRANSFER,
                             style = MaterialTheme.typography.bodySmall,
+                            hidden = hidden,
                         )
                     }
                     Spacer(Modifier.height(4.dp))
@@ -547,13 +933,13 @@ private fun PersonSpendCard(state: DashboardUiState) {
                         Modifier
                             .fillMaxWidth()
                             .height(8.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
+                            .background(MMTheme.colors.borderSubtle, CircleShape),
                     ) {
                         Box(
                             Modifier
                                 .fillMaxWidth((entry.amount / maxAmount).toFloat().coerceIn(0.02f, 1f))
                                 .height(8.dp)
-                                .background(barColors[index % barColors.size], RoundedCornerShape(4.dp)),
+                                .background(barColors[index % barColors.size], CircleShape),
                         )
                     }
                 }

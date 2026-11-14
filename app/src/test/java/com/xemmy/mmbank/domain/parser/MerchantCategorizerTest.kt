@@ -55,4 +55,56 @@ class MerchantCategorizerTest {
         assertEquals(SpendingCategory.UNCATEGORIZED, MerchantCategorizer.categorize(null, null))
         assertEquals(SpendingCategory.UNCATEGORIZED, MerchantCategorizer.categorize("   "))
     }
+
+    // -- short keywords must stand as a whole word ------------------------------
+
+    @Test
+    fun `short keywords no longer fire inside unrelated words`() {
+        val none = SpendingCategory.UNCATEGORIZED
+        assertEquals(none, MerchantCategorizer.categorize("Grand Palace"))
+        assertEquals(none, MerchantCategorizer.categorize("Space Odyssey"))
+        assertEquals(none, MerchantCategorizer.categorize("Marketplace XYZ"))
+        assertEquals(none, MerchantCategorizer.categorize("Acer Dubai"))
+        assertEquals(none, MerchantCategorizer.categorize("Smart Gadgets"))
+        assertEquals(none, MerchantCategorizer.categorize("Martini Bar"))
+        assertEquals(none, MerchantCategorizer.categorize("Halal Kitchen"))
+        assertEquals(none, MerchantCategorizer.categorize("Private Label"))
+    }
+
+    @Test
+    fun `short keywords still match as whole words`() {
+        assertEquals(SpendingCategory.SHOPPING, MerchantCategorizer.categorize("ACE Hardware"))
+        assertEquals(SpendingCategory.SHOPPING, MerchantCategorizer.categorize("ACE"))
+        assertEquals(SpendingCategory.TRANSPORT, MerchantCategorizer.categorize("Hala Taxi"))
+        assertEquals(SpendingCategory.TRANSPORT, MerchantCategorizer.categorize("NOL top-up"))
+        assertEquals(SpendingCategory.FEES, MerchantCategorizer.categorize("VAT 5%"))
+        assertEquals(SpendingCategory.FEES, MerchantCategorizer.categorize("Annual fees"))
+        assertEquals(SpendingCategory.DINING, MerchantCategorizer.categorize("KFC-DUBAI"))
+    }
+
+    @Test
+    fun `mart still matches as a word or a known compound`() {
+        assertEquals(SpendingCategory.GROCERIES, MerchantCategorizer.categorize("Lulu Mart"))
+        assertEquals(SpendingCategory.GROCERIES, MerchantCategorizer.categorize("D-Mart"))
+        assertEquals(SpendingCategory.GROCERIES, MerchantCategorizer.categorize("DMART"))
+        assertEquals(SpendingCategory.GROCERIES, MerchantCategorizer.categorize("Supermart Al Barsha"))
+    }
+
+    @Test
+    fun `longer keywords keep matching inside larger strings`() {
+        assertEquals(SpendingCategory.SHOPPING, MerchantCategorizer.categorize("Bookshop Downtown"))
+        assertEquals(SpendingCategory.GROCERIES, MerchantCategorizer.categorize("WWW.CARREFOURUAE.COM"))
+    }
+
+    @Test
+    fun `the message text is searched with the same word rules`() {
+        assertEquals(
+            SpendingCategory.UNCATEGORIZED,
+            MerchantCategorizer.categorize(merchant = null, rawText = "You spent AED 120 at Palace Holdings Group"),
+        )
+        assertEquals(
+            SpendingCategory.TRANSPORT,
+            MerchantCategorizer.categorize(merchant = null, rawText = "You spent AED 12 on NOL card top-up"),
+        )
+    }
 }

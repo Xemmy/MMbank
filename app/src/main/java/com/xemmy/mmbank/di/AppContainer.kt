@@ -2,7 +2,23 @@ package com.xemmy.mmbank.di
 
 import android.content.Context
 import androidx.room.withTransaction
+import androidx.work.Constraints
+import androidx.work.Data
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.xemmy.mmbank.domain.repository.LedgerRepository
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.ledger.LedgerMath
+import com.xemmy.mmbank.data.ai.AiParsingWorker
+import com.xemmy.mmbank.data.ai.LocalAiConfig
+import com.xemmy.mmbank.data.ai.LocalAiManager
 import com.xemmy.mmbank.data.backup.BackupManager
+import com.xemmy.mmbank.data.bills.BillReminderWorker
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.DatabaseEncryptionMigrator
 import com.xemmy.mmbank.data.local.SecureDatabaseFactory
@@ -12,35 +28,96 @@ import com.xemmy.mmbank.data.remote.binance.BinanceApi
 import com.xemmy.mmbank.data.remote.binance.BinanceSigningInterceptor
 import com.xemmy.mmbank.data.remote.binance.BinanceWalletAssetsService
 import com.xemmy.mmbank.data.remote.forex.ForexApi
+import com.xemmy.mmbank.data.repository.MerchantAccountRepositoryImpl
 import com.xemmy.mmbank.data.repository.AccountRepositoryImpl
+import com.xemmy.mmbank.data.repository.BillRepositoryImpl
+import com.xemmy.mmbank.data.repository.CategoryRepositoryImpl
+import com.xemmy.mmbank.data.repository.FriendRepositoryImpl
+import com.xemmy.mmbank.data.repository.IgnoredKeywordRepositoryImpl
+import com.xemmy.mmbank.data.repository.IgnoredMessageRepositoryImpl
 import com.xemmy.mmbank.data.repository.ParsingRuleRepositoryImpl
 import com.xemmy.mmbank.data.repository.PortfolioRepositoryImpl
 import com.xemmy.mmbank.data.repository.RatesRepositoryImpl
+import com.xemmy.mmbank.data.repository.SavingsGoalRepositoryImpl
 import com.xemmy.mmbank.data.repository.SenderLabelRepositoryImpl
+import com.xemmy.mmbank.data.repository.SplitGroupRepositoryImpl
+import com.xemmy.mmbank.data.repository.SubscriptionRepositoryImpl
 import com.xemmy.mmbank.data.repository.TransactionRepositoryImpl
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.data.local.entity.toDomain
+import com.xemmy.mmbank.data.retention.RetentionPruner
+import com.xemmy.mmbank.data.retention.TransactionRetentionWorker
+import com.xemmy.mmbank.data.subscription.SubscriptionReminderWorker
+import com.xemmy.mmbank.domain.budget.BudgetRollover
+import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
+import com.xemmy.mmbank.domain.budget.DailyBudgetPacing
+import com.xemmy.mmbank.data.digest.WeeklyDigestWorker
+import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
+import com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector
+import com.xemmy.mmbank.domain.intelligence.WhatChangedDigest
+import com.xemmy.mmbank.ui.util.CurrencyMath
+import com.xemmy.mmbank.util.CaptureAccess
+import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.demo.DemoDataGenerator
 import com.xemmy.mmbank.domain.auth.AppLockController
+import com.xemmy.mmbank.domain.auth.AppPinGate
+import com.xemmy.mmbank.domain.auth.PinAttemptLimiter
+import com.xemmy.mmbank.domain.auth.PinCheck
+import com.xemmy.mmbank.domain.auth.PinHasher
+import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
 import com.xemmy.mmbank.domain.auth.IdleSessionMonitor
+import com.xemmy.mmbank.domain.repository.MerchantAccountRepository
 import com.xemmy.mmbank.domain.repository.AccountRepository
+import com.xemmy.mmbank.domain.repository.BillRepository
+import com.xemmy.mmbank.domain.repository.CategoryRepository
+import com.xemmy.mmbank.domain.repository.FriendRepository
+import com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository
+import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.PortfolioRepository
 import com.xemmy.mmbank.domain.repository.RatesRepository
+import com.xemmy.mmbank.domain.repository.SavingsGoalRepository
 import com.xemmy.mmbank.domain.repository.SenderLabelRepository
+import com.xemmy.mmbank.domain.repository.SplitGroupRepository
+import com.xemmy.mmbank.domain.repository.SubscriptionRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.ai.AiDailyBudget
+import com.xemmy.mmbank.domain.ai.AiParseResult
+import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
+import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
+import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
+import com.xemmy.mmbank.domain.parser.IgnoredMessageCache
 import com.xemmy.mmbank.domain.usecase.BulkUpdateTransactionsUseCase
+import com.xemmy.mmbank.domain.usecase.ImportPastedMessagesUseCase
 import com.xemmy.mmbank.domain.usecase.IngestCapturedMessageUseCase
+import com.xemmy.mmbank.util.BudgetNotificationHelper
+import com.xemmy.mmbank.util.CategoryBudgetNotificationHelper
+import com.xemmy.mmbank.util.UnusualChargeNotificationHelper
+import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -75,6 +152,29 @@ class AppContainer(context: Context) {
 
     fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
 
+    // Single reactive source of truth for the Dark/Light/System theme: every
+    // screen renders through it, so it's a container-level flow.
+    private val _themeMode by lazy { MutableStateFlow(preferences.themeMode) }
+    val themeMode: StateFlow<ThemeMode> by lazy { _themeMode.asStateFlow() }
+
+    fun setThemeMode(mode: ThemeMode) {
+        preferences.themeMode = mode   // persist across restarts
+        _themeMode.value = mode        // notify all collectors live
+    }
+
+    // Single reactive source of truth for the app-wide ambient background
+    // style. Read/written from the Appearance settings screen; kept at the
+    // container level (not a per-screen pref snapshot) since the root app
+    // scaffold and Settings both need it live, the same way hideBalances
+    // does.
+    private val _backgroundPreset by lazy { MutableStateFlow(preferences.backgroundPreset) }
+    val backgroundPreset: StateFlow<BackgroundStyle> by lazy { _backgroundPreset.asStateFlow() }
+
+    fun setBackgroundPreset(style: BackgroundStyle) {
+        preferences.backgroundPreset = style   // persist across restarts
+        _backgroundPreset.value = style        // notify all collectors live
+    }
+
     // Single reactive source of truth for "Demo mode". The repositories collect
     // this to switch the ledger between the real partition (false) and the
     // disposable demo partition (true); flipping it hides/reveals real data live.
@@ -91,6 +191,7 @@ class AppContainer(context: Context) {
         database.withTransaction {
             // Fresh batch each time: clear any leftover demo rows first.
             database.transactionDao().deleteDemo()
+            database.accountChangeDao().deleteDemo()
             database.accountDao().deleteDemo()
             database.parsingRuleDao().deleteDemo()
 
@@ -98,7 +199,12 @@ class AppContainer(context: Context) {
             val idByKey = batch.accounts.associate { seed ->
                 seed.key to database.accountDao().insert(seed.entity)
             }
-            database.transactionDao().insertAll(batch.transactions(idByKey))
+            // Same enum-to-name bridge capture time uses, so demo transactions
+            // land on real dynamic categories instead of showing up Uncategorized.
+            val categoryIdByEnum = CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME.mapNotNull { (enumValue, name) ->
+                database.categoryDao().getByName(name)?.id?.let { enumValue to it }
+            }.toMap()
+            database.transactionDao().insertAll(batch.transactions(idByKey, categoryIdByEnum))
             database.parsingRuleDao().insertAll(batch.rules)
         }
         // Stash the real saved-people list and show demo people instead. Real
@@ -123,6 +229,7 @@ class AppContainer(context: Context) {
         preferences.demoPersonsBackup = ""
         database.withTransaction {
             database.transactionDao().deleteDemo()
+            database.accountChangeDao().deleteDemo()
             database.accountDao().deleteDemo()
             database.parsingRuleDao().deleteDemo()
         }
@@ -153,7 +260,12 @@ class AppContainer(context: Context) {
                 handler.postDelayed(runnable, delayMillis)
                 ({ handler.removeCallbacks(runnable) })
             }),
-            isEnabled = { preferences.appLockEnabled },
+            // Fails open: with neither an app PIN nor a system authenticator
+            // (e.g. the screen lock was removed after the lock was turned on)
+            // the lock could never be opened, so it stays off.
+            isEnabled = {
+                preferences.appLockEnabled && AppPinGate.lockUsable(appPinSet(), systemAuthAvailable())
+            },
             timeoutMillis = { preferences.appLockTimeoutMinutes * 60_000L },
             // Persisted so the idle grace window survives the process being
             // killed: a return within the timeout doesn't force a re-auth.
@@ -175,6 +287,76 @@ class AppContainer(context: Context) {
         appLock.onSettingsChanged()   // re-arm the idle timer with the new duration
     }
 
+    // --- App PIN (see AppPinGate) and screenshot blocking ---
+
+    val hasAppPin: Boolean get() = appPinSet()
+
+    // Both feed appLock's isEnabled, which runs on every touch
+    // (AppLockController.onUserInteraction), so they're cached: the PIN flag
+    // decrypts a pref and the authenticator check is a binder call. Cleared on
+    // every return to the foreground (a screen lock can only be removed
+    // outside the app) and whenever the PIN changes.
+    @Volatile private var cachedHasAppPin: Boolean? = null
+    @Volatile private var cachedSystemAuth: Boolean? = null
+
+    private fun appPinSet(): Boolean =
+        cachedHasAppPin ?: credentialStore.hasAppPin.also { cachedHasAppPin = it }
+
+    private fun systemAuthAvailable(): Boolean =
+        cachedSystemAuth ?: BiometricAuthManagerImpl.canAuthenticate(appContext).also { cachedSystemAuth = it }
+
+    /** Re-reads what can open the lock; called as the app comes to the foreground, before the lock decides. */
+    fun refreshLockAvailability() {
+        cachedHasAppPin = null
+        cachedSystemAuth = null
+    }
+
+    /** Stores the hash of a new app PIN (never the PIN) and clears any lockout. */
+    suspend fun setAppPin(pin: String) {
+        val hash = withContext(Dispatchers.Default) { PinHasher.hash(pin) }
+        credentialStore.appPinHash = hash
+        cachedHasAppPin = true
+        preferences.pinFailedAttempts = 0
+        preferences.pinLockedUntil = 0L
+        appLock.onSettingsChanged()
+    }
+
+    /**
+     * Removes the app PIN. If nothing else could open the lock (no
+     * biometrics, no screen lock), the lock is turned off too.
+     */
+    fun removeAppPin() {
+        credentialStore.appPinHash = null
+        cachedHasAppPin = false
+        cachedSystemAuth = null
+        if (preferences.appLockEnabled && !systemAuthAvailable()) {
+            setAppLockEnabled(false)
+        } else {
+            appLock.onSettingsChanged()
+        }
+    }
+
+    /** Checks a PIN typed on the lock screen, persisting the attempt limiter's state. */
+    suspend fun checkAppPin(pin: String): PinCheck {
+        val state = PinAttemptLimiter.State(preferences.pinFailedAttempts, preferences.pinLockedUntil)
+        val outcome = withContext(Dispatchers.Default) {
+            AppPinGate.check(pin, credentialStore.appPinHash, state, System.currentTimeMillis())
+        }
+        preferences.pinFailedAttempts = outcome.state.failedAttempts
+        preferences.pinLockedUntil = outcome.state.lockedUntil
+        return outcome.result
+    }
+
+    private val _secureScreen by lazy { MutableStateFlow(preferences.secureScreenEnabled) }
+
+    /** "Block screenshots" (`FLAG_SECURE`), reactive because MainActivity applies it live. */
+    val secureScreen: StateFlow<Boolean> by lazy { _secureScreen.asStateFlow() }
+
+    fun setSecureScreen(enabled: Boolean) {
+        preferences.secureScreenEnabled = enabled
+        _secureScreen.value = enabled
+    }
+
     /**
      * At-rest encryption: an existing plaintext ledger is migrated to
      * SQLCipher exactly once (verify-then-swap with a .bak safety net —
@@ -190,6 +372,13 @@ class AppContainer(context: Context) {
             )
             if (migrated) SecureDatabaseFactory().encryptedFactory(appContext, passphrase) else null
         }.onFailure { recordError("AppContainer.databaseEncryption", it) }.getOrNull()
+        // No key (Keystore hiccup) must never fall through to opening an
+        // already-encrypted ledger as plain SQLite: SQLite reports "not a
+        // database" and Room's default onCorruption deletes the file. Fail
+        // loudly instead; the next launch retries with the data untouched.
+        check(encrypted != null || !DatabaseEncryptionMigrator.isEncryptedOnDisk(appContext, AppDatabase.DB_NAME)) {
+            "Encrypted ledger present but its key is unavailable; refusing to open it as plaintext"
+        }
         AppDatabase.build(appContext, encrypted)
     }
 
@@ -218,19 +407,107 @@ class AppContainer(context: Context) {
             .create(ForexApi::class.java)
     }
 
-    val transactionRepository: TransactionRepository by lazy {
-        TransactionRepositoryImpl(
-            database, database.transactionDao(), demoModeEnabled,
-        ) { preferences.defaultPerson }
+    /**
+     * Foreign-currency converter for balances: converts each charge into its
+     * account's currency at the stored forex rates ([LedgerFx]). Re-emits when
+     * accounts or rates change.
+     */
+    val ledgerFxFlow: kotlinx.coroutines.flow.Flow<com.xemmy.mmbank.domain.account.LedgerFx> by lazy {
+        kotlinx.coroutines.flow.combine(
+            accountRepository.observeActive(),
+            accountRepository.observeArchived(),
+            ratesRepository.observeRates(),
+        ) { active, archived, rates ->
+            val base = preferences.defaultCurrency
+            com.xemmy.mmbank.domain.account.LedgerFx(
+                baseCurrency = base,
+                ratesFromBase = rates
+                    .filter { it.baseCode.equals(base, ignoreCase = true) }
+                    .associate { it.quoteCode.uppercase() to it.rate },
+                accountCurrencies = (active + archived).associate { it.id to it.currencyCode },
+            )
+        }
     }
+
+    /**
+     * Short one-off messages about something the ledger did on the user's behalf
+     * (today: "Filed 12 older transactions. X's balance was kept."). Shown by
+     * MainActivity whichever screen is open; a missed one is harmless, the same
+     * fact is in the account's history.
+     */
+    val ledgerNotices = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /** One instance behind both [transactionRepository] and [ledgerRepository]: they share transfer linking. */
+    private val transactionRepositoryImpl: TransactionRepositoryImpl by lazy {
+        TransactionRepositoryImpl(
+            database = database,
+            dao = database.transactionDao(),
+            demoMode = demoModeEnabled,
+            ledgerFx = ledgerFxFlow,
+            defaultPersonProvider = { preferences.defaultPerson },
+            inactivePersonsProvider = { preferences.inactivePersons },
+            categoryRepository = categoryRepository,
+            merchantAccountRepository = merchantAccountRepository,
+            onBalanceKept = { ledgerNotices.tryEmit(it) },
+            onTransactionRecorded = { transaction ->
+                checkDailyBudgetPacing(transaction)
+                checkCategoryBudget(transaction)
+                refreshSubscriptionForMerchant(transaction)
+                checkUnusualCharge(transaction)
+            },
+        )
+    }
+    val transactionRepository: TransactionRepository get() = transactionRepositoryImpl
+    val ledgerRepository: LedgerRepository get() = transactionRepositoryImpl
     val accountRepository: AccountRepository by lazy {
-        AccountRepositoryImpl(database.accountDao(), demoModeEnabled)
+        AccountRepositoryImpl(
+            dao = database.accountDao(),
+            parsingRuleDao = database.parsingRuleDao(),
+            demoMode = demoModeEnabled,
+            changes = database.accountChangeDao(),
+            database = database,
+        )
+    }
+    val categoryRepository: CategoryRepository by lazy {
+        CategoryRepositoryImpl(database)
+    }
+
+    /**
+     * Learned merchant -> account rules, written when the user assigns a
+     * transaction by hand and read back at capture time. Lazy over [database]
+     * like [categoryRepository], so no initialization cycle with
+     * [transactionRepository].
+     */
+    val merchantAccountRepository: MerchantAccountRepository by lazy {
+        MerchantAccountRepositoryImpl(database, onBalanceKept = { ledgerNotices.tryEmit(it) })
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao(), demoModeEnabled)
     }
     val senderLabelRepository: SenderLabelRepository by lazy {
         SenderLabelRepositoryImpl(database.senderLabelDao())
+    }
+    val ignoredKeywordRepository: IgnoredKeywordRepository by lazy {
+        IgnoredKeywordRepositoryImpl(database.ignoredKeywordDao())
+    }
+
+    val ignoredMessageRepository: IgnoredMessageRepository by lazy {
+        IgnoredMessageRepositoryImpl(database.ignoredMessagePatternDao())
+    }
+    val subscriptionRepository: SubscriptionRepository by lazy {
+        SubscriptionRepositoryImpl(database.subscriptionDao())
+    }
+    val savingsGoalRepository: SavingsGoalRepository by lazy {
+        SavingsGoalRepositoryImpl(database.savingsGoalDao())
+    }
+    val billRepository: BillRepository by lazy {
+        BillRepositoryImpl(database.billDao())
+    }
+    val friendRepository: FriendRepository by lazy {
+        FriendRepositoryImpl(database.friendDao())
+    }
+    val splitGroupRepository: SplitGroupRepository by lazy {
+        SplitGroupRepositoryImpl(database.splitGroupDao(), database.groupExpenseDao())
     }
     /** Logic-only Spot/Funding/Earn per-asset fetcher (zero balances filtered). */
     val binanceWalletAssets: BinanceWalletAssetsService by lazy {
@@ -247,22 +524,71 @@ class AppContainer(context: Context) {
         )
     }
     val ratesRepository: RatesRepository by lazy {
-        RatesRepositoryImpl(forexApi, database.exchangeRateDao())
+        RatesRepositoryImpl(forexApi, database.exchangeRateDao(), database.exchangeRateHistoryDao())
     }
 
     val backupManager: BackupManager by lazy {
         BackupManager(database, preferences)
     }
 
+    /**
+     * Executes a retention prune without moving a balance (see
+     * [RetentionPruner]). Held here rather than behind `TransactionRepository`
+     * for the same reason as [backupManager]: it is a whole-database operation,
+     * not a ledger query.
+     */
+    val retentionPruner: RetentionPruner by lazy {
+        RetentionPruner(database, fxProvider = { ledgerFxFlow.first() })
+    }
+
     private val compiledRuleCache by lazy {
         CompiledRuleCache(parsingRuleRepository, applicationScope)
+    }
+
+    private val ignoredMessageCache by lazy {
+        IgnoredMessageCache(ignoredMessageRepository, applicationScope, ignoredKeywordRepository)
+    }
+
+    /**
+     * Client for the Gate-2 AI server -- local (on-device) or online (cloud),
+     * per the user's selected mode. Timeouts are generous enough for a real
+     * internet round-trip (online mode) while staying fine for an on-device
+     * server (local mode). No Binance signing interceptor. Cleartext to
+     * loopback is permitted by the network-security-config; LoopbackGuard
+     * blocks any non-loopback host whenever local mode is selected.
+     */
+    private val localAiClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(40, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Gate 2's gateway to the configured AI server (local loopback, or an explicit online provider). */
+    val localAiManager: LocalAiManager by lazy {
+        LocalAiManager(
+            context = appContext,
+            readConfig = {
+                LocalAiConfig(
+                    enabled = preferences.aiParsingEnabled,
+                    mode = preferences.aiProviderMode,
+                    endpointUrl = preferences.aiEndpointUrl,
+                    model = preferences.aiModelName,
+                    apiKey = credentialStore.aiApiKey,
+                )
+            },
+            httpClientFactory = { localAiClient },
+        )
     }
 
     val ingestCapturedMessage: IngestCapturedMessageUseCase by lazy {
         IngestCapturedMessageUseCase(
             customRules = compiledRuleCache,
             transactionRepository = transactionRepository,
+            onGate1Miss = ::enqueueAiParsingWorker,
             fallbackCurrencyProvider = { preferences.defaultCurrency },
+            ignoredMessages = ignoredMessageCache,
         )
     }
 
@@ -270,8 +596,507 @@ class AppContainer(context: Context) {
         BulkUpdateTransactionsUseCase(transactionRepository)
     }
 
+    /** Backs the Settings "Import & ignore messages" screen's paste box. */
+    val importPastedMessages: ImportPastedMessagesUseCase by lazy {
+        ImportPastedMessagesUseCase(ingestCapturedMessage, transactionRepository)
+    }
+
+    /**
+     * A fresh [SimpleDateFormat] per call -- it's not thread-safe, and this is
+     * read from both the capture threads (notification listener / SMS
+     * receiver, via [consumeAiBudget]) and the UI thread (via
+     * [aiRequestsUsedToday]), so a single shared instance could corrupt under
+     * concurrent access.
+     */
+    private fun todaysAiBudgetDayKey(): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
+    /**
+     * Fire-and-forget: hands a Gate-1 miss to the expedited [AiParsingWorker],
+     * unless today's automatic-parsing budget ([AppPreferences.aiDailyRequestLimit],
+     * see [AiDailyBudget]) is already used up -- the message simply stays
+     * unparsed, same as any other Gate-2 skip. Never awaited, never allowed to
+     * affect the ingest pipeline's own result. The budget is only consulted
+     * while AI parsing is enabled, so it can't pre-exhaust itself while the
+     * feature is off.
+     */
+    private fun enqueueAiParsingWorker(message: CapturedMessage) {
+        if (preferences.aiParsingEnabled && !consumeAiBudget()) return
+        val input = Data.Builder()
+            .putString(AiParsingWorker.KEY_RAW_MESSAGE, message.body)
+            .build()
+        val request = OneTimeWorkRequestBuilder<AiParsingWorker>()
+            .setInputData(input)
+            // Local mode talks to a loopback server that's reachable with or
+            // without a WAN connection, but this constraint only delays the
+            // one-shot run until *some* network is up -- cheap, and it saves
+            // the online mode's HTTP call from firing while offline. The
+            // worker still never retries (see its doc comment): re-sending a
+            // user's raw message text to an online provider on every backoff
+            // tick is a privacy cost this app doesn't take on for a
+            // best-effort background parse.
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+        WorkManager.getInstance(appContext).enqueue(request)
+    }
+
+    /** True and consumed if today's automatic-parsing budget has room; false (and untouched) once it's spent. */
+    private fun consumeAiBudget(): Boolean {
+        val today = todaysAiBudgetDayKey()
+        val dayKey = preferences.aiBudgetDayKey
+        val state = if (dayKey.isEmpty()) null else AiDailyBudget.State(dayKey, preferences.aiBudgetDayCount)
+        if (AiDailyBudget.isExhausted(state, today, preferences.aiDailyRequestLimit)) return false
+        val next = AiDailyBudget.next(state, today)
+        preferences.aiBudgetDayKey = next.dayKey
+        preferences.aiBudgetDayCount = next.count
+        return true
+    }
+
+    /** Automatic Gate-2 requests consumed so far today (read-only; for Settings' "used X / limit" display). */
+    fun aiRequestsUsedToday(): Int {
+        val today = todaysAiBudgetDayKey()
+        return if (preferences.aiBudgetDayKey == today) preferences.aiBudgetDayCount else 0
+    }
+
+    /**
+     * Gate 2 self-healing hook: stages a *disabled* [ParsingRule] candidate
+     * generated from the AI's own extraction (see
+     * [AiSelfHealingRuleGenerator]) for one-tap human approval in the Rules
+     * screen. Nothing here ever writes a transaction or an enabled rule --
+     * unreviewed AI output can only ever produce a pending suggestion.
+     */
+    fun onAiTransactionParsed(rawMessage: String, result: AiParseResult) {
+        AiSelfHealingRuleGenerator.generate(rawMessage, result)?.let { candidate ->
+            applicationScope.launch {
+                runCatching {
+                    val existing = parsingRuleRepository.observeAll().first()
+                    if (existing.none { it.pattern == candidate.pattern }) {
+                        parsingRuleRepository.save(candidate)
+                    }
+                }.onFailure { recordError("AppContainer.onAiTransactionParsed", it) }
+            }
+        }
+        onAiCategorySuggested(result)
+    }
+
+    /**
+     * Gate 2's category counterpart to the rule-candidate hook above: a
+     * confident `category_name` match is learned as a confirmed merchant
+     * mapping (backfilling any already-captured, still-uncategorized
+     * transactions from that merchant); a brand-new `suggested_category` is
+     * staged as a *pending* mapping instead -- surfaced for one-tap approval
+     * in the Uncategorized queue, never auto-applied. No-op when the AI named
+     * neither (or there's no merchant to key off of).
+     */
+    private fun onAiCategorySuggested(result: AiParseResult) {
+        val merchant = result.merchant?.takeIf { it.isNotBlank() } ?: return
+        applicationScope.launch {
+            runCatching {
+                when {
+                    result.categoryName != null -> {
+                        val category = categoryRepository.observeAll().first()
+                            .firstOrNull { it.name.equals(result.categoryName, ignoreCase = true) }
+                        if (category != null) categoryRepository.learnMapping(merchant, category.id)
+                    }
+                    result.suggestedCategoryName != null -> categoryRepository.suggestPending(
+                        merchant, result.suggestedCategoryName, result.suggestedCategoryIcon, result.suggestedCategoryColorHex,
+                    )
+                }
+            }.onFailure { recordError("AppContainer.onAiCategorySuggested", it) }
+        }
+    }
+
+    /**
+     * Real-time daily budget pacing (see [DailyBudgetPacing]): after a real
+     * debit is recorded, checks it against
+     * `(monthlySpendBudget - fixedMonthlyExpenses - spentSoFarThisMonth) / remainingDaysInMonth`
+     * and posts a local notification if it pushed the day over its allowance.
+     * A no-op while no monthly budget is configured. Fire-and-forget, same as
+     * every other post-insert side effect here -- it must never affect the
+     * ingest pipeline's own result.
+     */
+    private fun checkDailyBudgetPacing(transaction: Transaction) {
+        if (!LedgerMath.isSpend(transaction)) return
+        val monthlyBudget = preferences.monthlySpendBudget
+        if (monthlyBudget <= 0.0) return
+
+        applicationScope.launch {
+            runCatching {
+                val zone = ZoneId.systemDefault()
+                val today = Instant.ofEpochMilli(transaction.timestampMillis).atZone(zone).toLocalDate()
+                val monthStart = today.withDayOfMonth(1)
+                val nextMonthStart = monthStart.plusMonths(1)
+                val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+                val endMillis = nextMonthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+
+                val spentSoFar = database.transactionDao()
+                    .sumDebitsInRange(transaction.currencyCode, startMillis, endMillis)
+                    .toBigDecimal()
+
+                val result = DailyBudgetPacing.checkPacing(
+                    transactionAmount = transaction.amount,
+                    monthlyBudget = BigDecimal.valueOf(monthlyBudget),
+                    fixedExpenses = BigDecimal.valueOf(preferences.fixedMonthlyExpenses),
+                    spentSoFarIncludingThis = spentSoFar,
+                    remainingDaysInMonth = DailyBudgetPacing.remainingDaysInMonth(today),
+                )
+                if (result is DailyBudgetPacing.PacingResult.Overspend) {
+                    BudgetNotificationHelper.postOverspendAlert(appContext, transaction, result)
+                }
+            }.onFailure { recordError("AppContainer.checkDailyBudgetPacing", it) }
+        }
+    }
+
+    /**
+     * Per-category cap check (see [CategoryBudgetCalculator]): after a real,
+     * categorized debit is recorded, compares that category's month-to-date
+     * spend against its [com.xemmy.mmbank.domain.model.Category.monthlyCap] and
+     * notifies the first time it reaches 80% and again the first time it passes
+     * 100%. A no-op for uncategorized rows or categories with no cap.
+     *
+     * Independent of [checkDailyBudgetPacing]: that one paces total
+     * discretionary spend per day, this one guards one category's monthly
+     * envelope. Both hang off the same post-insert hook and both are
+     * fire-and-forget -- neither may affect the ingest result.
+     */
+    /** Stored forex rates quoted per 1 [base], exact -- the shape [CategoryBudgetCalculator.converter] takes. */
+    private suspend fun ratesFromBaseExact(base: String): Map<String, java.math.BigDecimal> =
+        ratesRepository.observeRates().first()
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate }
+
+    private fun checkCategoryBudget(transaction: Transaction) {
+        if (!LedgerMath.isSpend(transaction)) return
+        val categoryId = transaction.categoryId ?: return
+
+        applicationScope.launch {
+            runCatching {
+                val category = categoryRepository.getById(categoryId) ?: return@runCatching
+                if (category.monthlyCap == null) return@runCatching
+
+                val zone = ZoneId.systemDefault()
+                val day = Instant.ofEpochMilli(transaction.timestampMillis).atZone(zone).toLocalDate()
+                val monthStart = day.withDayOfMonth(1)
+                val startMillis = monthStart.atStartOfDay(zone).toInstant().toEpochMilli()
+                val endMillis = monthStart.plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+                // The cap is in the base currency, so this month's spend in every
+                // currency is converted into it (as the Budgets screen does);
+                // spend with no rate is left out rather than added at face value.
+                val base = preferences.defaultCurrency
+                val allReal = transactionRepository.getAllReal()
+                val convert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base))
+                val spent = CategoryBudgetCalculator.monthSpend(
+                    transactions = allReal.filter { it.categoryId == categoryId },
+                    baseCurrency = base,
+                    startMillis = startMillis,
+                    endMillisExclusive = endMillis,
+                    convert = convert,
+                ).byCategory[categoryId] ?: java.math.BigDecimal.ZERO
+                // Envelope budgets: what earlier months left unspent raises this month's cap.
+                val carry: java.math.BigDecimal = (
+                    if (preferences.budgetRollover) {
+                        BudgetRollover.carryByCategory(
+                            categoryRepository.observeAll().first(), allReal, base, convert,
+                            java.time.YearMonth.from(monthStart), zone,
+                        )[categoryId]
+                    } else {
+                        null
+                    }
+                    ) ?: java.math.BigDecimal.ZERO
+
+                val status = CategoryBudgetCalculator.statusFor(category, spent, carry) ?: return@runCatching
+                // Locale.US explicitly: the default locale would render these
+                // digits Arabic-Indic on an Arabic device, so the same month
+                // would key differently depending on system language.
+                val monthKey = String.format(Locale.US, "%04d-%02d", monthStart.year, monthStart.monthValue)
+                val alerted = preferences.categoryBudgetAlerts
+                val key = CategoryBudgetCalculator.pendingAlert(status, monthKey, alerted) ?: return@runCatching
+
+                // Keep only this month's keys, so the set can't grow without bound.
+                preferences.categoryBudgetAlerts = alerted.filterTo(mutableSetOf()) { it.contains(":$monthKey:") } + key
+                CategoryBudgetNotificationHelper.postCapAlert(appContext, status, base)
+            }.onFailure { recordError("AppContainer.checkCategoryBudget", it) }
+        }
+    }
+
+    /**
+     * Opt-in "unusual charge" notification (see [SpendAnomalyDetector]):
+     * after a live capture lands, judges it against that merchant's own
+     * earlier purchases and notifies when it's far above the usual. Gated by
+     * [SpendAnomalyDetector.shouldAlert] -- toggle on, SMS/push only (never a
+     * pasted backlog or a manual entry), and fresh -- and scoped to one
+     * merchant via an indexed query. Fire-and-forget like the other hooks.
+     */
+    private fun checkUnusualCharge(transaction: Transaction) {
+        if (!SpendAnomalyDetector.shouldAlert(transaction, System.currentTimeMillis(), preferences.unusualChargeAlertsEnabled)) return
+        val merchant = transaction.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return
+        applicationScope.launch {
+            runCatching {
+                val history = transactionRepositoryImpl.spendHistoryForMerchant(merchant)
+                val anomaly = SpendAnomalyDetector.evaluate(transaction, history) ?: return@runCatching
+                UnusualChargeNotificationHelper.post(appContext, anomaly)
+            }.onFailure { recordError("AppContainer.checkUnusualCharge", it) }
+        }
+    }
+
+    /**
+     * Keeps the subscription radar current without being asked. After a real
+     * debit lands, re-runs [SubscriptionRadarEngine] over just that merchant's
+     * history and upserts the result, so a newly-started subscription, a moved
+     * renewal date or a price change shows up on its own instead of waiting for
+     * the user to remember to tap "Scan" on the Subscriptions screen.
+     *
+     * Scoped to one merchant via an indexed query rather than loading the
+     * ledger, since this runs on the capture path. `replaceAll` upserts by
+     * merchant and preserves a dismissed flag, so re-detecting something the
+     * user already dismissed can't silently un-dismiss it.
+     */
+    private fun refreshSubscriptionForMerchant(transaction: Transaction) {
+        if (transaction.kind != TransactionKind.SPEND || transaction.excludeFromStats) return
+        val merchant = transaction.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return
+
+        applicationScope.launch {
+            runCatching {
+                val history = database.transactionDao()
+                    .findRealDebitsByMerchant(merchant)
+                    .map { it.toDomain() }
+                val detected = SubscriptionRadarEngine.detect(history)
+                if (detected.isNotEmpty()) subscriptionRepository.replaceAll(detected)
+            }.onFailure { recordError("AppContainer.refreshSubscriptionForMerchant", it) }
+        }
+    }
+
+    /**
+     * Turns the opt-in renewal reminder on or off, scheduling or cancelling one
+     * of the app's periodic work items (see [SubscriptionReminderWorker]).
+     * Nothing is scheduled while the toggle is off, so the app's
+     * no-background-polling behavior is unchanged for anyone who doesn't want
+     * reminders.
+     */
+    fun setSubscriptionRemindersEnabled(enabled: Boolean) {
+        preferences.subscriptionRemindersEnabled = enabled
+        if (enabled) ensureSubscriptionReminderWork() else cancelSubscriptionReminderWork()
+    }
+
+    /**
+     * Re-arms the daily reminder if it's enabled. Idempotent (unique work with
+     * KEEP), so calling it on every app start just confirms the existing
+     * schedule rather than resetting its period.
+     */
+    fun ensureSubscriptionReminderWork() {
+        if (!preferences.subscriptionRemindersEnabled) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                SubscriptionReminderWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<SubscriptionReminderWorker>(1, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureSubscriptionReminderWork", it) }
+    }
+
+    private fun cancelSubscriptionReminderWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(SubscriptionReminderWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelSubscriptionReminderWork", it) }
+    }
+
+    /**
+     * Turns the opt-in bill due-date reminder on or off, scheduling or
+     * cancelling one of the app's periodic work items (see
+     * [BillReminderWorker]). Independent of [setSubscriptionRemindersEnabled] --
+     * a user may want one reminder stream but not the other.
+     */
+    fun setBillRemindersEnabled(enabled: Boolean) {
+        preferences.billRemindersEnabled = enabled
+        if (enabled) ensureBillReminderWork() else cancelBillReminderWork()
+    }
+
+    /**
+     * Re-arms the daily bill reminder if it's enabled. Idempotent (unique
+     * work with KEEP), so calling it on every app start just confirms the
+     * existing schedule rather than resetting its period.
+     */
+    fun ensureBillReminderWork() {
+        if (!preferences.billRemindersEnabled) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                BillReminderWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<BillReminderWorker>(1, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureBillReminderWork", it) }
+    }
+
+    private fun cancelBillReminderWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(BillReminderWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelBillReminderWork", it) }
+    }
+
+    /**
+     * Turns the opt-in weekly "what changed" notification on or off (see
+     * [WeeklyDigestWorker]). Nothing is scheduled while it's off.
+     */
+    fun setWeeklyDigestEnabled(enabled: Boolean) {
+        preferences.weeklyDigestNotificationsEnabled = enabled
+        if (enabled) ensureWeeklyDigestWork() else cancelWeeklyDigestWork()
+    }
+
+    /**
+     * Re-arms the weekly digest if it's enabled. The worker checks daily and
+     * sends at most once per ISO week, so the notice lands within a day of a
+     * new week starting rather than drifting with the install date.
+     */
+    fun ensureWeeklyDigestWork() {
+        if (!preferences.weeklyDigestNotificationsEnabled) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                WeeklyDigestWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<WeeklyDigestWorker>(1, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureWeeklyDigestWork", it) }
+    }
+
+    private fun cancelWeeklyDigestWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(WeeklyDigestWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelWeeklyDigestWork", it) }
+    }
+
+    /**
+     * This week's [WhatChangedDigest] for the notification, from the real
+     * ledger -- including a "capture looks quiet" line, because the weekly
+     * digest is the only background check capture health gets (the battery
+     * managers that kill the listener kill other workers too).
+     */
+    suspend fun buildWeeklyDigest(): WhatChangedDigest.Digest? {
+        val transactions = transactionRepository.getAllReal()
+        val base = preferences.defaultCurrency
+        val ratesFromBase = ratesRepository.observeRates().first()
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+        val now = System.currentTimeMillis()
+        val health = CaptureHealthEvaluator.evaluate(
+            CaptureHealthEvaluator.Inputs(
+                notificationAccess = CaptureAccess.notificationAccess(appContext),
+                smsPermission = CaptureAccess.sms(appContext),
+                batteryExempt = CaptureAccess.batteryExempt(appContext),
+                lastListenerEventAt = preferences.captureLastEventAt,
+                listenerConnectedAt = preferences.captureListenerConnectedAt,
+                listenerDisconnectedAt = preferences.captureListenerDisconnectedAt,
+                capturedAt = transactions
+                    .filter { it.source == TransactionSource.SMS || it.source == TransactionSource.PUSH_NOTIFICATION }
+                    .map { it.createdAt },
+                snoozedUntil = 0L,
+                now = now,
+            ),
+        )
+        return WhatChangedDigest.build(
+            transactions = transactions,
+            categories = categoryRepository.observeAll().first(),
+            subscriptions = subscriptionRepository.observeActive().first(),
+            bills = billRepository.observeAll().first(),
+            cards = cardStatuses(),
+            toBase = { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase) },
+            baseCurrency = base,
+            today = LocalDate.now(),
+            nowMillis = now,
+            captureQuietDays = health.takeIf { it.state == CaptureHealthEvaluator.State.QUIET }?.quietDays,
+            capConvert = CategoryBudgetCalculator.converter(base, ratesFromBaseExact(base)),
+            rolloverBudgets = preferences.budgetRollover,
+        )
+    }
+
+    /**
+     * Turns the opt-in transaction-retention prune on or off, scheduling or
+     * cancelling [TransactionRetentionWorker]. `months <= 0` disables it (and
+     * cancels any scheduled run); nothing is ever scheduled at a value of 0,
+     * matching [setSubscriptionRemindersEnabled]'s off-by-default posture.
+     */
+    fun setTransactionRetentionMonths(months: Int) {
+        preferences.transactionRetentionMonths = months
+        if (months > 0) ensureTransactionRetentionWork() else cancelTransactionRetentionWork()
+    }
+
+    /**
+     * Re-arms the weekly prune if a retention window is set. Idempotent
+     * (unique work with KEEP), so calling it on every app start just confirms
+     * the existing schedule rather than resetting its period.
+     */
+    fun ensureTransactionRetentionWork() {
+        if (preferences.transactionRetentionMonths <= 0) return
+        runCatching {
+            WorkManager.getInstance(appContext).enqueueUniquePeriodicWork(
+                TransactionRetentionWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<TransactionRetentionWorker>(7, TimeUnit.DAYS).build(),
+            )
+        }.onFailure { recordError("AppContainer.ensureTransactionRetentionWork", it) }
+    }
+
+    private fun cancelTransactionRetentionWork() {
+        runCatching {
+            WorkManager.getInstance(appContext).cancelUniqueWork(TransactionRetentionWorker.WORK_NAME)
+        }.onFailure { recordError("AppContainer.cancelTransactionRetentionWork", it) }
+    }
+
     /** Records a non-fatal exception (e.g. one caught instead of crashing a screen). */
     fun recordError(tag: String, throwable: Throwable) = Diagnostics.recordError(appContext, tag, throwable)
+
+    /**
+     * Where every real credit card stands today (see
+     * [com.xemmy.mmbank.domain.account.CreditCardStatusCalculator]) -- feeds
+     * the daily card-payment reminder. Balances come from the same
+     * [com.xemmy.mmbank.domain.account.AccountBalanceCalculator] every screen
+     * uses.
+     */
+    suspend fun cardStatuses(): List<com.xemmy.mmbank.domain.account.CardPaymentReminders.CardReminder> {
+        val transactions = transactionRepository.getAllReal()
+        val entries = transactions.map {
+            com.xemmy.mmbank.domain.account.AccountBalanceCalculator.LedgerEntry(
+                accountId = it.accountId,
+                amount = it.amount,
+                currencyCode = it.currencyCode,
+                direction = it.direction,
+                historyOnly = it.historyOnly,
+            )
+        }
+        return com.xemmy.mmbank.domain.account.CardPaymentReminders.build(
+            accounts = accountRepository.observeActiveReal().first(),
+            transactions = transactions,
+            entries = ledgerFxFlow.first().apply(entries),
+            today = java.time.LocalDate.now(),
+        )
+    }
+
+    /**
+     * One-time pass after the v26 upgrade: the SQL migration can only tell a
+     * plain debit from a plain credit, so ATM withdrawals, refunds, card
+     * payments and own-account transfers recognizable from their message text
+     * are re-read here with the full [TransactionKindDetector]. Bump
+     * [LEDGER_KIND_BACKFILL_VERSION] to re-run it after the detector learns
+     * new wording -- it only ever upgrades rows still on the plain default.
+     */
+    fun reclassifyLedgerOnce() {
+        if (preferences.ledgerKindBackfillVersion >= LEDGER_KIND_BACKFILL_VERSION) return
+        applicationScope.launch {
+            runCatching {
+                database.withTransaction {
+                    val accountTypes = database.accountDao().getAll().associate { it.id to it.type }
+                    database.transactionDao().getAll().forEach { entity ->
+                        val tx = entity.toDomain()
+                        val better = TransactionKindDetector.reclassify(tx, tx.accountId?.let { accountTypes[it] })
+                            ?: return@forEach
+                        database.transactionDao().update(entity.copy(kind = better))
+                    }
+                }
+                preferences.ledgerKindBackfillVersion = LEDGER_KIND_BACKFILL_VERSION
+            }.onFailure { recordError("AppContainer.reclassifyLedgerOnce", it) }
+        }
+    }
 
     /**
      * Inserts the starter Tabby Card / Tabby Cash rules exactly once. They are
@@ -312,3 +1137,6 @@ class AppContainer(context: Context) {
         }
     }
 }
+
+/** See [AppContainer.reclassifyLedgerOnce]. */
+private const val LEDGER_KIND_BACKFILL_VERSION = 1

@@ -15,6 +15,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -71,7 +72,7 @@ fun AmountText(
                         SpanStyle(
                             fontFamily = AppFonts.inter,
                             fontSize = ObsidianTokens.currencyFontSize,
-                            fontWeight = FontWeight.Light,
+                            fontWeight = FontWeight.Normal,
                             letterSpacing = ObsidianTokens.currencyTracking,
                             color = color.copy(alpha = 0.55f),
                         )
@@ -92,6 +93,14 @@ fun AmountText(
         style = style,
         color = color,
         maxLines = 1,
+        // In a narrow container (e.g. a 1/3-width Dashboard stat tile), a
+        // numeral too wide to fit after the inline AED glyph on line 1 would
+        // otherwise soft-wrap onto a line 2 that maxLines=1 then drops
+        // entirely -- the sign and glyph (which fit on line 1) stay visible
+        // while every digit vanishes. softWrap=false keeps it one line so
+        // overflow clips/ellipsizes in place instead of disappearing.
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
         modifier = modifier,
     )
 }

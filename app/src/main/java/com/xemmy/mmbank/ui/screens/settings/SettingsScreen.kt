@@ -18,16 +18,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CurrencyBitcoin
@@ -35,24 +41,37 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,364 +80,48 @@ import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.xemmy.mmbank.data.backup.BackupPasswordRules
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.data.ai.AiCallLogStore
 import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.ai.AiEndpointNormalizer
+import com.xemmy.mmbank.domain.ai.AiPrivacyStatus
+import com.xemmy.mmbank.domain.ai.AiProviderMode
+import com.xemmy.mmbank.domain.ai.AiResponseParser
+import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
+import com.xemmy.mmbank.domain.ai.LoopbackGuard
+import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.people.PersonBackfill
+import com.xemmy.mmbank.domain.people.PersonCounts
+import com.xemmy.mmbank.domain.people.PersonLists
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.util.CaptureAccess
 import com.xemmy.mmbank.ui.auth.BiometricAuthManagerImpl
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesTabContent
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.theme.LedgerColors
+import com.xemmy.mmbank.ui.theme.displayName
+import com.xemmy.mmbank.ui.util.asMoney
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
-
-class SettingsViewModel(private val container: AppContainer) : ViewModel() {
-
-    var defaultCurrency by mutableStateOf(container.preferences.defaultCurrency)
-    var hideZeroBalances by mutableStateOf(container.preferences.hideZeroBalances)
-        private set
-    var hideCryptoBalance by mutableStateOf(container.preferences.hideCryptoBalance)
-        private set
-    var excludeCryptoFromTotal by mutableStateOf(container.preferences.excludeCryptoFromTotal)
-        private set
-    var appLockEnabled by mutableStateOf(container.preferences.appLockEnabled)
-        private set
-    var appLockTimeoutMinutes by mutableStateOf(container.preferences.appLockTimeoutMinutes)
-        private set
-    var demoModeEnabled by mutableStateOf(container.preferences.demoModeEnabled)
-        private set
-    var apiKeyInput by mutableStateOf("")
-    var secretKeyInput by mutableStateOf("")
-    var hasBinanceKeys by mutableStateOf(container.credentialStore.hasBinanceCredentials)
-        private set
-    var statusMessage by mutableStateOf<String?>(null)
-        private set
-    var busy by mutableStateOf(false)
-        private set
-
-    var defaultPerson by mutableStateOf(container.preferences.defaultPerson.orEmpty())
-
-    /** Saved people list — the person menu's source, editable here, exported in backups. */
-    var persons by mutableStateOf(container.preferences.persons)
-        private set
-
-    /** Names still on transactions but absent from the saved list (old data / deletions). */
-    var unlistedPersons by mutableStateOf<List<String>>(emptyList())
-        private set
-    private var transactionPersons: List<String> = emptyList()
-
-    init {
-        viewModelScope.launch {
-            container.transactionRepository.observeTransactions()
-                .catch { emit(emptyList()) }
-                .collect { txs ->
-                    transactionPersons = txs.mapNotNull { it.person?.trim() }
-                        .filter { it.isNotEmpty() }
-                        .distinctBy { it.lowercase() }
-                    recomputeUnlisted()
-                }
-        }
-    }
-
-    private fun recomputeUnlisted() {
-        unlistedPersons = transactionPersons
-            .filter { p -> persons.none { it.equals(p, ignoreCase = true) } }
-            .sorted()
-    }
-
-    fun addPersonToList(name: String) {
-        val clean = name.trim()
-        if (clean.isEmpty()) return
-        container.preferences.addPerson(clean)
-        persons = container.preferences.persons
-        recomputeUnlisted()
-    }
-
-    fun removePersonFromList(name: String) {
-        container.preferences.persons = container.preferences.persons - name
-        if (container.preferences.defaultPerson == name) {
-            container.preferences.defaultPerson = null
-            defaultPerson = ""
-        }
-        persons = container.preferences.persons
-        recomputeUnlisted()
-        statusMessage = "$name removed from the list"
-    }
-
-    /**
-     * Renames on the saved list AND on every transaction carrying the old
-     * name. Also used to merge an old transaction-only name into a listed one.
-     */
-    fun renamePersonEverywhere(from: String, to: String) {
-        val clean = to.trim()
-        if (busy || clean.isEmpty() || clean == from) return
-        viewModelScope.launch {
-            busy = true
-            runCatching {
-                container.transactionRepository.renamePerson(from, clean)
-                container.preferences.persons =
-                    container.preferences.persons.map { if (it == from) clean else it }
-                container.preferences.addPerson(clean)
-                if (container.preferences.defaultPerson == from) {
-                    container.preferences.defaultPerson = clean
-                    defaultPerson = clean
-                }
-                persons = container.preferences.persons
-                recomputeUnlisted()
-            }.onSuccess {
-                statusMessage = "Renamed $from to $clean everywhere"
-            }.onFailure {
-                container.recordError("SettingsViewModel.renamePerson", it)
-                statusMessage = "Rename failed: ${it.message}"
-            }
-            busy = false
-        }
-    }
-
-    /** Strips [name] off every transaction (they become unassigned). */
-    fun clearPersonFromTransactions(name: String) {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            runCatching { container.transactionRepository.renamePerson(name, null) }
-                .onSuccess { statusMessage = "Removed $name from all transactions" }
-                .onFailure {
-                    container.recordError("SettingsViewModel.clearPerson", it)
-                    statusMessage = "Failed: ${it.message}"
-                }
-            busy = false
-        }
-    }
-
-    fun saveDefaultPerson() {
-        container.preferences.defaultPerson = defaultPerson
-        defaultPerson = container.preferences.defaultPerson.orEmpty()
-        statusMessage = if (defaultPerson.isBlank()) {
-            "New transactions start unassigned"
-        } else {
-            "New transactions will be assigned to $defaultPerson"
-        }
-    }
-
-    fun saveDefaultCurrency() {
-        val code = defaultCurrency.trim().uppercase()
-        if (code.length == 3) {
-            container.preferences.defaultCurrency = code
-            defaultCurrency = code
-            statusMessage = "Default currency set to $code"
-        } else {
-            statusMessage = "Currency must be a 3-letter ISO code"
-        }
-    }
-
-    fun updateHideZeroBalances(hide: Boolean) {
-        container.preferences.hideZeroBalances = hide
-        hideZeroBalances = hide
-    }
-
-    fun updateHideCryptoBalance(hide: Boolean) {
-        container.preferences.hideCryptoBalance = hide
-        hideCryptoBalance = hide
-    }
-
-    fun updateExcludeCryptoFromTotal(exclude: Boolean) {
-        container.preferences.excludeCryptoFromTotal = exclude
-        excludeCryptoFromTotal = exclude
-    }
-
-    /** Call only after the enabling auth prompt has succeeded (the UI enforces that). */
-    fun updateAppLockEnabled(enabled: Boolean) {
-        container.setAppLockEnabled(enabled)
-        appLockEnabled = enabled
-    }
-
-    fun updateAppLockTimeout(minutes: Int) {
-        container.setAppLockTimeoutMinutes(minutes)
-        appLockTimeoutMinutes = minutes
-    }
-
-    /**
-     * Re-snapshots the app-lock prefs. The root Settings menu and the Security
-     * subpage are separate nav destinations with separate SettingsViewModel
-     * instances, so the menu's subtitle must refresh on resume after the
-     * subpage changed the underlying preference.
-     */
-    fun refreshAppLockState() {
-        appLockEnabled = container.preferences.appLockEnabled
-        appLockTimeoutMinutes = container.preferences.appLockTimeoutMinutes
-    }
-
-    /** Re-snapshots the Demo mode flag (separate VM instances per nav destination). */
-    fun refreshDemoState() {
-        demoModeEnabled = container.preferences.demoModeEnabled
-    }
-
-    /**
-     * Turns Demo mode ON — real data hides, a fresh sample batch appears. Call
-     * only after the enabling auth prompt has succeeded (the UI enforces that).
-     */
-    fun enableDemoMode() {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Loading demo data…"
-            runCatching { container.enableDemoMode() }
-                .onSuccess {
-                    demoModeEnabled = true
-                    persons = container.preferences.persons
-                    recomputeUnlisted()
-                    statusMessage = "Demo mode on — your real data is hidden"
-                }
-                .onFailure {
-                    container.recordError("SettingsViewModel.enableDemoMode", it)
-                    statusMessage = "Couldn't start demo mode: ${it.message}"
-                }
-            busy = false
-        }
-    }
-
-    /**
-     * Turns Demo mode OFF — deletes the sample data and restores the real
-     * ledger, rules and people. Call only after the biometric prompt has
-     * succeeded (revealing real data is the guarded step; the UI enforces it).
-     */
-    fun disableDemoMode() {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Removing demo data…"
-            runCatching { container.disableDemoMode() }
-                .onSuccess {
-                    demoModeEnabled = false
-                    persons = container.preferences.persons
-                    recomputeUnlisted()
-                    statusMessage = "Demo mode off — your real data is back"
-                }
-                .onFailure {
-                    container.recordError("SettingsViewModel.disableDemoMode", it)
-                    statusMessage = "Couldn't exit demo mode: ${it.message}"
-                }
-            busy = false
-        }
-    }
-
-    fun saveBinanceKeys() {
-        container.credentialStore.binanceApiKey = apiKeyInput
-        container.credentialStore.binanceSecretKey = secretKeyInput
-        hasBinanceKeys = container.credentialStore.hasBinanceCredentials
-        apiKeyInput = ""
-        secretKeyInput = ""
-        statusMessage = if (hasBinanceKeys) "Binance keys saved (encrypted)" else "Both keys are required"
-    }
-
-    fun clearBinanceKeys() {
-        container.credentialStore.clearBinanceCredentials()
-        hasBinanceKeys = false
-        statusMessage = "Binance keys removed"
-    }
-
-    /** Read-only round trip to /api/v3/account — verifies keys and pulls balances. */
-    fun testBinanceConnection() {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Contacting Binance…"
-            container.portfolioRepository.syncSpotBalances()
-                .onSuccess {
-                    val failed = container.binanceWalletAssets.lastFailedWallets
-                    statusMessage = if (failed.isEmpty()) {
-                        "Connected — $it holdings synced (Spot · Funding · Earn)"
-                    } else {
-                        "Synced $it holdings, but couldn't read: ${failed.joinToString(", ")}. " +
-                            "Enable those permissions on the API key."
-                    }
-                }
-                .onFailure { statusMessage = "Binance error: ${it.message}" }
-            busy = false
-        }
-    }
-
-    fun refreshRates() {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Fetching rates…"
-            container.ratesRepository.refresh(container.preferences.defaultCurrency)
-                .onSuccess { statusMessage = "$it exchange rates updated" }
-                .onFailure { statusMessage = "Rates error: ${it.message}" }
-            busy = false
-        }
-    }
-
-    var backupPassword by mutableStateOf("")
-
-    /** [writeBytes] runs on IO and streams the encrypted blob to the chosen document. */
-    fun exportBackup(writeBytes: suspend (ByteArray) -> Unit) {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Encrypting backup…"
-            runCatching {
-                val blob = container.backupManager.export(backupPassword.toCharArray())
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeBytes(blob) }
-            }.onSuccess {
-                statusMessage = "Backup exported (encrypted)"
-            }.onFailure {
-                statusMessage = "Export failed: ${it.message}"
-            }
-            busy = false
-        }
-    }
-
-    /** [writeText] runs on IO and streams the unencrypted CSV to the chosen document. */
-    fun exportCsv(writeText: suspend (String) -> Unit) {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Exporting CSV…"
-            runCatching {
-                val csv = container.backupManager.exportCsv()
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeText(csv) }
-            }.onSuccess {
-                statusMessage = "Transactions exported to CSV"
-            }.onFailure {
-                statusMessage = "CSV export failed: ${it.message}"
-            }
-            busy = false
-        }
-    }
-
-    /** [readBytes] runs on IO and loads the chosen document. Import REPLACES current data. */
-    fun importBackup(readBytes: suspend () -> ByteArray) {
-        if (busy) return
-        viewModelScope.launch {
-            busy = true
-            statusMessage = "Restoring backup…"
-            runCatching {
-                val blob = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { readBytes() }
-                container.backupManager.import(blob, backupPassword.toCharArray())
-            }.onSuccess { (accounts, transactions) ->
-                // Import clears every table (demo rows included) and restores real
-                // data, so Demo mode must not stay on pointing at an empty partition.
-                container.forceDemoModeOff()
-                demoModeEnabled = false
-                defaultCurrency = container.preferences.defaultCurrency
-                statusMessage = "Backup restored: $accounts accounts, $transactions transactions"
-            }.onFailure {
-                statusMessage = "Import failed: ${it.message}"
-            }
-            busy = false
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Root: grouped menu, modern app style — each row opens a focused subpage.
@@ -432,12 +135,14 @@ fun SettingsScreen(
     val context = LocalContext.current
     var captureOk by remember { mutableStateOf(true) }
     var crashRecorded by remember { mutableStateOf(false) }
+    val backgroundStyle by viewModel.backgroundStyle.collectAsStateWithLifecycle()
 
     LifecycleResumeEffect(Unit) {
         captureOk = isNotificationAccessGranted(context) && isSmsGranted(context) && isBatteryExempt(context)
         crashRecorded = Diagnostics.readCrash(context) != null
         viewModel.refreshAppLockState()
         viewModel.refreshDemoState()
+        viewModel.refreshAiState()
         onPauseOrDispose { }
     }
 
@@ -450,85 +155,96 @@ fun SettingsScreen(
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
 
-        MenuSectionLabel("Capture")
-        Card(Modifier.fillMaxWidth()) {
-            MenuRow(
-                icon = Icons.Filled.NotificationsActive,
-                title = "Capture & permissions",
-                subtitle = if (captureOk) "All channels enabled" else "Action needed",
-                subtitleColor = if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
-                onClick = { onOpen("settings_capture") },
-            )
-        }
-
-        MenuSectionLabel("General")
-        Card(Modifier.fillMaxWidth()) {
-            Column {
-                MenuRow(
-                    icon = Icons.Filled.Tune,
-                    title = "Preferences",
-                    subtitle = "Currency ${viewModel.defaultCurrency}" +
-                        (viewModel.defaultPerson.takeIf { it.isNotBlank() }?.let { " · default person $it" } ?: "") +
-                        " · Forex rates",
-                    onClick = { onOpen("settings_prefs") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.CurrencyBitcoin,
-                    title = "Binance",
-                    subtitle = if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
-                    onClick = { onOpen("settings_binance") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Rule,
-                    title = "Parsing rules",
-                    subtitle = "Teach the app new bank message formats",
-                    onClick = { onOpen("rules") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Lock,
-                    title = "Security",
-                    subtitle = if (viewModel.appLockEnabled) {
-                        "App lock on · auto-lock ${appLockTimeoutLabel(viewModel.appLockTimeoutMinutes)}"
-                    } else {
-                        "Biometric app lock (off)"
-                    },
-                    onClick = { onOpen("settings_security") },
-                )
-            }
-        }
-
-        MenuSectionLabel("Data")
-        Card(Modifier.fillMaxWidth()) {
-            Column {
-                MenuRow(
-                    icon = Icons.Filled.Backup,
-                    title = "Backup & restore",
-                    subtitle = "Encrypted export and import",
-                    onClick = { onOpen("settings_backup") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.BugReport,
-                    title = "Diagnostics",
-                    subtitle = if (crashRecorded) "Crash log recorded — tap to view" else "No problems recorded",
-                    subtitleColor = if (crashRecorded) MaterialTheme.colorScheme.error else null,
-                    onClick = { onOpen("settings_diagnostics") },
-                )
-                HorizontalDivider(Modifier.padding(start = 56.dp))
-                MenuRow(
-                    icon = Icons.Filled.Science,
-                    title = "Demo mode",
-                    subtitle = if (viewModel.demoModeEnabled) {
-                        "On — real data hidden behind sample data"
-                    } else {
-                        "Show sample data for demos (your data stays safe)"
-                    },
-                    subtitleColor = if (viewModel.demoModeEnabled) MaterialTheme.colorScheme.primary else null,
-                    onClick = { onOpen("settings_demo") },
-                )
+        SettingsGroup.entries.forEach { group ->
+            MenuSectionLabel(group.title)
+            Card(Modifier.fillMaxWidth()) {
+                Column {
+                    group.entries.forEachIndexed { index, entry ->
+                        if (index > 0) HorizontalDivider(Modifier.padding(start = 56.dp))
+                        val row = when (entry) {
+                            SettingsEntry.CAPTURE -> MenuRowSpec(
+                                Icons.Filled.NotificationsActive, "Capture & permissions",
+                                if (captureOk) "All channels enabled" else "Action needed",
+                                if (captureOk) LedgerColors.credit else MaterialTheme.colorScheme.error,
+                            )
+                            SettingsEntry.IMPORT -> MenuRowSpec(
+                                Icons.Filled.ContentPaste, "Import & ignore messages",
+                                "Paste a backlog to import — or an example to stop capturing",
+                            )
+                            SettingsEntry.PREFERENCES -> MenuRowSpec(
+                                Icons.Filled.Tune, "Currency & preferences",
+                                "Currency ${viewModel.defaultCurrency}" +
+                                    (viewModel.defaultPerson.takeIf { it.isNotBlank() }?.let { " · default person $it" } ?: "") +
+                                    " · Forex rates",
+                            )
+                            SettingsEntry.NOTIFICATIONS -> MenuRowSpec(
+                                Icons.Filled.Notifications, "Notifications",
+                                notificationsSummary(
+                                    listOf(
+                                        viewModel.subscriptionRemindersEnabled,
+                                        viewModel.billRemindersEnabled,
+                                        viewModel.unusualChargeAlertsEnabled,
+                                        viewModel.weeklyDigestEnabled,
+                                    ),
+                                ),
+                            )
+                            SettingsEntry.CATEGORIES_PEOPLE -> MenuRowSpec(
+                                Icons.Filled.PieChart, "Categories & People",
+                                "Manage categories and saved people — add, edit, delete",
+                            )
+                            SettingsEntry.BINANCE -> MenuRowSpec(
+                                Icons.Filled.CurrencyBitcoin, "Binance",
+                                if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",
+                            )
+                            SettingsEntry.RULES -> MenuRowSpec(
+                                Icons.Filled.Rule, "Parsing rules", "Teach the app new bank message formats",
+                            )
+                            SettingsEntry.AI -> MenuRowSpec(
+                                Icons.Filled.AutoAwesome, "Local AI parsing",
+                                AiPrivacyStatus.menuSubtitle(viewModel.aiParsingEnabled, viewModel.aiProviderMode),
+                            )
+                            SettingsEntry.APPEARANCE -> MenuRowSpec(
+                                Icons.Filled.Palette, "Appearance & Backgrounds", backgroundStyle.displayName,
+                            )
+                            SettingsEntry.SECURITY -> MenuRowSpec(
+                                Icons.Filled.Lock, "App lock & PIN",
+                                if (viewModel.appLockEnabled) {
+                                    "App lock on · auto-lock ${appLockTimeoutLabel(viewModel.appLockTimeoutMinutes)}"
+                                } else {
+                                    "Biometric app lock (off)"
+                                },
+                            )
+                            SettingsEntry.BACKUP -> MenuRowSpec(
+                                Icons.Filled.Backup, "Backup & restore", "Encrypted export and import",
+                            )
+                            SettingsEntry.INTEGRITY -> MenuRowSpec(
+                                Icons.Filled.VerifiedUser, "Integrity check",
+                                "Compare your books with your bank's balances",
+                            )
+                            SettingsEntry.DIAGNOSTICS -> MenuRowSpec(
+                                Icons.Filled.BugReport, "Diagnostics",
+                                if (crashRecorded) "Crash log recorded — tap to view" else "No problems recorded",
+                                if (crashRecorded) MaterialTheme.colorScheme.error else null,
+                            )
+                            SettingsEntry.DEMO -> MenuRowSpec(
+                                Icons.Filled.Science, "Demo mode",
+                                if (viewModel.demoModeEnabled) {
+                                    "On — real data hidden behind sample data"
+                                } else {
+                                    "Show sample data for demos (your data stays safe)"
+                                },
+                                if (viewModel.demoModeEnabled) MaterialTheme.colorScheme.primary else null,
+                            )
+                        }
+                        MenuRow(
+                            icon = row.icon,
+                            title = row.title,
+                            subtitle = row.subtitle,
+                            subtitleColor = row.subtitleColor,
+                            onClick = { onOpen(entry.route) },
+                        )
+                    }
+                }
             }
         }
 
@@ -548,6 +264,17 @@ fun SettingsScreen(
         )
     }
 }
+
+/** "2 of 4 on" -- the menu's at-a-glance summary of the notification switches. */
+internal fun notificationsSummary(enabled: List<Boolean>): String =
+    if (enabled.none { it }) "All off" else "${enabled.count { it }} of ${enabled.size} on"
+
+private class MenuRowSpec(
+    val icon: ImageVector,
+    val title: String,
+    val subtitle: String,
+    val subtitleColor: Color? = null,
+)
 
 @Composable
 private fun MenuSectionLabel(text: String) {
@@ -600,7 +327,7 @@ private fun MenuRow(
 
 /** Shared subpage chrome: back arrow + title, then scrollable content. */
 @Composable
-private fun SettingsSubpage(
+fun SettingsSubpage(
     title: String,
     onBack: () -> Unit,
     content: @Composable () -> Unit,
@@ -619,6 +346,71 @@ private fun SettingsSubpage(
             Text(title, style = MaterialTheme.typography.titleLarge)
         }
         content()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: Categories & People — one organized home for both, tabbed so
+// neither crowds the other. Categories reuses CategoriesTabContent (also
+// reached via Insights > Categories / the Category budgets card's "Manage"
+// button, which route to the same "categories" destination); People is the
+// list previously buried inside Preferences, moved here as its own tab.
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoriesAndPeopleScreen(
+    onBack: () -> Unit,
+    initialTab: Int = 0,
+    categoriesViewModel: CategoriesViewModel = viewModel(factory = AppViewModelProvider.Factory),
+    settingsViewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    var tab by remember { mutableStateOf(initialTab) }
+    var creatingNewCategory by remember { mutableStateOf(false) }
+
+    Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+        topBar = {
+            TopAppBar(
+                title = { Text("Categories & People") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            // Only Categories has a create action; People adds inline via its own text field.
+            if (tab == 0) {
+                FloatingActionButton(onClick = { creatingNewCategory = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "New category")
+                }
+            }
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            TabRow(selectedTabIndex = tab) {
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Categories") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("People") })
+            }
+            when (tab) {
+                0 -> CategoriesTabContent(
+                    creatingNew = creatingNewCategory,
+                    onCreatingNewChange = { creatingNewCategory = it },
+                    viewModel = categoriesViewModel,
+                )
+                else -> Column(
+                    Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    PeopleSection(settingsViewModel)
+                }
+            }
+        }
     }
 }
 
@@ -724,6 +516,59 @@ fun CaptureSettingsScreen(onBack: () -> Unit) {
 // Subpage: Preferences (currency, default person, Forex)
 // ---------------------------------------------------------------------------
 
+/**
+ * Every phone-notification switch in one place: the four on-device alerts that
+ * used to be buried in the middle of Preferences. Each is off until turned on
+ * here, and asks for notification permission the first time.
+ */
+@Composable
+fun NotificationsSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    SettingsSubpage(title = "Notifications", onBack = onBack) {
+        Text(
+            "Everything here runs on your phone with no network use, and stays off unless you turn it on.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        AlertToggleRow(
+            title = "Subscription renewal reminders",
+            description = "Notifies you a few days before a detected subscription renews. Checks once a " +
+                "day on-device with no network use, and stays off unless you want it.",
+            checked = viewModel.subscriptionRemindersEnabled,
+            onCheckedChange = viewModel::updateSubscriptionReminders,
+        )
+
+        AlertToggleRow(
+            title = "Bill due-date reminders",
+            description = "Notifies you a few days before a manually tracked bill is due. Checks once a " +
+                "day on-device with no network use, and stays off unless you want it.",
+            checked = viewModel.billRemindersEnabled,
+            onCheckedChange = viewModel::updateBillReminders,
+        )
+
+        AlertToggleRow(
+            title = "Unusual charge alerts",
+            description = "Notifies you when a new charge is far above what that merchant usually costs " +
+                "you (e.g. 3× your usual taxi fare). Unusual charges always show in Smart insights; " +
+                "this only adds a phone notification.",
+            checked = viewModel.unusualChargeAlertsEnabled,
+            onCheckedChange = viewModel::updateUnusualChargeAlerts,
+        )
+
+        AlertToggleRow(
+            title = "Weekly digest",
+            description = "Once a week, a notification with what you spent and what changed: caps " +
+                "crossed, unusual charges, payments due, new subscriptions, and a warning if capture " +
+                "has gone quiet. Home's \"This week\" card always shows it.",
+            checked = viewModel.weeklyDigestEnabled,
+            onCheckedChange = viewModel::updateWeeklyDigest,
+        )
+    }
+}
+
 @Composable
 fun PreferencesSettingsScreen(
     onBack: () -> Unit,
@@ -743,6 +588,19 @@ fun PreferencesSettingsScreen(
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
+                value = viewModel.monthlySpendBudgetInput,
+                onValueChange = { viewModel.monthlySpendBudgetInput = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Monthly spend budget") },
+                supportingText = { Text("Drives the Activity tab's Premium hero card. Leave blank for no budget.") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = viewModel::saveMonthlySpendBudget) { Text("Save") }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
                 value = viewModel.defaultPerson,
                 onValueChange = { viewModel.defaultPerson = it },
                 label = { Text("Default person for new transactions") },
@@ -751,6 +609,26 @@ fun PreferencesSettingsScreen(
                 modifier = Modifier.weight(1f),
             )
             Button(onClick = viewModel::saveDefaultPerson) { Text("Save") }
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Carry unspent budget forward", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Envelope budgets: what a category's monthly cap didn't use is added to next month's cap " +
+                        "(up to 6 months back). Overspending never carries over.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.budgetRollover,
+                onCheckedChange = viewModel::updateBudgetRollover,
+            )
         }
 
         Row(
@@ -811,11 +689,48 @@ fun PreferencesSettingsScreen(
             )
         }
 
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Hide credit card balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Removes credit card accounts from the Dashboard's Accounts list entirely.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.hideCreditCardBalance,
+                onCheckedChange = viewModel::updateHideCreditCardBalance,
+            )
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Exclude credit card from total balance", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Net worth on the Dashboard and Insights won't count credit card balances. " +
+                        "Independent of the toggle above — credit cards can stay visible while excluded, or vice versa.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.excludeCreditCardFromTotal,
+                onCheckedChange = viewModel::updateExcludeCreditCardFromTotal,
+            )
+        }
+
         OutlinedButton(onClick = viewModel::refreshRates, enabled = !viewModel.busy) {
             Text("Refresh Forex rates now")
         }
-
-        PeopleSection(viewModel)
 
         viewModel.statusMessage?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
@@ -834,6 +749,16 @@ fun SecuritySettingsScreen(
 ) {
     SettingsSubpage(title = "Security", onBack = onBack) {
         AppLockSection(viewModel)
+        SecurityPinSection(
+            hasAppPin = viewModel.hasAppPin,
+            secureScreen = viewModel.secureScreen,
+            onSetPin = viewModel::setAppPin,
+            onRemovePin = viewModel::removeAppPin,
+            onSecureScreen = viewModel::updateSecureScreen,
+        )
+        viewModel.statusMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        }
     }
 }
 
@@ -851,6 +776,8 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
     val activity = context as? FragmentActivity
     val scope = rememberCoroutineScope()
     val canAuthenticate = remember { BiometricAuthManagerImpl.canAuthenticate(context) }
+    // An app PIN can open the lock on its own (see AppPinGate.lockUsable).
+    val lockUsable = canAuthenticate || viewModel.hasAppPin
     var enabling by remember { mutableStateOf(false) }
 
     Row(
@@ -861,11 +788,13 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
         Column(Modifier.weight(1f)) {
             Text("App lock", style = MaterialTheme.typography.bodyLarge)
             Text(
-                if (canAuthenticate) {
-                    "Require your fingerprint, face, or device PIN once the app has " +
-                        "been closed or idle beyond the auto-lock time below."
-                } else {
-                    "Unavailable: set up a screen lock or enroll biometrics on this device first."
+                when {
+                    canAuthenticate ->
+                        "Require your fingerprint, face, or device PIN once the app has " +
+                            "been closed or idle beyond the auto-lock time below."
+                    viewModel.hasAppPin ->
+                        "Require your app PIN once the app has been closed or idle beyond the auto-lock time below."
+                    else -> "Unavailable: set an app PIN below, or a screen lock or biometrics on this device."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -873,10 +802,13 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
         }
         Switch(
             checked = viewModel.appLockEnabled,
-            enabled = canAuthenticate && !enabling && activity != null,
+            enabled = lockUsable && !enabling && activity != null,
             onCheckedChange = { wantEnabled ->
                 if (!wantEnabled) {
                     viewModel.updateAppLockEnabled(false)
+                } else if (!canAuthenticate && viewModel.hasAppPin) {
+                    // No system prompt on this phone: the app PIN set below opens the lock.
+                    viewModel.updateAppLockEnabled(true)
                 } else if (activity != null) {
                     enabling = true
                     scope.launch {
@@ -913,6 +845,249 @@ private fun AppLockSection(viewModel: SettingsViewModel) {
                     label = { Text(appLockTimeoutLabel(minutes)) },
                 )
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Subpage: AI parsing (Gate 2 — local loopback-only server, or an online provider)
+// ---------------------------------------------------------------------------
+
+@Composable
+fun AiSettingsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
+) {
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshAiState()
+        onPauseOrDispose { }
+    }
+    val isLocal = viewModel.aiProviderMode == AiProviderMode.LOCAL
+    val loopbackValid = LoopbackGuard.isLoopbackUrl(viewModel.aiEndpointUrl.trim())
+    val endpointValid = if (isLocal) loopbackValid else viewModel.aiEndpointUrl.isNotBlank()
+
+    val context = LocalContext.current
+    var aiLogText by remember { mutableStateOf<String?>(null) }
+    var aiLogCount by remember { mutableStateOf(0) }
+    var aiLogRefreshKey by remember { mutableStateOf(0) }
+    LifecycleResumeEffect(aiLogRefreshKey) {
+        aiLogText = AiCallLogStore.readLog(context)
+        aiLogCount = AiCallLogStore.callCount(context)
+        onPauseOrDispose { }
+    }
+    // Every change to the test-message status (including the final result) means
+    // a request just completed, so re-read the log to show the new entry
+    // without waiting for the screen to pause/resume.
+    LaunchedEffect(viewModel.aiTestMessageStatus) {
+        if (viewModel.aiTestMessageStatus != null) {
+            aiLogText = AiCallLogStore.readLog(context)
+            aiLogCount = AiCallLogStore.callCount(context)
+        }
+    }
+
+    SettingsSubpage(title = "AI parsing", onBack = onBack) {
+        if (AiPrivacyStatus.sendsTextOffDevice(viewModel.aiParsingEnabled, viewModel.aiProviderMode)) {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        AiPrivacyStatus.ONLINE_BANNER_TITLE,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        AiPrivacyStatus.ONLINE_BANNER_BODY,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+        }
+        Text(
+            "When the built-in rules can't read a bank message, MMbank can ask an AI to extract the " +
+                "transaction. AI suggestions never write to the ledger directly — they appear as disabled " +
+                "rules you approve under Parsing rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Use AI parsing", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Off by default. Runs only on messages the built-in rules miss.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = viewModel.aiParsingEnabled,
+                onCheckedChange = viewModel::updateAiParsingEnabled,
+            )
+        }
+
+        OutlinedTextField(
+            value = viewModel.aiDailyRequestLimitInput,
+            onValueChange = { viewModel.aiDailyRequestLimitInput = it.filter(Char::isDigit) },
+            label = { Text("Daily automatic-parsing limit") },
+            supportingText = {
+                Text(
+                    "Used today: ${viewModel.aiRequestsUsedToday} / ${viewModel.aiDailyRequestLimit}. " +
+                        "Caps background parsing only — manual \"Parse with AI\" and the test button below " +
+                        "are never limited.",
+                )
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = viewModel::saveAiDailyRequestLimit) { Text("Save limit") }
+        }
+
+        Text("Provider", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = isLocal,
+                onClick = { viewModel.updateAiProviderMode(AiProviderMode.LOCAL) },
+                label = { Text("On-device (local)") },
+            )
+            FilterChip(
+                selected = !isLocal,
+                onClick = { viewModel.updateAiProviderMode(AiProviderMode.ONLINE) },
+                label = { Text("Online (cloud API)") },
+            )
+        }
+
+        if (isLocal) {
+            Text(
+                "On-device only: MMbank calls a local AI app (e.g. Off Grid) running on this phone. " +
+                    "It only ever reaches a loopback address — never the internet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "⚠ Sends message text to a third party: the raw bank/payment notification is sent over " +
+                    "the internet to whatever endpoint you configure below. Only enable this if you trust " +
+                    "that provider with your financial data.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+
+        OutlinedTextField(
+            value = viewModel.aiEndpointUrl,
+            onValueChange = { viewModel.aiEndpointUrl = it },
+            label = { Text("Server endpoint") },
+            supportingText = {
+                Text(
+                    if (isLocal) {
+                        if (loopbackValid) {
+                            "On-device only: 127.0.0.1 or localhost, e.g. http://127.0.0.1:11434/v1/chat/completions"
+                        } else {
+                            "Not a loopback address — only 127.0.0.1 / localhost is allowed for the on-device mode."
+                        }
+                    } else {
+                        "OpenAI-compatible /v1/chat/completions URL, e.g. https://api.openai.com/v1/chat/completions"
+                    },
+                )
+            },
+            isError = !endpointValid,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        OutlinedTextField(
+            value = viewModel.aiModelName,
+            onValueChange = { viewModel.aiModelName = it },
+            label = { Text(if (isLocal) "Model (optional)" else "Model") },
+            supportingText = {
+                Text(
+                    if (isLocal) {
+                        "Leave blank to use the server's currently loaded model."
+                    } else {
+                        "Required by most cloud providers, e.g. gpt-4o-mini."
+                    },
+                )
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (!isLocal) {
+            OutlinedTextField(
+                value = viewModel.aiApiKeyInput,
+                onValueChange = { viewModel.aiApiKeyInput = it },
+                label = { Text("API key") },
+                supportingText = { Text("Stored encrypted on this device (Android Keystore), sent only to the endpoint above.") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = viewModel::saveAiApiKey) { Text("Save key") }
+                TextButton(onClick = viewModel::clearAiApiKey) { Text("Clear", color = MaterialTheme.colorScheme.error) }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = viewModel::saveAiEndpoint) { Text("Save") }
+            OutlinedButton(onClick = viewModel::testAiConnection, enabled = !viewModel.aiTesting) {
+                Text(if (viewModel.aiTesting) "Testing…" else "Test connection")
+            }
+        }
+
+        viewModel.aiTestStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Text("Request log", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "$aiLogCount AI request${if (aiLogCount == 1) "" else "s"} made on this device so far.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = viewModel::sendTestAiMessage,
+                enabled = !viewModel.sendingTestAiMessage,
+            ) {
+                Text(if (viewModel.sendingTestAiMessage) "Sending…" else "Send test message")
+            }
+        }
+        Text(
+            "Sends an obviously-fake sample transaction to the configured engine so you can see a " +
+                "request appear below without waiting for a real one. Never written to the ledger or rules.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        viewModel.aiTestMessageStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        val logText = aiLogText
+        if (logText.isNullOrBlank()) {
+            Text(
+                "No requests logged yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            DiagnosticsLogCard(
+                title = "Recent requests (newest first)",
+                text = logText,
+                onClear = {
+                    AiCallLogStore.clearLog(context)
+                    aiLogRefreshKey++
+                },
+            )
         }
     }
 }
@@ -1017,16 +1192,29 @@ val APP_LOCK_TIMEOUT_OPTIONS_MIN = listOf(1, 2, 5, 15, 60, 360, 720)
 fun appLockTimeoutLabel(minutes: Int): String =
     if (minutes >= 60 && minutes % 60 == 0) "${minutes / 60} hr" else "$minutes min"
 
+/** Retention window choices, in months. `0` means "keep everything forever". */
+val TRANSACTION_RETENTION_OPTIONS_MONTHS = listOf(0, 6, 12, 24, 36)
+
+/** "Forever" / "6 mo" / "1 yr" / "3 yr" — whole-year multiples render in years, else months. */
+fun transactionRetentionLabel(months: Int): String = when {
+    months <= 0 -> "Forever"
+    months % 12 == 0 -> "${months / 12} yr"
+    else -> "$months mo"
+}
+
 /** Editable saved-people list: add, rename (updates every transaction), remove. */
 @Composable
 private fun PeopleSection(viewModel: SettingsViewModel) {
     var newPerson by remember { mutableStateOf("") }
     var renaming by remember { mutableStateOf<String?>(null) }
+    var confirmingDelete by remember { mutableStateOf<String?>(null) }
+    var fillingMissing by remember { mutableStateOf(false) }
 
-    Text("People", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
     Text(
         "This list feeds the person menu on transactions and is included in backups. " +
-            "Renaming updates every transaction that carries the old name.",
+            "Renaming updates every transaction that carries the old name. " +
+            "Switch someone off to stop offering them when you assign a person; " +
+            "their transactions keep their name and they stay in filters.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -1034,15 +1222,34 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
     if (viewModel.persons.isNotEmpty()) {
         Card(Modifier.fillMaxWidth()) {
             Column {
-                viewModel.persons.forEachIndexed { index, person ->
+                val ordered = PersonLists.activeFirst(viewModel.persons, viewModel.inactivePersons)
+                val firstInactive = ordered.indexOfFirst { !viewModel.isPersonActive(it) }
+                ordered.forEachIndexed { index, person ->
+                    val active = viewModel.isPersonActive(person)
+                    if (index == firstInactive) {
+                        Text(
+                            "Inactive: not offered when assigning",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp),
+                        )
+                    }
                     Row(
                         Modifier.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            person,
+                            if (viewModel.isDefaultPerson(person)) "$person · default" else person,
                             style = MaterialTheme.typography.bodyMedium,
+                            color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = active,
+                            onCheckedChange = { viewModel.setPersonActive(person, it) },
+                            modifier = Modifier.semantics {
+                                contentDescription = if (active) "$person is active" else "$person is inactive"
+                            },
                         )
                         IconButton(onClick = { renaming = person }) {
                             Icon(
@@ -1052,7 +1259,13 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.removePersonFromList(person) }) {
+                        IconButton(onClick = {
+                            if (viewModel.personDeleteNeedsPrompt(person)) {
+                                confirmingDelete = person
+                            } else {
+                                viewModel.removePersonFromList(person)
+                            }
+                        }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Remove $person",
@@ -1061,7 +1274,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                             )
                         }
                     }
-                    if (index < viewModel.persons.lastIndex) {
+                    if (index < ordered.lastIndex) {
                         HorizontalDivider(Modifier.padding(start = 16.dp))
                     }
                 }
@@ -1084,6 +1297,39 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                 newPerson = ""
             },
         ) { Text("Add") }
+    }
+
+    if (viewModel.noPersonIds.isNotEmpty()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                PersonBackfill.summary(viewModel.noPersonIds.size),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedButton(
+                enabled = viewModel.persons.isNotEmpty(),
+                onClick = { fillingMissing = true },
+            ) { Text("Assign to…") }
+        }
+        if (viewModel.persons.isEmpty()) {
+            Text(
+                "Add a person above first.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (fillingMissing) {
+        FillMissingPersonDialog(
+            count = viewModel.noPersonIds.size,
+            choices = PersonLists.assignable(viewModel.persons, viewModel.inactivePersons, viewModel.defaultPerson),
+            defaultPerson = viewModel.defaultPerson,
+            onDismiss = { fillingMissing = false },
+            onConfirm = { name ->
+                viewModel.fillMissingPerson(name)
+                fillingMissing = false
+            },
+        )
     }
 
     if (viewModel.unlistedPersons.isNotEmpty()) {
@@ -1127,7 +1373,7 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = { viewModel.clearPersonFromTransactions(person) }) {
+                        IconButton(onClick = { confirmingDelete = person }) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = "Clear $person from all transactions",
@@ -1169,6 +1415,137 @@ private fun PeopleSection(viewModel: SettingsViewModel) {
             },
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
+    }
+
+    confirmingDelete?.let { person ->
+        val count = viewModel.transactionCountForPerson(person)
+        val otherPersons = PersonCounts.reassignTargets(viewModel.persons, viewModel.unlistedPersons, person)
+        PersonReassignDialog(
+            person = person,
+            count = count,
+            otherPersons = otherPersons,
+            onDismiss = { confirmingDelete = null },
+            onConfirm = { reassignTo ->
+                viewModel.deletePersonAndReassign(person, reassignTo)
+                confirmingDelete = null
+            },
+        )
+    }
+}
+
+/**
+ * Shown instead of an instant remove when the person being deleted still has
+ * transactions on them -- picks where those transactions land (another
+ * person, or unassigned) instead of silently orphaning them.
+ */
+@Composable
+private fun PersonReassignDialog(
+    person: String,
+    count: Int,
+    otherPersons: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (String?) -> Unit,
+) {
+    var selected by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove “$person”?") },
+        text = {
+            Column {
+                if (count > 0) {
+                    Text(
+                        "$count transaction${if (count == 1) "" else "s"} " +
+                            "${if (count == 1) "is" else "are"} assigned to this person. " +
+                            "Choose where to move ${if (count == 1) "it" else "them"}:",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item {
+                        PersonReassignOptionRow(
+                            label = "Leave unassigned",
+                            selected = selected == null,
+                            onClick = { selected = null },
+                        )
+                    }
+                    items(otherPersons) { other ->
+                        PersonReassignOptionRow(
+                            label = other,
+                            selected = selected == other,
+                            onClick = { selected = other },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }) { Text("Remove") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** One-tap fill: picks who gets every transaction that has no person. Balances are not affected. */
+@Composable
+private fun FillMissingPersonDialog(
+    count: Int,
+    choices: List<String>,
+    defaultPerson: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var selected by remember { mutableStateOf(PersonBackfill.preselect(choices, defaultPerson)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Assign a person") },
+        text = {
+            Column {
+                Text(
+                    "${PersonBackfill.summary(count)}. Choose who to give ${if (count == 1) "it" else "them"} to. " +
+                        "Balances don't change, and you can still change any one of them later.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    items(choices) { name ->
+                        PersonReassignOptionRow(
+                            label = name,
+                            selected = selected == name,
+                            onClick = { selected = name },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selected != null,
+                onClick = { selected?.let(onConfirm) },
+            ) { Text("Assign") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PersonReassignOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1227,243 +1604,3 @@ fun BinanceSettingsScreen(
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Subpage: Backup & restore
-// ---------------------------------------------------------------------------
-
-@Composable
-fun BackupSettingsScreen(
-    onBack: () -> Unit,
-    viewModel: SettingsViewModel = viewModel(factory = AppViewModelProvider.Factory),
-) {
-    SettingsSubpage(title = "Backup & restore", onBack = onBack) {
-        BackupSection(viewModel)
-        viewModel.statusMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Subpage: Diagnostics
-// ---------------------------------------------------------------------------
-
-@Composable
-fun DiagnosticsSettingsScreen(onBack: () -> Unit) {
-    SettingsSubpage(title = "Diagnostics", onBack = onBack) {
-        DiagnosticsSection()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Shared pieces reused by the subpages
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun BackupSection(viewModel: SettingsViewModel) {
-    val context = LocalContext.current
-
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/octet-stream")
-    ) { uri ->
-        if (uri != null) {
-            viewModel.exportBackup { bytes ->
-                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-                    ?: error("Couldn't open the selected file")
-            }
-        }
-    }
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            viewModel.importBackup {
-                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: error("Couldn't read the selected file")
-            }
-        }
-    }
-    val csvLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        if (uri != null) {
-            viewModel.exportCsv { text ->
-                context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-                    ?: error("Couldn't open the selected file")
-            }
-        }
-    }
-
-    Text(
-        "Exports accounts, transactions, custom rules, sender names and settings into one " +
-            "AES-256 encrypted file protected by the password below. Binance keys are never " +
-            "exported. Importing REPLACES the app's current data.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    OutlinedTextField(
-        value = viewModel.backupPassword,
-        onValueChange = { viewModel.backupPassword = it },
-        label = { Text("Backup password") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(
-            onClick = {
-                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
-                    .format(java.util.Date())
-                exportLauncher.launch("mmbank-backup-$stamp.mmb")
-            },
-            enabled = viewModel.backupPassword.length >= 6 && !viewModel.busy,
-        ) { Text("Export") }
-        OutlinedButton(
-            onClick = { importLauncher.launch(arrayOf("*/*")) },
-            enabled = viewModel.backupPassword.length >= 6 && !viewModel.busy,
-        ) { Text("Import") }
-    }
-    if (viewModel.backupPassword.isNotEmpty() && viewModel.backupPassword.length < 6) {
-        Text(
-            "Password must be at least 6 characters.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-
-    HorizontalDivider(Modifier.padding(vertical = 4.dp))
-    Text(
-        "Or export a plain CSV of every transaction for spreadsheets (date, amount, " +
-            "merchant, category, account, person…). This file is NOT encrypted or " +
-            "password-protected.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    OutlinedButton(
-        onClick = {
-            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
-                .format(java.util.Date())
-            csvLauncher.launch("mmbank-$stamp.csv")
-        },
-        enabled = !viewModel.busy,
-    ) { Text("Export CSV") }
-}
-
-/**
- * Shows what [com.xemmy.mmbank.diagnostics.Diagnostics] has recorded: the last
- * fatal (uncaught) crash, and any non-fatal errors that a screen caught and
- * recovered from instead of crashing. Lets a crash be reported by screenshot
- * or copy-paste instead of requiring adb/logcat.
- */
-@Composable
-private fun DiagnosticsSection() {
-    val context = LocalContext.current
-    var crashText by remember { mutableStateOf<String?>(null) }
-    var errorsText by remember { mutableStateOf<String?>(null) }
-    var refreshKey by remember { mutableStateOf(0) }
-
-    LifecycleResumeEffect(refreshKey) {
-        crashText = Diagnostics.readCrash(context)
-        errorsText = Diagnostics.readErrors(context)
-        onPauseOrDispose { }
-    }
-
-    if (crashText == null && errorsText == null) {
-        Text(
-            "Nothing recorded. If the app ever crashes or a screen fails to load, the details will appear here.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    crashText?.let {
-        DiagnosticsLogCard(
-            title = "Last crash",
-            text = it,
-            onClear = {
-                Diagnostics.clearCrash(context)
-                refreshKey++
-            },
-        )
-    }
-    errorsText?.let {
-        DiagnosticsLogCard(
-            title = "Recent recovered errors",
-            text = it,
-            onClear = {
-                Diagnostics.clearErrors(context)
-                refreshKey++
-            },
-        )
-    }
-}
-
-@Composable
-private fun DiagnosticsLogCard(title: String, text: String, onClear: () -> Unit) {
-    val context = LocalContext.current
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
-            androidx.compose.foundation.text.selection.SelectionContainer {
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontSize = MaterialTheme.typography.labelSmall.fontSize,
-                    ),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, text)
-                    }
-                    context.startActivity(Intent.createChooser(send, "Share log"))
-                }) { Text("Share") }
-                OutlinedButton(onClick = onClear) { Text("Clear") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionCard(
-    title: String,
-    granted: Boolean,
-    description: String,
-    buttonLabel: String,
-    onClick: () -> Unit,
-) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(
-                    imageVector = if (granted) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-                    contentDescription = null,
-                    tint = if (granted) LedgerColors.credit else MaterialTheme.colorScheme.error,
-                )
-                Text(title, style = MaterialTheme.typography.titleSmall)
-            }
-            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (!granted) {
-                OutlinedButton(onClick = onClick) { Text(buttonLabel) }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Permission checks (also drive the root menu's status subtitles)
-// ---------------------------------------------------------------------------
-
-private fun isNotificationAccessGranted(context: Context): Boolean =
-    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
-
-private fun isSmsGranted(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
-        PackageManager.PERMISSION_GRANTED
-
-private fun isBatteryExempt(context: Context): Boolean =
-    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-        .isIgnoringBatteryOptimizations(context.packageName)

@@ -6,11 +6,45 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.TextStyle
+import java.util.Currency
 import java.util.Date
 import java.util.Locale
 
-fun Double.asMoney(currencyCode: String): String =
-    String.format(Locale.US, "%,.2f %s", this, currencyCode)
+/**
+ * Decimal places to show for [currencyCode]: ISO-4217 default for fiat (JPY 0,
+ * KWD 3), up to 8 for crypto tickers (trailing zeros trimmed by [asMoney]),
+ * 2 for anything unrecognised.
+ */
+fun fractionDigitsFor(currencyCode: String): Int {
+    if (currencyCode in CRYPTO_CODES) return 8
+    return try {
+        Currency.getInstance(currencyCode).defaultFractionDigits.let { if (it < 0) 2 else it }
+    } catch (_: IllegalArgumentException) {
+        2
+    }
+}
+
+private val CRYPTO_CODES = setOf("BTC", "ETH", "USDT", "USDC", "BNB", "SOL", "XRP", "ADA", "DOGE", "MATIC", "BUSD", "DOT", "LTC", "TRX")
+
+fun Double.asMoney(currencyCode: String): String {
+    val max = fractionDigitsFor(currencyCode)
+    val min = if (max > 2 && currencyCode in CRYPTO_CODES) 2 else max
+    val nf = java.text.NumberFormat.getNumberInstance(Locale.US).apply {
+        minimumFractionDigits = min
+        maximumFractionDigits = max
+        roundingMode = java.math.RoundingMode.HALF_UP
+    }
+    return "${nf.format(this)} $currencyCode"
+}
+
+/**
+ * Whole-currency-unit rendering (cents rounded off) for compact stat tiles
+ * — e.g. the Dashboard's Income/Spent/Net — where a full 2-decimal figure
+ * plus the drawn AED glyph doesn't reliably fit a narrow column. Display
+ * only: the underlying amount stays full-precision everywhere else.
+ */
+fun Double.asMoneyWhole(currencyCode: String): String =
+    String.format(Locale.US, "%,.0f %s", this, currencyCode)
 
 /** What the hide-balances toggle shows instead of any amount. */
 const val AMOUNT_MASK = "••••••"
@@ -19,8 +53,20 @@ const val AMOUNT_MASK = "••••••"
 fun Double.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
     if (hidden) AMOUNT_MASK else asMoney(currencyCode)
 
+/** [asMoneyWhole] variant of [asMoneyOrMask], for compact stat tiles. */
+fun Double.asMoneyWholeOrMask(currencyCode: String, hidden: Boolean): String =
+    if (hidden) AMOUNT_MASK else asMoneyWhole(currencyCode)
+
 fun BigDecimal.asMoney(currencyCode: String): String =
     toDouble().asMoney(currencyCode)
+
+/**
+ * [asMoneyOrMask] for the exact type. Account balances are computed in
+ * BigDecimal (see [com.xemmy.mmbank.domain.account.AccountBalanceCalculator]),
+ * so they reach the UI without ever passing through a Double.
+ */
+fun BigDecimal.asMoneyOrMask(currencyCode: String, hidden: Boolean): String =
+    if (hidden) AMOUNT_MASK else asMoney(currencyCode)
 
 /**
  * Accepted currency-code length: 3–5 uppercase letters. Covers ISO-4217 fiat

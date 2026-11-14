@@ -39,7 +39,10 @@ sealed interface DateRangeFilter {
 /** Account dimension of the Activity filter: any / only unassigned / one account. */
 sealed interface AccountFilter {
     data object Any : AccountFilter
+    /** In no account and still to be sorted; rows set aside as "history only" are not included. */
     data object Unassigned : AccountFilter
+    /** In no account on purpose: "before I started tracking" (see `Transaction.historyOnly`). */
+    data object HistoryOnly : AccountFilter
     data class Specific(val id: Long) : AccountFilter
 }
 
@@ -70,6 +73,15 @@ data class ActivityFilters(
     val maxAmount: BigDecimal? = null,
     val source: TransactionSource? = null,
     val analyticsStatus: AnalyticsStatusFilter? = null,
+    /** Only rows of this kind -- e.g. every card payment, every refund. Null = any. */
+    val kind: com.xemmy.mmbank.domain.model.TransactionKind? = null,
+    /**
+     * Only rows filed under one of these categories (a category plus its
+     * sub-categories). Null = any. Set by a drill-down, e.g. from a Copilot
+     * answer; there's no picker for it, so it shows as a removable row in
+     * More filters.
+     */
+    val categoryIds: Set<Long>? = null,
 ) {
     /** True when anything beyond the default (show-everything) is set. */
     val active: Boolean
@@ -111,6 +123,23 @@ object TransactionFilterEngine {
     fun activeAccount(filter: AccountFilter, accounts: List<Account>): Account? =
         (filter as? AccountFilter.Specific)?.let { spec -> accounts.firstOrNull { it.id == spec.id } }
 
+    /**
+     * How many independent secondary-filter categories (person, triage,
+     * amount, source, kind, analytics status, category) are active — drives
+     * the "More filters" badge count in the single-row filter bar.
+     */
+    fun activeSecondaryFilterCount(filters: ActivityFilters): Int {
+        var count = 0
+        if (filters.categoryIds != null) count++
+        if (filters.person != PersonFilter.Any) count++
+        if (filters.triageOnly) count++
+        if (filters.minAmount != null || filters.maxAmount != null) count++
+        if (filters.source != null) count++
+        if (filters.kind != null) count++
+        if (filters.analyticsStatus != null) count++
+        return count
+    }
+
     /** Resolves a date filter to a concrete window; null = unbounded (All). */
     fun resolveDateWindow(
         range: DateRangeFilter,
@@ -148,10 +177,12 @@ object TransactionFilterEngine {
 
     /**
      * "Inbox Zero" triage: rows still needing a human look — uncategorized
-     * captures plus system-generated balance corrections.
+     * captures plus system-generated balance corrections. Uses the dynamic
+     * [Transaction.categoryId] (post category-unification, the actual source
+     * of truth) rather than the frozen [SpendingCategory] enum.
      */
     fun needsTriage(tx: Transaction): Boolean =
-        tx.spendingCategory == SpendingCategory.UNCATEGORIZED ||
+        tx.categoryId == null ||
             tx.matchedRuleName == BALANCE_ADJUSTMENT_RULE_NAME
 
     private fun matches(
@@ -165,7 +196,8 @@ object TransactionFilterEngine {
         if (f.direction != null && tx.direction != f.direction) return false
         when (val a = f.account) {
             AccountFilter.Any -> Unit
-            AccountFilter.Unassigned -> if (tx.accountId != null) return false
+            AccountFilter.Unassigned -> if (!tx.needsAccount) return false
+            AccountFilter.HistoryOnly -> if (tx.accountId != null || !tx.historyOnly) return false
             is AccountFilter.Specific -> if (tx.accountId != a.id) return false
         }
         when (val p = f.person) {
@@ -177,6 +209,8 @@ object TransactionFilterEngine {
         if (f.minAmount != null && tx.amount < f.minAmount) return false
         if (f.maxAmount != null && tx.amount > f.maxAmount) return false
         if (f.source != null && tx.source != f.source) return false
+        if (f.kind != null && tx.kind != f.kind) return false
+        if (f.categoryIds != null && tx.categoryId !in f.categoryIds) return false
         when (f.analyticsStatus) {
             AnalyticsStatusFilter.INCLUDED_ONLY -> if (tx.excludeFromStats) return false
             AnalyticsStatusFilter.EXCLUDED_ONLY -> if (!tx.excludeFromStats) return false

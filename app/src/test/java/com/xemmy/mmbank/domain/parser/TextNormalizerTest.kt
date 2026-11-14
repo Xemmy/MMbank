@@ -35,4 +35,9 @@ class TextNormalizerTest {
         assertEquals("USDT", CurrencyNormalizer.normalize("USDT"))
         assertEquals("USDT", CurrencyNormalizer.normalize("usdt"))
     }
+
+    @Test
+    fun `non-breaking and unicode spaces collapse to one space`() {
+        assertEquals("AED 45.00 at X", TextNormalizer.normalize("AED\u00a045.00\u202fat\u2009X"))
+    }
 }

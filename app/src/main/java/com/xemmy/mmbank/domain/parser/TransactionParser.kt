@@ -44,11 +44,22 @@ class TransactionParser(
         rules.withIndex().filter { it.value.signatures.isNotEmpty() }
 
     fun parse(message: CapturedMessage): ParsedTransaction? {
-        val text = TextNormalizer.normalize(
-            listOfNotNull(message.title, message.body)
-                .filter { it.isNotBlank() }
-                .joinToString(" ")
-        )
+        val parsed = parseCore(message) ?: return null
+        // The balance the bank printed alongside the transaction. Added after
+        // the amount is settled and independent of every rule, so it can only
+        // add information, never change what was parsed.
+        val balance = BalanceExtractor.extract(normalizedText(message), parsed.currencyCode) ?: return parsed
+        return parsed.copy(reportedBalance = balance.value, reportedBalanceKind = balance.kind)
+    }
+
+    private fun normalizedText(message: CapturedMessage): String = TextNormalizer.normalize(
+        listOfNotNull(message.title, message.body)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+    )
+
+    private fun parseCore(message: CapturedMessage): ParsedTransaction? {
+        val text = normalizedText(message)
         if (text.isBlank()) return null
 
         routeBySignature(message, text)?.let { return it }
@@ -61,17 +72,35 @@ class TransactionParser(
             }
             val match = pattern.find(text) ?: continue
 
+            val builtIn = rule.name.startsWith("builtin.")
+            if (builtIn && ParseGuards.isNonTransaction(text)) continue
+
             val amountRaw = match.groupOrNull(RuleCompiler.AMOUNT_GROUP) ?: continue
             val amount = amountRaw.replace(",", "").toBigDecimalOrNull() ?: continue
             if (amount.signum() <= 0) continue
 
-            val currency = match.groupOrNull(RuleCompiler.CURRENCY_GROUP)
+            val matchedCurrency = match.groupOrNull(RuleCompiler.CURRENCY_GROUP)
                 ?.let(CurrencyNormalizer::normalize)
+            // A built-in rule that found no currency must not guess one when the
+            // "amount" is really a card ending, or the real currency is a code
+            // the rules don't know ("THB 1,500.00" would otherwise save as the
+            // default currency).
+            if (builtIn && matchedCurrency == null) {
+                val range = match.groups[RuleCompiler.AMOUNT_GROUP]?.range
+                if (range != null &&
+                    (ParseGuards.isIdentifierAmount(text, range) ||
+                        ParseGuards.hasUnrecognisedCurrencyBefore(text, range))
+                ) {
+                    continue
+                }
+            }
+            val currency = matchedCurrency
                 ?: rule.defaultCurrency
                 ?: fallbackCurrency
 
             val merchant = match.groupOrNull(RuleCompiler.MERCHANT_GROUP)
                 ?.trim()
+                ?.let(MerchantTail::trim)
                 ?.trimEnd('.', ',', '-', ':')
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
@@ -90,7 +119,7 @@ class TransactionParser(
             // like "...processed after next statement is paid" in cashback credits,
             // so we never demote a CREDIT rule here — only rescue a mislabeled credit.
             val direction =
-                if (rule.direction == TransactionDirection.DEBIT &&
+                if (builtIn && rule.direction == TransactionDirection.DEBIT &&
                     GenericExtractors.detectDirectionOverride(text) == TransactionDirection.CREDIT
                 ) {
                     TransactionDirection.CREDIT
@@ -107,6 +136,7 @@ class TransactionParser(
                 accountNumberSuffix = accountNumberSuffix,
                 category = rule.category,
                 assignAccountId = rule.assignAccountId,
+                kindOverride = rule.assignKind,
             )
         }
 
@@ -201,6 +231,7 @@ class TransactionParser(
             accountNumberSuffix = GenericExtractors.extractAccountSuffix(text),
             category = winner.rule.category,
             assignAccountId = winner.rule.assignAccountId,
+            kindOverride = winner.rule.assignKind,
         )
     }
 

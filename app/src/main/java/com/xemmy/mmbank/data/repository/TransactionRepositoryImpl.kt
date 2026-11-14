@@ -6,15 +6,40 @@ import com.xemmy.mmbank.data.local.dao.TransactionDao
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.AccountNumberMatcher
+import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
+import com.xemmy.mmbank.domain.ledger.CaptureDedupPolicy
+import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
+import com.xemmy.mmbank.domain.ledger.PersonLearner
+import com.xemmy.mmbank.domain.ledger.RefundMatcher
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.ledger.TransferLegs
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.parser.MerchantAccountLearner
+import com.xemmy.mmbank.domain.repository.LedgerRepository
+import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
+import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.parser.AiConfidenceScorer
+import com.xemmy.mmbank.domain.parser.CaptureAccountResolver
+import com.xemmy.mmbank.domain.parser.CaptureCategoryResolver
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
+import com.xemmy.mmbank.domain.repository.CategoryRepository
+import com.xemmy.mmbank.domain.repository.MerchantAccountRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
+import com.xemmy.mmbank.domain.usecase.TransferMatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import com.xemmy.mmbank.domain.account.LedgerFx
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
@@ -29,9 +54,38 @@ class TransactionRepositoryImpl(
     private val demoMode: StateFlow<Boolean>,
     /** Person newly captured transactions default to (Settings > Default person). */
     private val defaultPersonProvider: () -> String? = { null },
-) : TransactionRepository {
+    /** People marked inactive in Settings; a learned pattern never assigns a new capture to one. */
+    private val inactivePersonsProvider: () -> List<String> = { emptyList() },
+    /** Dynamic category lookup for newly captured transactions (see [CategoryMatcher]). */
+    private val categoryRepository: CategoryRepository? = null,
+    /**
+     * Learned merchant -> account lookup, consulted only after the account
+     * number in the message fails to identify one (see [CaptureAccountResolver]).
+     * Nullable and defaulted like [categoryRepository] so every existing
+     * construction site -- including the hand-written test fakes -- still
+     * compiles and behaves exactly as before.
+     */
+    private val merchantAccountRepository: MerchantAccountRepository? = null,
+    /**
+     * Fire-and-forget hook run after a real, dedup-passing transaction is
+     * inserted -- used by [com.xemmy.mmbank.di.AppContainer] to run the daily
+     * budget pacing check. Never awaited and never allowed to affect the
+     * ingest pipeline's own result.
+     */
+    private val onTransactionRecorded: (Transaction) -> Unit = {},
+    /**
+     * Live foreign-currency converter for balances ([LedgerFx]). Null keeps
+     * entries at face value, so hand-written test fakes behave as before.
+     */
+    private val ledgerFx: Flow<LedgerFx>? = null,
+    /** Told when filing old rows left a corrected balance where it was; see [AccountChangeRecorder]. */
+    onBalanceKept: (String) -> Unit = {},
+) : TransactionRepository, LedgerRepository {
 
     @OptIn(ExperimentalCoroutinesApi::class)
+    /** Writes the account change log for edits that can move a balance; see [AccountChangeRecorder]. */
+    private val changeLog = AccountChangeRecorder(database, onBalanceKept = onBalanceKept)
+
     override fun observeTransactions(): Flow<List<Transaction>> =
         demoMode.flatMapLatest { demo -> dao.observeAll(demo) }
             .map { list -> list.map(TransactionEntity::toDomain) }
@@ -42,9 +96,23 @@ class TransactionRepositoryImpl(
             .map { list -> list.map(TransactionEntity::toDomain) }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    override fun observeNetByAccount(): Flow<Map<Long, Double>> =
-        demoMode.flatMapLatest { demo -> dao.observeNetByAccount(demo) }
-            .map { rows -> rows.associate { it.accountId to it.net } }
+    override fun observeLedgerEntries(): Flow<List<AccountBalanceCalculator.LedgerEntry>> =
+        demoMode.flatMapLatest { demo -> dao.observeLedgerEntries(demo) }
+            .map { rows ->
+                rows.map {
+                    AccountBalanceCalculator.LedgerEntry(
+                        accountId = it.accountId,
+                        amount = it.amount,
+                        currencyCode = it.currencyCode,
+                        direction = it.direction,
+                        historyOnly = it.historyOnly,
+                    )
+                }
+            }
+            .let { entries ->
+                val fxFlow = ledgerFx ?: return@let entries
+                combine(entries, fxFlow) { list, fx -> fx.apply(list) }
+            }
 
     /**
      * Sliding-Window Deduplication Engine.
@@ -55,61 +123,375 @@ class TransactionRepositoryImpl(
      * timestamp falls within ±[DEDUP_WINDOW_MILLIS]. The check and the insert
      * run inside one Room transaction so two channels racing each other can't
      * both pass the check.
+     *
+     * [dedupWindow] = false skips that check entirely — see the interface: the
+     * window only means something when the timestamp is a real arrival time.
      */
     override suspend fun recordParsed(
         parsed: ParsedTransaction,
         message: CapturedMessage,
+        dedupWindow: Boolean,
     ): IngestResult = database.withTransaction {
-        val existing = dao.findDuplicateInWindow(
-            amount = parsed.amount,
-            currencyCode = parsed.currencyCode,
-            direction = parsed.direction,
-            timestamp = message.timestampMillis,
-            windowMillis = DEDUP_WINDOW_MILLIS,
-        )
+        val existing = if (dedupWindow) {
+            val incoming = CaptureDedupPolicy.Side(message.source, message.body, parsed.accountNumberSuffix)
+            dao.findDuplicateCandidatesInWindow(
+                amount = parsed.amount,
+                currencyCode = parsed.currencyCode,
+                direction = parsed.direction,
+                timestamp = message.timestampMillis,
+                windowMillis = DEDUP_WINDOW_MILLIS,
+            ).firstOrNull { row ->
+                CaptureDedupPolicy.isSameTransaction(
+                    CaptureDedupPolicy.Side(row.source, row.rawMessage, row.accountNumberSuffix),
+                    incoming,
+                )
+            }
+        } else {
+            null
+        }
         if (existing != null) {
             IngestResult.Duplicate(existing.id)
         } else {
-            // A rule's explicit account ("default assign") wins over the
-            // number sniffed out of the message text.
-            val detectedAccountId = parsed.assignAccountId
-                ?: parsed.accountNumberSuffix?.let { detectAccountByNumber(it, parsed.currencyCode) }
+            // Rule pin > account number printed in the message > learned
+            // merchant rule. The ordering itself lives in CaptureAccountResolver
+            // so it can be tested on its own rather than inferred from this
+            // block.
+            val rulePinnedAccountId = parsed.assignAccountId
+            val numberAccountId = parsed.accountNumberSuffix
+                ?.let { detectAccountByNumber(it, parsed.currencyCode) }
+            // Only pay for the learned-rule read when the two stronger signals
+            // both came up empty -- which includes a message that DID carry a
+            // card number that matches no account, the case that otherwise
+            // leaves a transaction unassigned forever.
+            val learnedAccountId = if (rulePinnedAccountId == null && numberAccountId == null) {
+                parsed.merchant?.let { merchantAccountRepository?.findAccountForMerchant(it) }
+            } else {
+                null
+            }
+            val detectedAccountId = CaptureAccountResolver.resolve(
+                rulePinnedAccountId = rulePinnedAccountId,
+                detectedAccountId = numberAccountId,
+                learnedAccountId = learnedAccountId,
+            )
 
-            val id = dao.insert(
-                TransactionEntity(
+            // Dynamic category: a confirmed merchant mapping wins outright; failing
+            // that, an unconfirmed AI guess for the same merchant rides along as a
+            // pending suggestion rather than being silently applied (see
+            // AppContainer.onAiCategorySuggested). Only when neither applies does
+            // MerchantCategorizer's keyword guess get bridged onto a same-named
+            // dynamic category (see CategoryMigrationMapping) as a last resort --
+            // CaptureCategoryResolver picks between the three.
+            val confirmedCategoryId = parsed.merchant?.let { categoryRepository?.findCategoryForMerchant(it) }
+            val pendingSuggestion = if (confirmedCategoryId == null) {
+                parsed.merchant?.let { categoryRepository?.findPendingSuggestion(it) }
+            } else null
+            val spendingCategory = parsed.spendingCategoryOverride
+                ?: MerchantCategorizer.categorize(parsed.merchant, message.body)
+            val bridgedCategoryId = if (confirmedCategoryId == null && pendingSuggestion == null &&
+                spendingCategory != SpendingCategory.UNCATEGORIZED
+            ) {
+                CategoryMigrationMapping.ENUM_TO_CATEGORY_NAME[spendingCategory]
+                    ?.let { categoryRepository?.findCategoryIdByName(it) }
+            } else null
+            val categoryId = CaptureCategoryResolver.resolve(confirmedCategoryId, pendingSuggestion != null, bridgedCategoryId)
+
+            // What the message is -- spend, refund, ATM, card payment... --
+            // decided once the account is known, since a credit landing on a
+            // credit card is a payment or a refund, never income.
+            val accountType = detectedAccountId?.let { database.accountDao().getById(it)?.type }
+            val learnedKind = parsed.merchant?.let { findKindForMerchant(it) }
+            val detectedKind = TransactionKindDetector.detect(
+                TransactionKindDetector.Input(
+                    direction = parsed.direction,
+                    matchedRuleName = parsed.matchedRuleName,
+                    rawMessage = message.body,
+                    merchant = parsed.merchant,
+                    accountType = accountType,
+                    category = parsed.category,
+                    ruleKind = parsed.kindOverride,
+                    learnedKind = learnedKind,
+                ),
+            )
+            // A credit the bank didn't label as a refund can still be one: same
+            // merchant, earlier purchase, no larger. Never second-guesses a kind
+            // a rule or the user's own teaching already decided.
+            // A refund -- whether the wording said so or the matcher recognised it -- remembers
+            // which purchase it gave money back for, so the link can be shown and broken.
+            var refundOfId: Long? = null
+            val canBeRefund = !parsed.merchant.isNullOrBlank() && parsed.direction == TransactionDirection.CREDIT &&
+                (detectedKind == TransactionKind.REFUND ||
+                    (detectedKind == TransactionKind.INCOME && parsed.kindOverride == null && learnedKind == null))
+            val kind = if (canBeRefund) {
+                val credit = Transaction(
                     amount = parsed.amount,
                     currencyCode = parsed.currencyCode,
                     direction = parsed.direction,
                     merchant = parsed.merchant,
                     source = message.source,
-                    sender = message.sender,
-                    rawMessage = message.body,
-                    matchedRuleName = parsed.matchedRuleName,
-                    timestamp = message.timestampMillis,
-                    createdAt = System.currentTimeMillis(),
-                    accountNumberSuffix = parsed.accountNumberSuffix,
-                    accountId = detectedAccountId,
-                    category = parsed.category,
-                    person = defaultPersonProvider()?.takeIf { it.isNotBlank() },
-                    spendingCategory = MerchantCategorizer.categorize(parsed.merchant, message.body),
-                    excludeFromStats = parsed.excludeFromStats,
+                    timestampMillis = message.timestampMillis,
                 )
+                val original = RefundMatcher.findOriginal(credit, spendHistoryForMerchant(parsed.merchant!!))
+                refundOfId = original?.id
+                if (detectedKind == TransactionKind.INCOME && original != null) TransactionKind.REFUND else detectedKind
+            } else {
+                detectedKind
+            }
+
+            // Who this belongs to: the default person, unless the user has moved
+            // this merchant's last two rows to someone else (see PersonLearner).
+            val defaultPerson = defaultPersonProvider()
+            val person = PersonLearner.pick(
+                parsed.merchant?.takeIf { it.isNotBlank() }?.let { dao.lastUserPersonsForMerchant(it) }.orEmpty(),
+                defaultPerson,
+                inactivePersonsProvider(),
             )
+            // Learned only when the pattern chose someone other than the default.
+            val personSource = if (person != null && !person.equals(defaultPerson?.trim(), ignoreCase = true)) {
+                AssignmentSource.LEARNED
+            } else {
+                AssignmentSource.DEFAULT
+            }
+
+            val entity = TransactionEntity(
+                amount = parsed.amount,
+                currencyCode = parsed.currencyCode,
+                direction = parsed.direction,
+                merchant = parsed.merchant,
+                source = message.source,
+                sender = message.sender,
+                rawMessage = message.body,
+                matchedRuleName = parsed.matchedRuleName,
+                timestamp = message.timestampMillis,
+                createdAt = System.currentTimeMillis(),
+                accountNumberSuffix = parsed.accountNumberSuffix,
+                accountId = detectedAccountId,
+                category = parsed.category,
+                person = person,
+                personSource = personSource,
+                refundOfId = refundOfId,
+                categorySource = when {
+                    categoryId == null -> AssignmentSource.DEFAULT
+                    categoryId == confirmedCategoryId -> AssignmentSource.LEARNED
+                    else -> AssignmentSource.KEYWORD
+                },
+                spendingCategory = spendingCategory,
+                excludeFromStats = parsed.excludeFromStats,
+                categoryId = categoryId,
+                needsCategoryApproval = pendingSuggestion != null,
+                suggestedCategoryName = pendingSuggestion?.suggestedName,
+                suggestedCategoryIcon = pendingSuggestion?.suggestedIcon,
+                suggestedCategoryColorHex = pendingSuggestion?.suggestedColorHex,
+                extractedMerchant = parsed.merchant,
+                aiConfidence = AiConfidenceScorer.score(
+                    // Deliberately the confirmed-only signal, not the final
+                    // (possibly bridge-assigned) categoryId -- a bridge match
+                    // is a KEYWORD_MATCH-strength guess, not a CONFIRMED_MAPPING
+                    // one; spendingCategory already carries that signal below.
+                    hasConfirmedCategory = confirmedCategoryId != null,
+                    hasPendingSuggestion = pendingSuggestion != null,
+                    spendingCategory = spendingCategory,
+                ),
+                kind = kind,
+                reportedBalance = parsed.reportedBalance,
+                reportedBalanceKind = parsed.reportedBalanceKind,
+            )
+            val id = dao.insert(entity)
+            tryLinkTransfer(entity.copy(id = id))
+            // The row as it stands AFTER linking: a debit that just turned out
+            // to be one leg of a card payment must not trip a budget alert or
+            // feed subscription detection as if it were a purchase.
+            onTransactionRecorded((dao.getById(id) ?: entity.copy(id = id)).toDomain())
             IngestResult.Inserted(id)
         }
     }
 
-    override suspend fun recordManual(transaction: Transaction): Long =
-        dao.insert(transaction.toEntity())
+    override suspend fun findIdByRawMessage(rawMessage: String): Long? =
+        dao.findByRawMessage(rawMessage)?.id
 
-    override suspend fun update(transaction: Transaction) =
-        dao.update(transaction.toEntity())
+    override suspend fun spendHistoryForMerchant(merchant: String): List<Transaction> =
+        dao.findRealDebitsByMerchant(merchant).map { it.toDomain() }
 
-    override suspend fun assignAccount(transactionId: Long, accountId: Long?) =
+    /**
+     * Reconciles the two legs of a transfer or card payment (see
+     * [TransferMatcher]) right after inserting [inserted], inside the same
+     * Room transaction as the insert itself — matching [recordParsed]'s own
+     * atomicity guarantee, so a second, unrelated pair racing in can never
+     * grab an already-linked row.
+     */
+    private suspend fun tryLinkTransfer(inserted: TransactionEntity) {
+        val candidates = dao.findUnlinkedOppositeDirectionCandidates(
+            amount = inserted.amount,
+            currencyCode = inserted.currencyCode,
+            direction = inserted.direction,
+            timestamp = inserted.timestamp,
+            windowMillis = TransferMatcher.MAX_WINDOW_MILLIS,
+        )
+        if (candidates.isEmpty()) return
+        val accountTypes = accountTypes()
+        val self = inserted.toDomain()
+        val match = TransferMatcher.bestMatch(self, candidates.map(TransactionEntity::toDomain), accountTypes) ?: return
+        val kind = TransferMatcher.pairKind(self, match, accountTypes)
+        dao.linkAsTransfer(inserted.id, match.id, kind, SpendingCategory.TRANSFERS)
+        dao.linkAsTransfer(match.id, inserted.id, kind, SpendingCategory.TRANSFERS)
+    }
+
+    /** Re-detects [row]'s kind as if it stood alone (a kind the user set is kept). */
+    private suspend fun standaloneKind(row: TransactionEntity, accountTypes: Map<Long, AccountType>): TransactionKind =
+        if (row.kindUserSet) {
+            row.kind
+        } else {
+            TransactionKindDetector.detect(
+                TransactionKindDetector.Input(
+                    direction = row.direction,
+                    matchedRuleName = row.matchedRuleName,
+                    rawMessage = row.rawMessage,
+                    merchant = row.merchant,
+                    accountType = row.accountId?.let { accountTypes[it] },
+                    category = row.category,
+                    learnedKind = row.merchant?.let { findKindForMerchant(it) },
+                ),
+            )
+        }
+
+    private suspend fun accountTypes(): Map<Long, AccountType> =
+        database.accountDao().getActive().associate { it.id to it.type }
+
+    /**
+     * Deletes [ids] and releases whatever they were linked to. Without this
+     * the surviving leg kept pointing at a row that no longer exists and kept
+     * its transfer kind -- silently hidden from Spent/Received forever. The
+     * partner gets the kind it would have had on its own (a kind the user set
+     * by hand is kept).
+     */
+    private suspend fun deleteAndRelease(ids: List<Long>): Int = database.withTransaction {
+        val partners = dao.getLinkedPartners(ids)
+        // Read first: once the rows are gone there is nothing left to say what the balance lost.
+        val doomed = ids.chunked(SQL_ID_CHUNK).flatMap { dao.getByIds(it) }.map(TransactionEntity::toDomain)
+        val deleted = dao.deleteMany(ids)
+        changeLog.recordDeletes(doomed)
+        if (partners.isNotEmpty()) {
+            val accountTypes = accountTypes()
+            partners.forEach { partner ->
+                dao.update(partner.copy(linkedTransactionId = null, kind = standaloneKind(partner, accountTypes)))
+            }
+        }
+        deleted
+    }
+
+    /** Whatever the user typed in is their choice: a category or person on a manual row is `USER`. */
+    override suspend fun recordManual(transaction: Transaction): Long = insertManual(transaction, reason = null, note = null)
+
+    override suspend fun recordAdjustment(transaction: Transaction, reason: String?, note: String?): Long =
+        insertManual(transaction, reason, note)
+
+    private suspend fun insertManual(transaction: Transaction, reason: String?, note: String?): Long =
+        database.withTransaction {
+            val id = dao.insert(
+                transaction.copy(
+                    categorySource = if (transaction.categoryId != null) AssignmentSource.USER else transaction.categorySource,
+                    personSource = if (!transaction.person.isNullOrBlank()) AssignmentSource.USER else transaction.personSource,
+                ).toEntity(),
+            )
+            // An ordinary new row is the ledger itself and needs no log entry; a balance adjustment
+            // is the one manual row whose whole purpose is to move a balance, so it gets one.
+            if (transaction.kind == TransactionKind.ADJUSTMENT) {
+                changeLog.recordAdjustment(transaction.copy(id = id), reason, note?.trim()?.takeIf { it.isNotEmpty() })
+            }
+            id
+        }
+
+    // --- LedgerRepository ---
+
+    override suspend fun recordTransfer(draft: TransferLegs.Draft): Int = database.withTransaction {
+        val (out, inn) = TransferLegs.build(draft, label = MANUAL_TRANSFER_LABEL)
+        val outId = out?.let { dao.insert(it.toEntity()) }
+        val inId = inn?.let { dao.insert(it.toEntity()) }
+        if (outId != null && inId != null) {
+            val kind = TransferLegs.kindFor(draft)
+            dao.linkAsTransfer(outId, inId, kind, SpendingCategory.TRANSFERS)
+            dao.linkAsTransfer(inId, outId, kind, SpendingCategory.TRANSFERS)
+        }
+        listOfNotNull(outId, inId).size
+    }
+
+    override suspend fun setKind(transactionId: Long, kind: TransactionKind, rememberForMerchant: Boolean): Int =
+        database.withTransaction {
+            val row = dao.getById(transactionId) ?: return@withTransaction 0
+            val accountTypes = accountTypes()
+            val newKind = TransactionKindDetector.coerce(kind, row.direction)
+            var updated = row.copy(kind = newKind, kindUserSet = true)
+
+            val partner = row.linkedTransactionId?.let { dao.getById(it) }
+            if (partner != null) {
+                if (newKind.isInternalMove) {
+                    // Transfer <-> card payment: keep the pair consistent.
+                    if (!partner.kindUserSet) dao.update(partner.copy(kind = newKind))
+                } else {
+                    // No longer one side of a move: release the other side.
+                    dao.update(partner.copy(linkedTransactionId = null, kind = standaloneKind(partner, accountTypes)))
+                    updated = updated.copy(linkedTransactionId = null)
+                }
+            } else if (row.linkedTransactionId != null) {
+                // The other side no longer exists (deleted, or never restored): a link to nothing helps no one.
+                updated = updated.copy(linkedTransactionId = null)
+            }
+            dao.update(updated)
+            if (newKind.isInternalMove && updated.linkedTransactionId == null) tryLinkTransfer(updated)
+
+            val merchant = row.merchant?.trim()?.takeIf { it.isNotEmpty() }
+            if (!rememberForMerchant || merchant == null) return@withTransaction 0
+            database.merchantKindDao().upsert(
+                MerchantKindMappingEntity(merchantPattern = merchant, kind = newKind),
+            )
+            val candidates = dao.getAutoClassifiedWithMerchant().filter { it.id != row.id }
+            val ids = MerchantAccountLearner.idsToBackfill(
+                candidates.map { MerchantAccountLearner.Candidate(it.id, it.merchant.orEmpty()) },
+                merchant,
+            ).toSet()
+            var changed = 0
+            candidates.filter { it.id in ids }.forEach { other ->
+                val coerced = TransactionKindDetector.coerce(newKind, other.direction)
+                if (coerced != other.kind) {
+                    dao.update(other.copy(kind = coerced))
+                    if (coerced.isInternalMove) tryLinkTransfer(other.copy(kind = coerced))
+                    changed++
+                }
+            }
+            changed
+        }
+
+    override suspend fun findKindForMerchant(merchant: String): TransactionKind? =
+        MerchantKindMatcher.match(merchant, database.merchantKindDao().getAll().map { it.toDomain() })
+
+    override suspend fun forgetMerchantKind(merchant: String): Int =
+        database.merchantKindDao().deleteByMerchant(merchant.trim())
+
+    override fun observeMerchantKinds(): Flow<List<com.xemmy.mmbank.domain.model.MerchantKindMapping>> =
+        database.merchantKindDao().observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun update(transaction: Transaction) = database.withTransaction {
+        val old = dao.getById(transaction.id)?.toDomain()
+        // "History only" means something only without an account: filing the row clears it.
+        val saved = if (transaction.accountId != null && transaction.historyOnly) transaction.copy(historyOnly = false) else transaction
+        dao.update(saved.toEntity())
+        if (old != null) changeLog.recordEdits(listOf(old to saved))
+    }
+
+    override suspend fun setHistoryOnly(ids: List<Long>, historyOnly: Boolean): Int =
+        ids.chunked(SQL_ID_CHUNK).sumOf { dao.setHistoryOnly(it, historyOnly) }
+
+    override suspend fun assignAccount(transactionId: Long, accountId: Long?) = database.withTransaction {
+        val old = dao.getById(transactionId)?.toDomain()
         dao.assignAccount(transactionId, accountId)
+        if (old != null) changeLog.recordEdits(listOf(old to old.copy(accountId = accountId)))
+    }
 
-    override suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int =
-        dao.assignAccountByRuleName(ruleName, accountId)
+    override suspend fun assignAccountForRule(ruleName: String, accountId: Long): Int = database.withTransaction {
+        val moving = dao.getUnassignedByRuleName(ruleName).map(TransactionEntity::toDomain)
+        val moved = dao.assignAccountByRuleName(ruleName, accountId)
+        changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) })
+        moved
+    }
 
     override suspend fun setPerson(transactionId: Long, person: String?) =
         dao.setPerson(transactionId, person?.trim()?.takeIf { it.isNotBlank() })
@@ -120,9 +502,11 @@ class TransactionRepositoryImpl(
     ) = dao.setSpendingCategory(transactionId, category)
 
     override suspend fun renamePerson(from: String, to: String?) =
-        dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() })
+        dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() }, demoMode.value)
 
-    override suspend fun delete(transactionId: Long) = dao.deleteById(transactionId)
+    override suspend fun delete(transactionId: Long) {
+        deleteAndRelease(listOf(transactionId))
+    }
 
     override suspend fun bulkSetCategory(
         ids: List<Long>,
@@ -132,35 +516,64 @@ class TransactionRepositoryImpl(
     override suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int =
         dao.bulkSetExcludeFromStats(ids, excluded)
 
-    override suspend fun deleteMany(ids: List<Long>): Int = dao.deleteMany(ids)
+    override suspend fun deleteMany(ids: List<Long>): Int = deleteAndRelease(ids)
+
+    override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int = bulkAssign(ids, accountId, keepBalance = true)
+
+    override suspend fun bulkAssignAccountCounted(ids: List<Long>, accountId: Long): Int =
+        bulkAssign(ids, accountId, keepBalance = false)
+
+    private suspend fun bulkAssign(ids: List<Long>, accountId: Long?, keepBalance: Boolean): Int = database.withTransaction {
+        val moving = ids.chunked(SQL_ID_CHUNK).flatMap { dao.getByIds(it) }.map(TransactionEntity::toDomain)
+        val moved = ids.chunked(SQL_ID_CHUNK).sumOf { dao.bulkAssignAccount(it, accountId) }
+        changeLog.recordEdits(moving.map { it to it.copy(accountId = accountId) }, keepBalance = keepBalance)
+        moved
+    }
+
+    override suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int =
+        dao.bulkSetPerson(ids, person?.trim()?.takeIf { it.isNotBlank() })
+
+    override suspend fun getAllReal(): List<Transaction> = dao.getAll().map(TransactionEntity::toDomain)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeUncategorized(): Flow<List<Transaction>> =
+        demoMode.flatMapLatest { demo -> dao.observeUncategorized(demo) }
+            .map { list -> list.map(TransactionEntity::toDomain) }
+
+    override suspend fun setCategory(transactionId: Long, categoryId: Long?) =
+        dao.setCategory(transactionId, categoryId)
+
+    override suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int =
+        dao.bulkSetCategoryId(ids, categoryId)
+
+    override suspend fun dismissCategorySuggestion(transactionId: Long) =
+        dao.dismissCategorySuggestion(transactionId)
+
+    override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int =
+        dao.reassignCategory(oldCategoryId, newCategoryId, demoMode.value)
 
     /**
      * Matches the account/card number pulled from a bank message (e.g. "*617",
-     * "XXX810001") against the identifying number the user configured on each
-     * account. Comparison is on digits only, tolerating masking characters and
-     * differing lengths by matching on a shared suffix. When several accounts
-     * share the same trailing digits, currency is used to disambiguate.
+     * "XXX810001") against each account's number and extra card numbers; see
+     * [AccountNumberMatcher] for the rules.
      */
-    private suspend fun detectAccountByNumber(detected: String, currencyCode: String): Long? {
-        val detectedDigits = detected.filter(Char::isDigit)
-        if (detectedDigits.isEmpty()) return null
-
-        val candidates = database.accountDao().getActive().filter { account ->
-            val accountDigits = account.accountNumber?.filter(Char::isDigit).orEmpty()
-            accountDigits.length >= 3 &&
-                (detectedDigits.endsWith(accountDigits) || accountDigits.endsWith(detectedDigits))
-        }
-
-        return when {
-            candidates.isEmpty() -> null
-            candidates.size == 1 -> candidates.first().id
-            else -> candidates.firstOrNull { it.currencyCode.equals(currencyCode, ignoreCase = true) }?.id
-                ?: candidates.first().id
-        }
-    }
+    private suspend fun detectAccountByNumber(detected: String, currencyCode: String): Long? =
+        AccountNumberMatcher.match(
+            detected = detected,
+            currencyCode = currencyCode,
+            candidates = database.accountDao().getActive().map {
+                AccountNumberMatcher.Candidate(it.id, it.accountNumber, it.cardEndings, it.currencyCode)
+            },
+        )
 
     companion object {
         /** ±2 minutes, per the dedup strategy. */
         const val DEDUP_WINDOW_MILLIS: Long = 2 * 60 * 1000
+
+        /** matchedRuleName on both legs of a transfer the user entered by hand. */
+        const val MANUAL_TRANSFER_LABEL = "Manual transfer"
+
+        /** Well under SQLite's bound-variable limit, for `id IN (...)` reads of a big selection. */
+        private const val SQL_ID_CHUNK = 500
     }
 }

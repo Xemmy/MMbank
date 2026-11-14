@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   lint-and-unit-tests:
     name: Lint & Unit Tests
@@ -31,10 +34,42 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      # A failing test fails this job, and with it the workflow (see
+      # final-status). The APK is still built for inspection -- build-apk
+      # runs unless the workflow was cancelled -- but it is never published
+      # as a release.
       - name: Run unit tests
         id: unit_tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon -x lint
-        continue-on-error: true
+
+      - name: Summarize failing tests
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, os, xml.etree.ElementTree as ET
+          lines = []
+          for path in sorted(glob.glob("app/build/test-results/testDebugUnitTest/TEST-*.xml")):
+              try:
+                  root = ET.parse(path).getroot()
+              except ET.ParseError:
+                  continue
+              for case in root.iter("testcase"):
+                  for tag in ("failure", "error"):
+                      node = case.find(tag)
+                      if node is not None:
+                          message = (node.get("message") or "").strip().splitlines()
+                          first = message[0][:200] if message else tag
+                          lines.append(f"{case.get('classname')}.{case.get('name')}: {first}")
+          if not lines:
+              lines = ["No failing test cases found in the XML results -- the failure is "
+                       "probably a compile error. Check the 'Run unit tests' step log."]
+          print("\n".join(lines))
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a") as out:
+                  out.write("## Failing unit tests\n\n")
+                  out.writelines(f"- `{line}`\n" for line in lines)
+          PY
 
       - name: Upload test results
         if: always()
@@ -42,7 +77,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
-          path: app/build/reports/tests/testDebugUnitTest/
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -51,6 +88,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: lint-and-unit-tests
+    # Build even when unit tests fail, so the APK of a red commit can still be
+    # inspected. The release steps below are gated on the tests separately.
+    if: ${{ !cancelled() }}
     continue-on-error: false
 
     steps:
@@ -64,9 +104,16 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      # packages: '' is load-bearing. Without it the action runs
+      # `sdkmanager tools` by default, and Google has removed the obsolete
+      # `tools` package from the SDK repository -- so the step dies with
+      # "Warning: Failed to find package 'tools'" before a single Gradle task
+      # runs, taking the whole gating build with it. The runner image already
+      # ships the SDK, so skipping the default install costs nothing.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
+          packages: ''
           api-levels: '35'
           ndk-version: '26.1.10909125'
 
@@ -173,6 +220,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Merges to main get a durable, non-expiring download link -- the
+      # 7-day artifact above is for quick access to in-progress claude/**
+      # builds, not for something you'd want to sideload weeks later.
+      - name: Extract version for release
+        id: version
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint-and-unit-tests.result == 'success'
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          echo "tag=v$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint-and-unit-tests.result == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: MMbank ${{ steps.version.outputs.tag }} (build ${{ steps.version.outputs.code }})
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: app/build/outputs/apk/debug/app-debug.apk
+
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -227,15 +296,21 @@ jobs:
     name: Final Status
     runs-on: ubuntu-latest
     needs: [ lint-and-unit-tests, build-apk ]
-    if: always()
+    # Not always(): a run superseded by a newer push (cancel-in-progress) is
+    # cancelled, and should read as cancelled rather than as a failure.
+    if: ${{ !cancelled() }}
 
     steps:
       - name: Check overall build status
         run: |
-          if [ "${{ needs.build-apk.result }}" = "success" ]; then
-            echo "MMbank APK built successfully!"
+          TESTS="${{ needs.lint-and-unit-tests.result }}"
+          APK="${{ needs.build-apk.result }}"
+          echo "Unit tests: $TESTS"
+          echo "APK build:  $APK"
+          if [ "$TESTS" = "success" ] && [ "$APK" = "success" ]; then
+            echo "MMbank: unit tests passed and the APK built."
             exit 0
-          else
-            echo "MMbank APK build failed"
-            exit 1
           fi
+          [ "$TESTS" != "success" ] && echo "Unit tests did not pass -- see 'Summarize failing tests'."
+          [ "$APK" != "success" ] && echo "The APK build failed."
+          exit 1

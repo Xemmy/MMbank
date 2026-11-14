@@ -1,13 +1,18 @@
 package com.xemmy.mmbank.ui.screens.dashboard
 
+import com.xemmy.mmbank.domain.filter.DateWindow
+import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
+import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
-import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.model.WalletBalance
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -28,11 +33,22 @@ class DashboardViewModelTest {
     private val thisMonth = YearMonth.of(2026, 6)
     private val noRates = emptyList<ExchangeRate>()
 
+    private val groceries = Category(id = 1, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+    private val dining = Category(id = 2, name = "Dining", icon = "🍽️", colorHex = "#FF7043")
+    private val transport = Category(id = 3, name = "Transport", icon = "🚕", colorHex = "#29B6F6")
+    private val shopping = Category(id = 4, name = "Shopping", icon = "🛍️", colorHex = "#FFCA28")
+    private val fuel = Category(id = 5, name = "Fuel", icon = "⛽", colorHex = "#AB47BC")
+    private val entertainment = Category(id = 6, name = "Entertainment", icon = "🎬", colorHex = "#EC407A")
+    private val transfers = Category(id = 7, name = "Transfers", icon = "🔁", colorHex = "#26A69A")
+    private val uncategorized = Category(id = 8, name = "Uncategorized", icon = "🏷️", colorHex = "#78909C")
+    private val allCategories =
+        listOf(groceries, dining, transport, shopping, fuel, entertainment, transfers, uncategorized)
+
     private fun tx(
         amount: String,
         direction: TransactionDirection,
         excluded: Boolean = false,
-        category: SpendingCategory = SpendingCategory.UNCATEGORIZED,
+        categoryId: Long? = null,
         person: String? = null,
         month: YearMonth = thisMonth,
     ) = Transaction(
@@ -41,7 +57,7 @@ class DashboardViewModelTest {
         direction = direction,
         source = TransactionSource.MANUAL,
         timestampMillis = month.atDay(15).atStartOfDay(zone).toInstant().toEpochMilli(),
-        spendingCategory = category,
+        categoryId = categoryId,
         person = person,
         excludeFromStats = excluded,
     )
@@ -51,6 +67,7 @@ class DashboardViewModelTest {
             transactions = transactions,
             rates = noRates,
             baseCurrency = "AED",
+            categories = allCategories,
             includeExcluded = includeExcluded,
             zone = zone,
             thisMonth = thisMonth,
@@ -60,10 +77,10 @@ class DashboardViewModelTest {
     // credit and a flagged refund-adjustment debit that must not skew stats.
     private val mixed = listOf(
         tx("1000.00", TransactionDirection.CREDIT),
-        tx("200.00", TransactionDirection.DEBIT, category = SpendingCategory.GROCERIES),
-        tx("50.00", TransactionDirection.DEBIT, category = SpendingCategory.DINING),
+        tx("200.00", TransactionDirection.DEBIT, categoryId = groceries.id),
+        tx("50.00", TransactionDirection.DEBIT, categoryId = dining.id),
         tx("500.00", TransactionDirection.CREDIT, excluded = true),
-        tx("75.00", TransactionDirection.DEBIT, excluded = true, category = SpendingCategory.TRANSFERS),
+        tx("75.00", TransactionDirection.DEBIT, excluded = true, categoryId = transfers.id),
     )
 
     @Test
@@ -85,10 +102,10 @@ class DashboardViewModelTest {
     @Test
     fun `toggle off - a flagged transaction's category contributes nothing`() {
         val spends = stats(mixed, includeExcluded = false).categorySpends
-        assertNull(spends.firstOrNull { it.category == SpendingCategory.TRANSFERS })
+        assertNull(spends.firstOrNull { it.category == transfers })
         assertEquals(
             200.0,
-            spends.first { it.category == SpendingCategory.GROCERIES }.amount,
+            spends.first { it.category == groceries }.amount,
             1e-9,
         )
     }
@@ -98,7 +115,7 @@ class DashboardViewModelTest {
         val spends = stats(mixed, includeExcluded = true).categorySpends
         assertEquals(
             75.0,
-            spends.first { it.category == SpendingCategory.TRANSFERS }.amount,
+            spends.first { it.category == transfers }.amount,
             1e-9,
         )
     }
@@ -139,12 +156,12 @@ class DashboardViewModelTest {
     @Test
     fun `categorySlicesFrom caps at top 4 and rolls the rest into Other`() {
         val spends = listOf(
-            CategorySpend(SpendingCategory.GROCERIES, 600.0),
-            CategorySpend(SpendingCategory.DINING, 400.0),
-            CategorySpend(SpendingCategory.TRANSPORT, 300.0),
-            CategorySpend(SpendingCategory.SHOPPING, 200.0),
-            CategorySpend(SpendingCategory.FUEL, 80.0),
-            CategorySpend(SpendingCategory.ENTERTAINMENT, 20.0),
+            CategorySpend(groceries, 600.0),
+            CategorySpend(dining, 400.0),
+            CategorySpend(transport, 300.0),
+            CategorySpend(shopping, 200.0),
+            CategorySpend(fuel, 80.0),
+            CategorySpend(entertainment, 20.0),
         )
         val slices = categorySlicesFrom(spends)
 
@@ -152,7 +169,7 @@ class DashboardViewModelTest {
         assertEquals(listOf("Groceries", "Dining", "Transport", "Shopping", "Other"), slices.map { it.name })
         assertEquals(100.0, slices.last().amount, 1e-9)
         assertEquals(
-            listOf(0xFF4ECDC4L, 0xFFE07A5FL, 0xFFF2CC8FL, 0xFF81B29AL, 0xFF6C757DL),
+            listOf(0xFF4CAF50L, 0xFFFF7043L, 0xFF29B6F6L, 0xFFFFCA28L, 0xFF6C757DL),
             slices.map { it.color },
         )
     }
@@ -160,9 +177,9 @@ class DashboardViewModelTest {
     @Test
     fun `categorySlicesFrom leaves no Other slice when there are 4 or fewer categories`() {
         val spends = listOf(
-            CategorySpend(SpendingCategory.GROCERIES, 600.0),
-            CategorySpend(SpendingCategory.DINING, 400.0),
-            CategorySpend(SpendingCategory.TRANSPORT, 300.0),
+            CategorySpend(groceries, 600.0),
+            CategorySpend(dining, 400.0),
+            CategorySpend(transport, 300.0),
         )
         val slices = categorySlicesFrom(spends)
 
@@ -176,10 +193,118 @@ class DashboardViewModelTest {
         val result = stats(mixed, includeExcluded = false)
         assertEquals(2, result.categorySlices.size)
         assertEquals(
-            result.categorySpends.map { it.category.label to it.amount },
+            result.categorySpends.map { it.category.name to it.amount },
             result.categorySlices.map { it.name to it.amount },
         )
         assertTrue(result.categorySlices.none { it.name == "Other" })
+    }
+
+    @Test
+    fun `default date range scopes period figures to this month, same as the old this-month behavior`() {
+        val result = stats(mixed, includeExcluded = false)
+        assertEquals("This month", result.periodLabel)
+        assertEquals(1000.0, result.periodIncome, 1e-9)
+        assertEquals(250.0, result.periodSpend, 1e-9)
+    }
+
+    @Test
+    fun `Last3Months pulls in spend from two months back that ThisMonth would miss`() {
+        val transactions = listOf(
+            tx("100.00", TransactionDirection.DEBIT, categoryId = groceries.id),
+            tx("60.00", TransactionDirection.DEBIT, categoryId = dining.id, month = thisMonth.minusMonths(2)),
+            // Outside the 3-month window entirely.
+            tx("500.00", TransactionDirection.DEBIT, month = thisMonth.minusMonths(3)),
+        )
+        val result = computeDashboardStats(
+            transactions = transactions,
+            rates = noRates,
+            baseCurrency = "AED",
+            categories = allCategories,
+            zone = zone,
+            thisMonth = thisMonth,
+            dateRange = DashboardDateRange.Last3Months,
+        )
+        assertEquals("Last 3 months", result.periodLabel)
+        assertEquals(160.0, result.periodSpend, 1e-9)
+    }
+
+    @Test
+    fun `AllTime has no previous period, so no spend-trend insight fires`() {
+        val transactions = listOf(
+            tx("100.00", TransactionDirection.DEBIT, month = thisMonth.minusMonths(20)),
+            tx("200.00", TransactionDirection.CREDIT, month = thisMonth.minusMonths(20)),
+        )
+        val result = computeDashboardStats(
+            transactions = transactions,
+            rates = noRates,
+            baseCurrency = "AED",
+            categories = allCategories,
+            zone = zone,
+            thisMonth = thisMonth,
+            dateRange = DashboardDateRange.AllTime,
+        )
+        assertEquals("All time", result.periodLabel)
+        assertEquals(100.0, result.periodSpend, 1e-9)
+        assertTrue(result.insights.none { it is SmartInsight.SpendTrend })
+    }
+
+    @Test
+    fun `a period with spend but no income yields a NoIncomeSpend insight, not a savings rate`() {
+        val transactions = listOf(tx("50.00", TransactionDirection.DEBIT))
+        val result = stats(transactions, includeExcluded = false)
+        assertTrue(result.insights.any { it is SmartInsight.NoIncomeSpend })
+        assertTrue(result.insights.none { it is SmartInsight.SavingsRate })
+    }
+
+    @Test
+    fun `the biggest debit in the period surfaces as a BiggestExpense insight`() {
+        val big = Transaction(
+            amount = BigDecimal("300.00"),
+            currencyCode = "AED",
+            direction = TransactionDirection.DEBIT,
+            source = TransactionSource.MANUAL,
+            timestampMillis = thisMonth.atDay(10).atStartOfDay(zone).toInstant().toEpochMilli(),
+            merchant = "Big Mart",
+            categoryId = shopping.id,
+        )
+        val result = stats(mixed + big, includeExcluded = false)
+        val biggest = result.insights.filterIsInstance<SmartInsight.BiggestExpense>().single()
+        assertEquals("Big Mart", biggest.merchant)
+        assertEquals(300.0, biggest.amount, 1e-9)
+    }
+
+    private fun kindTx(amount: String, kind: TransactionKind, direction: TransactionDirection, categoryId: Long? = null) =
+        tx(amount, direction, categoryId = categoryId).copy(kind = kind)
+
+    @Test
+    fun `a card payment is counted neither as spend nor income`() {
+        val transactions = listOf(
+            kindTx("200.00", TransactionKind.SPEND, TransactionDirection.DEBIT, categoryId = groceries.id),
+            kindTx("3600.00", TransactionKind.CARD_PAYMENT, TransactionDirection.DEBIT),
+            kindTx("3600.00", TransactionKind.CARD_PAYMENT, TransactionDirection.CREDIT),
+        )
+        val result = stats(transactions, includeExcluded = false)
+        assertEquals(200.0, result.periodSpend, 1e-9)
+        assertEquals(0.0, result.periodIncome, 1e-9)
+    }
+
+    @Test
+    fun `a refund lowers spend in its category instead of counting as income`() {
+        val transactions = listOf(
+            kindTx("200.00", TransactionKind.SPEND, TransactionDirection.DEBIT, categoryId = groceries.id),
+            kindTx("50.00", TransactionKind.REFUND, TransactionDirection.CREDIT, categoryId = groceries.id),
+        )
+        val result = stats(transactions, includeExcluded = false)
+        assertEquals(150.0, result.periodSpend, 1e-9)
+        assertEquals(0.0, result.periodIncome, 1e-9)
+        assertEquals(150.0, result.categorySpends.first { it.category == groceries }.amount, 1e-9)
+        assertEquals(150.0, result.monthly.last().spend, 1e-9)
+    }
+
+    @Test
+    fun `an ATM withdrawal counts as spend`() {
+        val transactions = listOf(kindTx("500.00", TransactionKind.ATM, TransactionDirection.DEBIT))
+        assertEquals(500.0, stats(transactions, includeExcluded = false).periodSpend, 1e-9)
     }
 }
 
@@ -299,5 +424,438 @@ class DashboardCryptoPresentationTest {
         val result = presentation(assets = listOf(asset(100.0)), wallets = listOf(wallet(400.0)))
         assertEquals(400.0, result.cryptoTotalUsd, 1e-9)
         assertEquals(400.0, result.cryptoInBase ?: 0.0, 1e-9)
+    }
+}
+
+/**
+ * [computeAccountsPresentation] folds fiat accounts into what the Dashboard
+ * shows and how much (if any) counts toward net worth. hideCreditCardBalance
+ * (visibility) and excludeCreditCardFromTotal (accounting) are independent
+ * Settings toggles, mirroring [computeCryptoPresentation] — the key thing
+ * these tests pin is that neither implies the other.
+ */
+class DashboardAccountsPresentationTest {
+
+    private fun row(
+        type: AccountType,
+        balanceInBase: Double?,
+        name: String = "Account",
+        hiddenFromDashboard: Boolean = false,
+    ) = AccountRow(
+        account = Account(id = 1, name = name, type = type, currencyCode = "AED", hiddenFromDashboard = hiddenFromDashboard),
+        balance = balanceInBase ?: 0.0,
+        balanceInBase = balanceInBase,
+    )
+
+    @Test
+    fun `hideCreditCardBalance drops credit card rows from the visible list`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = true,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(1, result.visibleAccounts.size)
+        assertEquals(AccountType.CHECKING, result.visibleAccounts.first().account.type)
+    }
+
+    @Test
+    fun `hiding credit cards does not by itself exclude them from the total`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = true,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(50.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `excluding the total does not by itself hide credit cards`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = true,
+        )
+        assertEquals(2, result.visibleAccounts.size)
+        assertEquals(100.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `neither toggle set keeps everything visible and summed`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.CREDIT_CARD, -50.0)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(2, result.visibleAccounts.size)
+        assertEquals(50.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `hiddenFromDashboard drops a row from the carousel but not from the total`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.SAVINGS, 50.0, hiddenFromDashboard = true)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(1, result.visibleAccounts.size)
+        assertEquals(AccountType.CHECKING, result.visibleAccounts.first().account.type)
+        assertEquals(150.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `an unconverted credit card row only flags hasUnconvertedFiat when not excluded`() {
+        val included = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CREDIT_CARD, null)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertTrue(included.hasUnconvertedFiat)
+
+        val excluded = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CREDIT_CARD, null)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = true,
+        )
+        assertFalse(excluded.hasUnconvertedFiat)
+    }
+}
+
+/**
+ * [filterAccountFeed] is the pure logic behind the "Recent activity" feed's
+ * account-carousel wiring: selecting a card in [com.xemmy.mmbank.ui.components.AccountCarousel]
+ * scopes the feed to just that account; "All Accounts" (null) shows everything.
+ */
+class DashboardFeedFilterTest {
+
+    private fun tx(id: Long, accountId: Long?, timestampMillis: Long) = Transaction(
+        id = id,
+        accountId = accountId,
+        amount = BigDecimal("10.00"),
+        currencyCode = "AED",
+        direction = TransactionDirection.DEBIT,
+        source = TransactionSource.MANUAL,
+        timestampMillis = timestampMillis,
+    )
+
+    @Test
+    fun `null accountId returns every transaction, newest first`() {
+        val transactions = listOf(
+            tx(1, accountId = 1, timestampMillis = 100),
+            tx(2, accountId = 2, timestampMillis = 300),
+            tx(3, accountId = null, timestampMillis = 200),
+        )
+        val feed = filterAccountFeed(transactions, accountId = null, limit = 10)
+        assertEquals(listOf(2L, 3L, 1L), feed.map { it.id })
+    }
+
+    @Test
+    fun `a specific accountId only returns that account's rows`() {
+        val transactions = listOf(
+            tx(1, accountId = 1, timestampMillis = 100),
+            tx(2, accountId = 2, timestampMillis = 300),
+            tx(3, accountId = 1, timestampMillis = 200),
+        )
+        val feed = filterAccountFeed(transactions, accountId = 1, limit = 10)
+        assertEquals(listOf(3L, 1L), feed.map { it.id })
+    }
+
+    @Test
+    fun `limit caps the result even when more rows match`() {
+        val transactions = (1..5).map { tx(it.toLong(), accountId = 1, timestampMillis = it.toLong()) }
+        val feed = filterAccountFeed(transactions, accountId = 1, limit = 2)
+        assertEquals(listOf(5L, 4L), feed.map { it.id })
+    }
+
+    @Test
+    fun `an account with no transactions yields an empty feed, not a crash`() {
+        val transactions = listOf(tx(1, accountId = 1, timestampMillis = 100))
+        assertTrue(filterAccountFeed(transactions, accountId = 99, limit = 10).isEmpty())
+    }
+}
+
+/**
+ * [resolveDashboardWindow] and [dashboardPeriodLabel] are the Dashboard's own
+ * date-filter presets, anchored on a [YearMonth] (not a live "today") so
+ * every preset's window is deterministic under test.
+ */
+class DashboardDateRangeTest {
+
+    private val thisMonth = YearMonth.of(2026, 6)
+
+    @Test
+    fun `ThisMonth resolves to the calendar month`() {
+        val window = resolveDashboardWindow(DashboardDateRange.ThisMonth, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `Last3Months spans this month and the two before it`() {
+        val window = resolveDashboardWindow(DashboardDateRange.Last3Months, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 4, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `Last6Months spans this month and the five before it`() {
+        val window = resolveDashboardWindow(DashboardDateRange.Last6Months, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `Last12Months spans this month and the eleven before it`() {
+        val window = resolveDashboardWindow(DashboardDateRange.Last12Months, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2025, 7, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `YearToDate starts on January 1st of thisMonth's year`() {
+        val window = resolveDashboardWindow(DashboardDateRange.YearToDate, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30)), window)
+    }
+
+    @Test
+    fun `AllTime is unbounded`() {
+        assertNull(resolveDashboardWindow(DashboardDateRange.AllTime, thisMonth))
+    }
+
+    @Test
+    fun `Custom normalizes a reversed start-end pair`() {
+        val reversed = DashboardDateRange.Custom(LocalDate.of(2026, 6, 20), LocalDate.of(2026, 6, 10))
+        val window = resolveDashboardWindow(reversed, thisMonth)
+        assertEquals(DateWindow(LocalDate.of(2026, 6, 10), LocalDate.of(2026, 6, 20)), window)
+    }
+
+    @Test
+    fun `labels are human-readable for every preset, and Custom formats its span`() {
+        assertEquals("This month", dashboardPeriodLabel(DashboardDateRange.ThisMonth))
+        assertEquals("Last 3 months", dashboardPeriodLabel(DashboardDateRange.Last3Months))
+        assertEquals("Last 6 months", dashboardPeriodLabel(DashboardDateRange.Last6Months))
+        assertEquals("Last 12 months", dashboardPeriodLabel(DashboardDateRange.Last12Months))
+        assertEquals("Year to date", dashboardPeriodLabel(DashboardDateRange.YearToDate))
+        assertEquals("All time", dashboardPeriodLabel(DashboardDateRange.AllTime))
+        assertEquals(
+            "Jun 1, 2026 – Jun 10, 2026",
+            dashboardPeriodLabel(DashboardDateRange.Custom(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 10))),
+        )
+    }
+}
+
+/**
+ * [computeSmartInsights] turns a period's raw totals into plain-English
+ * observations. Each insight kind is independent and only fires when it has
+ * enough signal — these tests pin both the firing conditions and the silence
+ * when a condition isn't met.
+ */
+class DashboardSmartInsightsTest {
+
+    private val groceries = Category(id = 1, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+    private val dining = Category(id = 2, name = "Dining", icon = "🍽️", colorHex = "#FF7043")
+    private val transport = Category(id = 3, name = "Transport", icon = "🚕", colorHex = "#29B6F6")
+
+    private fun insights(
+        periodIncome: Double = 0.0,
+        periodSpend: Double = 0.0,
+        categorySpends: List<CategorySpend> = emptyList(),
+        previousPeriodSpend: Double? = null,
+        previousCategorySpends: List<CategorySpend> = emptyList(),
+        biggestExpense: Pair<String, Double>? = null,
+    ) = computeSmartInsights(
+        periodIncome, periodSpend, categorySpends, previousPeriodSpend, previousCategorySpends, biggestExpense,
+    )
+
+    @Test
+    fun `no signal yields no insights`() {
+        assertTrue(insights().isEmpty())
+    }
+
+    @Test
+    fun `spend trend fires negative when spend rose vs the previous period`() {
+        val result = insights(periodSpend = 150.0, previousPeriodSpend = 100.0)
+        val trend = result.filterIsInstance<SmartInsight.SpendTrend>().single()
+        assertEquals(50.0, trend.percentChange, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, trend.tone)
+    }
+
+    @Test
+    fun `spend trend fires positive when spend fell vs the previous period`() {
+        val result = insights(periodSpend = 50.0, previousPeriodSpend = 100.0)
+        val trend = result.filterIsInstance<SmartInsight.SpendTrend>().single()
+        assertEquals(-50.0, trend.percentChange, 1e-9)
+        assertEquals(InsightTone.POSITIVE, trend.tone)
+    }
+
+    @Test
+    fun `spend trend is silent below a 1 percent change`() {
+        val result = insights(periodSpend = 100.5, previousPeriodSpend = 100.0)
+        assertTrue(result.none { it is SmartInsight.SpendTrend })
+    }
+
+    @Test
+    fun `spend trend is silent when there is no previous period`() {
+        val result = insights(periodSpend = 500.0, previousPeriodSpend = null)
+        assertTrue(result.none { it is SmartInsight.SpendTrend })
+    }
+
+    @Test
+    fun `savings rate is positive when income exceeds spend`() {
+        val result = insights(periodIncome = 1000.0, periodSpend = 400.0)
+        val rate = result.filterIsInstance<SmartInsight.SavingsRate>().single()
+        assertEquals(60.0, rate.ratePercent, 1e-9)
+        assertEquals(InsightTone.POSITIVE, rate.tone)
+    }
+
+    @Test
+    fun `savings rate goes negative when spend exceeds income`() {
+        val result = insights(periodIncome = 400.0, periodSpend = 1000.0)
+        val rate = result.filterIsInstance<SmartInsight.SavingsRate>().single()
+        assertEquals(-150.0, rate.ratePercent, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, rate.tone)
+    }
+
+    @Test
+    fun `zero income with spend yields NoIncomeSpend instead of a savings rate`() {
+        val result = insights(periodIncome = 0.0, periodSpend = 250.0)
+        assertEquals(250.0, result.filterIsInstance<SmartInsight.NoIncomeSpend>().single().spend, 1e-9)
+        assertTrue(result.none { it is SmartInsight.SavingsRate })
+    }
+
+    @Test
+    fun `top category reports its share of total spend`() {
+        val result = insights(
+            categorySpends = listOf(
+                CategorySpend(groceries, 300.0),
+                CategorySpend(dining, 100.0),
+            ),
+        )
+        val top = result.filterIsInstance<SmartInsight.TopCategory>().single()
+        assertEquals(groceries, top.category)
+        assertEquals(75.0, top.sharePercent, 1e-9)
+    }
+
+    @Test
+    fun `category spike fires for a category up at least 25 percent, picking the biggest mover`() {
+        val result = insights(
+            categorySpends = listOf(
+                CategorySpend(dining, 130.0), // +30%
+                CategorySpend(transport, 200.0), // +100%
+            ),
+            previousCategorySpends = listOf(
+                CategorySpend(dining, 100.0),
+                CategorySpend(transport, 100.0),
+            ),
+        )
+        val spike = result.filterIsInstance<SmartInsight.CategorySpike>().single()
+        assertEquals(transport, spike.category)
+        assertEquals(100.0, spike.percentChange, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, spike.tone)
+    }
+
+    @Test
+    fun `category spike is silent below the 25 percent threshold`() {
+        val result = insights(
+            categorySpends = listOf(CategorySpend(dining, 110.0)), // +10%
+            previousCategorySpends = listOf(CategorySpend(dining, 100.0)),
+        )
+        assertTrue(result.none { it is SmartInsight.CategorySpike })
+    }
+
+    @Test
+    fun `unusual charges become insights in their own currency`() {
+        val charge = Transaction(
+            amount = BigDecimal("74"), currencyCode = "USD", direction = TransactionDirection.DEBIT,
+            merchant = "Careem", source = TransactionSource.SMS, timestampMillis = 0L,
+        )
+        val anomaly = com.xemmy.mmbank.domain.intelligence.SpendAnomalyDetector.Anomaly(
+            transaction = charge, merchant = "Careem", amount = BigDecimal("74"),
+            usual = BigDecimal("24.00"), ratio = 74.0 / 24.0, currencyCode = "USD",
+        )
+        val result = computeSmartInsights(0.0, 0.0, emptyList(), null, emptyList(), null, listOf(anomaly))
+        val unusual = result.filterIsInstance<SmartInsight.UnusualCharge>().single()
+        assertEquals("USD", unusual.currencyCode)
+        assertEquals(24.0, unusual.usual, 1e-9)
+        assertEquals(InsightTone.NEGATIVE, unusual.tone)
+    }
+
+    @Test
+    fun `dashboard stats flag an unusual charge in the period, never in the raw ledger view`() {
+        val zone = ZoneId.of("UTC")
+        val thisMonth = YearMonth.of(2026, 11)
+        fun ride(amount: String, date: LocalDate) = Transaction(
+            amount = BigDecimal(amount), currencyCode = "AED", direction = TransactionDirection.DEBIT,
+            merchant = "Careem", source = TransactionSource.SMS,
+            timestampMillis = date.atStartOfDay(zone).plusHours(9).toInstant().toEpochMilli(),
+        )
+        val history = (1..5).map { ride("24", LocalDate.of(2026, 10, it * 3)) }
+        val spike = ride("100", LocalDate.of(2026, 11, 4))
+        val stats = computeDashboardStats(
+            transactions = history + spike, rates = emptyList(), baseCurrency = "AED",
+            categories = emptyList(), zone = zone, thisMonth = thisMonth,
+        )
+        assertEquals(1, stats.insights.filterIsInstance<SmartInsight.UnusualCharge>().size)
+        val raw = computeDashboardStats(
+            transactions = history + spike, rates = emptyList(), baseCurrency = "AED",
+            categories = emptyList(), includeExcluded = true, zone = zone, thisMonth = thisMonth,
+        )
+        assertTrue(raw.insights.none { it is SmartInsight.UnusualCharge })
+    }
+
+    @Test
+    fun `biggest expense passes the merchant and amount through unchanged`() {
+        val result = insights(biggestExpense = "Corner Store" to 42.0)
+        val biggest = result.filterIsInstance<SmartInsight.BiggestExpense>().single()
+        assertEquals("Corner Store", biggest.merchant)
+        assertEquals(42.0, biggest.amount, 1e-9)
+    }
+}
+
+/**
+ * [resolveCategory] is the single place a transaction's `categoryId` becomes
+ * a real [Category] for the Dashboard/Analytics charts -- both a normal hit
+ * and every fallback path matter here, since a wrong fallback would either
+ * crash (empty list) or silently mislabel real spend as something else.
+ */
+class DashboardResolveCategoryTest {
+
+    private val groceries = Category(id = 1, name = "Groceries", icon = "🛒", colorHex = "#4CAF50")
+    private val uncategorized = Category(id = 2, name = "Uncategorized", icon = "🏷️", colorHex = "#78909C")
+    private val categories = listOf(groceries, uncategorized)
+
+    @Test
+    fun `a matching id resolves to its category`() {
+        assertEquals(groceries, resolveCategory(groceries.id, categories))
+    }
+
+    @Test
+    fun `a null id falls back to the seeded Uncategorized category`() {
+        assertEquals(uncategorized, resolveCategory(null, categories))
+    }
+
+    @Test
+    fun `an id with no match falls back to the seeded Uncategorized category`() {
+        assertEquals(uncategorized, resolveCategory(999L, categories))
+    }
+
+    @Test
+    fun `an empty category list falls back to a synthetic Uncategorized rather than throwing`() {
+        val result = resolveCategory(null, emptyList())
+        assertEquals("Uncategorized", result.name)
+    }
+}
+
+/** [colorLongFromHex] is the pure-JVM stand-in for the Android-only [com.xemmy.mmbank.ui.components.categoryColor]. */
+class DashboardColorLongFromHexTest {
+
+    @Test
+    fun `a well-formed hex converts to a full-alpha ARGB Long`() {
+        assertEquals(0xFF4CAF50L, colorLongFromHex("#4CAF50"))
+    }
+
+    @Test
+    fun `a hex with no leading hash still converts correctly`() {
+        assertEquals(0xFF4CAF50L, colorLongFromHex("4CAF50"))
+    }
+
+    @Test
+    fun `a malformed hex falls back to the neutral grey`() {
+        assertEquals(0xFF6C757DL, colorLongFromHex("not-a-color"))
     }
 }

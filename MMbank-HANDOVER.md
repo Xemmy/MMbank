@@ -5,6 +5,16 @@ on branch `claude/phase-6-completion-mtqgb7`, which carries the complete phase
 stack on top of base commit `e363638` ("Add account balance correction").
 Last updated: 2026-07-10.*
 
+> ⚠️ **This document is a historical snapshot of the Phases 0-6 state, not the
+> current state.** Substantial work has landed since, on branch
+> `claude/mmbank-local-ai-parsing-4cfi14`: local-AI (Gate-2) parsing, dynamic
+> categories with an AI review queue, Subscription Radar, savings goals, a
+> financial copilot, a home-screen widget, the Obsidian/ambient theming pass,
+> per-category budgets, and a monthly report. The schema has moved from v9 to
+> **v18** (see §3). Treat §§4-9 below as accurate for what they describe and
+> stale for anything after 2026-07-10; **`MMbank-FEATURE-LOG.md` is the current
+> per-phase record.**
+
 > **Note on this document's origin:** the upgrade plan referenced an existing
 > `MMbank-HANDOVER.md`, but no file by that name was ever committed to the
 > repository. Phase 6's "update the handover" therefore *created* this document
@@ -60,9 +70,22 @@ re-ran the full suite on the final state.
 There is **no Android SDK in the dev sandbox** and Gradle downloads are
 blocked; all verification is CI-only. See `CLAUDE.md`.
 
-## 3. Data layer — schema v9
+## 3. Data layer — schema
 
-`data/local/AppDatabase.kt` is at **`version = 9`** with an explicit,
+> **This section describes the Phases 0-6 state (schema v9). The schema has
+> moved on considerably since.** `data/local/AppDatabase.kt` is now at
+> **`version = 18`**, with an unbroken non-destructive chain `MIGRATION_1_2` …
+> `MIGRATION_17_18`, all registered in `addMigrations(...)`. The steps added
+> after this document was written cover demo mode, transfer reconciliation,
+> dynamic categories, Subscription Radar, savings goals, dashboard hiding, AI
+> review fields (`extractedMerchant` / `aiConfidence`) and subscription price
+> history (`previousAmount`). See `MMbank-FEATURE-LOG.md` for the per-phase
+> record of the recent ones. The v9 detail below is kept as-is because the
+> Phase 1 reasoning it explains is still accurate.
+
+The original Phases 0-6 text follows.
+
+`data/local/AppDatabase.kt` was at **`version = 9`** with an explicit,
 non-destructive migration chain `MIGRATION_1_2` … `MIGRATION_8_9`.
 
 `MIGRATION_8_9` (added in Phase 1):
@@ -82,10 +105,18 @@ UPDATE accounts SET statementCycleDay = 10
   statement-cycle filter needed no second migration. Tabby is seeded with `10`
   via the LIKE match above; all other accounts stay `null`.
 
-> **Accepted gap (unchanged from the plan):** Room migration tests need
-> instrumentation and CI runs JVM tests only, so `MIGRATION_8_9` is verified by
-> compilation plus SQL review. Do one manual upgrade-install sanity check on a
-> device when convenient.
+> **Accepted gap (unchanged from the plan, and now wider):** Room migration
+> tests need instrumentation and CI runs JVM tests only, so migrations are
+> verified by compilation plus SQL review. This gap now spans all 17 steps, not
+> just `MIGRATION_8_9`. Room's KSP processor does validate `@Entity` classes
+> against the schema at compile time, so a column/entity mismatch fails the
+> build rather than the device — but the `ALTER TABLE` statements themselves
+> have never actually been executed in CI. Do one manual upgrade-install sanity
+> check on a device when convenient. Note also that `exportSchema = true` and
+> `room.schemaLocation` are configured but `app/schemas/` is not committed, so
+> there is no schema-vs-migration validation and no basis for
+> `MigrationTestHelper` tests; committing those JSONs would be the cheapest way
+> to close this.
 
 ### Analytics-purity flag — the three ingestion points
 1. **Balance corrections** (`AccountsScreen.kt`): the generated

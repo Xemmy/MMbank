@@ -15,12 +15,16 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Opt-in biometric app lock (BiometricPrompt) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Daily budget pacing alert (see BudgetNotificationHelper). Android 13+ requires this to post any notification. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".MMBankApp"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.MMbank"
         tools:targetApi="34">
@@ -32,7 +36,35 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Long-press the launcher icon: "Add a cash spend". -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!--
+            Quick add: a small sheet that records one manual cash spend. Not exported:
+            the launcher shortcut and the Quick Settings tile both start it as this app.
+        -->
+        <activity
+            android:name=".ui.quickadd.QuickAddActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="@string/quick_add_long_label"
+            android:taskAffinity=""
+            android:theme="@style/Theme.MMbank.QuickAdd"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
+
+        <service
+            android:name=".ui.quickadd.QuickAddTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_quick_add"
+            android:label="@string/quick_add_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!--
             Push-notification capture channel.
@@ -59,6 +91,19 @@
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
+        </receiver>
+
+        <!-- Home screen widget: today's safe-to-spend allowance (see ui/widgets/DailyBudgetWidget.kt). -->
+        <receiver
+            android:name=".ui.widgets.DailyBudgetWidgetReceiver"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/daily_budget_widget_info" />
         </receiver>
     </application>
 </manifest>

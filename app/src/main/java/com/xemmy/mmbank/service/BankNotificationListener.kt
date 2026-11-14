@@ -1,13 +1,18 @@
 package com.xemmy.mmbank.service
 
 import android.app.Notification
+import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.diagnostics.Diagnostics
+import com.xemmy.mmbank.domain.intelligence.CaptureHealthEvaluator
 import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.parser.CaptureLogFormatter
+import com.xemmy.mmbank.domain.parser.UnmatchedExplainer
 import com.xemmy.mmbank.util.LogRedactor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +31,17 @@ class BankNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Heartbeat first, before any filtering: any notification from any app
+        // proves the listener is alive (see CaptureHealthEvaluator). Throttled
+        // so a busy phone doesn't write preferences on every post.
+        runCatching {
+            val prefs = (applicationContext as MMBankApp).container.preferences
+            val now = System.currentTimeMillis()
+            if (CaptureHealthEvaluator.shouldRecordHeartbeat(prefs.captureLastEventAt, now)) {
+                prefs.captureLastEventAt = now
+            }
+        }
+
         // Never parse our own notifications, and skip ongoing/group-summary noise.
         if (sbn.packageName == packageName) return
         if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
@@ -52,17 +68,64 @@ class BankNotificationListener : NotificationListenerService() {
         val container = (applicationContext as MMBankApp).container
         scope.launch {
             try {
-                when (val result = container.ingestCapturedMessage(message)) {
+                val result = container.ingestCapturedMessage(message)
+                logCapture(message, result)
+                when (result) {
                     is IngestResult.Inserted ->
                         Log.d(TAG, LogRedactor.redactSensitiveData("Captured tx #${result.transactionId} from ${sbn.packageName}"))
                     is IngestResult.Duplicate ->
                         Log.d(TAG, LogRedactor.redactSensitiveData("Deduped against tx #${result.existingTransactionId} (${sbn.packageName})"))
+                    IngestResult.Ignored ->
+                        Log.d(TAG, LogRedactor.redactSensitiveData("Muted by the ignore list (${sbn.packageName})"))
                     IngestResult.NoMatch -> Unit
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, LogRedactor.redactSensitiveData("Ingest failed for notification from ${sbn.packageName}"), t)
+                Diagnostics.recordCapture(
+                    applicationContext,
+                    CaptureLogFormatter.line("PUSH", message.sender, message.title, message.body, "ERROR ${t.javaClass.simpleName}"),
+                )
+                Diagnostics.recordError(applicationContext, "BankNotificationListener.ingest", t)
             }
         }
+    }
+
+    private fun logCapture(message: CapturedMessage, result: IngestResult) {
+        val financial = CaptureLogFormatter.looksFinancial(message.body) ||
+            message.title?.let(CaptureLogFormatter::looksFinancial) == true
+        val why = if (result == IngestResult.NoMatch) UnmatchedExplainer.explain(message.title, message.body)?.headline else null
+        val outcome = CaptureLogFormatter.outcome(result, financial, why) ?: return
+        Diagnostics.recordCapture(
+            applicationContext,
+            CaptureLogFormatter.line("PUSH", message.sender, message.title, message.body, outcome),
+        )
+    }
+
+    private fun logEvent(text: String) = Diagnostics.recordCapture(
+        applicationContext,
+        CaptureLogFormatter.line("LISTENER", null, null, text, "EVENT"),
+    )
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        logEvent("Listener connected")
+        runCatching {
+            (applicationContext as MMBankApp).container.preferences.captureListenerConnectedAt = System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * Android unbinds the listener under memory pressure or when an OEM
+     * battery manager steps in. Record it (Home shows a capture-health
+     * banner) and ask to be bound again; the system may or may not honour it.
+     */
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        logEvent("Listener disconnected by system; requesting rebind")
+        runCatching {
+            (applicationContext as MMBankApp).container.preferences.captureListenerDisconnectedAt = System.currentTimeMillis()
+        }
+        runCatching { requestRebind(ComponentName(this, BankNotificationListener::class.java)) }
     }
 
     override fun onDestroy() {

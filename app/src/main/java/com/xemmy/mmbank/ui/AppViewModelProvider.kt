@@ -6,12 +6,32 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.xemmy.mmbank.MMBankApp
+import com.xemmy.mmbank.ui.screens.accounts.AccountHistoryViewModel
 import com.xemmy.mmbank.ui.screens.accounts.AccountsViewModel
+import com.xemmy.mmbank.ui.screens.accounts.DebtPlannerViewModel
+import com.xemmy.mmbank.ui.screens.analytics.AnalyticsViewModel
+import com.xemmy.mmbank.ui.screens.bills.BillsViewModel
+import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
+import com.xemmy.mmbank.ui.screens.copilot.CopilotChatViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
+import com.xemmy.mmbank.ui.screens.goals.GoalsViewModel
+import com.xemmy.mmbank.ui.screens.integrity.IntegrityViewModel
+import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailViewModel
+import com.xemmy.mmbank.ui.screens.report.MonthlyReportViewModel
+import com.xemmy.mmbank.ui.screens.review.ReviewViewModel
+import com.xemmy.mmbank.ui.screens.search.SearchViewModel
+import com.xemmy.mmbank.ui.screens.statement.StatementReconcileViewModel
+import com.xemmy.mmbank.ui.screens.plan.PlanViewModel
+import com.xemmy.mmbank.ui.screens.upcoming.UpcomingPaymentsViewModel
+import com.xemmy.mmbank.ui.screens.year.YearInReviewViewModel
 import com.xemmy.mmbank.ui.screens.rules.RuleEditorViewModel
 import com.xemmy.mmbank.ui.screens.rules.RulesViewModel
+import com.xemmy.mmbank.ui.screens.settings.ImportMessagesViewModel
 import com.xemmy.mmbank.ui.screens.settings.SettingsViewModel
+import com.xemmy.mmbank.ui.screens.splits.GroupDetailViewModel
+import com.xemmy.mmbank.ui.screens.splits.SplitsViewModel
+import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsViewModel
 
 /** Central factory wiring every ViewModel to the manual [AppContainer]. */
@@ -21,10 +41,30 @@ object AppViewModelProvider {
         initializer { DashboardViewModel(mmBankApp().container) }
         initializer { TransactionsViewModel(mmBankApp().container) }
         initializer { AccountsViewModel(mmBankApp().container) }
+        initializer { AccountHistoryViewModel(createSavedStateHandle(), mmBankApp().container) }
+        initializer { DebtPlannerViewModel(mmBankApp().container) }
         initializer { CashbackViewModel(mmBankApp().container) }
         initializer { RulesViewModel(mmBankApp().container) }
         initializer { RuleEditorViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SettingsViewModel(mmBankApp().container) }
+        initializer { ImportMessagesViewModel(mmBankApp().container) }
+        initializer { SubscriptionsViewModel(mmBankApp().container) }
+        initializer { AnalyticsViewModel(mmBankApp().container) }
+        initializer { GoalsViewModel(mmBankApp().container) }
+        initializer { IntegrityViewModel(mmBankApp().container) }
+        initializer { CopilotChatViewModel(mmBankApp().container) }
+        initializer { ReviewViewModel(mmBankApp().container) }
+        initializer { CategoriesViewModel(mmBankApp().container) }
+        initializer { MonthlyReportViewModel(mmBankApp().container) }
+        initializer { MerchantDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
+        initializer { BillsViewModel(mmBankApp().container) }
+        initializer { SplitsViewModel(mmBankApp().container) }
+        initializer { GroupDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
+        initializer { SearchViewModel(mmBankApp().container) }
+        initializer { StatementReconcileViewModel(mmBankApp().container) }
+        initializer { YearInReviewViewModel(mmBankApp().container) }
+        initializer { PlanViewModel(mmBankApp().container) }
+        initializer { UpcomingPaymentsViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

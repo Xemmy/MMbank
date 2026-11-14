@@ -1,36 +1,44 @@
 package com.xemmy.mmbank.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF4FC3F7),
-    onPrimary = Color(0xFF00344A),
-    secondary = Color(0xFF80CBC4),
-    onSecondary = Color(0xFF00332E),
-    tertiary = Color(0xFFFFB74D),
-    background = ObsidianTokens.canvas,
-    surface = Color(0xFF12161F),
-    surfaceVariant = Color(0xFF1B2130),
-    onBackground = ObsidianTokens.textPrimary,
-    onSurface = ObsidianTokens.textPrimary,
-    error = Color(0xFFFF8A80),
-)
+/**
+ * Financial-status semantic tokens (Zero-Conflict Color System spec). Resolved
+ * off [ColorScheme.surface] luminance rather than a CompositionLocal so any
+ * composable already holding `MaterialTheme.colorScheme` can reach them
+ * without extra plumbing; ColorContrastTest pins the light/dark selection
+ * logic and the underlying hex pairs.
+ */
+private fun ColorScheme.isDarkScheme(): Boolean = surface.luminance() < 0.5f
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF0277BD),
-    secondary = Color(0xFF00796B),
-    tertiary = Color(0xFFEF6C00),
-)
+val ColorScheme.incomeContainer: Color
+    get() = if (isDarkScheme()) IncomeContainerDark else IncomeContainerLight
 
-/** Colors used for transaction direction across all screens. */
+val ColorScheme.onIncomeContainer: Color
+    get() = if (isDarkScheme()) OnIncomeContainerDark else OnIncomeContainerLight
+
+val ColorScheme.expenseContainer: Color
+    get() = if (isDarkScheme()) ExpenseContainerDark else ExpenseContainerLight
+
+val ColorScheme.onExpenseContainer: Color
+    get() = if (isDarkScheme()) OnExpenseContainerDark else OnExpenseContainerLight
+
+/**
+ * Colors used for transaction direction across all screens. Backed by the
+ * accessible income/expense "on container" tokens so every credit/debit
+ * indicator gets AAA contrast against the app's dark canvas for free.
+ */
 object LedgerColors {
-    val credit = Color(0xFF66BB6A)
-    val debit = Color(0xFFEF5350)
+    val credit: Color
+        @Composable get() = MaterialTheme.colorScheme.onIncomeContainer
+    val debit: Color
+        @Composable get() = MaterialTheme.colorScheme.onExpenseContainer
 }
 
 /**
@@ -63,14 +71,32 @@ object GlowPalette {
     }
 }
 
+/** One design for everyone: Classic/Premium was merged (Improvement Plan §1.6). */
 @Composable
 fun MMbankTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = ObsidianTypography,
-        content = content,
-    )
+    val mmColors = if (darkTheme) darkMMColors() else lightMMColors()
+    val colorScheme = mmColors.toColorScheme()
+    CompositionLocalProvider(LocalMMColors provides mmColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = ObsidianTypography,
+            shapes = MMShapes,
+        ) {
+            // The app root Scaffold (MainActivity) uses a transparent
+            // container so the ambient background shows through; that
+            // Color.Transparent doesn't match any ColorScheme role, so M3's
+            // contentColorFor() falls back to LocalContentColor's own
+            // default (Color.Black) instead of onSurface. Any Text() below
+            // it without an explicit color would render black on the dark
+            // canvas. Providing onSurface here fixes that fallback for the
+            // whole tree; nested Surface/Scaffold/Card composables still
+            // override it correctly per their own container color.
+            CompositionLocalProvider(LocalContentColor provides colorScheme.onSurface) {
+                content()
+            }
+        }
+    }
 }

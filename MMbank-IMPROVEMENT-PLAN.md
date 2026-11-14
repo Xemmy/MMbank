@@ -1,0 +1,872 @@
+# MMbank — Improvement Plan (living tracker)
+
+> **Legend:** ⬜ todo · 🟡 in progress · ✅ done · 📱 done in code, device check pending.
+> Mark an item ✅ (with version) in the same commit that delivers it.
+
+## Progress
+
+| Phase | Done | Notes |
+|---|---|---|
+| Phase 0 — Hotfixes | 13/13 coded (11 ✅, 2 📱 pending device check: 0.3, 0.4) | shipped 0.62.16, CI green |
+| Phase 1 — Design system 2.0 | 0 | 0.63.0 |
+| Phase 2 — Component library | 0 | 0.64.0 |
+| Phase 3 — Navigation & IA | 0 | 0.65.0 |
+| Phase 4 — Screen redesigns | 0 | 0.66–0.71 |
+| Phase 5 — States, onboarding, brand | 0 | 0.72–0.73 |
+| Phase 6 — Accessibility & l10n | 0 | 0.74.0 |
+| Part B — Functionality | 0 | |
+| Part C — Smart assignment & subscriptions | 0 | |
+
+---
+
+# MMbank — Design Review & Improvement Plan (Pro Guide)
+
+**Reviewed:** `Xemmy/MMbank` @ branch `claude/mmbank-local-ai-parsing-4cfi14`, commit `a9f0fbd` (v0.62.15, versionCode 104, Room schema v31, ~436 files, Kotlin + Jetpack Compose + Material 3, Compose BOM 2025.12, targetSdk 35 / minSdk 26).
+**Decisions you made:** (1) **dark-first, with a real working light mode** and an in-app Light / Dark / System switch; (2) **one design**: remove the Classic/Premium switch and the two filter-bar layouts.
+**How this was reviewed:** I read the theme layer myself. Three parallel audits covered every screen (Home/Dashboard/Accounts, Activity/Review/Merchant, Settings + secondary screens + widget). Seven skeptic agents then tried to refute the 40 highest-impact claims against the code, and a completeness critic looked for anything missed. Contrast ratios below were computed with the WCAG formula. Everything marked **verified** was confirmed in code. Things that depend on device runtime are marked **test on device**. Nothing could be rendered: the sandbox has no Android SDK.
+
+---
+
+## 0. Context — why a design pass, why now
+
+MMbank's engine is impressive: dual-channel capture, a bilingual parser, dedup, SQLCipher, on-device AI, and 60+ feature releases with good unit-test discipline. The UI grew with it, one feature session at a time, and it now has **design-system drift**:
+
+- **Two colour systems.** Material `ColorScheme` (`ui/theme/Color.kt`) and dark-only `ObsidianTokens` (white-alpha surfaces, near-white text) are mixed on the same screens. On top of that, raw hex values appear in rows and charts.
+- **Light mode is broken.** The theme follows the phone setting, but six screens and every "glass" dialog draw a fixed near-black background and then put theme-coloured (near-black) text on it.
+- **Text is too small.** The type scale bottoms out at **8sp** (`labelSmall`) and **9sp** (`labelMedium`, `MetaLabel`). These are used **87 times**, including the bottom navigation labels.
+- **Navigation is hard to follow.** There are 30+ routes, a "Home" tab and a "Dashboard" tab that renders `InsightsScreen`, 9 link rows at the bottom of that tab, five different header patterns, and 13 secondary routes that highlight no tab.
+- **Inconsistency everywhere.** There are 3 credit/debit palettes, 7+ chip styles, 4 card styles, 3 transaction-row designs, 5 corner radii, 12/14/16dp gutters, and 2 filter bars.
+- **The privacy promise leaks.** "Hide balances" masks Home only. Activity, the hero card, Debt Planner, Merchant, the account dialogs and the widget show amounts anyway.
+- **Platform basics are missing.** There is no edge-to-edge handling (Android 15 forces it), no splash screen, no status-bar icon colour, no transitions or predictive back, a launcher icon that doesn't match the brand, and notification small icons that render as smudges.
+
+**Intended outcome:** one coherent, legible, theme-correct and accessible design system ("Obsidian 2.0") with a small component library. Then a simpler navigation structure, then the screens redesigned on top of those, each step shipped in reviewable PRs that keep CI green.
+
+---
+
+## 1. Scorecard (current state)
+
+| Area | Grade | One-line reason |
+|---|---|---|
+| Visual identity | **B** | The Obsidian idea is strong: deep canvas, Space Grotesk, the Dirham glyph. But it is applied unevenly and the launcher icon doesn't match it. |
+| Colour system | **D** | Two parallel systems, 3 money palettes, dark-only tokens on light surfaces, textMeta on cards at 4.05:1. |
+| Typography | **D** | An 8–9sp floor, no line heights, `headlineSmall` = `titleLarge` (21sp), monospace amounts, Bold requested but not bundled. |
+| Layout & spacing | **C** | No spacing tokens; 12/14/16dp gutters and card paddings mixed; 290–437-line dialogs. |
+| Components | **D** | 47 Material `Card`s + 21 `ObsidianCard`s + 4 hand-built copies; 7+ chip styles; everything is an `AlertDialog`. |
+| Navigation & structure | **D** | Home vs "Dashboard", a link-dump tab, 5 header patterns, tabs not highlighted, no transitions. |
+| States & feedback | **D** | No loading states anywhere (the empty state flashes on every screen); raw `e.message` shown to users; no undo; silent status messages. |
+| Accessibility | **D−** | Text under 11sp, targets under 48dp, 0 semantics on charts, 0 toggleable rows, 0 string resources, lock screen readable by TalkBack. |
+| Platform polish | **D** | No edge-to-edge, splash, monochrome icon, notification icon, predictive back or adaptive layout. |
+| Copy | **C** | Clear in places, but leaks jargon (AGSL, loopback, regex, DEBIT) and names the same thing 2–3 ways. |
+
+---
+
+## 2. The 12 issues that matter most (executive summary)
+
+1. **Light mode is unreadable** on the Dashboard tab, Accounts, Debt Planner, Report, Merchant and in all glass dialogs. Example: `InsightsScreen.kt:410` "Smart insights" is near-black on #0B0E14. *(verified)*
+2. **The text-size floor is 8sp.** Bottom-nav labels use `labelSmall` = 8sp (`MainActivity.kt:251`, `Typography.kt:57-68`). *(verified)*
+3. **Edge-to-edge is not handled** while targetSdk is 35. On Android 15, nested `Scaffold`/`TopAppBar`s probably double the status-bar and nav-bar padding, and status-bar icons stay white over light UI. *(code verified; test on device)*
+4. **Hide-balances leaks** across Activity, the hero card, the detail sheet, Debt Planner, Merchant, the account dialogs and the widget. The Dashboard tab masks numbers but still leaks sign, trends and proportions. *(verified)*
+5. **The lock screen doesn't really lock.** TalkBack can read the ledger underneath it, and the Recents thumbnail shows balances unless "Block screenshots" is on. *(verified)*
+6. **Three credit/debit palettes:** `LedgerColors`, `ObsidianTokens.credit/debit`, and raw `#E07A5F/#4ECDC4` in `TransactionsScreen.kt:2137`. Only the first adapts to theme. *(verified)*
+7. **Wallet cards put white text on yellow/green** at 1.45–1.59:1 contrast (Cash, Savings, Crypto in `GlassWalletCard.kt`). *(computed)*
+8. **The Activity row is dense:** ~4 lines, 3 chips, 2 icon buttons, card + glow + divider. Its touch targets are 24–30dp. *(verified)*
+9. **Forms fight the user.** Amounts open a QWERTY keyboard, the date is typed as `YYYY-MM-DD`, there are no IME actions, error fields turn red with no message, and input is lost on rotation. *(verified)*
+10. **No loading states.** Every screen flashes "No … yet" before its data arrives, and Home also flashes "USD 0.00". *(verified)*
+11. **Navigation is unclear:** "Dashboard" ≠ DashboardScreen, 9 link rows, duplicated routes (`categories` and `settings_categories_people`), and 13 routes that highlight no tab. *(verified)*
+12. **There are no design guardrails:** 0 `@Preview`s, 0 screenshot tests, and nothing stops a raw hex or 8sp text from coming back. *(verified)*
+
+---
+
+## Phase 0 — Hotfixes (one PR, ~1–2 days, patch bump → 0.62.16)
+
+These are small, safe and visible. Ship them before the redesign.
+
+| # | Fix | Where | How | Status |
+|---|---|---|---|---|
+| 0.1 | **Pin dark theme for now.** This removes every light-mode breakage at once until Phase 1 makes tokens theme-aware. | `ui/MainActivity.kt:113`, `res/values/themes.xml` | `MMbankTheme(darkTheme = true, …)`. Set `windowBackground` to `#0B0E14` (not pure black). | ✅ 0.62.16 |
+| 0.2 | **Raise the type floor.** | `ui/theme/Typography.kt`, `ObsidianTokens.kt` | `labelSmall` 8 → **11sp**, `labelMedium` 9 → **12sp**, `MetaLabel` 9 → **11sp** with tracking 0.14em → 0.06em, currency code 8.5 → **max(11sp, 0.7em)**. Add `lineHeight` to every style. Bottom-nav labels use `labelMedium`. | ✅ 0.62.16 |
+| 0.3 | **Handle edge-to-edge.** | `MainActivity.onCreate` + inner Scaffolds | Call `enableEdgeToEdge()` before `setContent`. Root Scaffold: `contentWindowInsets = WindowInsets(0)` for the top, and let each screen's top bar own the status-bar inset; *or* apply `Modifier.consumeWindowInsets(innerPadding)` on the NavHost column. Nested Scaffolds: `contentWindowInsets = WindowInsets(0)`. **Test on an API 35 device** with gesture nav and 3-button nav. | 📱 0.62.16 |
+| 0.4 | **Lock screen privacy.** | `MainActivity.kt:122-140`, `auth/LockScreen.kt` | While locked, wrap `MMbankApp` in `Modifier.clearAndSetSemantics {}`. When app lock is on: `setRecentsScreenshotEnabled(false)` on API 33+, and `FLAG_SECURE` below 33. Give the ⌫ key `contentDescription="Delete digit"`, make the wrong-PIN text `liveRegion = Polite`, and add haptics plus a shake on a wrong PIN. | 📱 0.62.16 |
+| 0.5 | **Show the Security status messages.** | `screens/settings/SettingsScreen.kt:1418-1432` | Render `statusMessage`, as the other subpages already do (`:1407`). | ✅ 0.62.16 |
+| 0.6 | **Notification toggles respect denial.** | `screens/settings/SmartAlertsSection.kt:35,76-77` | Turn the toggle on only in the permission result callback. Show a "Blocked — Open settings" row when `NotificationPermission.granted` is false. | ✅ 0.62.16 |
+| 0.7 | **Back exits bulk mode.** | `TransactionsScreen.kt` (bulk state ~495) | `BackHandler(enabled = bulkMode) { exitBulkMode() }`. | ✅ 0.62.16 |
+| 0.8 | **Day labels stay correct across midnight.** | `TransactionsScreen.kt:1048` | Replace `remember { LocalDate.now() }` with a `currentDate` StateFlow that ticks at midnight and on resume. | ✅ 0.62.16 |
+| 0.9 | **Transfer editor shows only fields that apply.** | `TransactionsScreen.kt:2829-2877` | Hide Category, Exclude and Currency when `transferMode`. Add `KeyboardType.Decimal` to the amount fields (2693, 2761). | ✅ 0.62.16 |
+| 0.10 | **Crypto amounts aren't rounded to 0.00.** | `ui/util/Format.kt:12-13` | Take fraction digits from `Currency.getInstance(code).defaultFractionDigits`, with a crypto override (up to 8 significant decimals). Unit-test it in `FormatTest`. | ✅ 0.62.16 |
+| 0.11 | **Wallet-card contrast.** | `ui/components/GlassWalletCard.kt:35-42` | Darken the end stops: mixing 45% `#0B0E14` gives white ≥4.5:1 (Cash `#8C7400` 4.55, Savings `#1F8345` 4.78, Crypto `#856F2A` 4.88). Add a contrast assertion to `WalletCardTest`. | ✅ 0.62.16 |
+| 0.12 | **The review highlight is readable.** | `screens/review/components/TransactionDetailReviewCard.kt:218` | Give the highlight `SpanStyle` an explicit dark `color`. Today it is #F1F5F9 on #FFF59D, about 1.02:1. | ✅ 0.62.16 |
+| 0.13 | **Bold → SemiBold.** | 9 call sites (e.g. `TransactionsScreen.kt:2284`, `GlassWalletCard.kt:115`) | Bold renders as SemiBold today anyway; say so in code. Drop the Inter *Light* request in `AmountText.kt:75`. | ✅ 0.62.16 |
+
+---
+
+## Phase 1 — Design system 2.0 ("Obsidian 2.0") (minor bump → 0.63.0)
+
+### 1.1 Token architecture (the most important change)
+
+Replace the two systems with **one three-layer model**:
+
+```
+Primitives (ui/theme/Palette.kt)       raw ramps: ink-950…ink-50, indigo-*, mint-*, copper-*, gold-*, teal-*, red-*
+        │
+Semantic tokens (ui/theme/MMColors.kt) @Immutable data class MMColors(...)  ← darkMMColors() / lightMMColors()
+        │   provided via LocalMMColors; accessed as MMTheme.colors.textPrimary
+        ├──> Material ColorScheme built FROM the same semantic tokens (so M3 Buttons/TextFields/Switches match)
+        │
+Component tokens (inside ui/designsystem/*)   e.g. TransactionRowDefaults.amountColor(kind)
+```
+
+- Delete the colour `val`s in `ObsidianTokens` (keep the file as a deprecated alias for one release, then remove). `LedgerColors`, `GlowPalette` and the raw hex in screens all map onto semantic tokens.
+- Add `ThemeMode { SYSTEM, DARK, LIGHT }`, **defaulting to DARK** (dark-first). Store it as a reactive `StateFlow` on `AppContainer`; the CLAUDE.md rule applies because every screen reads it. `MMbankTheme(darkTheme = themeMode.resolve(isSystemInDarkTheme()))`. Keep the status-bar and nav-bar icon appearance in sync with it.
+- Draw **one canvas** at the root, and make every screen container transparent. Today some screens paint `obsidianCanvas()` themselves and others use opaque Scaffolds, which is also why the background presets barely show.
+
+**Semantic colour tokens.** Ratios were computed; pin them all in `ColorContrastTest`.
+
+| Token | Dark | Light | Used for |
+|---|---|---|---|
+| `canvas` | `#0B0E14` | `#F5F6F8` | app background |
+| `surface` | `#131823` | `#FFFFFF` | cards, rows |
+| `surfaceRaised` | `#1B2130` | `#FFFFFF` + border | menus, selected rows, inputs |
+| `surfaceOverlay` | `#1E2535` | `#FFFFFF` | dialogs, sheets (solid; blur only on the scrim) |
+| `borderSubtle` / `borderStrong` | `#232A3A` / `#333C4F` | `#E4E7EC` / `#CBD2DC` | hairlines, focus |
+| `textPrimary` | `#EDF1F6` (15.7:1 on surface) | `#0B0F17` (19:1) | titles, amounts |
+| `textSecondary` | `#A7B0BF` (8.1:1) | `#4B5563` (7.6:1) | subtitles, meta |
+| `textTertiary` | `#7D8699` (4.9:1) | `#5F6673` (5.3:1) | captions only; never under 12sp |
+| `accent` / `onAccent` | `#818CF8` / `#0B0E14` (6.5:1) | `#4F46E5` / `#FFFFFF` (6.3:1) | primary buttons, selection. Today's `#6366F1` with white text is **4.47:1 and fails AA**. |
+| `moneyIn` | `#6EE7B7` (11.6:1) | `#047857` (5.5:1) | credits, with "+" |
+| `moneyOut` | = `textPrimary` | = `textPrimary` | spending, with "−" (see the principle below) |
+| `moneyNeutral` | = `textSecondary` | = `textSecondary` | transfers, adjustments |
+| `danger` / `warning` / `info` | `#F87171` / `#FBBF24` / `#60A5FA` | `#B91C1C` / `#B45309` / `#1D4ED8` | overdue, over budget, errors, alerts |
+| `brandGold` / `brandTeal` | `#F0BE5A` / `#2DD4BF` | `#8A5A00` / `#0F766E` | Binance / Tabby accents |
+| `chart1…chart8`, `chartOther` | validated categorical set | light variants | charts and category swatches (`CategoryPresets` maps onto these) |
+
+**Pro principle: calm money colours.** Spending is the normal state of a ledger. Painting every debit red or copper makes the app feel like an alarm. Show debits in `textPrimary` with a "−" sign, credits in `moneyIn` with "+", and transfers in `moneyNeutral`. Keep `danger` for things that need action (over budget, overdue, failed capture). This is the convention used by top fintech apps. If you prefer coloured debits, use a soft copper, but only through the `moneyOut` token.
+
+**Brand accents per account, not string matching.** `GlowTones.forAccountOrigin` checks for "binance"/"tabby" in names. Instead, add `Account.accentColor: Long?` (schema v32; per CLAUDE.md, mirror it in Entity, Model and both mappers, add a round-trip test and an explicit `MIGRATION_31_32`). Default it from a small bank registry (`domain/model/BankNames.kt`). Render it as a 3dp leading accent bar or avatar tint, and drop the per-row radial blooms.
+
+**Ambient background.** Keep it as the signature, but make it real:
+- Remove the 88% scrim (`AmbientBackground.kt:88`).
+- Draw the glows at 0.10–0.18 alpha in a top band behind the Home hero and the tab headers only.
+- Give every preset both a dark and a light variant. Presets: **Obsidian** (default), **Aurora**, **Warm**, **Off**.
+- Under "Off", or when Reduce Motion / Battery Saver is on, draw nothing.
+
+### 1.2 Typography
+
+- **Two families, not three.** Space Grotesk for display and titles; Inter for everything else, *including amounts*. Inter's bundled TTFs contain `tnum` (verified by parsing the GSUB tables). Drop IBM Plex Mono, whose monospace digits read like a terminal next to Inter. Use `fontFeatureSettings = "tnum"` on every amount.
+- Define **all 15 M3 styles**. Today `headlineMedium` falls back to the M3 default size, and `headlineSmall` = `titleLarge`. Set line heights everywhere.
+
+| Style | Family / weight | Size / line | Use |
+|---|---|---|---|
+| displaySmall | Space Grotesk SemiBold, −0.02em, tnum | 36 / 44 | Home net worth, detail-sheet amount |
+| headlineLarge | Space Grotesk SemiBold | 28 / 36 | tab-root large title |
+| headlineMedium | Space Grotesk SemiBold | 24 / 32 | stat hero values |
+| headlineSmall | Space Grotesk SemiBold | 22 / 28 | dialog/sheet titles |
+| titleLarge | Space Grotesk SemiBold | 20 / 28 | top-app-bar title |
+| titleMedium | Inter SemiBold | 16 / 24 | card titles, row primary text |
+| titleSmall | Inter SemiBold | 14 / 20 | section headers |
+| bodyLarge / bodyMedium / bodySmall | Inter Regular | 16/24 · 14/20 · 12/16 | inputs · body · row secondary |
+| labelLarge / labelMedium / labelSmall | Inter Medium | 14/20 · 12/16 · **11/16 (floor)** | buttons · chips & nav · captions/overline |
+
+- Add an `MMTypography` extension with amount styles: `amountDisplay` 36, `amountTitle` 20, `amountRow` 16, `amountCaption` 13, all Inter or Space Grotesk tnum. The currency code is 0.7em with an 11sp minimum.
+- Overline (`MetaLabel`) = `labelSmall`, uppercase, +0.06em tracking, `textSecondary` (not 48% alpha).
+- **Large fonts:** amounts never ellipsize their digits (today `AmountText.kt:95-103` turns "Đ46,122" into "Đ46,12…"). Use `BasicText(autoSize = TextAutoSize.StepBased(minFontSize = 14.sp))`, available in the pinned BOM, and fall back to compact "Đ46.1K" with the full value in `contentDescription`. Replace `height(x)` with `heightIn(min = x)` on chips, the search field and the chart rows.
+
+### 1.3 Spacing, shape, elevation
+
+- **`MMSpacing`:** 2 · 4 · 8 · 12 · 16 · 24 · 32. Screen gutter **16** everywhere (today 12 or 16). Card padding **16**. Gap between cards **12**. Gap between sections **24**.
+- **`MaterialTheme.shapes`:** extraSmall 8 (tags), small 12 (chips, fields, avatars), medium 16 (cards and rows; replaces 18), large 24 (dialogs), extraLarge 28 (sheets), pills = `CircleShape`. No other literal radii.
+- **Elevation:** use tonal steps (`canvas` → `surface` → `surfaceRaised` → `surfaceOverlay`) plus a 1dp `borderSubtle`, and no shadows. Glass becomes a solid `surfaceOverlay`, with blur kept only on the *scrim* behind overlays on API 31+ (`GlassDialogBackdrop`). That fixes the always-dark glass dialogs in light mode.
+
+### 1.4 Iconography & glyphs
+
+- One icon style: Material Symbols **Rounded**, 24dp, outlined when unselected and filled when selected. Replace the ▲▼ ↑↓ ⚠ ⚠️ ✓ ★ text glyphs with icons and proper `contentDescription`s. TalkBack currently reads "black up-pointing triangle".
+- Category emoji stay (users like them), but always inside a tinted 40dp `CategoryIcon` tile, with the category name as the semantics label.
+- The AED Dirham glyph is used everywhere money is shown, through `MoneyText`. Today only 7 call sites use it and ~125 print "1,240.00 AED". Its accessibility `alternateText` becomes "AED" (today "Đ"), and money nodes get a `contentDescription` like "spent 46 dirhams 12 fils".
+
+### 1.5 Motion & haptics
+
+- **`MMMotion` tokens:** short 150ms, medium 250ms, long 350ms; emphasized easing for enter/exit.
+- **NavHost:** tab switches fade through (~200ms); pushes slide on the X axis plus a fade (~300ms), with matching pop transitions. Today everything is the default 700ms crossfade.
+- Set `android:enableOnBackInvokedCallback="true"` to get predictive back.
+- Honour reduce motion (`ANIMATOR_DURATION_SCALE == 0`): skip springs and the AGSL shader.
+- **Haptics:** a confirm tick on save, on reaching the swipe threshold, on entering bulk select and on PIN success; a reject pattern on a wrong PIN.
+
+### 1.6 Merge Classic/Premium (your decision)
+
+- Delete `DesignMode`, `LocalDesignMode`, `DesignSettingsScreen` (`SettingsScreen.kt:1750-1803`) and its route. Keep the stored pref key unread, for backup compatibility.
+- The AGSL AI indicator turns on automatically on API 33+ when reduce-motion is off. The detail spring always runs, under the same condition. The Activity hero card is always present and collapsible.
+- Delete `FilterBarLayout`, the CLASSIC `ActivityFilterBar` (`TransactionsScreen.kt:1721-2011`, about 290 lines) and its setting. Keep the single-row `TransactionFilterBar`.
+
+---
+
+## Phase 2 — Component library (`ui/designsystem/`) (minor bump)
+
+Build each component once, with a `@Preview` in light, dark, 200% font and RTL. Then migrate the screens to it. Every component reads `MMTheme` tokens only.
+
+| Component | Replaces | Spec highlights |
+|---|---|---|
+| `MMTopBar` / `MMScaffold` | 5 header patterns (`SettingsSubpage` Row, custom rows, missing headers on Rules, Cashback and RuleEditor) | Tab roots: large title that collapses on scroll, with actions (eye, gear, overflow). Pushed screens: small title, back arrow, actions. Owns the status-bar inset. |
+| `MMCard` (default / interactive / status) | 47 `Card` + 21 `ObsidianCard` + 4 hand-built boxes | `surface` fill, 1dp border, 16dp radius, 16dp padding. The interactive variant uses `Card(onClick)` (button role, ripple clipped), with an optional chevron. The status variant adds a leading accent bar for info, warning or danger. |
+| `SectionHeader` | ad-hoc titles | `titleSmall` + optional "See all ›" action, 24dp top spacing |
+| `ListRow` | dozens of Rows | leading (icon / avatar / category tile), title, subtitle, trailing (value / chevron / switch / checkbox). Heights 56 / 64 / 72. The **whole row is `toggleable`/`selectable`** for switch, checkbox and radio rows (0 today). |
+| `MoneyText` | `AmountText` + 125 `asMoney` uses | sign, Dirham glyph, tnum, `moneyIn/Out/Neutral` by `TransactionKind`, autosize, a11y description. **Reads `LocalHideBalances`** and masks itself. |
+| `TransactionRow` | 3 row designs (Activity, Uncategorized, Review) | Comfortable and compact densities. Spec in §4.2. |
+| Chips (×3) | 7+ chip styles | `MMFilterChip` (selectable, M3 FilterChip, `Role.Checkbox`, ≥48dp via `minimumInteractiveComponentSize`), `MMAssistChip` (action), `MMTag` (non-interactive label). |
+| `StatTile`, `ProgressBar`, `BudgetBar`, `Banner` | Home and Insights tiles, the capture-health, uncategorized and review cards | `Banner(tone, title, body, actions)` replaces 4 bespoke alert cards. |
+| `EmptyState`, `LoadingState` (skeleton rows/cards), `ErrorState` | flashing "No … yet", raw errors | icon, title, body, primary action. Skeletons are sized like the real content. |
+| `MMDialog` (confirm / destructive), `MMBottomSheet` | 31 `AlertDialog`s | Dialogs only for confirmations, with the destructive button in `danger`. **Pickers and filters move to sheets.** The old ModalBottomSheet rendering bug is very likely the inset problem from 0.3. Re-test after 0.3 and keep a dialog fallback behind a constant. |
+| `MoneyField`, `DateField`, `CurrencyField`, `SearchField` | 63 text fields with 6 `KeyboardOptions` | Decimal keypad, `ImeAction.Next`/`Done`, `supportingText` errors ("Enter an amount like 125.50"), DatePicker/TimePicker, currency dropdown, `ImeAction.Search`. |
+| `charts/` (`BarChart`, `DonutChart`, `Sparkline`, `Heatmap`, `PacingGauge`) | `CanvasCharts.kt`, `DonutChart.kt`, `SpendingHeatmap.kt`, the Box-built cash-flow bars | chart tokens; real slice gaps (stroke in `surface` or angular gaps, not 5.5% white); a centre total; tap a value to see it; a `semantics { contentDescription = "Spend by category: Dining 34%, …" }` summary; hidden-mode rendering (flat placeholder, no proportions). |
+
+**Hide balances, done right:** provide `LocalHideBalances` at the root from `container.hideBalances`.
+- `MoneyText`, every chart and the percentages all honour it.
+- Add an eye toggle in the Home, Accounts and Activity top bars.
+- The widget shows "Hidden" when hide-balances is on and "Unlock MMbank to view" when app lock is on.
+
+---
+
+## Phase 3 — Navigation & information architecture (minor bump)
+
+### 3.1 Tabs
+
+| Today | Proposed |
+|---|---|
+| Home · Activity · **Dashboard** (renders `InsightsScreen`, ending in 9 link rows) · Accounts · **Settings** | **Home · Activity · Insights · Plan · Accounts**, with Settings behind the ⚙ in the top bar of every tab root |
+
+- **Insights** is all the analysis: period summary, cash flow, categories, people, net-worth trend, plus **AnalyticsScreen merged in** (heatmap, pacing). The Monthly report is a top-bar action, and Copilot is an "Ask about your money" field at the top.
+- **Plan** is a new hub: a grid or list of live cards for **Budgets, Bills, Subscriptions, Goals, Debt payoff, Splits, Rewards**. Each card shows status ("2 bills due this week", "Groceries 82% of cap").
+- **Inbox:** merge `ReviewTransactionsScreen` and `UncategorizedQueueScreen` into one "To review" screen with two tabs (Needs category / AI suggestions) and a progress line ("3 of 12"). It opens from the Home banner and the Activity banner.
+- **Highlighting:** move to **nested navigation graphs** (`navigation(route = "plan_graph") { … }`) and check `destination.hierarchy` instead of `childRoutePrefixes`. Every screen then highlights its tab. Consider type-safe `@Serializable` routes; navigation-compose 2.8 supports them.
+- **Duplicates:** remove the `categories` route (keep one Categories screen, reached from Plan → Budgets and Settings → Money). Integrity check lives under Accounts, with a link from Settings → Data.
+
+### 3.2 Settings: 14 flat rows → 8 named groups
+
+| Group | Rows |
+|---|---|
+| **Capture** | Permissions & health · Import & ignore · Parsing rules · AI parsing |
+| **Money** | Currency & exchange rates · Monthly budget · Categories · People |
+| **Notifications** | every alert toggle, moved out of Preferences, each with permission state |
+| **Appearance** | Theme (System / Dark / Light) · Ambient background · Hide balances by default |
+| **Security & privacy** | App lock & PIN · Block screenshots · Hide in Recents |
+| **Data** | Backup & restore · History retention · Integrity check |
+| **Connections** | Binance |
+| **About** | Diagnostics · Demo mode · Version |
+
+- Use one `MMTopBar` for every subpage. Its header does not scroll away.
+- Show status inline, e.g. "App PIN set" as a confirming snackbar.
+- One Save per form, not three Save buttons with a status line at the bottom.
+
+### 3.3 Adaptive layouts
+
+- Use `NavigationSuiteScaffold` (material3-adaptive): a bottom bar on compact screens, a rail on medium and expanded.
+- Constrain content to `widthIn(max = 640.dp)`.
+- On expanded width, Activity becomes list-detail.
+- Use `rememberSaveable` (or `SavedStateHandle`) for all form fields and dialog flags. Today there is only one `rememberSaveable`, so rotation, fold or a theme change wipes typed input.
+
+---
+
+## Phase 4 — Screen-by-screen redesign (one PR per screen, minor bumps)
+
+Order: Home → Activity (+ detail + editor) → Insights → Accounts (+ new Account detail) → Plan tools → Settings → Lock / Copilot / Inbox / Rules.
+
+### 4.1 Home (`screens/dashboard/DashboardScreen.kt`)
+```
+┌─────────────────────────────────────┐
+│ Wed, 11 Nov                 👁   ⚙  │  MMTopBar (large title collapses)
+│ NET WORTH                           │  overline
+│ Đ 46,122.24                         │  displaySmall, tnum, autosize
+│ ▲ Đ1,240 · 2.8% vs last month  ~~~  │  delta + sparkline · "Updated 5 min ago"
+├─────────────────────────────────────┤
+│ ⚠ Capture may have stopped    Fix › │  AlertStack: one Banner list,
+│ ● 12 transactions to review       › │  priority-sorted, max 2 + "2 more"
+├─────────────────────────────────────┤
+│ Safe to spend today        Đ 182    │  BudgetBar (pacing)
+│ [▢ All]  [▢ ADCB]  [▢ Tabby] →      │  accounts carousel (fixed contrast)
+│ Recent                   See all ›  │
+│ 🛒 Carrefour  Groceries     −Đ86.40 │  TransactionRow compact ×5
+└─────────────────────────────────────┘
+```
+- Up to 3 banners sit *above* net worth today; move them below the hero into one AlertStack.
+- Fold Crypto (Binance) into an account card in the carousel, with its detail on Account detail.
+- Recent shows 5 rows, not 30. Fix the "Cards due" 32dp inset.
+- Show a skeleton while loading, instead of "USD 0.00" plus the empty text. Add pull-to-refresh, and keep the refresh slot at 48dp so the layout doesn't jump.
+- Empty state: a **Setup checklist** card (see 5.3), not a paragraph.
+
+### 4.2 Activity (`screens/transactions/`)
+
+**Row: today ≈ 4 lines + chips + 2 icon buttons, inside a card, plus a glow, plus a divider → 2 lines, 64–72dp:**
+```
+[🛒]  Carrefour                         −Đ 86.40
+      Groceries · ADCB ••1234             14:20
+```
+- The raw SMS, rule, person and the edit/delete buttons move to the **detail sheet**. Swipe actions stay, but add `semantics { customActions = [Categorize, Exclude] }` and neutral swipe colours instead of the debit/credit ones.
+- Drop the per-row divider (card *or* divider, never both) and the per-row radial glow, which is also a performance cost.
+- Excluded rows: 60% alpha + an "Excluded" `MMTag`, no strikethrough.
+- **Sticky day header with a day total:** `Today · Wed 11 Nov ………… −Đ 230.10`, on an opaque `canvas` background so rows don't show through.
+- **Header:** a pill `SearchField` plus one row of `MMFilterChip`s (Time ▾, Type ▾, Account ▾, More). Active filters show as removable chips and a "Clear all".
+  - Snap the collapse on fling, and read `collapseFraction` via `derivedStateOf` or `graphicsLayer` so the screen doesn't recompose on every frame.
+- **No results:** `EmptyState("No matches", action = "Clear filters")`.
+- **Detail** becomes a sheet (half → full), with sections for Amount & kind, Details (merchant, category, account, person, date) as tappable `ListRow`s, Original message (raw text with the parsed amount and merchant highlighted), and Actions (Edit, Exclude, Delete).
+- **Editor** becomes a full screen:
+```
+✕  New transaction                 Save
+          − Đ 0.00                       big MoneyField, decimal keypad, autofocus
+  [ Spent ][ Received ][ Transfer ]      segmented, 6 kinds behind "More"
+  Merchant      ____________
+  Category      🛒 Groceries        ›    sheet picker (+ New)
+  Account       ADCB ••1234          ›
+  Date          Today, 14:20         ›   DatePicker + TimePicker
+  Person        Me                   ›
+  ▸ More: Exclude from insights · Note · Paste message (AI)
+```
+- **Delete** happens immediately, with an **Undo snackbar** (5s). Keep the "ignore similar" option as a snackbar action. For bulk delete, keep a confirm dialog, styled destructive.
+- **Performance:** map rows to an `@Immutable TransactionRowUi` in the ViewModel (bank name, account and glow precomputed). Add `contentType` to items, use `drawWithCache` instead of per-draw allocations, and `flowOn(Dispatchers.Default)` for filtering (`TransactionsScreen.kt:341-379`).
+
+### 4.3 Insights (`screens/insights/` + `screens/analytics/`)
+```
+Insights                         📄 ⋯
+[ Ask about your money…            ]      Copilot entry
+[Month ▾]     ‹  November 2026  ›         segmented period + stepper
+┌ In Đ12,400 ┐┌ Out Đ8,210 ┐┌ Net +Đ4,190 ┐
+Cash flow · 6 months       (bars, axis, tap value; follows period)
+Spending by category       (donut w/ centre total + legend: name · % · amount)
+Daily spending             (heatmap from Analytics, 48dp-hit, labelled)
+People · Net worth 12 mo · Smart insights
+```
+- "Raw ledger" chip → overflow menu item, renamed "Include excluded transactions".
+- Person bars use the chart palette, not `error` for the 4th person (`InsightsScreen.kt:907-912`).
+- Show errors (today `state.message` is never rendered on this tab).
+
+### 4.4 Accounts (`screens/accounts/`)
+```
+Accounts                        👁  +
+Total                     Đ 46,122.24
+CASH & BANK               Đ 38,400.00
+ ▌ ADCB Current ••1234     Đ 30,100.00
+ ▌ Wio Savings              Đ 8,300.00
+CARDS                     −Đ 3,210.00
+ ▌ Tabby Card · due in 4 days −Đ 1,050
+⚠ 3 differences vs your bank       ›
+Plan debt payoff                   ›
+```
+- Group by type with group totals. One masking format ("•• 1234") everywhere. The carousel title uses the account *name*.
+- **New Account detail screen:** balance + sparkline, the account's transactions, and actions (Adjust balance, Edit, Archive, Delete). This replaces the 3 icon buttons per card and the hidden tap-to-edit.
+- The **account form** (`AccountDialog`, 290 lines, ~20 fields in a 460dp dialog) becomes a full screen with progressive disclosure:
+  - Basics: name, type, currency, last 4 digits, accent colour.
+  - Card & loan details: limit, statement day, APR, minimum payment.
+  - Matching: senders, card endings.
+- The Unassigned concept gets one design, shared with Home.
+
+### 4.5 Plan tools (Bills, Subscriptions, Goals, Debt planner, Splits, Budgets, Rewards)
+- Each uses `MMScaffold` + `ListRow` + an extended FAB with a label ("Add bill").
+- Each gets an `EmptyState` with a CTA, and a `LoadingState` instead of the empty-text flash.
+- Confirm the destructive actions that are unprotected today: rule delete, split-expense delete, Binance remove, AI-key clear. Expose split-group archive (`SplitsScreen.kt:111` is never called).
+- Show human enum labels, not `DEBIT`, `MONTHLY` or `EQUAL`.
+- Debt planner honours hide-balances, and an error no longer shows "nothing owed".
+- Cashback gets a header and back button, and stops hard-coding "AED".
+
+### 4.6 Lock screen, Copilot, Rules
+- **Lock:** follows the theme. 72dp round keys. Fixed-width dots (no layout shift past 4 digits). A biometric prompt that opens by itself. Scrollable in landscape.
+- **Copilot:** asymmetric bubbles; `ImeAction.Send`; `SelectionContainer` for copying figures; `liveRegion` on new answers; friendly errors with **Retry** (no `${e.message}`); a "New chat" action; suggestion chips that are always available; answer cards with mini-charts and "See transactions".
+- **Rules:** add a top bar and back arrow. Raw regex goes behind an "Advanced" disclosure. In the live tester, highlight the captured amount and merchant in place. Show plain "Money out / Money in". Don't prefill "ai.pending." into the name field.
+
+---
+
+## Phase 5 — States, feedback, onboarding & trust (minor bump)
+
+### 5.1 State model
+- Each ViewModel exposes `UiState<T> = Loading | Empty | Content(T) | Error(message, retry)`. Never initialise to an empty `Content`, which is the cause of every empty-state flash.
+- **Errors:** map exceptions to human copy ("Couldn't update exchange rates — Retry") and never show `e.message` (today it appears in SettingsScreen ×7, Copilot and the Dashboard snackbar). Log the raw error to Diagnostics.
+- **One feedback channel:** a root `SnackbarHostState` via a CompositionLocal. Today Home uses a snackbar, Accounts uses red tappable text, and Security shows nothing.
+
+### 5.2 Destructive actions
+
+| Action | Pattern |
+|---|---|
+| Single delete or exclude (transaction, expense, rule) | do it now + **Undo** snackbar |
+| Bulk delete, backup import, wipe, remove PIN, remove Binance keys | confirm `MMDialog`, button styled in `danger` |
+| Archive (account, goal, group) | Undo snackbar; archived items stay reachable |
+
+### 5.3 Onboarding (backlog #59)
+- A first-run flow with **live permission status** per step, re-checked on resume:
+  1. Welcome, with the privacy promise: "Everything stays on this phone".
+  2. Notification access, with an **illustrated "Allow restricted settings" walkthrough**. This is the step that actually blocks sideloaded installs.
+  3. SMS.
+  4. Battery exemption.
+  5. Currency & monthly budget.
+  6. Optional "Import past messages".
+- Every step is skippable. Afterwards a Home "Setup checklist" card stays until all steps are complete, and it replaces today's paragraph-style empty state.
+
+### 5.4 Notifications & widget
+- **Notifications:**
+  - A real 24dp `ic_stat_mmbank` small icon (all 6 helpers use the launcher foreground today), plus `setColor(accent)`.
+  - Every notification deep-links to its screen.
+  - Actions: "Mark paid", "Review", "Snooze".
+  - A `NotificationChannelGroup` for channels, and `setGroup` + a summary for repeated alerts.
+- **Widget:**
+  - `GlanceTheme` with day and night `ColorProviders`.
+  - System corner radius; `SizeMode.Responsive`; a real `previewLayout`.
+  - Honour hide-balances and app lock.
+  - Correct the empty copy ("Set a monthly budget in Settings → Money").
+
+### 5.5 Brand assets
+- **Launcher icon:** redraw the mark centred in the 66dp safe zone (today the second "M" is clipped by circular masks), in brand indigo on `#0B0E14`, or with an indigo→teal glow. Add a `<monochrome>` layer for Android 13 themed icons.
+- **Splash:** use `androidx.core:core-splashscreen` with a per-mode background and the monochrome mark.
+- **XML theme:** `Theme.Material3.DayNight.NoActionBar`, with `values-night`, so cold start doesn't flash black.
+
+---
+
+## Phase 6 — Accessibility & localisation (minor bump; backlog #76–80)
+
+- **Targets:**
+  - ≥48dp everywhere. Fix `FilterBarChip` (28), `SecondaryActionChip` (24), `MetaChip` (~26), the row icon buttons (30), the clear-search icon (16), the Insights info button (32), the category edit/delete buttons (36) and the heatmap tiles (16).
+  - Let `minimumInteractiveComponentSize()` do this, not hand-picked sizes.
+- **Semantics:**
+  - Row-level `mergeDescendants`, with a description ("Carrefour, spent 86 dirhams 40 fils, Groceries, today 2:20 pm") plus `onClickLabel`/`onLongClickLabel`.
+  - Charts get summaries. Selection state goes on chips and appearance cards. Permission status gets text, not only colour.
+- **Never colour alone:** sign + colour for money, icon + text for status, a pattern or label on bars.
+- **Font scale:** test at 100%, 130% and 200%. Nothing truncates money.
+- **Strings:**
+  - Extract per screen into `strings.xml`, *after* the file splits (strings.xml has 3 entries today and `stringResource` is never used).
+  - Turn on `pseudoLocalesEnabled` for debug builds to catch clipping and RTL problems.
+- **Arabic and RTL** (the app already parses Arabic):
+  - `values-ar`; mirrored layouts (16 files already use AutoMirrored icons).
+  - Locale-aware `MoneyFormatter` and `DateFormats`, keeping `Locale.US` *only* for AI prompts and CSV export.
+- **One `DateFormats` object:** "11 Nov", "11 Nov 2026", relative "Today / Yesterday". It respects `DateFormat.is24HourFormat`. Today it is "MMM d" on one screen, "d MMM" on another, and uppercase "TODAY · 10 JUL" on a third.
+
+---
+
+## 7. Copy & naming guide
+
+**Glossary.** Use one name per concept, everywhere.
+
+| Use | Instead of |
+|---|---|
+| **Activity** (tab) / "transactions" (items) | "Review Transactions", "See transactions" as a place |
+| **Insights** | "Dashboard" (tab), "Smart insights" as a place, "Spending analytics" |
+| **Plan** | (new hub) |
+| **Rewards** | "Cashback", "Cashback rewards" |
+| **Subscriptions** | "Subscriptions radar" |
+| **People** (Splits members are People too) | "Friends", "Members" as a separate list |
+| **Monthly budget** · **Safe to spend today** | "Daily budget", "allowance", "Premium hero card" |
+| **Capture** | "Gate-2", "signature", "ingest" |
+| **AI parsing** (on-device or online) | "Local AI parsing" when online is selected |
+| **Money out / Money in / Transfer** | `DEBIT` / `CREDIT` |
+
+**Rules:**
+- Sentence case. Verbs on buttons ("Add bill", not "+").
+- Relative time, written the same way everywhere ("in 3 days"; today "due in 3d" and "Renews in 3 days" are mixed).
+- Pick one spelling: optimise or optimize.
+- Technical detail (AES-256, loopback 127.0.0.1, Android Keystore, regex, AGSL) goes behind "Learn more", never in a toggle's subtitle.
+
+| Before | After |
+|---|---|
+| "Premium · AGSL indicator + springier motion" | *(removed: one design)* |
+| "Sorry, I couldn't get an answer: java.net.ConnectException…" | "Couldn't reach your AI server. Check it's running, then retry." [Retry] |
+| "Capture log (newest first: saved, duplicate, ignored, unmatched, failed)" | "Recent captures" + a status filter chip row |
+| "⚠️ Sideload trap: toggle greyed out?" | "Can't turn it on? Android blocks this for apps installed from a file — here's the 20-second fix." |
+| "Rates: timeout\nBinance: 401" | "Couldn't update rates or Binance. Retry" |
+
+---
+
+## 8. Engineering guardrails (do these alongside Phase 1, so the design can't drift again)
+
+1. **Split the giant files.** This is a no-behaviour-change PR first (backlog #56).
+   - `TransactionsScreen.kt` (3,096 lines) → `TransactionsViewModel.kt`, `TransactionsScreen.kt`, `list/`, `row/`, `bulk/`, `editor/`, `dialogs/`.
+   - `SettingsScreen.kt` (2,524 lines) → one file per subpage + `SettingsViewModel.kt`.
+   - `AccountsScreen.kt` (1,329 lines) → move the VM out; `AccountFormScreen.kt`.
+2. **`DesignLintTest`.** This is a pure-JVM unit test, so it runs in the existing CI with no new infrastructure. It scans `app/src/main/java/**/ui/**` and fails on:
+   - `Color(0x` outside `ui/theme` and `ui/designsystem`
+   - `fontSize =` outside theme
+   - any `ObsidianTokens.` use after migration
+   - `asMoney(` in screens (must use `MoneyText`)
+   - `RoundedCornerShape(<n>.dp)` literals
+   - `Modifier.size(<48.dp)` on `IconButton`
+   - Theme-side assertion: no `TextStyle` under 11sp.
+3. **Extend `ColorContrastTest`** to every semantic text/surface pair in both themes (≥4.5 for text, ≥3 for large text, icons and chart marks), and to the wallet-card gradients.
+4. **Previews.** Add a `@MMPreviews` multipreview (Dark, Light, fontScale 2.0, RTL `ar`) on every designsystem component and on every screen's stateless content composable. That forces screens into stateful wrapper + stateless content pairs, which is better architecture anyway.
+5. **Screenshot tests** (backlog #73). Use **Roborazzi + Robolectric**, which runs on the JVM and fits the CI shape. Golden images for the designsystem components and the 5 tab roots, in both themes and at 200% font. Check AGP/SDK-35 compatibility; if it doesn't work, use Paparazzi.
+6. **Performance.** Baseline profile (backlog #74), `@Immutable` UI models, stable lambdas, `contentType`, `derivedStateOf` for scroll-driven values, no allocations inside `drawBehind`.
+
+---
+
+## 9. Delivery plan
+
+| Step | PR | Size | Version (per CLAUDE.md) | Depends on |
+|---|---|---|---|---|
+| 1 | Phase 0 hotfixes | S | 0.62.16 (patch) | — |
+| 2 | File splits (no behaviour change) | M | — (refactor; bump only if APK behaviour changes) | — | ✅ TransactionsScreen split (VM + editor dialogs, run 424); SettingsScreen split (VM + backup/diagnostics) and AccountsScreen split (VM + account form), run 428 |
+| 3 | Tokens 2.0 + ThemeMode + merge Classic/Premium + DesignLintTest + contrast tests | L | 0.63.0 | 1 | ✅ 3a tokens + ThemeMode + contrast tests ✅ 0.63.0; 3b merge Classic/Premium ✅ 0.63.1 (run 432); 3c DesignLintTest ratchet ✅ (run 438) |
+| 4 | Designsystem components + previews + Roborazzi | L | 0.64.0 | 3 | 🟡 first batch ✅ 0.64.0 (run 438): MMCard, SectionHeader, ListRow, chips, StatTile, MMProgressBar, Banner, MoneyText, MoneyField, SearchField, states, MMDialog, MMBottomSheet, MMTopBar/MMScaffold, @MMPreviews; second batch ✅ 0.65.0 (CI pending): charts (BarChart, DonutChart, Sparkline, Heatmap, PacingGauge + ChartMath) and TransactionRow; chart tokens `chart1…8` ✅ 0.68.0 (Okabe-Ito-derived, ≥3:1 on canvas/surface/raised in both themes; `chartSeries()` now reads them; CI pending); still ⬜: Roborazzi |
+| 5 | Navigation & structure (tabs, Plan hub, nested graphs, Settings regroup, transitions, predictive back, adaptive) | M | 0.65.0 | 4 | 🟡 first batch ✅ 0.65.0 (CI pending): pure route/tab model (`ui/navigation/AppNavigation.kt`) wired into MainActivity, child screens keep parent tab highlighted; transitions ✅ 0.71.0 (pure `NavTransitions` model: tab switch fade-through, child slide, reduce-motion off; CI runs 452/453 green; animation feel not covered by CI); predictive back ✅ 0.72.0 (manifest `enableOnBackInvokedCallback` opt-in, no legacy onBackPressed in code; CI runs 454/455 green; gesture preview on Android 14+ not covered by CI); Settings root regrouped into 7 named groups ✅ 0.73.0 (pure `SettingsGroups` model + coverage test; CI runs 456/457 green; Notifications group and per-form Save still ⬜); tabs now Home · Activity · Insights · Plan · Accounts with Settings behind a gear on every tab root, new Plan hub (`PlanEntry` model: Budgets, Bills, Subscriptions, Goals, Debt payoff, Splits, Rewards) ✅ 0.74.0 (CI runs 458/459 green; hub cards are static descriptions, live status and the To-review merge still ⬜; look and gear placement not covered by CI); adaptive ✅ 0.75.0 (pure `AdaptiveLayout`: rail at ≥600dp instead of bottom bar, content capped at 640dp and centred; CI runs 460/461 green; no device/tablet check in CI; list-detail on Activity still ⬜); ⬜ nested graphs |
+| 6–11 | Screens: Home → Activity → Insights → Accounts (+ `MIGRATION_31_32` for `accentColor`) → Plan tools → Settings/Lock/Copilot/Inbox | 6 × M | 0.66 → 0.71 | 4, 5 | 🟡 0.67.1 (CI run 442 green: unit tests + APK; device visual checks pending): Home, Activity (transactions/), Insights + Analytics (charts swapped 0.68.0: net-worth Sparkline, category DonutChart on both screens, daily PacingGauge, heatmap tiles on tokens; cash-flow pairs, person bars and the tap-to-filter heatmap stay bespoke), Accounts + Debt planner, Plan tools (Bills, Goals, Splits, GroupDetail, Categories, Rules, Subscriptions, Merchant, Report, Cashback, Integrity, Review, Copilot) moved to tokens/MMCard/MoneyText; `MIGRATION_31_32` ✅ 0.69.0 (nullable `accounts.accentColor`, schema v32, mapper + backup round-trips; CI run 446 green; no UI picker yet), Settings and Lock/PinPad ✅ (0.67.2/0.68.0); design-system `TransactionRow` gained `onLongClick` + `glowTone` (`rowEdgeGlow`) ✅ 0.70.0 (CI runs 448/449 green; Transactions-screen bespoke card not yet swapped onto it) |
+| 12 | States, undo, onboarding | M | 0.72.0 | 4 |
+| 13 | Notifications, widget, icon, splash | M | 0.73.0 | 3 |
+| 14 | Strings + Arabic/RTL + locale formatting | L | 0.74.0 | 2, 6–11 |
+
+- **Run Part B.7 step 1 (data safety) before step 9's `MIGRATION_31_32`**, so the first new migration in the redesign is also the first one that is actually tested.
+- Remove the dark pin from 0.1 **in step 3**, once light tokens exist. Ship light mode as "Theme → Light" (opt-in, dark stays the default) until the screenshot tests show every screen is clean.
+- Each PR: unit tests in the same commit (CLAUDE.md rule), CI green, and a manual device check (below). Update `MMbank-FEATURE-LOG.md`, listing "Not covered by CI".
+
+---
+
+## 10. Verification
+
+- **CI** (`.github/workflows/test-build.yml`): `:app:testDebugUnitTest` must pass. That includes:
+  - `DesignLintTest` and the extended `ColorContrastTest`.
+  - `MoneyFormatter` and `DateFormats` tests: fraction digits per currency, crypto, masks, locale.
+  - Token-resolution tests (light/dark), the `ThemeMode` pref round-trip, the `Account.accentColor` mapper round-trip, and migration SQL v31→v32 in `MigrationSqlTest`.
+  - Roborazzi golden diffs once added.
+  - `:app:assembleDebug` succeeds.
+- **Device checklist** (per PR, from the CI APK):
+  1. An Android 15 phone with gesture nav, *and* one with 3-button nav: no doubled top or bottom gaps; status-bar icons readable in both themes.
+  2. An API 26–30 device or emulator: the solid-overlay fallback looks right (no blur).
+  3. Theme → Light, Dark and System on every tab and in every dialog.
+  4. Font size at maximum plus display size large: no money truncation and no clipped chips.
+  5. TalkBack: lock screen (nothing readable behind it), an Activity row (description + custom actions), charts (summaries), and settings switches (one focus stop per row).
+  6. Hide balances on, then visit every screen and the widget: no amount, sign, trend or proportion visible.
+  7. Kill the app with app lock on and open Recents: no balances in the thumbnail.
+  8. Rotate during transaction entry: input kept.
+  9. Cold start in light mode: no black flash.
+  10. Accessibility Scanner on the 5 tab roots: no touch-target or contrast warnings.
+
+---
+
+## Part B — Functionality review (beyond the UI)
+
+**Verdict:** the engine is the strongest part of MMbank: dual-channel capture with dedup, a bilingual normaliser, a rule engine with a live tester, signature routing, AI as a gated fallback (`AiForwardGate` plausibility floor, `LoopbackGuard`, daily budget, redactor), integrity checks against bank balances, capture health, transfer matching, and **1,413 unit tests in 156 files**. The weak spots are (1) **places where money is quietly misreported**, (2) **data safety across 31 schema versions**, and (3) **features that grew in breadth faster than depth**.
+
+### B.1 Correctness: where numbers go quietly wrong (fix first)
+
+| # | Problem (verified) | Why it matters | Fix |
+|---|---|---|---|
+| B1 | **Foreign-currency charges hit an account 1:1.** A USD 100 charge reduces an AED account by 100. This is documented in `MMbank-FEATURE-LOG.md` (~line 2873), and you chose to keep it. | Every USD subscription and every trip silently corrupts balances, and then net worth, the integrity check and budgets. | Store **original amount + currency** *and* **billed amount in the account currency**. Parse the "AED X equivalent" phrase when the bank includes it; otherwise convert at that day's rate and mark it "≈". Change only `AccountBalanceCalculator` and the parser output. Pin it with the existing named test. |
+| B2 | **Today's FX rate is used for every past month** (net-worth history, monthly report, Insights). The report also shows *today's* balances for past months (feature log, Phase 18.17 "Still open"). | History shifts every time rates move, so last March doesn't stay last March. | A daily `exchange_rates_history` table, filled on each refresh and backfilled lazily. `CurrencyMath.toBase(…, onDate)`. Backlog #8. |
+| B3 | **Category caps silently skip other-currency spend.** `CategoryBudgetCalculator` is scoped to one `currencyCode`. | You can be over budget while the cap shows under. | Convert (B2) and count it, or at least show "+ USD 45 not counted". Backlog #9. |
+| B4 | **Dedup key is coarse:** amount + currency + direction within ±2 min (`Daos.kt:66-82`). It ignores account, card ending and channel. | Two *real* identical charges get dropped, e.g. two AED 4 Salik gates a minute apart, or two coffees. Meanwhile an SMS and a push for the same FX purchase with different amounts are both kept. | Dedup only **across channels** (SMS ↔ push). Two SMS are two purchases unless the body text is identical. Never dedup when both card endings are known and differ. Show merged rows ("Also arrived by SMS") with **Split back out**. Backlog #25. |
+| B5 | **No refund/reversal pairing, pending→posted, or partial refunds.** | Spend is overstated; reversals look like income. | Pair by merchant + amount within N days, net them in analytics, and keep the link visible and breakable. Backlog #22–24. |
+
+> **B2 rate history, part 3 (Monthly report)** ✅ 0.81.0: the report's net worth and runway for a *past* month are now that month's balances (the ledger replayed to its last moment, at that month-end's recorded rates) instead of today's balances under a past heading (`BalanceHistory.balancesForMonth`, also fixing the Phase 18.17 "Still open" item). A month before the oldest kept transaction shows no net worth. Still open: Insights/analytics totals in other currencies still use today's rates.
+>
+> **B2 rate history, part 2 (net-worth trend)** ✅ 0.80.0: a past month's net worth is now converted at the rates recorded for that month-end (today's rates for the current month, and for any currency with no recording). Still open: the Monthly report and Insights still value everything at today's rates, and the "converted at today's rates" note on the trend card should be reworded once history has filled in.
+>
+> **B2 rate history, part 1 (storage)** ✅ 0.79.0: schema v33 adds `exchange_rates_history` (explicit additive migration `MIGRATION_32_33_SQL`, checked by `MigrationSqlTest` against the exported v33 schema). Each forex refresh now also stores that day's rate for the currencies the user holds (accounts or transactions), and `RateHistory.rateOn/ratesOn` looks a rate up for any date (latest on or before, else earliest after). The provider only serves *latest* rates, so history accumulates from this version on; earlier dates fall back to the earliest recording. Part 2 (use it in the net-worth trend, Monthly report and Insights instead of today's rate) is still open.
+>
+> **B3 category caps and other currencies** ✅ 0.78.0 (run 472 green): the Budgets screen, the weekly digest and the 80%/100% cap alerts now convert other-currency spend into the base currency at the stored rates (`CategoryBudgetCalculator.monthSpend`/`converter`), so a USD charge counts toward an AED cap. Spend with no rate is no longer silently ignored: the Budgets screen shows "Not counted toward caps: USD 45.00 (no exchange rate)". Today's rate is used (B2 rate history would pin it per day). Cap alerts are now evaluated in the base currency, and the alert is posted in it.
+>
+> **B5 refund pairing (capture side)** ✅ 0.77.0 (run 472 green): a credit the bank didn't call a refund is now recognised as one when an earlier plain purchase from the same merchant (same currency, within 90 days, no larger than the purchase) exists (`RefundMatcher`), so it nets against Spent instead of inflating Received. A rule's kind or a learned merchant kind is never overridden. Still open: showing the link on the transaction, breaking it, existing rows (only new captures are paired), pending→posted.
+>
+> **B1 foreign-currency balances** ✅ 0.76.0 (run 472 green: unit tests + APK build), per your choice "convert at today's rate": `LedgerFx` converts each charge into its account's currency at the stored forex rates where ledger entries are produced (Accounts, Home, Debt planner, card reminders, Monthly report, net-worth trend, retention fold), so every surface agrees. No usable rate → face value, flagged `approximate`. Known limit: today's rate is used, so a converted charge's effect moves when rates move (fixed by B2 rate history); the ≈ mark now shows on an account whose balance includes converted foreign charges (0.81.1); Part-B "store billed amount" is not done.
+
+### B.2 Data safety (the only area with data-loss consequences)
+
+> Status: schema JSONs are exported by KSP in CI and `MigrationSqlTest` runs v25→v32 on real SQLite (already in place). ✅ 0.75.2 (verified by CI runs 466/467): retention prune preview ("This would delete N transactions from YEAR", `RetentionPreview`) shown under the history chips; "require a fresh backup first" not enforced. Still ⬜: scheduled automatic backups (#67).
+
+- **31 schema versions, and no migration is ever executed in CI.** `app/schemas/` is not committed, so `MigrationTestHelper` is impossible. Commit the schema JSONs and add Robolectric migration tests, at minimum a "v1 → v31" smoke test (backlog #1–3).
+- **Automatic backups:** today backup is manual-only. Add a scheduled encrypted `.mmb` to a chosen SAF folder, weekly plus before every migration (backlog #67). Subscriptions aren't in the backup (re-detected); say so in the UI.
+- **Retention prune deletes with no preview.** Show "This will delete 1,240 transactions from 2023" and require a fresh backup first (backlog #58).
+
+> **B4 dedup** ✅ 0.75.3 (CI runs 466/467 green): `CaptureDedupPolicy` — only cross-channel (SMS↔push) matches merge; two same-channel messages are two purchases unless the text is identical; differing known card endings never merge. Still ⬜: "Also arrived by SMS" merged-row display + Split back out.
+
+### B.3 Capture loop (the growth loop for accuracy)
+
+- **Unmatched → rule in one tap:**
+  - Show *why* a message wasn't recognised (#13).
+  - Turn on the existing `AiSelfHealingRuleGenerator` draft-rule path from the capture log (#14).
+  - Test rules against a **corpus** of past messages, not one sample (`RuleHistoryTester` exists; surface it).
+  - Warn on rule shadowing (#16).
+- **SMS inbox import** at onboarding (#11). It's the single biggest day-one win, because a new install starts with months of history instead of an empty ledger.
+- **Per-sender stats** ("ADCB: 212 captured, 3 unmatched") make capture quality visible (#17).
+
+> **B.3 why-unmatched (#13)** ✅ 0.84.0 (CI run 43301447217 green): `UnmatchedExplainer` says why a financial-looking message produced nothing -- declined/OTP wording skipped on purpose, an unknown currency code ("THB is not a currency MMbank reads yet"), no amount next to a currency, or a clear amount with no matching rule (with a money-in/out cue) -- and the Diagnostics capture log now prints it on every NO MATCH line (redacted like the rest of the line). Still open in B.3: a one-tap "create rule from this" button wired to `AiSelfHealingRuleGenerator`, corpus testing surfaced in the rule editor, shadow warnings, SMS inbox import, per-sender stats.
+
+> **C.2 person learning** ✅ 0.85.0 (CI run 43303012219 green; first slice, no schema change): a new capture goes to the person the merchant's last two real rows were assigned to (`PersonLearner`), else the default person as before; two defaults in a row hand it back. Still open in C.2: `categorySource`/`personSource` columns (so USER choices are never re-assigned and the app can explain why), counts/confidence per merchant, amount/card/sender signals, keyword fixes.
+
+> **C.1 keyword misfires** ✅ 0.85.1 (CI run 43304628317 green): short, ambiguous keywords in `MerchantCategorizer` ("ace", "mart", "hala", "vat", "fee", "nol", "rta", "kfc"…) must now stand as a whole word, so Palace/Space/Acer are not shopping, Smart/Martini are not groceries, Halal is not a taxi and "Private" is not a VAT fee; "supermart"/"dmart" and "fees" are handled explicitly. Longer keywords still match inside larger strings ("carrefour" in "CARREFOUR-MAF", "shop" in "bookshop").
+
+### B.4 Consolidate overlapping features
+
+| Overlap today | Merge into |
+|---|---|
+| Bills · Subscriptions · Card payment reminders (`BillReminders`, `SubscriptionReminders`, `CardPaymentReminders`: three recurring-payment models, three reminder paths) | **One "Recurring" model** with types (bill / subscription / card due / income), one calendar view, one reminder pipeline, and "link to the transaction that paid it" (#48) |
+| Review queue · Uncategorized queue | **One "To review" inbox** (see Phase 3.1) |
+| Settings "People" · Splits "Friends/Members" | **One People list**, used for both assignment and splits |
+| Dashboard "Savings goal" card · Goals screen | Goals only; the Home and Insights card shows the top goal |
+| Cashback catalog (hard-coded UAE card reward categories such as "Groceries — LuLu", separate from your own categories) | Map rewards onto **your categories plus accounts**, or freeze the feature if you don't use it weekly |
+| Analytics screen · Insights tab | Insights (Phase 3.1) |
+
+**Rule of thumb:** for a single-user ledger, every feature has to earn its place in the weekly loop of *capture → correct → understand → plan*. Freeze Splits, Cashback and the demo-data paths unless you actively use them. Each one costs UI surface, backup coverage and migration risk.
+
+### B.5 High-value additions (after B.1–B.4)
+
+1. **Quick add:** a Quick Settings tile and a notification action for cash or manual entry (#61).
+2. **Global search:** one search across transactions, merchants, accounts, rules and settings (#57).
+3. **Statement reconcile:** extend the Integrity check to import a bank CSV for a month and diff it line by line against captured rows. Paste-import machinery exists.
+4. **Envelope or rollover budgets** (#44), building on category caps.
+5. **Year in review** and month-over-month deltas on every headline number (#36, #38).
+
+### B.6 Privacy & honesty
+
+> ✅ 0.75.1 (CI runs 462/463 green): README AI/privacy section; persistent "Online AI is on" notice on the AI parsing screen and in the Settings row (`AiPrivacyStatus`). ✅ 0.82.0: redaction audit (#33) -- audit found the message body went to online providers unmasked (only logs were redacted); `AiPayloadRedactor` now masks card/account/IBAN numbers, one-time codes and PINs, e-mails and international phone numbers before an Online request (on-device is untouched). Amounts, merchants, dates and balances are deliberately kept.
+
+- The README still says AI is loopback-only, but `AiProviderMode.ONLINE` sends message text to third parties. Fix the README.
+- Show a persistent "Online AI on" indicator in Capture settings.
+- ✅ Redaction audit (#33) done in 0.82.0 -- see above.
+
+### B.7 Suggested order (functional track, interleaved with the design track)
+
+1. **Data safety:** schema JSONs, migration tests, auto-backup, prune preview. Do this *before* any new migration, including `accentColor`.
+2. **Money correctness:** B1 (billed amount), B4 (dedup), B2 + B3 (historical FX, budgets), B5 (refunds).
+3. **Capture loop:** SMS inbox import, why-unmatched, corpus testing, one-tap rule.
+4. **Consolidation:** Recurring model, one People list, one inbox. This lines up with design Phase 3.
+5. **Additions** from B.5.
+
+---
+
+## Part C — Make it smarter: learn from the past, auto-assign person/category, better subscription detection
+
+### C.1 How it works today (verified in code)
+
+**Category at capture** (`data/repository/TransactionRepositoryImpl.kt:150-166`, `domain/parser/CaptureCategoryResolver.kt`):
+1. A **learned merchant → category mapping** (`CategoryMatcher`) is checked first: exact name, then normalised brand key (`MerchantNormalizer.key`), then regex. It is learned whenever you set a category on a single row (Activity, Review, Uncategorized, Merchant screen) and backfills that merchant's still-uncategorized rows (`CategoryRepositoryImpl.learnMapping`). Bulk edits deliberately teach nothing.
+2. If an AI suggestion is pending for that merchant, the row stays uncategorized for review.
+3. Otherwise a **hard-coded keyword list** (`MerchantCategorizer`: plain substring matches on UAE brands, first bucket wins) is bridged onto a same-named category.
+
+**Person:** **no learning at all.** Every capture gets the single default person (`TransactionRepositoryImpl.kt:199`). Setting a person on a row (`TransactionsScreen.kt` `setPerson`, ~596) teaches nothing.
+
+**Account:** rule pin > card number in the message > learned merchant → account, with backfill. **Kind:** learned merchant → kind.
+
+**Limitations:**
+- **One mapping per merchant.** It is overwritten on every upsert: no counts, no confidence, and a single mis-tap rewrites the rule.
+- **Merchant is the only signal.** Amount, card, account, time and sender are ignored, so an AED 2,000 TV from Carrefour is "Groceries".
+- **Substring keywords misfire.** "ace" (shopping) also matches *Palace*, *Space* and *Marketplace*; "mart" matches *Smart*.
+- **The app can't tell your choice from its guess.** `categoryId` doesn't record who set it, so it can't safely re-assign later or explain *why*.
+
+**Subscriptions** (`domain/intelligence/SubscriptionRadarEngine.kt`). Runs automatically per merchant after each captured debit (`AppContainer.refreshSubscriptionForMerchant`, ~789), plus a full **Scan** on the Subscriptions screen.
+- **Input:** SPEND rows that aren't excluded, grouped by **raw** `merchant.trim().lowercase()` + currency (not the brand key).
+- **Needs ≥3 charges.**
+- **Every** gap between charges must be within ±2 days of 7 (weekly) or ±5 days of 30 (monthly).
+- **Amounts** must be within 5% of the average, or show exactly one price change (an older steady run, then the newest price).
+- **Next due** = last charge + 30 days (or + 7).
+
+**What it misses:**
+- One late or missed month, or one extra purchase at the same merchant (Apple, Google Play, Amazon), breaks the "every gap" rule, and the whole merchant disappears.
+- No quarterly, semi-annual, yearly or bi-weekly cadences.
+- "NETFLIX.COM" and "Netflix.com Amsterdam" are different merchants.
+- +30 days drifts against real billing dates (the 15th of each month).
+- Subscriptions billed in another currency wobble with FX and can fail the 5% check.
+- No use of the message text ("renewal", "subscription", "auto-debit", Arabic "اشتراك"/"تجديد").
+- No "cancelled / charge missing" state.
+- No "mark this as a subscription".
+
+> **C.1 subscription detection v2** ✅ 0.83.0 (CI run 43299353575 green: unit tests + APK build): `SubscriptionRadarEngine` now tolerates a missed cycle (one per three gaps) and skips extra purchases at the same merchant, as long as the chain explains ≥60% of the merchant's charges (so a daily coffee never reads as a subscription); adds bi-weekly, quarterly, semi-annual and yearly cadences; groups by brand (`MerchantNormalizer.key`); keeps the billing day of the month (and month-end billers) for next-due dates; and accepts two charges on a clean cadence when the message says subscription/renewal/auto-debit/اشتراك/تجديد. Still open from C.1: a "charge missing / cancelled" state, a manual "mark as subscription", and feeding the brand-grouped history into the per-merchant refresh (the capture-time refresh still sees one raw merchant spelling; the full Scan sees all).
+
+### C.2 Smart auto-assignment, the design ("learns from your past")
+
+All on-device, pure Kotlin, JVM-testable, explainable. No model file and no network.
+
+**1. Record where each value came from.** Add `categorySource` and `personSource` to `transactions` (`USER | LEARNED | ACCOUNT_OWNER | KEYWORD | AI | DEFAULT`).
+- The app may re-assign anything except `USER`.
+- The detail sheet can say *why*: "Groceries — you chose this for 12 Carrefour purchases".
+
+**2. Replace last-write-wins with an evidence table.**
+
+```
+merchant_learning(merchantKey, field[CATEGORY|PERSON|ACCOUNT|KIND], value,
+                  votes, lastUsedAt, accountId?, amountBand?)
+```
+- Every confirmed assignment adds a vote; a correction adds a vote to the new value; votes decay with age (half-life about 6 months).
+- Prediction = the value with the highest weighted share, with **confidence = share × min(1, votes/3)**.
+- **Auto-apply** when confidence ≥ 0.8. Between 0.5 and 0.8, assign it but mark it "Check" in the To-review inbox with one-tap chips. Below 0.5, fall through to the next signal.
+- Migrate the existing `merchant_category_mappings`, `merchant_account` and `merchant_kind` rows in as votes = 3, so nothing already learned is lost.
+
+**3. Use context, not just the merchant (a small nearest-neighbour vote over your own history).** For a new transaction, prefilter past **user-confirmed** rows by brand key *or* card ending (indexed, capped at 500 rows), then score:
+
+| Signal | Weight | Example it solves |
+|---|---|---|
+| same brand key (`MerchantNormalizer.key`) | 5 | Carrefour → Groceries |
+| same card ending / account | 3 | spouse's supplementary card → spouse |
+| amount band (log buckets: <20, 20–100, 100–500, 500–2k, >2k) | 2 | Carrefour > AED 1,000 → Electronics |
+| same sender / bank | 1 | |
+| weekday vs weekend, hour band | 1 | weekday lunch → you; weekend groceries → family |
+
+- Weighted vote per candidate value gives the prediction and its confidence.
+- This handles "same merchant, different category by amount" with no rules UI.
+
+**4. Person: three signals cover most of it.**
+- Add **`Account.ownerPerson`** ("Tabby Card → Sara"). Order: account owner > learned (merchant × account) > learned (merchant) > default person.
+- Start learning from `setPerson` corrections, which are thrown away today.
+- One row added to the account form solves most households.
+
+**5. Learn backwards ("apply to similar past transactions").** After a correction, show a snackbar: **"Apply to 14 similar past transactions?"** with Preview / Apply / Undo.
+- It only touches rows whose source isn't `USER`.
+- It extends today's uncategorized-only backfill to person, and to rows the app guessed earlier.
+
+**6. Cold start.**
+- Move the keyword list to a data file with **word-boundary** matching. Reuse the brand registry in `MerchantNormalizer.collapseToBrand`.
+- Add a one-screen **"Teach MMbank"** pass: your top 20 unknown merchants by frequency, one tap each. That is usually around 80% of spend volume.
+- AI suggestions for the rest stay *pending* (existing flow).
+
+**7. Measure and self-tune.**
+- Track overrides of `LEARNED`/`KEYWORD` values, and show "Auto-assigned 90 this month · you changed 6 (93% right)".
+- Raise or lower the auto-apply threshold for each field from that rate.
+- On the Merchant screen, list what was learned with vote counts, plus **Forget**.
+
+**8. Bulk edits teach, carefully.** When every selected row shares one brand key, count the bulk edit as 1 vote, not N.
+
+### C.3 Subscription detection v2
+
+1. **Group by brand key** (`MerchantNormalizer.key`) + currency. This needs `MIGRATION_x` to re-key the `subscriptions` unique index, which the feature log deferred (~line 3008). Carry ids and dismissed flags across via `SubscriptionMerge`.
+2. **Cluster by amount within a merchant first** (±5%, or ±8% for foreign-currency charges). Then detect cadence **per cluster**. "Apple · 3.99 monthly (iCloud)" and "Apple · 24.99 monthly" are found separately, and one-off Apple purchases no longer break anything.
+3. **Find the dominant period** instead of requiring every gap to match:
+   - Take the median gap and snap it to weekly 7 / bi-weekly 14 / monthly 28–31 / quarterly ~91 / semi-annual ~182 / yearly ~365, with ±15% tolerance.
+   - Require **≥70% of gaps** to fit, so one late or missed month is fine.
+   - Minimum count: 3 for weekly and monthly, **2 for quarterly and yearly**, when backed by text or brand evidence.
+4. **Calendar-anchored next due date:** monthly means the same day next month, clamped to month end. Reuse the anchor-day approach from the 0.62.13 bill fix (`BillAdvancer`), not "+30 days".
+5. **Confidence score** = regularity + amount stability + count + **text evidence** + **known-brand list**.
+   - Text: "subscription", "renewal", "recurring", "auto-debit", "standing instruction", "membership", "اشتراك", "تجديد".
+   - Brands: Netflix, Spotify, Shahid, OSN+, Anghami, YouTube, iCloud, Google One, ChatGPT/OpenAI, gyms, telecom postpaid.
+   - **≥0.8 Active**; **0.5–0.8 "Possible — is this a subscription?"** with Yes/No; anything lower is ignored.
+6. **Lifecycle:** Active → Due soon → **Charge missing** (expected charge didn't come within tolerance: "Cancelled? or a failed payment?") → Cancelled (you confirm, or 2 periods missed) → Reactivated. Add a **trial** flag (first charge 0 or small, then full price; or "trial ends" text) and full **price history** (backlog #49).
+7. **You can teach it:**
+   - "Mark as subscription" from any transaction. It is then tracked even with irregular gaps.
+   - "Not a subscription" (today's dismiss) suppresses that merchant + amount cluster permanently and feeds the score.
+8. **One recurring engine** (Part B.4): bills are *declared* recurring, subscriptions are *detected* recurring, and salary/income uses the same engine in the credit direction (today `CashFlowForecaster` has its own paycheck logic). One status model, one reminder pipeline, one calendar.
+9. **Useful outputs:**
+   - "9 subscriptions · AED 2,340/year".
+   - Overlap detection ("2 music services").
+   - "Price went up 18% since March".
+   - Upcoming renewals on Home and in the weekly digest (exists; feed it the new states).
+
+### C.4 Delivery and tests
+- **Order:**
+  - After Part B.7 step 1 (migration tests). Then: `categorySource`/`personSource` + `Account.ownerPerson` (one migration), then the evidence table plus import of existing mappings, then predictor and backfill UI, then Subscriptions v2 (re-key migration).
+  - Bump the backup `formatVersion` (`BackupManager.kt` ~184) for the new tables and columns.
+  - Follow the CLAUDE.md entity/model/mapper round-trip rule.
+- **Pure-JVM tests (synthetic histories):**
+  - Spouse's card → spouse.
+  - Carrefour bimodal amounts.
+  - A correction outvotes stale votes.
+  - Never overwrite `USER`.
+  - A missed month still detected.
+  - Late renewal by 6 days still detected.
+  - 31st → Feb 28 anchoring.
+  - Apple with 3 clusters + noise.
+  - Two price changes.
+  - Yearly with 2 charges + renewal text.
+  - FX wobble of 6% on a EUR subscription.
+  - A dismissed cluster stays dismissed after rescan.
+  - "Charge missing" fires once, not every day.
+
+---
+
+## 11. Critical files
+
+- **Theme:** `ui/theme/{Color,ObsidianTokens,Theme,Typography,Fonts,Glass,Glow,AmbientBackground,RowComponents,CurrencyGlyphs}.kt`; `ui/util/{AmountText,Format}.kt`; `res/values/themes.xml` (+ new `values-night/`); `res/drawable/ic_launcher_foreground.xml`; `res/mipmap-anydpi-v26/ic_launcher.xml`.
+- **New:** `ui/designsystem/**`, `ui/theme/{Palette,MMColors,MMTypography,MMSpacing,MMMotion}.kt`, `ui/util/DateFormats.kt`, `domain/model/ThemeMode.kt`, `app/src/test/.../ui/DesignLintTest.kt`.
+- **Shell:** `ui/MainActivity.kt` (theme mode, edge-to-edge, nav graphs, transitions, lock semantics), `di/AppContainer.kt` (themeMode and hideBalances flows), `data/prefs/AppPreferences.kt`.
+- **Screens:** `ui/screens/transactions/TransactionsScreen.kt` (split), `ui/screens/settings/SettingsScreen.kt` (split), `ui/screens/dashboard/DashboardScreen.kt`, `ui/screens/insights/InsightsScreen.kt`, `ui/screens/accounts/AccountsScreen.kt`, `ui/components/{GlassWalletCard,AccountCarousel,DonutChart,CanvasCharts}.kt`, `ui/auth/{LockScreen,PinPad}.kt`, `ui/widgets/DailyBudgetWidget.kt`, `util/*NotificationHelper.kt`.
+- **Smart assignment & subscriptions (Part C):** `domain/parser/{CategoryMatcher,CaptureCategoryResolver,MerchantCategorizer,MerchantNormalizer,CategorySuggestionEngine,MerchantAccountLearner}.kt`, `data/repository/{TransactionRepositoryImpl,CategoryRepositoryImpl,MerchantAccountRepositoryImpl}.kt` (recordParsed ~150-199), `domain/intelligence/{SubscriptionRadarEngine,SubscriptionMerge,CashFlowForecaster,BillAdvancer}.kt`, `di/AppContainer.kt` (~789 `refreshSubscriptionForMerchant`), `ui/screens/transactions/TransactionsScreen.kt` (`setPerson`/`setCategoryId` ~596-662), `data/backup/BackupManager.kt` (formatVersion). New: `domain/learning/{AssignmentPredictor,EvidenceVote}.kt`, `domain/intelligence/RecurringDetector.kt`.
+- **Data (for `accentColor`):** `domain/model/Models.kt`, `data/local/entity/Entities.kt`, `data/local/AppDatabase.kt` (v32 + migration), `EntityMappersTest`.
+- **Reuse, don't rewrite:**
+  - `ColorContrastTest`, `GlassSpec` (API gate for the scrim blur), `FilterBarCollapse` (math), `TransactionFilterEngine`.
+  - `CaptureHealthEvaluator` (feeds the Home AlertStack and the onboarding checklist), `NotificationPermission`, `DirhamSymbol`.
+  - `dayPillLabel` → generalise into `DateFormats`.
+
+---
+
+> **B.5 #2 global search** ✅ 0.86.0 (CI run 43308056350 green): a search icon beside the gear on every tab root opens one search across screens and settings (by title or keyword, so "pin" finds App lock),
+merchants (brand-grouped, with counts), transactions (by merchant or an exact amount), accounts (name, bank, last four digits) and parsing rules (`GlobalSearch`, ranked exact > prefix > word-start > contains, capped per kind). UI is not verified by CI.
+
+> **B.5 #3 statement reconcile** ✅ 0.87.0 (CI run 43310318225 green): Integrity check → "Compare with a bank statement": paste a statement CSV (comma/semicolon/tab, header or not, signed or debit/credit columns, `(x)`/DR/CR amounts, UAE date formats), pick the account, and `StatementReconciler` pairs each line with a captured transaction (same signed amount, within 3 days, nearest date then closest description, one-to-one) and lists what is missing from MMbank and what is only in MMbank. Read-only; unreadable lines are counted, not hidden. UI is not verified by CI.
+
+> **B.5 #5 year in review** ✅ 0.88.0 (CI run 43313727806 green as 0.88.1): Monthly report → "Year in review" (also findable from search): the year's spent / received / net / savings rate, change vs the year before, busiest and quietest month, biggest single expense, no-spend days, spending by month, and top categories and merchants (`YearInReviewBuilder`, Spent/Received per `LedgerMath`, converted row by row). Month-over-month deltas on every headline number (#38) is still open. UI is not verified by CI.
+
+> **B.5 #4 envelope budgets** ✅ 0.89.0 (CI run 43315687558 green): Settings → Currency & preferences → "Carry unspent budget forward" (off by default). With it on, what a category's monthly cap didn't use is added to the next month's cap, up to 6 months back (`BudgetRollover`); overspending carries nothing and never creates debt; a category only starts accumulating in its first month of spend; a parent's envelope covers its sub-categories. The Budgets screen, the 80%/100% cap alerts and the weekly digest all use the same effective cap, and the Budgets row says "Includes X carried over". Also fixed: the Home "This week" card now converts foreign-currency spend toward caps like the notification path does (it had been missed in 0.78.0). UI is not verified by CI.
+
+> **B.2 fresh backup before prune** ✅ 0.90.0 (CI run 43317469306 green): the weekly retention prune now only deletes when an *encrypted* backup was exported in the last 30 days (`RetentionBackupGate`; each export stamps `lastBackupAt`; a CSV export doesn't count). Otherwise that run does nothing, and the retention preview under the history chips says so ("Pruning is paused until you export an encrypted backup" / "your last backup is N days old"). Existing installs have no stamp yet, so pruning stays paused until their first export after this version. Still open in B.2: scheduled automatic backups (#67).
+
+> **B.3 per-sender stats (#17)** ✅ 0.91.0 (CI run 43320300934 green): Settings → Diagnostics shows "Capture by sender" above the capture log -- per sender, how many messages were saved, duplicate, ignored, unmatched or failed (`CaptureSenderStats`, read from the rolling capture log, unmatched-heavy senders first and highlighted). Covers what the log still holds, not all time. UI is not verified by CI.
+
+> **C.2 categorySource / personSource** ✅ 0.92.0 (CI run 43323573510 green): schema v34 adds `categorySource` and `personSource` to transactions (explicit additive migration `MIGRATION_33_34_SQL`; every existing row with a category/person is marked `USER`, so history is never re-assigned on its own; backup format v12 carries them and restores old backups the same way). Capture records `LEARNED` / `KEYWORD` / `DEFAULT`; every manual pick, bulk edit and edit-form change records `USER`. Used now: (1) learning a merchant's category re-categorizes its earlier *guessed* rows (keyword/learned/AI) but never a `USER` one; (2) the person pattern reads only explicit user choices; (3) the edit form shows a plain "why" line ("Chosen by you", "Learned from your earlier choices", "Guessed from the merchant name"). Saving an edit form with the "Auto" category chip counts the guess as the user's (conservative). Still open in C.2: per-merchant counts/confidence, amount/card/sender signals. UI line not verified by CI.
+
+> **Phase 3 / B.4 one "To review" inbox** ✅ 0.93.0 (CI run 43325415417 green): the standalone Uncategorized queue is gone; its route (Activity banner, widget, notification) now opens the Review Transactions inbox, which already did everything it did (ranked one-tap suggestions, confidence, batch approve, pick any category) and now also has "Dismiss suggestion". The duplicate screen and view model were deleted. UI is not verified by CI.
+
+> **Phase 3 live status on Plan cards** ✅ 0.94.0 (CI run 43326950201 green): each Plan card shows one line of live status when there is something to say -- Budgets ("1 over budget · 2 near their cap" / "All 4 on track"), Bills ("1 overdue · 2 due this week" / "Next: Gym in 12 days"), Subscriptions ("5 active · AED 140.00/month", amounts honour hide-balances), Goals ("closest: Trip 80%") (`PlanStatus`, `PlanViewModel`). The budget numbers now come from one shared `BudgetStatusBuilder`, also used by the Budgets screen, so they cannot disagree. Debt/Splits/Rewards have no status yet. UI is not verified by CI.
+
+> **Phase 3 Settings "Notifications" group** ✅ 0.95.0 (CI run 43328478115 green): the four phone-notification switches (subscription renewals, bill due dates, unusual charges, weekly digest) moved out of the middle of Preferences into their own Settings → Notifications page, with an "N of 4 on" summary on the menu row and a search entry. Nothing changed about what they do. UI is not verified by CI.
+
+> **B.5 #1 quick add** ✅ 0.96.0 (CI run 43330234097 green): long-press the launcher icon for "Add a cash spend", or add the "Add spend" tile to Quick Settings (the tile makes the phone unlock first). Both open a small sheet -- amount plus an optional "where" -- that records one manual SPEND (`QuickAdd`: amount rules, decimal comma, ≤2 decimals, lands on a cash account in the same currency, else any cash account, else unassigned). The sheet only adds an entry and shows no ledger data. Not done: a notification action. Launcher shortcut, tile and sheet are not verified by CI.
+
+> **Onboarding (first-run checklist)** ✅ 0.97.0 (CI run 43332109175 green): Home shows a "Finish setting up · N of 4" card -- allow notification/SMS capture, add an account, see a first transaction, make an encrypted backup -- each ticked off from real state (`OnboardingChecklist`), with a "Do this" button for the next step (capture settings, Accounts, Backup & restore) and a permanent Dismiss. It hides itself when everything is done, in demo mode, and until permissions are known; long-time users with only "make a backup" left see it too, and can dismiss it. Not done: a guided multi-screen first-run walkthrough. UI is not verified by CI.
+
+> **B5 refund link, stored and breakable** ✅ 0.98.0 (CI run 43333819390 green): schema v35 adds `refundOfId` (explicit additive migration, backup format v13). When a credit is recognised as a refund -- by its wording or by `RefundMatcher` -- capture now remembers which earlier purchase it gave money back for. The edit form shows "Matched to an earlier purchase from this merchant" with a **Not a refund** button that breaks the link and makes it plain income (a user choice, never auto-reverted); changing the kind away from Refund also clears it. The link is informational: totals never depend on it. Still open from B5: pairing *existing* rows, pending→posted, showing the original purchase's details, partial-refund tracking. Editor line not verified by CI.
+
+> **B.4 Recurring, first step: one "Upcoming payments" list** ✅ 0.99.0 (CI run 43335508720 green): Plan → Upcoming payments merges manually tracked bills, detected subscriptions and credit-card dues into one date-ordered list, grouped Overdue / Due this week / Later, tapping an item opens its own screen (`UpcomingPayments`). It is a read-only view over the three existing models, so nothing moves and nothing can be lost; a detected subscription more than 3 days past its projected date is treated as stopped and left out. This is *not* the full "one Recurring model" -- the three kinds still have separate data, editors and reminder pipelines (that part needs a design decision and a data migration). Not verified on a device.
+
+## Part D — Accounts: quick add, update-if-exists, change log
+
+Full design in **MMbank-ACCOUNTS-PLAN.md**. Planned, not started.
+
+| # | Item | Target | Status |
+|---|---|---|---|
+| D1 | `account_changes` log table (schema v36), diff builders, write points, backup | 0.100.0 | ✅ 0.100.0 (CI run 43387209299 green) |
+| D2 | Account history screen with running balance; reason on balance adjustments | 0.101.0 | ✅ 0.101.0 (CI run 43389467494 green) |
+| D3 | Quick add sheet with update-if-exists (`AccountUpsertResolver`, `AccountMerge`) | 0.102.0 | ✅ 0.102.0 (CI run 43394048775 green) |
+| D4 | Account suggestions from unknown card numbers; "Whose account is it?" on one-sided transfers | 0.103.0 | ✅ 0.103.0 (CI run 43397688441 green) |
+| D5 | Drift explainer (`DriftWindow`) on the Integrity screen | 0.104.0 | ✅ 0.104.0 (CI run 43402851466 green) |
+
+> **D1 account change log** ✅ 0.100.0 (CI run 43387209299 green): schema v36 adds `account_changes` (explicit additive `MIGRATION_35_36`, backup format v14). Every balance-moving event that used to leave no trace now writes an entry in the same Room transaction as the change: account create / edit (one entry per changed field, opening-balance edits with the exact delta) / archive / restore / delete; transaction amount, direction, currency or date edits; moves between accounts (an out-entry and an in-entry); deletes; balance adjustments; retention folds (opening balance moves, balance effect zero); and a marker per account on backup restore. Pure builders `AccountChangeDiff` and `LedgerChangeDiff` decide what is recorded (merchant, category and person edits are deliberately not). Retention also trims log rows older than its cutoff. Added a `currencyCode` column to the plan's table, so `balanceDelta` always has a unit. Bulk moves (a rule or learned-merchant backfill) log one entry per transaction; Phase 2's timeline should group them. Nothing is shown in the UI yet. **Not covered by CI:** the real Room v35→v36 migration on a device (only the SQL is run, on sqlite-jdbc), the atomic write under Room's `withTransaction`, and the retention and restore paths end to end.
+
+> **D2 account history** ✅ 0.101.0: Accounts → an account card → **History** opens one account's transactions and change log in a single newest-first list (`AccountTimeline`, route `account_history/{accountId}`). Transactions carry a running balance (the current rows replayed oldest-first from the current opening balance, ending on today's balance); change entries sit at the moment they were made and show what they did to the balance then. A bulk move or delete (one entry per row at the same instant) collapses into one line with a count and the summed effect. Filters: Everything / Balance changes / Edits. Wording lives in the pure `AccountChangeWording`; headlines never contain an amount, and amounts, signs and old→new values are masked while balances are hidden. **Adjust balance** now requires a reason (`BalanceChangeReason`, likeliest first for the account type) plus an optional note, both stored on the adjustment's log entry via the new `TransactionRepository.recordAdjustment` (default-bodied, so test fakes are untouched). Amounts are face value in each row's own currency; an account holding other-currency rows shows "≈" and a note. Changes made before 0.100.0 were never recorded, and the empty state says so. **Not covered by CI:** Compose rendering of the screen and the new dialog fields, navigation to and from `account_history`, the History button's placement on the account card, and hide-balances masking on the new screen.
+
+> **D3 quick add, update-if-exists** ✅ 0.102.0 (CI run 43394048775 green): the Accounts **+** now opens a short sheet (type chips, name, currency, current balance, optional last digits, *Paste bank details*, *More details*) instead of the 20-field form. Saving first asks `AccountUpsertResolver` whether it exists: a matching IBAN or account/card number (the `AccountNumberMatcher` rules: digits only, at least 3, longest suffix, a tie is no match) is a strong match, same name + bank + currency + type a weak one, and archived accounts count. A match never creates a copy: the prompt says what matched, the balance now vs the one typed, what blank details will be filled (`AccountMerge` never overwrites a value, appends new card endings, and reports conflicts it kept) and offers **Update balance** (posts the adjustment with a reason, in the history), **Restore and update** for an archived one, or, only for a weak match, **create a separate one**. Several matches ask which one. The full form's Save runs the same check (a new account against everything, an edit only against strong matches) and can update the existing account instead, leaving its balance alone. Not covered by CI: how the sheet and prompts look and behave with the keyboard, the **+** entry point, hide-balances masking in the prompt.
+
+> **D4 suggestions and "Whose account is it?"** ✅ 0.103.0 (CI run 43397688441 green): captured messages whose card/account ending matches none of your accounts (archived ones included) now show a card on Accounts, "5 messages from card ••4543", grouped per ending and currency (`UnknownAccountSuggestions`; a printed *available credit* suggests a credit card). **Add it** names the account and files every matching unassigned row into it with `bulkAssignAccount` (so the change log records the moves); its opening balance is worked out by `OpeningBalanceSolver` so the books equal the bank's last printed balance at that message and the account starts reconciled (a card needs its credit limit for this, otherwise it starts at zero). **It's an account I have** remembers the ending on an existing same-currency account (`AccountMerge`, nothing else touched) and files the rows into it. In the transfer editor, when one side is "Outside / not tracked", a new **Whose account is the other side?** choice: *Mine, not tracked* keeps today's transfer (not spent, not received); *Someone else's* records a plain Spent / Received row with the person set, which fixes money sent to another person vanishing from both totals. **Not covered by CI:** how the suggestion card, its two dialogs and the new chips look and behave, and the end-to-end backfill on a real database.
+
+> **D5 drift explainer** ✅ 0.104.0 (CI run 43402851466 green): a balance-difference issue on the Integrity screen now has **See what changed** next to *Record the difference*. It opens that account's History narrowed to when the difference appeared. `DriftWindow` walks the account's bank-printed balances backwards from the newest: the run of consecutive mismatches ends at the first one that doesn't match, and the window is (last balance that matched, first that didn't]; it uses the same accepted balance kinds, currency rule, card-owed maths and retention cutoff as `IntegrityChecker`, and a test pins the two to the same figure. A banner says, for example, "A difference of −120.00 appeared between 3 Nov 14:02 and 5 Nov 09:10: 4 transactions in that time, 1 change made since", with the sign hidden while balances are hidden. The list keeps the transactions dated inside the window and the balance-moving changes made since the last match (an edit made before it cannot have caused a later difference), with the running balances untouched. A difference present from the first printed balance has no lower bound, and the banner says so. The history route gained an optional `drift` argument. **Not covered by CI:** how the button, banner and narrowed list look, the navigation from Integrity to History with the argument, and hide-balances masking in the banner. Limits to know: the check uses today's books at each older point, so a deleted transaction appears as a change, not as a row; and mixed-currency accounts and cards without a credit limit get no window.
+
+## Part E — Old unassigned transactions and people
+
+Full design in **MMbank-UNASSIGNED-PLAN.md**.
+
+| # | Item | Target | Status |
+|---|---|---|---|
+| E1 | Balance-neutral filing: an old row filed into (or moved out of) an account keeps its corrected balance (`BalanceNeutralFiling`) | 0.105.0 | ✅ 0.105.0 (CI run 43571124029 green) |
+| E2 | "History only" for old unassigned rows (schema v37) | 0.106.0 | ✅ 0.106.0 (CI run 43572206281 green) |
+| E3 | One-tap person fill for rows with no person | 0.107.0 | ✅ 0.107.0 (CI run 43572206281 green) |
+| E4 | Active / inactive people; assignment menus show active only | 0.108.0 | ✅ 0.108.0 (CI run 43572206281 green) |
+
+> **E1 balance-neutral filing** ✅ 0.105.0 (CI run 43571124029 green): filing a transaction dated before an account's last balance update (its newest "Balance adjustment" row, or the account's creation when it has none) no longer moves that account's balance. Such a row is already inside the corrected figure, so `BalanceNeutralFiling` shifts the opening balance by the opposite amount in the same Room transaction; moving an old row out is the mirror. Rows dated on or after the update still move the balance. It runs in one place, `AccountChangeRecorder.recordEdits`, so it covers single assign, the editor's account change, bulk assign, rule assignment, the merchant-learning backfill and "It's an account I have". The history shows one line, "12 older transactions filed, balance kept · by MMbank, to keep your balance" (an `OPENING_BALANCE_CHANGED` entry with the new source `HISTORY_FILING`, whose delta cancels the moved-in entries beside it), and a short message appears after the filing. "Add as new account" from a suggestion is exempt (`bulkAssignAccountCounted`): its opening balance is solved to expect those rows. **Limits:** only rows in the account's own currency are kept neutral (a foreign-currency row reaches the balance through today's rate, so it still moves it); balances already thrown off by earlier filing are not repaired, one more Update balance fixes each; deleting or re-pricing an old row still moves the balance. **Not covered by CI:** the message on screen, the extra sentence in the "Which account is…" dialog, how the history line renders, and the whole path on a real database (the SQL for the last adjustment, the opening-balance write inside the transaction).
+
+> **E2 history only** ✅ 0.106.0 (CI run 43572206281 green), one combined run for 0.106.0 to 0.108.0: schema v37 adds `transactions.historyOnly` (explicit additive migration, backup format v15). It means "this happened before I started tracking" and only applies to a row with no account. Such a row stays in Activity, search and spending reports, but leaves the Unassigned card on Accounts, the Home notice, the Integrity "unassigned" issue and the unknown-ending suggestions, and the automatic merchant and rule backfills skip it. Filing the row into an account clears the flag (and then goes through E1). **How to mark:** the Unassigned card has **Before I started tracking…**, which offers "Before <date>, your earliest balance update", "Older than 30 days" and "All of them", each with its count (`HistoryOnlyPlanner`); Activity's bulk menu has **Mark as history only**; a transaction's detail has the same action and **Undo history only**. The Activity account filter gained **History only**, and **Unassigned** no longer lists those rows. **Changed from the plan:** fixed choices instead of a free date picker; pick exact rows with Activity's bulk selection. **Not covered by CI:** the dialog, the card button, the bulk and detail actions and the filter entry as rendered, and the real Room v36→v37 migration on a device (the SQL itself runs in `MigrationSqlTest`).
+
+> **E3 person fill** ✅ 0.107.0 (CI run 43572206281 green), one combined run for 0.106.0 to 0.108.0: Settings → People shows "212 transactions have no person" with **Assign to…**. The dialog lists your saved people (the default person preselected), states the count, and on **Assign** gives that person to every transaction that has none (`PersonBackfill`, then the existing `bulkSetPerson` in chunks of 500). Balance adjustments are skipped: they are bookkeeping, not anybody's spending. No balance is affected, and each row can still be changed afterwards. **Not covered by CI:** the row, the dialog and the status message as rendered, and the bulk update on a real database.
+
+> **E4 active people** ✅ 0.108.0 (CI run 43572206281 green), one combined run for 0.106.0 to 0.108.0: Settings → People has a switch on each person. Switched off, a person is **inactive**: their transactions keep their name and they stay in the Activity person filter, but they are no longer offered when you assign a person (the row menu, the editor, bulk "assign person", and the E3 "Assign to…" picker). Inactive people are listed below the active ones. `PersonLists` holds the rules: the default person is always offered and cannot be switched off; a row that already carries an inactive person still shows that name in its own menu, so opening it never drops the value; typing an inactive name again as a new person switches them back on; renaming keeps the mark. New captures stop being routed to an inactive person by the learned merchant pattern (`PersonLearner`) and get the default instead. Stored in a new preference and carried in backups (format v16; an older backup restores with everyone active). A follow-up fix (`3bc6ebf`) stores an inactive mark in the saved list's own spelling of the name. **Not covered by CI:** the switches and the "Inactive" group as rendered, the shortened menus on screen, and the preference surviving an app restart and a real backup/restore.
+
+## Where things stand after 0.99.0
+
+Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43335508720 for 0.99.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.
+
+**Still open, grouped by what blocks it**
+
+*Needs UI work that CI cannot check (build it, then look at it on a device):*
+- Phase 3: nested nav graphs, Activity list-detail on tablets, per-form Save.
+- B.5: a quick-add notification action; month-over-month deltas on every headline number (#38).
+- B.4 consolidation: one Recurring model (bills + subscriptions + card dues), one People list, goals-only (drop the duplicate Home card), cashback onto user categories.
+- B4 follow-up: "Also arrived by SMS" display and Split back out (needs the merge stored, so a schema change). B5: pairing existing rows, pending→posted, partial-refund tracking.
+- B.3: one-tap "create rule from this message" in the capture log, corpus testing in the rule editor, rule-shadow warnings.
+- Phases 1/2/4/5/6 design track: Roborazzi screenshots, a guided first-run walkthrough (the Home checklist exists), notifications/widget/icon/splash, accessibility and localisation (Arabic/RTL, string resources).
+
+*Needs a schema change (so a v34 migration plus its test):*
+- C.2: per-merchant counts and confidence; amount/card/sender signals (the source columns are done).
+- B2 part 4: per-transaction historical conversion in Insights (only worth it once rate history has accumulated).
+
+*Needs a decision or a device from the owner:*
+- Scheduled automatic backups (#67): a chosen folder (SAF) and a backup-key policy.
+- SMS inbox import at onboarding (#11): a new READ_SMS permission and a privacy decision.
+- Goals consolidation (B.4): the Insights "Savings goal" card measures progress by your **total net worth** against a target, while the Goals screen tracks a **manually entered amount** per goal. Folding one into the other changes what "progress" means for anyone with an existing goal, so it needs a choice: keep the net-worth meaning (e.g. as an optional "track against net worth" goal type) or switch the card to the top Goals-screen goal and migrate the old target as a manual goal.
+- Swapping the Transactions list onto the design-system `TransactionRow`; a colour picker for `accentColor`; device checks 0.3 / 0.4.
+
+**Not covered by CI (to check on a device):** tab bar, gear and search placement, the tablet rail, AI notice look, the retention-preview text and refresh timing, predictive-back preview (Android 14+), transition feel, the "≈" note and the Budgets "not counted" / "carried over" notices as rendered, the global-search, statement-compare and year-in-review screens, the real Room v32→v33 migration, a live request to an online AI provider with redaction on, and the weekly prune actually running once a backup exists.
+

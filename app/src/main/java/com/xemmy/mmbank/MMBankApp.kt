@@ -17,11 +17,26 @@ class MMBankApp : Application() {
         installCrashRecorder()
         container = AppContainer(this)
         container.seedDefaultRulesOnce()
+        // One-time re-read of old messages for ATM/refund/card-payment wording
+        // after the transaction-kind upgrade. A no-op once it has run.
+        container.reclassifyLedgerOnce()
+        // Re-arms the opt-in subscription reminder if it's on. Idempotent
+        // (unique work, KEEP), and a no-op entirely while the toggle is off.
+        container.ensureSubscriptionReminderWork()
+        // Same idempotent re-arm for the opt-in transaction-retention prune.
+        container.ensureTransactionRetentionWork()
+        // Same idempotent re-arm for the opt-in bill due-date reminder.
+        container.ensureBillReminderWork()
+        container.ensureWeeklyDigestWork()
         // Whole-app foreground/background transitions drive the opt-in app
         // lock (ProcessLifecycleOwner, unlike Activity onStop, doesn't fire
         // on rotation or intra-app navigation).
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) = container.appLock.onAppForegrounded()
+            override fun onStart(owner: LifecycleOwner) {
+                // The screen lock may have changed while we were away.
+                container.refreshLockAvailability()
+                container.appLock.onAppForegrounded()
+            }
             override fun onStop(owner: LifecycleOwner) = container.appLock.onAppBackgrounded()
         })
     }

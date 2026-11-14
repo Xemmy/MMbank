@@ -16,17 +16,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
@@ -40,6 +40,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -69,30 +71,39 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.BankDetailsParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.MMTone
+import com.xemmy.mmbank.ui.designsystem.MoneyText
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.GlassDialogBackdrop
 import com.xemmy.mmbank.ui.theme.GlowTone
 import com.xemmy.mmbank.ui.theme.GlowTones
 import com.xemmy.mmbank.ui.theme.MetaLabel
-import com.xemmy.mmbank.ui.theme.ObsidianTokens
+import com.xemmy.mmbank.ui.theme.MMTheme
 import com.xemmy.mmbank.ui.theme.RowAvatar
-import com.xemmy.mmbank.ui.theme.dottedLeader
 import com.xemmy.mmbank.ui.theme.glassSurface
 import com.xemmy.mmbank.ui.theme.obsidianCanvas
 import com.xemmy.mmbank.ui.theme.rowEdgeGlow
-import com.xemmy.mmbank.ui.util.AMOUNT_MASK
-import com.xemmy.mmbank.ui.util.AmountText
 import com.xemmy.mmbank.ui.util.asDate
-import com.xemmy.mmbank.ui.util.asMoney
-import com.xemmy.mmbank.ui.util.asMoneyOrMask
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
+import com.xemmy.mmbank.domain.account.HistoryOnlyPlanner
+import com.xemmy.mmbank.domain.account.AccountUpsertResolver
+import com.xemmy.mmbank.domain.account.BalanceChangeReason
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner
+import com.xemmy.mmbank.domain.ledger.IntegrityChecker
+import com.xemmy.mmbank.domain.account.CreditCardStatusCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -100,125 +111,67 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class AccountWithBalance(val account: Account, val balance: Double)
-
-class AccountsViewModel(private val container: AppContainer) : ViewModel() {
-
-    /** Set when a database write or the accounts list itself fails, instead of crashing. */
-    val lastError = MutableStateFlow<String?>(null)
-
-    val uiState: StateFlow<List<AccountWithBalance>> = combine(
-        container.accountRepository.observeActive(),
-        container.transactionRepository.observeNetByAccount(),
-    ) { accounts, netByAccount ->
-        accounts.map { account ->
-            AccountWithBalance(
-                account = account,
-                balance = account.openingBalance.toDouble() + (netByAccount[account.id] ?: 0.0),
-            )
-        }
-    }.recoverAndRetry("AccountsViewModel", container) { e ->
-        lastError.value = "Couldn't load accounts: ${e.message}"
-        emptyList()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Shared, live hide-balances flag — see [AppContainer.hideBalances]. */
-    val hideBalances: StateFlow<Boolean> = container.hideBalances
-
-    fun save(account: Account) {
-        viewModelScope.launch {
-            runCatching { container.accountRepository.save(account) }
-                .onFailure {
-                    container.recordError("AccountsViewModel.save", it)
-                    lastError.value = "Couldn't save account: ${it.message}"
-                }
-        }
-    }
-
-    fun archive(account: Account) {
-        viewModelScope.launch {
-            runCatching { container.accountRepository.archive(account) }
-                .onFailure {
-                    container.recordError("AccountsViewModel.archive", it)
-                    lastError.value = "Couldn't archive account: ${it.message}"
-                }
-        }
-    }
-
-    fun delete(account: Account) {
-        viewModelScope.launch {
-            runCatching { container.accountRepository.delete(account) }
-                .onFailure {
-                    container.recordError("AccountsViewModel.delete", it)
-                    lastError.value = "Couldn't delete account: ${it.message}"
-                }
-        }
-    }
-
-    /**
-     * Corrects a drifted balance (e.g. after a missed or mis-parsed capture) by
-     * posting a single "Balance adjustment" transaction for the gap between the
-     * computed balance and the real one, pinned to this account. It's an ordinary
-     * row, so the fix is visible in Activity and reversible (just delete it).
-     */
-    fun adjustBalance(account: Account, computedBalance: Double, targetBalance: BigDecimal) {
-        viewModelScope.launch {
-            runCatching {
-                val adjustment = buildBalanceAdjustment(account, computedBalance, targetBalance)
-                    ?: return@runCatching
-                container.transactionRepository.recordManual(adjustment)
-            }.onFailure {
-                container.recordError("AccountsViewModel.adjustBalance", it)
-                lastError.value = "Couldn't adjust balance: ${it.message}"
-            }
-        }
-    }
-}
-
-/**
- * Builds the "Balance adjustment" transaction that reconciles a drifted computed
- * balance to the real one, or null when they already match. The row is excluded
- * from analytics by construction: it corrects the ledger, it isn't a real spend
- * or income, so it must never show up in stats.
- */
-internal fun buildBalanceAdjustment(
-    account: Account,
-    computedBalance: Double,
-    targetBalance: BigDecimal,
-    nowMillis: Long = System.currentTimeMillis(),
-): Transaction? {
-    val current = BigDecimal.valueOf(computedBalance).setScale(2, RoundingMode.HALF_UP)
-    val delta = targetBalance.setScale(2, RoundingMode.HALF_UP).subtract(current)
-    if (delta.signum() == 0) return null
-    return Transaction(
-        accountId = account.id,
-        amount = delta.abs(),
-        currencyCode = account.currencyCode,
-        direction = if (delta.signum() > 0) TransactionDirection.CREDIT else TransactionDirection.DEBIT,
-        merchant = "Balance adjustment",
-        source = TransactionSource.MANUAL,
-        timestampMillis = nowMillis,
-        matchedRuleName = "Balance adjustment",
-        spendingCategory = SpendingCategory.OTHER,
-        excludeFromStats = true,
-    )
-}
-
 @Composable
 fun AccountsScreen(
+    onOpenUnassigned: () -> Unit = {},
+    onOpenIntegrity: () -> Unit = {},
+    onOpenDebtPlanner: () -> Unit = {},
+    onOpenHistory: (Long) -> Unit = {},
     viewModel: AccountsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
-    val rows by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val rows = state.rows
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     // null = closed; an Account with id 0 = "new"; an existing Account = "edit".
     var editing by remember { mutableStateOf<Account?>(null) }
     // The account row whose balance is being corrected; null = dialog closed.
     var adjusting by remember { mutableStateOf<AccountWithBalance?>(null) }
+    var showArchived by remember { mutableStateOf(false) }
+    // The quick-add sheet, and the full form's "this already exists" prompt (typed account + what matched).
+    var quickAdding by remember { mutableStateOf(false) }
+    var duplicate by remember { mutableStateOf<Pair<Account, AccountUpsertResolver.Result>?>(null) }
+    // The unknown-ending suggestion being added as a new account / linked to an existing one.
+    var addingSuggestion by remember { mutableStateOf<com.xemmy.mmbank.domain.account.UnknownAccountSuggestions.Suggestion?>(null) }
+    var linkingSuggestion by remember { mutableStateOf<com.xemmy.mmbank.domain.account.UnknownAccountSuggestions.Suggestion?>(null) }
+    var historyDialogOpen by remember { mutableStateOf(false) }
+
+    addingSuggestion?.let { suggestion ->
+        AddFromSuggestionDialog(
+            suggestion = suggestion,
+            onDismiss = { addingSuggestion = null },
+            onConfirm = { name, type, limit ->
+                viewModel.addFromSuggestion(suggestion, name, type, limit)
+                addingSuggestion = null
+            },
+        )
+    }
+    if (historyDialogOpen) {
+        HistoryOnlyDialog(
+            options = state.historyOptions,
+            onDismiss = { historyDialogOpen = false },
+            onConfirm = { ids ->
+                viewModel.markHistoryOnly(ids)
+                historyDialogOpen = false
+            },
+        )
+    }
+    linkingSuggestion?.let { suggestion ->
+        LinkToExistingDialog(
+            suggestion = suggestion,
+            accounts = rows.map { it.account },
+            onDismiss = { linkingSuggestion = null },
+            onPick = { account ->
+                viewModel.linkSuggestion(suggestion, account)
+                linkingSuggestion = null
+            },
+        )
+    }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = Account(name = "", type = AccountType.CHECKING, currencyCode = "AED") }) {
+            FloatingActionButton(onClick = { quickAdding = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add account")
             }
         },
@@ -229,9 +182,9 @@ fun AccountsScreen(
                 .obsidianCanvas()
                 .padding(padding),
             // Bottom clearance so the "+" FAB never floats over the last card's
-            // adjust/delete actions (56dp FAB + 16dp margin + 16dp).
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            // adjust/delete actions (56dp FAB + 16dp margin + 16dp + extra buffer).
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             lastError?.let { error ->
                 item {
@@ -247,21 +200,71 @@ fun AccountsScreen(
                 item {
                     Text(
                         "No accounts yet. Add your checking accounts, credit cards and loans, " +
-                            "then assign captured transactions to them. Tap “+” to add one, or use " +
-                            "“Paste bank details” to import an account from a copied statement.",
+                            "then assign captured transactions to them. Tap “+” to add one with just a name and today's balance; adding something " +
+                            "you already have updates it instead of duplicating it.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (state.integrity.actionableCount > 0) {
+                item(key = "integrity_summary") {
+                    IntegritySummaryCard(count = state.integrity.actionableCount, onClick = onOpenIntegrity)
+                }
+            }
+            val owedDebts = rows.count { r ->
+                (r.account.type == AccountType.CREDIT_CARD || r.account.type == AccountType.LOAN) &&
+                    (r.balance.signum() < 0 || (r.account.outstandingBalance?.signum() ?: 0) > 0)
+            }
+            if (owedDebts > 0) {
+                item(key = "debt_planner") {
+                    DebtPlannerEntryCard(debts = owedDebts, onClick = onOpenDebtPlanner)
+                }
+            }
+            items(state.suggestions, key = { "suggest_${it.digits}_${it.currencyCode}" }) { suggestion ->
+                UnknownAccountSuggestionCard(
+                    suggestion = suggestion,
+                    hidden = hidden,
+                    onAddNew = { addingSuggestion = suggestion },
+                    onLinkExisting = { linkingSuggestion = suggestion },
+                )
+            }
+            if (!state.unassigned.isEmpty) {
+                item(key = "unassigned_total") {
+                    UnassignedCard(
+                        unassigned = state.unassigned,
+                        hidden = hidden,
+                        onClick = onOpenUnassigned,
+                        onHistoryOnly = { historyDialogOpen = true },
                     )
                 }
             }
             items(rows, key = { it.account.id }) { row ->
                 AccountCard(
                     row = row,
+                    reconciliation = state.integrity.reconciliations[row.account.id],
                     hidden = hidden,
                     onEdit = { editing = row.account },
                     onAdjust = { adjusting = row },
+                    onHistory = { onOpenHistory(row.account.id) },
+                    onArchive = { viewModel.archive(row.account) },
                     onDelete = { viewModel.delete(row.account) },
                 )
+            }
+            if (state.archived.isNotEmpty()) {
+                item(key = "archived_header") {
+                    TextButton(onClick = { showArchived = !showArchived }) {
+                        Text(
+                            (if (showArchived) "Hide" else "Show") + " archived (${state.archived.size})",
+                            color = MMTheme.colors.textSecondary,
+                        )
+                    }
+                }
+                if (showArchived) {
+                    items(state.archived, key = { "archived_${it.account.id}" }) { row ->
+                        ArchivedAccountRow(row = row, hidden = hidden, onRestore = { viewModel.unarchive(row.account) })
+                    }
+                }
             }
         }
     }
@@ -271,18 +274,74 @@ fun AccountsScreen(
             existing = account,
             onDismiss = { editing = null },
             onSave = { saved ->
-                viewModel.save(saved)
-                editing = null
+                val dup = viewModel.duplicateOf(saved)
+                if (dup == null) {
+                    viewModel.save(saved)
+                    editing = null
+                } else {
+                    duplicate = saved to dup
+                }
             },
         )
+    }
+
+    if (quickAdding) {
+        QuickAddAccountSheet(
+            defaultCurrency = viewModel.defaultCurrency,
+            hidden = hidden,
+            plan = viewModel::planQuickAdd,
+            onCreate = viewModel::save,
+            onUpdate = viewModel::applyUpdate,
+            planUpdateOf = viewModel::planUpdateOf,
+            onMoreDetails = { draft ->
+                quickAdding = false
+                editing = draft
+            },
+            onDismiss = { quickAdding = false },
+        )
+    }
+
+    duplicate?.let { (saved, result) ->
+        val isNew = saved.id == 0L
+        val saveAnyway = DuplicateAction(if (isNew) "Create a separate account" else "Save anyway") {
+            viewModel.save(saved)
+            duplicate = null
+            editing = null
+        }
+        fun updateIt(existing: Account, matchedOn: AccountUpsertResolver.MatchedOn) = DuplicateAction(
+            (if (existing.archived) "Restore and update " else "Update ") + existing.name,
+            primary = true,
+        ) {
+            viewModel.mergeInto(existing, matchedOn, saved)
+            duplicate = null
+            editing = null
+        }
+        when (result) {
+            is AccountUpsertResolver.Result.Existing -> DuplicateAccountDialog(
+                title = "You already have “${result.account.name}”",
+                lines = listOf(
+                    "Matched on ${result.matchedOn.label}.",
+                    if (isNew) "Updating fills in its missing details; its balance is left as it is (use Adjust balance for that)." else "Saving would leave two accounts with the same details.",
+                ),
+                actions = listOfNotNull(if (isNew) updateIt(result.account, result.matchedOn) else null, saveAnyway),
+                onCancel = { duplicate = null },
+            )
+            is AccountUpsertResolver.Result.Ambiguous -> DuplicateAccountDialog(
+                title = "Which one is it?",
+                lines = listOf("Several accounts match the ${result.matchedOn.label}."),
+                actions = (if (isNew) result.accounts.map { updateIt(it, result.matchedOn) } else emptyList()) + saveAnyway,
+                onCancel = { duplicate = null },
+            )
+            AccountUpsertResolver.Result.New -> Unit
+        }
     }
 
     adjusting?.let { row ->
         AdjustBalanceDialog(
             row = row,
             onDismiss = { adjusting = null },
-            onConfirm = { target ->
-                viewModel.adjustBalance(row.account, row.balance, target)
+            onConfirm = { target, reason, note ->
+                viewModel.adjustBalance(row.account, row.balance, target, reason, note)
                 adjusting = null
             },
         )
@@ -292,76 +351,111 @@ fun AccountsScreen(
 @Composable
 private fun AccountCard(
     row: AccountWithBalance,
+    reconciliation: IntegrityChecker.Reconciliation?,
     hidden: Boolean,
     onEdit: () -> Unit,
     onAdjust: () -> Unit,
+    onHistory: () -> Unit,
+    onArchive: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val a = row.account
     var confirmingDelete by remember { mutableStateOf(false) }
+    var confirmingArchive by remember { mutableStateOf(false) }
     // Edge glow (spec 5.3): the account's brand origin, or a neutral slate
     // for accounts with none registered.
     val originTone = GlowTones.forAccountOrigin(a.name, a.bankName) ?: GlowTone.SYSTEM_SLATE
-    val shape = RoundedCornerShape(ObsidianTokens.rowRadius)
-    Box(
-        Modifier
+    MMCard(
+        modifier = Modifier
             .fillMaxWidth()
             // Loan-section expansion and edits glide instead of snapping.
-            .animateContentSize()
-            .clickable { onEdit() }
-            .clip(shape)
-            .background(ObsidianTokens.surfaceGlass, shape)
-            .border(1.dp, ObsidianTokens.hairline, shape)
-            .rowEdgeGlow(originTone),
+            .animateContentSize(),
+        onClick = onEdit,
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RowAvatar(name = a.bankName ?: a.name, tone = originTone)
+        Column(Modifier.rowEdgeGlow(originTone)) {
+            // Row 1: avatar, full (never-truncated) title, actions.
+            Row(verticalAlignment = Alignment.Top) {
+                RowAvatar(name = a.bankName ?: a.name, tone = originTone, size = 40.dp)
                 Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f, fill = false)) {
-                    Text(a.name, style = MaterialTheme.typography.bodyMedium, color = ObsidianTokens.textPrimary)
-                    MetaLabel(
-                        buildString {
-                            a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
-                            append(a.type.name.replace('_', ' '))
-                            append(" · ")
-                            append(a.currencyCode)
-                            a.accountNumber?.takeIf { it.isNotBlank() }?.let {
-                                append(" · ••")
-                                append(it.takeLast(4))
-                            }
-                        },
-                    )
-                }
-                Spacer(Modifier.weight(1f).widthIn(min = 12.dp).padding(horizontal = 6.dp).dottedLeader())
-                AmountText(
-                    display = row.balance.asMoneyOrMask(a.currencyCode, hidden),
-                    color = if (!hidden && row.balance < 0) ObsidianTokens.debit else ObsidianTokens.textPrimary,
-                    style = androidx.compose.ui.text.TextStyle(fontSize = ObsidianTokens.amountFontSize),
+                Text(
+                    a.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MMTheme.colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip,
+                    softWrap = true,
+                    modifier = Modifier.weight(1f).padding(top = 2.dp),
                 )
                 IconButton(onClick = onAdjust) {
-                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = ObsidianTokens.textMeta)
+                    Icon(Icons.Filled.Tune, contentDescription = "Adjust balance", tint = MMTheme.colors.textSecondary)
+                }
+                IconButton(onClick = { confirmingArchive = true }) {
+                    Icon(Icons.Filled.Archive, contentDescription = "Archive account", tint = MMTheme.colors.textSecondary)
                 }
                 IconButton(onClick = { confirmingDelete = true }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = ObsidianTokens.textMeta)
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete account", tint = MMTheme.colors.textSecondary)
                 }
             }
+
+            // Row 2: institution/type/number footer, balance on the right.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MetaLabel(
+                    buildString {
+                        a.bankName?.takeIf { it.isNotBlank() }?.let { append(it); append(" · ") }
+                        append(accountTypeLabel(a.type))
+                        append(" · ")
+                        append(a.currencyCode)
+                        a.accountNumber?.takeIf { it.isNotBlank() }?.let {
+                            append(" · ••")
+                            append(it.takeLast(4))
+                        }
+                    },
+                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
+                )
+                MoneyText(
+                    amount = balanceMagnitude(row.balance),
+                    currencyCode = a.currencyCode,
+                    kind = balanceKind(row.balance),
+                    hidden = hidden,
+                    color = if (!hidden && row.balance.signum() < 0) MMTheme.colors.danger else MMTheme.colors.textPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            TextButton(onClick = onHistory, modifier = Modifier.padding(top = 2.dp)) {
+                Icon(Icons.Filled.History, contentDescription = null, tint = MMTheme.colors.textSecondary)
+                Text("History", color = MMTheme.colors.textSecondary, modifier = Modifier.padding(start = 6.dp))
+            }
+
+            if (row.approximate && !hidden) {
+                MetaLabel("≈ Includes foreign-currency charges, converted at today's exchange rate where one is stored", maxLines = 2)
+            }
+
+            reconciliation?.let { BankCheckLine(it, a.currencyCode, hidden) }
+
+            row.card?.let { CardStatusBlock(it, a.currencyCode, hidden) }
 
             if (a.outstandingBalance != null || a.nextInstallmentAmount != null) {
                 Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     a.outstandingBalance?.let {
-                        LoanLine("Outstanding", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode))
+                        LoanLine("Outstanding", moneyLabel(it, a.currencyCode, hidden))
                     }
                     a.nextInstallmentAmount?.let {
                         val due = a.dueDayOfMonth?.let { d -> " · due day $d" }.orEmpty()
-                        LoanLine("Next installment", if (hidden) AMOUNT_MASK else it.asMoney(a.currencyCode) + due)
+                        LoanLine("Next installment", moneyLabel(it, a.currencyCode, hidden) + (if (hidden) "" else due))
                     }
                     a.profitRatePa?.let { LoanLine("Profit rate", String.format(java.util.Locale.US, "%.2f%% p.a.", it)) }
                     a.maturityDateMillis?.let { LoanLine("Maturity", it.asDate()) }
                     a.earlySettlementFeeEstimate?.let {
                         LoanLine(
                             "Est. early-settlement fee",
-                            if (hidden) AMOUNT_MASK else "≈ " + it.asMoney(a.currencyCode) + " (1% of outstanding)",
+                            if (hidden) moneyLabel(it, a.currencyCode, true) else "≈ " + moneyLabel(it, a.currencyCode) + " (1% of outstanding)",
                         )
                     }
                     settlementRecommendation(a)?.let {
@@ -374,6 +468,28 @@ private fun AccountCard(
                 }
             }
         }
+    }
+
+    if (confirmingArchive) {
+        AlertDialog(
+            onDismissRequest = { confirmingArchive = false },
+            title = { Text("Archive this account?") },
+            text = {
+                Text(
+                    if (row.balance.signum() == 0) {
+                        "“${a.name}” moves to Archived: out of your lists and pickers, history kept. You can restore it any time."
+                    } else {
+                        "“${a.name}” still shows ${moneyLabel(row.balance, a.currencyCode)}. Archiving keeps that " +
+                            "in your history but hides the account from lists and totals. If it's closed, " +
+                            "adjust the balance to 0 first."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onArchive(); confirmingArchive = false }) { Text("Archive") }
+            },
+            dismissButton = { TextButton(onClick = { confirmingArchive = false }) { Text("Cancel") } },
+        )
     }
 
     if (confirmingDelete) {
@@ -392,20 +508,264 @@ private fun AccountCard(
 }
 
 /**
+ * A credit card at a glance: how much of the limit is used, what's left, and
+ * whether this statement is paid.
+ */
+@Composable
+private fun CardStatusBlock(card: CreditCardStatusCalculator.CardStatus, currency: String, hidden: Boolean) {
+    fun money(v: BigDecimal) = moneyLabel(v, currency, hidden)
+    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        card.utilisation?.let { used ->
+            LinearProgressIndicator(
+                progress = { used.toFloat().coerceIn(0f, 1f) },
+                color = when {
+                    used > 0.9 -> MMTheme.colors.danger
+                    used > 0.3 -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LoanLine(
+                "Available",
+                "${money(card.available ?: BigDecimal.ZERO)} of ${money(card.creditLimit ?: BigDecimal.ZERO)} · " +
+                    String.format(java.util.Locale.US, "%.0f%% used", used * 100),
+            )
+        }
+        card.statementBalance?.let { LoanLine("Last statement", money(it)) }
+        LoanLine("Spent this cycle", money(card.spentThisCycle))
+        val dueText = when (card.status) {
+            CreditCardStatusCalculator.Status.NOTHING_OWED -> "Nothing owed"
+            CreditCardStatusCalculator.Status.PAID -> "Statement paid ✓"
+            CreditCardStatusCalculator.Status.NO_DUE_DATE ->
+                money(card.amountDue) + " owed · set a payment due day to get reminders"
+            else -> {
+                val days = card.daysUntilDue ?: 0L
+                money(card.amountDue) + (if (card.estimated) " (all owed)" else "") + " · " +
+                    when {
+                        days < 0 -> "overdue by ${-days}d"
+                        days == 0L -> "due today"
+                        else -> "due ${card.dueDate?.asShortDate()} (${days}d)"
+                    }
+            }
+        }
+        Text(
+            dueText,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (card.status == CreditCardStatusCalculator.Status.OVERDUE) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MMTheme.colors.textPrimary
+            },
+        )
+    }
+}
+
+private fun LocalDate.asShortDate(): String =
+    "${dayOfMonth} ${month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())}"
+
+/**
+ * One line on an account card: does the app's balance agree with the one the
+ * bank last printed? Silent when the bank has never reported one.
+ */
+@Composable
+private fun BankCheckLine(rec: IntegrityChecker.Reconciliation, currency: String, hidden: Boolean) {
+    val asOf = rec.asOfMillis?.asDate()
+    when (rec.status) {
+        IntegrityChecker.Status.MATCHES -> Text(
+            "Matches your bank ✓ (${asOf.orEmpty()})",
+            style = MaterialTheme.typography.labelSmall,
+            color = MMTheme.colors.textSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        IntegrityChecker.Status.DIFFERS -> Text(
+            "Differs from your bank by " +
+                (rec.drift?.abs()?.let { moneyLabel(it, currency, hidden) } ?: "") +
+                (asOf?.let { " (as of $it)" }.orEmpty()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        IntegrityChecker.Status.NO_BANK_BALANCE, IntegrityChecker.Status.CANNOT_CHECK -> Unit
+    }
+}
+
+/** Entry to the integrity screen, shown only while something needs a look. */
+@Composable
+private fun IntegritySummaryCard(count: Int, onClick: () -> Unit) {
+    MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick, tone = MMTone.DANGER) {
+        Column {
+            Text(
+                if (count == 1) "1 thing to check against your bank" else "$count things to check against your bank",
+                style = MaterialTheme.typography.titleSmall,
+                color = MMTheme.colors.textPrimary,
+            )
+            Text(
+                "Tap to see what doesn't add up",
+                style = MaterialTheme.typography.labelSmall,
+                color = MMTheme.colors.textSecondary,
+            )
+        }
+    }
+}
+
+/** Entry to the debt payoff planner, shown while any card or loan owes money. */
+@Composable
+private fun DebtPlannerEntryCard(debts: Int, onClick: () -> Unit) {
+    MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Column {
+            Text(
+                "Plan paying off ${if (debts == 1) "your debt" else "your $debts debts"}",
+                style = MaterialTheme.typography.titleSmall,
+                color = MMTheme.colors.textPrimary,
+            )
+            Text(
+                "See when you'd be debt-free, and how much interest each strategy costs",
+                style = MaterialTheme.typography.labelSmall,
+                color = MMTheme.colors.textSecondary,
+            )
+        }
+    }
+}
+
+/** One retired account, with what's left on it and a way back. */
+@Composable
+private fun ArchivedAccountRow(row: AccountWithBalance, hidden: Boolean, onRestore: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(row.account.name, style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textSecondary)
+            MetaLabel(accountTypeLabel(row.account.type) + " · " + moneyLabel(row.balance, row.account.currencyCode, hidden))
+        }
+        TextButton(onClick = onRestore) { Text("Restore") }
+    }
+}
+
+/**
+ * Money in the ledger that belongs to no account, and so appears in no balance.
+ *
+ * Without this the total is simply invisible: a capture whose card number the
+ * app could not match to an account is filed, counted in analytics, and missing
+ * from every balance, with nothing on screen to say so. Tapping opens the
+ * Activity tab already filtered to those rows, which is where they get fixed.
+ */
+@Composable
+private fun UnassignedCard(
+    unassigned: UnassignedTotal,
+    hidden: Boolean,
+    onClick: () -> Unit,
+    onHistoryOnly: () -> Unit,
+) {
+    MMCard(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                if (unassigned.entryCount == 1) {
+                    "1 transaction isn't in any account"
+                } else {
+                    "${unassigned.entryCount} transactions aren't in any account"
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = MMTheme.colors.textPrimary,
+            )
+            unassigned.totalsByCurrency.forEach { (code, total) ->
+                Text(
+                    moneyLabel(total, code, hidden),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MMTheme.colors.textSecondary,
+                )
+            }
+            Text(
+                "They're counted in analytics but in no balance. Tap to assign them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MMTheme.colors.textSecondary,
+            )
+            TextButton(onClick = onHistoryOnly) { Text("Before I started tracking…") }
+        }
+    }
+}
+
+/**
+ * Sets old unassigned transactions aside as "history only": they stay in
+ * Activity and in spending reports but stop being reported as unassigned.
+ * The choices and their counts come from [HistoryOnlyPlanner].
+ */
+@Composable
+private fun HistoryOnlyDialog(
+    options: List<HistoryOnlyPlanner.Option>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<Long>) -> Unit,
+) {
+    var picked by remember { mutableStateOf(HistoryOnlyPlanner.default(options)?.scope) }
+    val chosen = options.firstOrNull { it.scope == picked }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Before I started tracking") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Transactions you mark stay in Activity and in spending reports, in no account. " +
+                        "The app stops asking you to assign them. You can undo it from the transaction.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MMTheme.colors.textSecondary,
+                )
+                options.forEach { option ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { picked = option.scope },
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = picked == option.scope,
+                            onClick = { picked = option.scope },
+                        )
+                        Text(historyOptionLabel(option), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { chosen?.let { onConfirm(it.transactionIds) } },
+                enabled = (chosen?.count ?: 0) > 0,
+            ) { Text("Mark as history only") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun historyOptionLabel(option: HistoryOnlyPlanner.Option): String {
+    val which = when (option.scope) {
+        HistoryOnlyPlanner.Scope.BEFORE_TRACKING ->
+            "Before ${option.beforeMillis?.asDate().orEmpty()}, your earliest balance update"
+        HistoryOnlyPlanner.Scope.OLDER_THAN_30_DAYS -> "Older than 30 days"
+        HistoryOnlyPlanner.Scope.ALL -> "All of them"
+    }
+    return "$which (${option.count})"
+}
+
+/**
  * Reconciles a drifted balance: the user types the account's real balance and a
  * single "Balance adjustment" entry is posted for the difference. Nothing happens
  * when the numbers already match.
  */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun AdjustBalanceDialog(
     row: AccountWithBalance,
     onDismiss: () -> Unit,
-    onConfirm: (BigDecimal) -> Unit,
+    onConfirm: (BigDecimal, BalanceChangeReason, String?) -> Unit,
 ) {
     val account = row.account
-    var text by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", row.balance)) }
-    val target = text.replace(",", "").trim().toBigDecimalOrNull()
-    val current = BigDecimal.valueOf(row.balance).setScale(2, RoundingMode.HALF_UP)
+    var text by remember { mutableStateOf(row.balance.setScale(2, RoundingMode.HALF_UP).toPlainString()) }
+    // The reason is required: it is what the account's history says about this correction.
+    var reason by remember { mutableStateOf<BalanceChangeReason?>(null) }
+    var note by remember { mutableStateOf("") }
+    val target = parseMoneyInput(text)
+    val current = row.balance.setScale(2, RoundingMode.HALF_UP)
     val delta = target?.setScale(2, RoundingMode.HALF_UP)?.subtract(current)
 
     AlertDialog(
@@ -419,7 +779,7 @@ private fun AdjustBalanceDialog(
             GlassDialogBackdrop()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "“${account.name}” currently computes to ${row.balance.asMoney(account.currencyCode)} " +
+                    "“${account.name}” currently computes to ${moneyLabel(row.balance, account.currencyCode)} " +
                         "from its opening balance and transactions. Enter the real balance and a matching " +
                         "“Balance adjustment” entry is added so they line up.",
                     style = MaterialTheme.typography.bodySmall,
@@ -433,10 +793,32 @@ private fun AdjustBalanceDialog(
                     singleLine = true,
                     isError = target == null,
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = ObsidianTokens.surfaceGlass,
-                        focusedContainerColor = ObsidianTokens.surfaceGlass,
-                        unfocusedBorderColor = ObsidianTokens.hairline,
-                        focusedBorderColor = Color.White.copy(alpha = 0.28f),
+                        unfocusedContainerColor = MMTheme.colors.surface,
+                        focusedContainerColor = MMTheme.colors.surface,
+                        unfocusedBorderColor = MMTheme.colors.borderSubtle,
+                        focusedBorderColor = MMTheme.colors.borderStrong,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                MetaLabel("Why is it different?")
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    BalanceChangeReason.orderedFor(account.type).forEach { option ->
+                        MMFilterChip(label = option.label, selected = reason == option, onClick = { reason = option })
+                    }
+                }
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { MetaLabel("Note (optional)") },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MMTheme.colors.surface,
+                        focusedContainerColor = MMTheme.colors.surface,
+                        unfocusedBorderColor = MMTheme.colors.borderSubtle,
+                        focusedBorderColor = MMTheme.colors.borderStrong,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -445,15 +827,15 @@ private fun AdjustBalanceDialog(
                     delta.signum() == 0 -> Text(
                         "Already matches — no adjustment needed.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = ObsidianTokens.textMeta,
+                        color = MMTheme.colors.textSecondary,
                     )
                     else -> {
                         val credit = delta.signum() > 0
                         Text(
                             (if (credit) "Adds a credit of +" else "Adds a debit of −") +
-                                delta.abs().asMoney(account.currencyCode) + ".",
+                                moneyLabel(delta.abs(), account.currencyCode) + ".",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (credit) ObsidianTokens.credit else ObsidianTokens.debit,
+                            color = if (credit) MMTheme.colors.moneyIn else MMTheme.colors.danger,
                         )
                     }
                 }
@@ -461,8 +843,8 @@ private fun AdjustBalanceDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = delta != null && delta.signum() != 0,
-                onClick = { target?.let(onConfirm) },
+                enabled = delta != null && delta.signum() != 0 && reason != null,
+                onClick = { if (target != null) reason?.let { onConfirm(target, it, note.trim().ifEmpty { null }) } },
             ) { Text("Adjust") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -476,7 +858,7 @@ private fun LoanLine(label: String, value: String) {
         Text(
             value,
             style = MaterialTheme.typography.labelSmall,
-            color = ObsidianTokens.textPrimary,
+            color = MMTheme.colors.textPrimary,
             modifier = Modifier.padding(start = 8.dp),
         )
     }
@@ -493,419 +875,3 @@ private fun settlementRecommendation(a: Account): String? {
         "Low profit rate — early settlement rarely worth the fee."
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AccountDialog(
-    existing: Account,
-    onDismiss: () -> Unit,
-    onSave: (Account) -> Unit,
-) {
-    val isNew = existing.id == 0L
-    var name by remember { mutableStateOf(existing.name) }
-    var type by remember { mutableStateOf(existing.type) }
-    var currency by remember { mutableStateOf(existing.currencyCode) }
-    var openingBalance by remember { mutableStateOf(existing.openingBalance.toPlainString()) }
-    var accountNumber by remember { mutableStateOf(existing.accountNumber.orEmpty()) }
-    var bankName by remember { mutableStateOf(existing.bankName.orEmpty()) }
-    var accountTitle by remember { mutableStateOf(existing.accountTitle.orEmpty()) }
-    var iban by remember { mutableStateOf(existing.iban.orEmpty()) }
-    var swift by remember { mutableStateOf(existing.swift.orEmpty()) }
-    var outstanding by remember { mutableStateOf(existing.outstandingBalance?.toPlainString().orEmpty()) }
-    var nextInstallment by remember { mutableStateOf(existing.nextInstallmentAmount?.toPlainString().orEmpty()) }
-    var dueDay by remember { mutableStateOf(existing.dueDayOfMonth?.toString().orEmpty()) }
-    var profitRate by remember { mutableStateOf(existing.profitRatePa?.toString().orEmpty()) }
-    var maturity by remember { mutableStateOf(existing.maturityDateMillis?.let(::millisToIsoDate).orEmpty()) }
-    var loanNotes by remember { mutableStateOf(existing.loanNotes.orEmpty()) }
-    var typeMenuOpen by remember { mutableStateOf(false) }
-    var showPaste by remember { mutableStateOf(false) }
-    var showCopy by remember { mutableStateOf(false) }
-
-    val opening = openingBalance.toBigDecimalOrNull()
-    val valid = name.isNotBlank() && currency.trim().length == 3 && opening != null
-    val showLoanFields = type == AccountType.LOAN || type == AccountType.CREDIT_CARD
-
-    // Live field list for "Copy details" — reflects whatever is currently
-    // typed/pasted in this dialog, not just the last-saved account.
-    val copyFields: List<Pair<String, String>> = buildList {
-        if (name.isNotBlank()) add("Name" to name)
-        add("Type" to type.name.replace('_', ' '))
-        if (currency.isNotBlank()) add("Currency" to currency)
-        if (openingBalance.isNotBlank()) add("Opening balance" to openingBalance)
-        if (accountNumber.isNotBlank()) add("Account/card number" to accountNumber)
-        if (bankName.isNotBlank()) add("Bank name" to bankName)
-        if (accountTitle.isNotBlank()) add("Account title" to accountTitle)
-        if (iban.isNotBlank()) add("IBAN" to iban)
-        if (swift.isNotBlank()) add("SWIFT/BIC" to swift)
-        if (showLoanFields) {
-            if (outstanding.isNotBlank()) add("Outstanding balance" to outstanding)
-            if (nextInstallment.isNotBlank()) add("Next installment amount" to nextInstallment)
-            if (dueDay.isNotBlank()) add("Installment due day" to dueDay)
-            if (profitRate.isNotBlank()) add("Profit rate % p.a." to profitRate)
-            if (maturity.isNotBlank()) add("Maturity date" to maturity)
-            if (loanNotes.isNotBlank()) add("Loan notes" to loanNotes)
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                if (isNew) "New account" else "Edit account",
-                style = MaterialTheme.typography.titleLarge,
-            )
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .heightIn(max = 460.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    CompactActionButton(
-                        label = "Paste",
-                        icon = { Icon(Icons.Filled.ContentPaste, contentDescription = null, Modifier.size(16.dp)) },
-                        onClick = { showPaste = true },
-                        modifier = Modifier.weight(1f),
-                    )
-                    CompactActionButton(
-                        label = "Copy details",
-                        icon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, Modifier.size(16.dp)) },
-                        onClick = { showCopy = true },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
-                EditorSectionHeader("Essentials")
-                CompactField(value = name, onValueChange = { name = it }, label = "Name")
-                ExposedDropdownMenuBox(expanded = typeMenuOpen, onExpandedChange = { typeMenuOpen = it }) {
-                    CompactField(
-                        value = type.name.replace('_', ' '),
-                        onValueChange = {},
-                        label = "Type",
-                        readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeMenuOpen) },
-                        modifier = Modifier.menuAnchor(),
-                    )
-                    ExposedDropdownMenu(expanded = typeMenuOpen, onDismissRequest = { typeMenuOpen = false }) {
-                        AccountType.entries.forEach { entry ->
-                            DropdownMenuItem(
-                                text = { Text(entry.name.replace('_', ' '), style = MaterialTheme.typography.bodyMedium) },
-                                onClick = {
-                                    type = entry
-                                    typeMenuOpen = false
-                                },
-                            )
-                        }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    CompactField(
-                        value = currency,
-                        onValueChange = { currency = it.uppercase().take(3) },
-                        label = "Currency",
-                        modifier = Modifier.weight(0.42f),
-                    )
-                    CompactField(
-                        value = openingBalance,
-                        onValueChange = { openingBalance = it },
-                        label = "Opening balance",
-                        supporting = "Negative for debt.",
-                        modifier = Modifier.weight(0.58f),
-                    )
-                }
-
-                EditorSectionHeader("Bank details")
-                CompactField(
-                    value = accountNumber,
-                    onValueChange = { accountNumber = it },
-                    label = "Account/card number",
-                    supporting = "Used to auto-assign captured transactions.",
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    CompactField(
-                        value = bankName,
-                        onValueChange = { bankName = it },
-                        label = "Bank name",
-                        modifier = Modifier.weight(0.58f),
-                    )
-                    CompactField(
-                        value = swift,
-                        onValueChange = { swift = it },
-                        label = "SWIFT / BIC",
-                        modifier = Modifier.weight(0.42f),
-                    )
-                }
-                CompactField(value = accountTitle, onValueChange = { accountTitle = it }, label = "Account title / holder")
-                CompactField(value = iban, onValueChange = { iban = it }, label = "IBAN")
-
-                if (showLoanFields) {
-                    EditorSectionHeader("Loan / financing")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        CompactField(
-                            value = outstanding,
-                            onValueChange = { outstanding = it },
-                            label = "Outstanding",
-                            modifier = Modifier.weight(1f),
-                        )
-                        CompactField(
-                            value = nextInstallment,
-                            onValueChange = { nextInstallment = it },
-                            label = "Next installment",
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        CompactField(
-                            value = dueDay,
-                            onValueChange = { dueDay = it.filter(Char::isDigit).take(2) },
-                            label = "Due day (1-31)",
-                            modifier = Modifier.weight(1f),
-                        )
-                        CompactField(
-                            value = profitRate,
-                            onValueChange = { profitRate = it },
-                            label = "Profit rate % p.a.",
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    CompactField(value = maturity, onValueChange = { maturity = it }, label = "Maturity date (YYYY-MM-DD)")
-                    CompactField(
-                        value = loanNotes,
-                        onValueChange = { loanNotes = it },
-                        label = "Add-ons / early-settlement notes",
-                        singleLine = false,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = valid,
-                onClick = {
-                    onSave(
-                        existing.copy(
-                            name = name.trim(),
-                            type = type,
-                            currencyCode = currency.trim().uppercase(),
-                            openingBalance = opening ?: BigDecimal.ZERO,
-                            accountNumber = accountNumber.trim().takeIf { it.isNotBlank() },
-                            bankName = bankName.trim().takeIf { it.isNotBlank() },
-                            accountTitle = accountTitle.trim().takeIf { it.isNotBlank() },
-                            iban = iban.trim().takeIf { it.isNotBlank() },
-                            swift = swift.trim().takeIf { it.isNotBlank() },
-                            outstandingBalance = outstanding.toBigDecimalOrNull(),
-                            nextInstallmentAmount = nextInstallment.toBigDecimalOrNull(),
-                            dueDayOfMonth = dueDay.toIntOrNull()?.takeIf { it in 1..31 },
-                            profitRatePa = profitRate.toDoubleOrNull(),
-                            maturityDateMillis = parseIsoDateToMillis(maturity),
-                            loanNotes = loanNotes.trim().takeIf { it.isNotBlank() },
-                        )
-                    )
-                },
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-
-    if (showPaste) {
-        PasteDetailsDialog(
-            onDismiss = { showPaste = false },
-            onParsed = { d ->
-                d.bankName?.let { bankName = it }
-                d.accountTitle?.let { accountTitle = it }
-                d.accountNumber?.let { accountNumber = it }
-                d.iban?.let { iban = it }
-                d.swift?.let { swift = it }
-                d.currencyCode?.let { currency = it }
-                if (name.isBlank()) name = d.bankName ?: name
-                showPaste = false
-            },
-        )
-    }
-
-    if (showCopy) {
-        CopyDetailsDialog(fields = copyFields, onDismiss = { showCopy = false })
-    }
-}
-
-/** Outlined text field tuned for dense dialog forms: smaller type, softer corners. */
-@Composable
-private fun CompactField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    supporting: String? = null,
-    singleLine: Boolean = true,
-    readOnly: Boolean = false,
-    trailingIcon: @Composable (() -> Unit)? = null,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-        supportingText = supporting?.let { { Text(it, style = MaterialTheme.typography.labelSmall) } },
-        singleLine = singleLine,
-        readOnly = readOnly,
-        trailingIcon = trailingIcon,
-        textStyle = MaterialTheme.typography.bodyMedium,
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier.fillMaxWidth(),
-    )
-}
-
-/** Small uppercase section label with a hairline rule, to group the form. */
-@Composable
-private fun EditorSectionHeader(text: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 2.dp),
-    ) {
-        Text(
-            text.uppercase(),
-            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.width(8.dp))
-        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
-    }
-}
-
-/** Low-height tonal button so the paste/copy row doesn't dominate the dialog. */
-@Composable
-private fun CompactActionButton(
-    label: String,
-    icon: @Composable () -> Unit,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    FilledTonalButton(
-        onClick = onClick,
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        icon()
-        Spacer(Modifier.width(6.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-    }
-}
-
-@Composable
-private fun PasteDetailsDialog(
-    onDismiss: () -> Unit,
-    onParsed: (com.xemmy.mmbank.domain.model.ParsedBankDetails) -> Unit,
-) {
-    var text by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Paste bank details", style = MaterialTheme.typography.titleLarge) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    // Fictional example values — never real account details.
-                    "Paste a block like:\nBank Name: ADIB\nAccount Title: FATIMA SALEM ALSUWAIDI\n" +
-                        "Account Number: 12345678\nIBAN: AE35...\nSWIFT: ABDIAEADXXX\nCurrency: AED",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("Pasted text", style = MaterialTheme.typography.labelMedium) },
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = text.isNotBlank(),
-                onClick = { onParsed(BankDetailsParser.parse(text)) },
-            ) { Text("Fill fields") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-@Composable
-private fun CopyDetailsDialog(
-    fields: List<Pair<String, String>>,
-    onDismiss: () -> Unit,
-) {
-    val clipboard = LocalClipboardManager.current
-    // Default: everything checked, so "copy all" is the zero-tap path;
-    // unchecking individual rows is how you copy just a subset.
-    val checked = remember(fields) {
-        mutableStateMapOf<String, Boolean>().apply { fields.forEach { (label, _) -> put(label, true) } }
-    }
-    val allChecked = fields.isNotEmpty() && fields.all { checked[it.first] == true }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Copy details", style = MaterialTheme.typography.titleLarge) },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable {
-                        val next = !allChecked
-                        fields.forEach { (label, _) -> checked[label] = next }
-                    },
-                ) {
-                    Checkbox(
-                        checked = allChecked,
-                        onCheckedChange = { v -> fields.forEach { (label, _) -> checked[label] = v } },
-                    )
-                    Text("Select all", style = MaterialTheme.typography.bodyMedium)
-                }
-                HorizontalDivider()
-                fields.forEach { (label, value) ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { checked[label] = !(checked[label] ?: false) },
-                    ) {
-                        Checkbox(
-                            checked = checked[label] ?: false,
-                            onCheckedChange = { v -> checked[label] = v },
-                        )
-                        Text("$label: $value", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = fields.any { checked[it.first] == true },
-                onClick = {
-                    val text = fields.filter { checked[it.first] == true }
-                        .joinToString("\n") { (label, value) -> "$label: $value" }
-                    clipboard.setText(AnnotatedString(text))
-                    onDismiss()
-                },
-            ) { Text("Copy") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-private fun parseIsoDateToMillis(s: String): Long? = try {
-    s.trim().takeIf { it.isNotBlank() }
-        ?.let { LocalDate.parse(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() }
-} catch (_: Exception) {
-    null
-}
-
-private fun millisToIsoDate(millis: Long): String =
-    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
