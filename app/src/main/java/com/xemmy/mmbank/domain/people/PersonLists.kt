@@ -56,7 +56,9 @@ object PersonLists {
     fun setActive(inactive: Collection<String>, saved: List<String>, name: String, active: Boolean): List<String> {
         val kept = clean(inactive).filter { it -> saved.any { s -> PersonCounts.key(s) == PersonCounts.key(it) } }
             .filterNot { PersonCounts.key(it) == PersonCounts.key(name) }
-        return if (active) kept else clean(kept + name)
+        // Stored in the saved list's own spelling, however the name was typed.
+        val spelling = saved.firstOrNull { PersonCounts.key(it) == PersonCounts.key(name) } ?: name
+        return if (active) kept else clean(kept + spelling)
     }
 
     /** The inactive list after [from] was renamed to [to]: the status follows the person. */
