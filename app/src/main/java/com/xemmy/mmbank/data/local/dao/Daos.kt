@@ -236,7 +236,7 @@ interface TransactionDao {
      * are already inside the corrected balance.
      */
     @Query(
-        "SELECT accountId AS accountId, MAX(timestampMillis) AS atMillis FROM transactions " +
+        "SELECT accountId AS accountId, MAX(timestamp) AS atMillis FROM transactions " +
             "WHERE kind = 'ADJUSTMENT' AND accountId IN (:accountIds) GROUP BY accountId"
     )
     suspend fun lastAdjustmentAt(accountIds: List<Long>): List<LastAdjustmentRow>
