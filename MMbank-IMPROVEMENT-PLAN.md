@@ -848,7 +848,7 @@ Full design in **MMbank-UNASSIGNED-PLAN.md**.
 
 | # | Item | Version | Status |
 |---|---|---|---|
-| F0 | Colour theme (Obsidian / Graphite) and one background | 0.109.0 | ✅ 0.109.0 (CI run pending) |
+| F0 | Colour theme (Obsidian / Graphite) and one background | 0.109.0 | ✅ 0.109.0 (CI run 43755085855 green) |
 | F1 | One period control | 0.110.0 | |
 | F2 | Tap a chart, get a page | 0.111.0 | |
 | F3 | One transaction screen | 0.112.0 | |
