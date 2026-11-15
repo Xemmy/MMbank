@@ -8,6 +8,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.xemmy.mmbank.domain.model.ColorPalette
 
 /**
  * Semantic colour tokens (Improvement Plan §1.1). Screens read these through
@@ -51,6 +52,14 @@ data class MMColors(
     val chart6: Color,
     val chart7: Color,
     val chart8: Color,
+    /** Material container roles that differ per palette; the rest of the scheme is shared. */
+    val primaryContainer: Color,
+    val onPrimaryContainer: Color,
+    val surfaceContainerLowest: Color,
+    val surfaceContainerLow: Color,
+    val surfaceContainer: Color,
+    val surfaceContainerHigh: Color,
+    val surfaceContainerHighest: Color,
 ) {
     /** [chart1]..[chart8] in order. */
     val chartPalette: List<Color>
@@ -98,6 +107,10 @@ fun darkMMColors() = MMColors(
     brandTeal = Teal400,
     chart1 = ChartDark1, chart2 = ChartDark2, chart3 = ChartDark3, chart4 = ChartDark4,
     chart5 = ChartDark5, chart6 = ChartDark6, chart7 = ChartDark7, chart8 = ChartDark8,
+    primaryContainer = PrimaryContainerDark, onPrimaryContainer = OnPrimaryContainerDark,
+    surfaceContainerLowest = DarkSurfaceContainerLowest, surfaceContainerLow = DarkSurfaceContainerLow,
+    surfaceContainer = DarkSurfaceContainer, surfaceContainerHigh = DarkSurfaceContainerHigh,
+    surfaceContainerHighest = DarkSurfaceContainerHighest,
 )
 
 fun lightMMColors() = MMColors(
@@ -123,13 +136,70 @@ fun lightMMColors() = MMColors(
     brandTeal = Teal700,
     chart1 = ChartLight1, chart2 = ChartLight2, chart3 = ChartLight3, chart4 = ChartLight4,
     chart5 = ChartLight5, chart6 = ChartLight6, chart7 = ChartLight7, chart8 = ChartLight8,
+    primaryContainer = PrimaryContainerLight, onPrimaryContainer = OnPrimaryContainerLight,
+    surfaceContainerLowest = LightSurfaceContainerLowest, surfaceContainerLow = LightSurfaceContainerLow,
+    surfaceContainer = LightSurfaceContainer, surfaceContainerHigh = LightSurfaceContainerHigh,
+    surfaceContainerHighest = LightSurfaceContainerHighest,
 )
+
+/**
+ * Graphite: neutral black + green. Money, status and chart colours are inherited from the
+ * Obsidian sets (the "calm money colours" rule); only canvas, surfaces, borders, text and the
+ * accent change. Contrast of every pair is pinned in ColorContrastTest.
+ */
+fun graphiteDarkMMColors() = darkMMColors().copy(
+    canvas = Color(0xFF0D0E10),
+    surface = Color(0xFF1A1B1E),
+    surfaceRaised = Color(0xFF232428),
+    surfaceOverlay = Color(0xFF2A2B30),
+    borderSubtle = Color(0xFF2C2D32),
+    borderStrong = Color(0xFF43454C),
+    textPrimary = Color(0xFFF3F4F6),
+    textSecondary = Color(0xFFB4B8C0),
+    textTertiary = Color(0xFF8B9099),
+    accent = Color(0xFF34D399),
+    onAccent = Color(0xFF06281C),
+    moneyOut = Color(0xFFF3F4F6),
+    moneyNeutral = Color(0xFFB4B8C0),
+    primaryContainer = Color(0xFF0F3D2E),
+    onPrimaryContainer = Color(0xFFA7F3D0),
+    surfaceContainerLowest = Color(0xFF08090A),
+    surfaceContainerLow = Color(0xFF131416),
+    surfaceContainer = Color(0xFF1A1B1E),
+    surfaceContainerHigh = Color(0xFF232428),
+    surfaceContainerHighest = Color(0xFF2A2B30),
+)
+
+fun graphiteLightMMColors() = lightMMColors().copy(
+    canvas = Color(0xFFF6F6F7),
+    borderSubtle = Color(0xFFE2E3E6),
+    borderStrong = Color(0xFFC4C6CC),
+    textPrimary = Color(0xFF0E0F11),
+    textSecondary = Color(0xFF4B4F57),
+    textTertiary = Color(0xFF5F636B),
+    accent = Color(0xFF047857),
+    onAccent = Color.White,
+    moneyOut = Color(0xFF0E0F11),
+    moneyNeutral = Color(0xFF4B4F57),
+    primaryContainer = Color(0xFFD1FAE5),
+    onPrimaryContainer = Color(0xFF053D2B),
+    surfaceContainerLow = Color(0xFFF9F9FA),
+    surfaceContainer = Color(0xFFF1F1F3),
+    surfaceContainerHigh = Color(0xFFE6E7EA),
+    surfaceContainerHighest = Color(0xFFD5D7DB),
+)
+
+/** The token set for a palette in dark or light. */
+fun mmColors(palette: ColorPalette, dark: Boolean): MMColors = when (palette) {
+    ColorPalette.OBSIDIAN -> if (dark) darkMMColors() else lightMMColors()
+    ColorPalette.GRAPHITE -> if (dark) graphiteDarkMMColors() else graphiteLightMMColors()
+}
 
 /** Builds the Material scheme from the semantic tokens so both always agree. */
 fun MMColors.toColorScheme(): ColorScheme = if (isDark) {
     darkColorScheme(
         primary = accent, onPrimary = onAccent,
-        primaryContainer = PrimaryContainerDark, onPrimaryContainer = OnPrimaryContainerDark,
+        primaryContainer = primaryContainer, onPrimaryContainer = onPrimaryContainer,
         secondary = SecondaryDark, onSecondary = OnSecondaryDark,
         secondaryContainer = SecondaryContainerDark, onSecondaryContainer = OnSecondaryContainerDark,
         tertiary = TertiaryDark, onTertiary = OnTertiaryDark,
@@ -137,9 +207,9 @@ fun MMColors.toColorScheme(): ColorScheme = if (isDark) {
         background = canvas, onBackground = textPrimary,
         surface = surface, onSurface = textPrimary,
         surfaceVariant = surfaceRaised, onSurfaceVariant = textSecondary,
-        surfaceContainerLowest = DarkSurfaceContainerLowest, surfaceContainerLow = DarkSurfaceContainerLow,
-        surfaceContainer = DarkSurfaceContainer, surfaceContainerHigh = DarkSurfaceContainerHigh,
-        surfaceContainerHighest = DarkSurfaceContainerHighest,
+        surfaceContainerLowest = surfaceContainerLowest, surfaceContainerLow = surfaceContainerLow,
+        surfaceContainer = surfaceContainer, surfaceContainerHigh = surfaceContainerHigh,
+        surfaceContainerHighest = surfaceContainerHighest,
         outline = borderStrong, outlineVariant = borderSubtle,
         error = danger, onError = OnErrorDark,
         errorContainer = ErrorContainerDark, onErrorContainer = OnErrorContainerDark,
@@ -149,17 +219,17 @@ fun MMColors.toColorScheme(): ColorScheme = if (isDark) {
 } else {
     lightColorScheme(
         primary = accent, onPrimary = onAccent,
-        primaryContainer = PrimaryContainerLight, onPrimaryContainer = OnPrimaryContainerLight,
+        primaryContainer = primaryContainer, onPrimaryContainer = onPrimaryContainer,
         secondary = SecondaryLight, onSecondary = OnSecondaryLight,
         secondaryContainer = SecondaryContainerLight, onSecondaryContainer = OnSecondaryContainerLight,
         tertiary = TertiaryLight, onTertiary = OnTertiaryLight,
         tertiaryContainer = TertiaryContainerLight, onTertiaryContainer = OnTertiaryContainerLight,
         background = canvas, onBackground = textPrimary,
         surface = surface, onSurface = textPrimary,
-        surfaceVariant = LightSurfaceContainer, onSurfaceVariant = textSecondary,
-        surfaceContainerLowest = LightSurfaceContainerLowest, surfaceContainerLow = LightSurfaceContainerLow,
-        surfaceContainer = LightSurfaceContainer, surfaceContainerHigh = LightSurfaceContainerHigh,
-        surfaceContainerHighest = LightSurfaceContainerHighest,
+        surfaceVariant = surfaceContainer, onSurfaceVariant = textSecondary,
+        surfaceContainerLowest = surfaceContainerLowest, surfaceContainerLow = surfaceContainerLow,
+        surfaceContainer = surfaceContainer, surfaceContainerHigh = surfaceContainerHigh,
+        surfaceContainerHighest = surfaceContainerHighest,
         outline = borderStrong, outlineVariant = borderSubtle,
         error = danger, onError = OnErrorLight,
         errorContainer = ErrorContainerLight, onErrorContainer = OnErrorContainerLight,

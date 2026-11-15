@@ -84,7 +84,8 @@ val BackgroundStyle.description: String
  * "100dp blur" look without that cost or side effect.
  */
 @Composable
-fun Modifier.ambientBackground(style: BackgroundStyle): Modifier {
+fun Modifier.ambientBackground(style: BackgroundStyle, useCanvas: Boolean = true): Modifier {
+    val canvas = MaterialTheme.colorScheme.background
     val scrimColor = MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
     return drawWithCache {
         val spec = specFor(style)
@@ -107,7 +108,8 @@ fun Modifier.ambientBackground(style: BackgroundStyle): Modifier {
             )
         }
         onDrawBehind {
-            drawRect(color = spec.surface)
+            // The palette's canvas is the one base colour; a preset only adds glows (previews opt out).
+            drawRect(color = if (useCanvas) canvas else spec.surface)
             brushes.forEach { (brush, center, radius) ->
                 drawCircle(brush = brush, radius = radius, center = center)
             }

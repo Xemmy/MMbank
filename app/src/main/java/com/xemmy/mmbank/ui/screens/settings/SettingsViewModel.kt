@@ -106,6 +106,7 @@ import com.xemmy.mmbank.domain.ai.AiResponseParser
 import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.ai.LoopbackGuard
 import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.model.ColorPalette
 import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.people.PersonBackfill
 import com.xemmy.mmbank.domain.people.PersonCounts
@@ -174,6 +175,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val themeMode: StateFlow<ThemeMode> = container.themeMode
     fun setThemeMode(mode: ThemeMode) = container.setThemeMode(mode)
+    val colorPalette: StateFlow<ColorPalette> = container.colorPalette
+    fun setColorPalette(palette: ColorPalette) = container.setColorPalette(palette)
 
     // Ambient background style: a reactive flow (not a mutableStateOf snapshot)
     // since the root app scaffold applies it live the instant it's changed here.

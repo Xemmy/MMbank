@@ -844,6 +844,22 @@ Full design in **MMbank-UNASSIGNED-PLAN.md**.
 
 > **E4 active people** ✅ 0.108.0 (CI run 43572206281 green), one combined run for 0.106.0 to 0.108.0: Settings → People has a switch on each person. Switched off, a person is **inactive**: their transactions keep their name and they stay in the Activity person filter, but they are no longer offered when you assign a person (the row menu, the editor, bulk "assign person", and the E3 "Assign to…" picker). Inactive people are listed below the active ones. `PersonLists` holds the rules: the default person is always offered and cannot be switched off; a row that already carries an inactive person still shows that name in its own menu, so opening it never drops the value; typing an inactive name again as a new person switches them back on; renaming keeps the mark. New captures stop being routed to an inactive person by the learned merchant pattern (`PersonLearner`) and get the default instead. Stored in a new preference and carried in backups (format v16; an older backup restores with everyone active). A follow-up fix (`3bc6ebf`) stores an inactive mark in the saved list's own spelling of the name. **Not covered by CI:** the switches and the "Inactive" group as rendered, the shortened menus on screen, and the preference surviving an app restart and a real backup/restore.
 
+## Part F — Everyday usability (see MMbank-USABILITY-PLAN.md)
+
+| # | Item | Version | Status |
+|---|---|---|---|
+| F0 | Colour theme (Obsidian / Graphite) and one background | 0.109.0 | ✅ 0.109.0 (CI run pending) |
+| F1 | One period control | 0.110.0 | |
+| F2 | Tap a chart, get a page | 0.111.0 | |
+| F3 | One transaction screen | 0.112.0 | |
+| F4 | Home at a glance, day totals | 0.113.0 | |
+| F5 | Set a budget in one tap | 0.114.0 | |
+| F6 | Notes and labels | 0.115.0 | |
+| F7 | Category housekeeping | 0.116.0 | |
+| F8 | Accounts: order, net worth, wealth chart | 0.117.0 | |
+| F9 | Repeat a manual transaction | 0.118.0 | |
+| F10 | Widgets | 0.119.0 | |
+
 ## Where things stand after 0.99.0
 
 Every batch above is verified by a green CI run (unit tests, the design-lint ratchet, and a built APK). The latest feature run is 43335508720 for 0.99.0. CI proves logic and that the APK builds; it does **not** prove how anything looks or feels on a device.

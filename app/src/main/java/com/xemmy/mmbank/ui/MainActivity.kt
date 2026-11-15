@@ -177,7 +177,8 @@ class MainActivity : FragmentActivity() {
                     android.widget.Toast.makeText(this@MainActivity, notice, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
-            MMbankTheme(darkTheme = darkTheme) {
+            val colorPalette by container.colorPalette.collectAsStateWithLifecycle()
+            MMbankTheme(darkTheme = darkTheme, palette = colorPalette) {
                 val locked by container.appLock.locked.collectAsStateWithLifecycle()
                 val backgroundStyle by container.backgroundPreset.collectAsStateWithLifecycle()
                 Box {

@@ -1,6 +1,12 @@
 package com.xemmy.mmbank.ui.screens.settings
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.CircleShape
+import com.xemmy.mmbank.domain.model.ColorPalette
+import com.xemmy.mmbank.ui.theme.mmColors
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +56,7 @@ fun AppearanceSettingsScreen(
 ) {
     val current by viewModel.backgroundStyle.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val palette by viewModel.colorPalette.collectAsStateWithLifecycle()
     SettingsSubpage(title = "Appearance & Backgrounds", onBack = onBack) {
         Text("Theme", style = MaterialTheme.typography.titleSmall)
         Column(Modifier.selectableGroup()) {
@@ -80,6 +87,41 @@ fun AppearanceSettingsScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Text("Colours", style = MaterialTheme.typography.titleSmall)
+        Column(Modifier.selectableGroup()) {
+            ColorPalette.entries.forEach { option ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .selectable(selected = option == palette, role = Role.RadioButton, onClick = { viewModel.setColorPalette(option) })
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    RadioButton(selected = option == palette, onClick = null)
+                    Column(Modifier.weight(1f)) {
+                        Text(option.displayName, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            option.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val swatch = mmColors(option, themeMode.resolve(isSystemInDarkTheme()))
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(swatch.canvas)
+                            .border(1.dp, swatch.borderStrong, CircleShape)
+                            .padding(7.dp)
+                            .clip(CircleShape)
+                            .background(swatch.accent),
+                    )
+                }
+            }
+        }
         Text(
             "An ultra-subtle ambient glow behind the app. Pick a style below — it applies instantly.",
             style = MaterialTheme.typography.bodySmall,
@@ -123,7 +165,7 @@ private fun BackgroundStyleCard(
                 Modifier
                     .size(48.dp)
                     .clip(MMShapes.extraSmall)
-                    .ambientBackground(style),
+                    .ambientBackground(style, useCanvas = false),
             )
             Column(Modifier.weight(1f)) {
                 Text(style.displayName, style = MaterialTheme.typography.titleSmall)

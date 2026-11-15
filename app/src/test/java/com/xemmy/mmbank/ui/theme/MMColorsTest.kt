@@ -39,4 +39,36 @@ class MMColorsTest {
         }
         assertTrue(darkMMColors().chartPalette != lightMMColors().chartPalette)
     }
+
+    @Test
+    fun `obsidian palette is exactly the legacy dark and light sets`() {
+        assertEquals(darkMMColors(), mmColors(com.xemmy.mmbank.domain.model.ColorPalette.OBSIDIAN, true))
+        assertEquals(lightMMColors(), mmColors(com.xemmy.mmbank.domain.model.ColorPalette.OBSIDIAN, false))
+    }
+
+    @Test
+    fun `obsidian colour scheme keeps its pre-palette container roles`() {
+        val dark = darkMMColors().toColorScheme()
+        assertEquals(PrimaryContainerDark, dark.primaryContainer)
+        assertEquals(DarkSurfaceContainerHigh, dark.surfaceContainerHigh)
+        assertEquals(DarkSurfaceContainerLowest, dark.surfaceContainerLowest)
+        val light = lightMMColors().toColorScheme()
+        assertEquals(PrimaryContainerLight, light.primaryContainer)
+        assertEquals(LightSurfaceContainer, light.surfaceVariant)
+    }
+
+    @Test
+    fun `graphite differs from obsidian but keeps money and status colours`() {
+        for (dark in listOf(true, false)) {
+            val o = mmColors(com.xemmy.mmbank.domain.model.ColorPalette.OBSIDIAN, dark)
+            val g = mmColors(com.xemmy.mmbank.domain.model.ColorPalette.GRAPHITE, dark)
+            assertEquals(dark, g.isDark)
+            assertTrue(g.canvas != o.canvas && g.accent != o.accent)
+            assertEquals(o.moneyIn, g.moneyIn)
+            assertEquals(o.danger, g.danger)
+            assertEquals(o.chartPalette, g.chartPalette)
+            assertEquals(g.accent, g.toColorScheme().primary)
+            assertEquals(g.primaryContainer, g.toColorScheme().primaryContainer)
+        }
+    }
 }

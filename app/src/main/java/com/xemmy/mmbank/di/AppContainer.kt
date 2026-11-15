@@ -87,6 +87,7 @@ import com.xemmy.mmbank.domain.ai.AiSelfHealingRuleGenerator
 import com.xemmy.mmbank.domain.model.BackgroundStyle
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.ColorPalette
 import com.xemmy.mmbank.domain.model.ThemeMode
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.Transaction
@@ -160,6 +161,15 @@ class AppContainer(context: Context) {
     fun setThemeMode(mode: ThemeMode) {
         preferences.themeMode = mode   // persist across restarts
         _themeMode.value = mode        // notify all collectors live
+    }
+
+    // Colour theme (Obsidian / Graphite): reactive for the same reason as themeMode.
+    private val _colorPalette by lazy { MutableStateFlow(preferences.colorPalette) }
+    val colorPalette: StateFlow<ColorPalette> by lazy { _colorPalette.asStateFlow() }
+
+    fun setColorPalette(palette: ColorPalette) {
+        preferences.colorPalette = palette
+        _colorPalette.value = palette
     }
 
     // Single reactive source of truth for the app-wide ambient background

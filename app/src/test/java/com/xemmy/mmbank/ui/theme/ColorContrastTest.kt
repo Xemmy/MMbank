@@ -130,6 +130,25 @@ class ColorContrastTest {
     @Test
     fun `light semantic tokens clear AA`() = semantic(lightMMColors())
 
+    @Test
+    fun `graphite dark semantic tokens clear AA`() = semantic(graphiteDarkMMColors())
+
+    @Test
+    fun `graphite light semantic tokens clear AA`() = semantic(graphiteLightMMColors())
+
+    @Test
+    fun `graphite chart tokens clear 3 to 1`() {
+        chartTokens(graphiteDarkMMColors())
+        chartTokens(graphiteLightMMColors())
+    }
+
+    @Test
+    fun `graphite primary container pairs clear AAA`() {
+        for (c in listOf(graphiteDarkMMColors(), graphiteLightMMColors())) {
+            assertTrue(contrastRatio(c.onPrimaryContainer, c.primaryContainer) >= 7f)
+        }
+    }
+
     // -- Chart series tokens: >= 3:1 non-text contrast on every surface, both themes --------
 
     private fun chartTokens(c: MMColors) {

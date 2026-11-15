@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.xemmy.mmbank.domain.model.ColorPalette
 
 /**
  * Financial-status semantic tokens (Zero-Conflict Color System spec). Resolved
@@ -75,9 +76,10 @@ object GlowPalette {
 @Composable
 fun MMbankTheme(
     darkTheme: Boolean = true,
+    palette: ColorPalette = ColorPalette.OBSIDIAN,
     content: @Composable () -> Unit,
 ) {
-    val mmColors = if (darkTheme) darkMMColors() else lightMMColors()
+    val mmColors = mmColors(palette, darkTheme)
     val colorScheme = mmColors.toColorScheme()
     CompositionLocalProvider(LocalMMColors provides mmColors) {
         MaterialTheme(

@@ -56,7 +56,8 @@ class QuickAddActivity : ComponentActivity() {
         val container = (application as MMBankApp).container
         setContent {
             val themeMode by container.themeMode.collectAsStateWithLifecycle()
-            MMbankTheme(darkTheme = themeMode.resolve(androidx.compose.foundation.isSystemInDarkTheme())) {
+            val colorPalette by container.colorPalette.collectAsStateWithLifecycle()
+            MMbankTheme(darkTheme = themeMode.resolve(androidx.compose.foundation.isSystemInDarkTheme()), palette = colorPalette) {
                 QuickAddSheet(
                     currency = container.preferences.defaultCurrency,
                     onCancel = { finish() },

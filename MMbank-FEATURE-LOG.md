@@ -4591,3 +4591,10 @@ is replaced by surface tokens; dense Activity filter chips are tokenised, not MM
 
 Not covered by CI: all Compose rendering, TalkBack text (Spent reads "transferred"), rowEdgeGlow placement inside
 MMCard on Accounts, long-press on rows, theme switching on these screens.
+
+## Part F0 — Colour theme and one background (0.109.0)
+Settings → Appearance has a new **Colours** group: **Obsidian** (today's blue-black, default, values unchanged) and **Graphite** (neutral black, green accent), each in dark and light. New `ColorPalette` (stored pref, reactive `StateFlow` on `AppContainer` like `themeMode`), `mmColors(palette, dark)`, and the palette-specific Material container roles (primary container, five surface-container steps) now live in `MMColors`. `MMbankTheme(darkTheme, palette)` is used by `MainActivity` and `QuickAddActivity`. `ambientBackground` now fills with the palette's canvas and a background preset only adds its glows, so Home and Plan no longer sit on a lighter grey than Activity; the style previews in Settings still show each preset's own base. Tests: `ColorPaletteTest`, `ColorContrastTest` (Graphite semantic, chart and container pairs), `MMColorsTest` (Obsidian unchanged, Graphite differs only where intended).
+
+**Changed from the plan:** `CanvasCharts` and `DonutChart` keep their fixed credit/debit/glass colours, because Graphite shares Obsidian's money colours (no `DesignLintTest` baseline change); the Material secondary, tertiary and error roles stay in `Color.kt`; the search entry is a keyword addition to "Appearance & Backgrounds".
+
+Not covered by CI: how Graphite looks on every screen in dark and light, Home now being darker, the cold-start flash staying blue-black (`res/values/themes.xml`), the widget keeping fixed colours until F10, the swatches and radio rows as rendered.
