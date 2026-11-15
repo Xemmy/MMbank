@@ -4,6 +4,7 @@ import com.xemmy.mmbank.domain.people.PersonLists
 import android.content.Context
 import com.xemmy.mmbank.domain.ai.AiProviderMode
 import com.xemmy.mmbank.domain.model.BackgroundStyle
+import com.xemmy.mmbank.domain.filter.PeriodUnit
 import com.xemmy.mmbank.domain.model.ColorPalette
 import com.xemmy.mmbank.domain.model.ThemeMode
 
@@ -224,6 +225,11 @@ class AppPreferences(context: Context) {
     var themeMode: ThemeMode
         get() = ThemeMode.fromStored(prefs.getString(KEY_THEME_MODE, null))
         set(value) = prefs.edit().putString(KEY_THEME_MODE, value.name).apply()
+
+    /** Last unit (week / month / year) chosen on the period bar; Month by default. */
+    var periodUnit: PeriodUnit
+        get() = PeriodUnit.fromStored(prefs.getString(KEY_PERIOD_UNIT, null))
+        set(value) = prefs.edit().putString(KEY_PERIOD_UNIT, value.name).apply()
 
     /** Colour theme (Obsidian / Graphite). Obsidian by default; unknown stored values fall back to it. */
     var colorPalette: ColorPalette
@@ -484,6 +490,7 @@ class AppPreferences(context: Context) {
         const val KEY_DESIGN_MODE = "design_mode"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_COLOR_PALETTE = "color_palette"
+        const val KEY_PERIOD_UNIT = "period_unit"
         const val KEY_FILTER_BAR_LAYOUT = "filter_bar_layout"
         const val KEY_BACKGROUND_PRESET = "background_preset"
         const val KEY_CATEGORY_BUDGET_ALERTS = "category_budget_alerts"

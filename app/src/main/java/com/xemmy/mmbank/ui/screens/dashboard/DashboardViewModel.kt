@@ -30,6 +30,8 @@ import com.xemmy.mmbank.ui.util.CurrencyMath
 import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.time.Instant
 import java.time.LocalDate
+import com.xemmy.mmbank.domain.filter.PeriodUnit
+import com.xemmy.mmbank.domain.filter.PeriodWindow
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -40,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -643,6 +646,30 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         dateRange.value = range
     }
 
+    /** The period the Insights [PeriodBar] shows; its unit is remembered between launches. */
+    private val _period = MutableStateFlow(
+        PeriodWindow.of(container.preferences.periodUnit, LocalDate.now(), firstDayOfWeek()),
+    )
+    val period: StateFlow<PeriodWindow> = _period.asStateFlow()
+
+    init {
+        dateRange.value = _period.value.toDashboardRange(LocalDate.now())
+    }
+
+    fun setPeriod(window: PeriodWindow) {
+        _period.value = window
+        dateRange.value = window.toDashboardRange(LocalDate.now())
+        if (window.unit != PeriodUnit.CUSTOM && window.unit != PeriodUnit.ALL) {
+            container.preferences.periodUnit = window.unit
+        }
+    }
+
+    /** Switching unit jumps to the current window of that unit, like the reference app. */
+    fun setPeriodUnit(unit: PeriodUnit) = setPeriod(PeriodWindow.of(unit, LocalDate.now(), firstDayOfWeek()))
+
+    fun firstDayOfWeek(): java.time.DayOfWeek =
+        java.time.temporal.WeekFields.of(Locale.getDefault()).firstDayOfWeek
+
     fun toggleHideBalances() {
         // Route through the container's shared flow so every screen updates live.
         container.toggleHideBalances()
@@ -878,6 +905,17 @@ internal fun resolveDashboardWindow(range: DashboardDateRange, thisMonth: YearMo
     DashboardDateRange.AllTime -> null
     is DashboardDateRange.Custom ->
         if (range.start <= range.end) DateWindow(range.start, range.end) else DateWindow(range.end, range.start)
+}
+
+/**
+ * Maps a [PeriodWindow] onto the stats code's existing [DashboardDateRange]: the current month
+ * and all time keep their dedicated cases (month-to-date logic keys off ThisMonth); anything
+ * else is a concrete custom span.
+ */
+internal fun PeriodWindow.toDashboardRange(today: LocalDate): DashboardDateRange {
+    val r = range() ?: return DashboardDateRange.AllTime
+    if (unit == PeriodUnit.MONTH && isCurrent(today)) return DashboardDateRange.ThisMonth
+    return DashboardDateRange.Custom(r.start, r.end)
 }
 
 private val PERIOD_LABEL_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US)

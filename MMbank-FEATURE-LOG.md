@@ -4598,3 +4598,10 @@ Settings → Appearance has a new **Colours** group: **Obsidian** (today's blue-
 **Changed from the plan:** `CanvasCharts` and `DonutChart` keep their fixed credit/debit/glass colours, because Graphite shares Obsidian's money colours (no `DesignLintTest` baseline change); the Material secondary, tertiary and error roles stay in `Color.kt`; the search entry is a keyword addition to "Appearance & Backgrounds".
 
 Not covered by CI: how Graphite looks on every screen in dark and light, Home now being darker, the cold-start flash staying blue-black (`res/values/themes.xml`), the widget keeping fixed colours until F10, the swatches and radio rows as rendered.
+
+## Part F1 — One period control (0.110.0)
+Insights' row of date chips is replaced by `PeriodBar`: **W · M · Y · Max**, a ‹ label › stepper ("This week", "Last month", "Mar 2026", "2025") and **More** (Last 3 / 6 / 12 months, Custom range with the existing calendar picker), so no earlier range is lost. Pure `domain/filter/PeriodWindow` does the stepping, labels, future limit and chart buckets (days or months); the week starts on the device locale's first day. `DashboardViewModel` holds the window (`period`, `setPeriod`, `setPeriodUnit`) and maps it onto the existing `DashboardDateRange` (current month → ThisMonth, Max → AllTime, else Custom), so the stats code is untouched. The last W/M/Y unit is remembered (plain preference `periodUnit`). Tests: `PeriodWindowTest`, `PeriodMappingTest`.
+
+**Changed from the plan:** "Max" hides the stepper; the "…" button is a "More" chip; the bucket helper exists but is first used by F2.
+
+Not covered by CI: the bar as rendered, stepping on screen, the sheet and the picker, and the remembered unit across a restart.

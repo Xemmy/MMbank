@@ -60,6 +60,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.screens.dashboard.NetWorthTrend
 import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetSummaryCard
+import com.xemmy.mmbank.domain.filter.PeriodWindow
+import com.xemmy.mmbank.ui.designsystem.PeriodBar
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardDateRange
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardUiState
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
@@ -162,7 +164,26 @@ fun InsightsScreen(
         }
 
         item(key = "date_filter_row") {
-            DateRangeFilterRow(selected = state.dateRange, onSelect = viewModel::setDateRange)
+            var customOpen by remember { mutableStateOf(false) }
+            val period by viewModel.period.collectAsStateWithLifecycle()
+            val today = remember { LocalDate.now() }
+            PeriodBar(
+                window = period,
+                today = today,
+                onUnit = viewModel::setPeriodUnit,
+                onWindow = viewModel::setPeriod,
+                onPickCustom = { customOpen = true },
+            )
+            if (customOpen) {
+                DashboardCustomDateRangeDialog(
+                    initial = period.range()?.let { DashboardDateRange.Custom(it.start, it.end) },
+                    onDismiss = { customOpen = false },
+                    onSelect = { start, end ->
+                        viewModel.setPeriod(PeriodWindow.custom(start, end, viewModel.firstDayOfWeek()))
+                        customOpen = false
+                    },
+                )
+            }
         }
 
         item(key = "period_tiles") { PeriodTiles(state) }
@@ -297,63 +318,6 @@ private fun NavigationRow(
         }
     }
 }
-
-/**
- * Chips for the Dashboard's own date filter (month-oriented, unlike the
- * Activity tab's day-oriented presets) — drives [DashboardUiState.stats]'s
- * period-scoped fields: the stat tiles, category/person breakdowns, and the
- * smart-analysis insights. The 6-month cash-flow trend chart is unaffected.
- */
-@Composable
-private fun DateRangeFilterRow(selected: DashboardDateRange, onSelect: (DashboardDateRange) -> Unit) {
-    var customOpen by remember { mutableStateOf(false) }
-    val presets = listOf(
-        "This month" to DashboardDateRange.ThisMonth,
-        "3mo" to DashboardDateRange.Last3Months,
-        "6mo" to DashboardDateRange.Last6Months,
-        "YTD" to DashboardDateRange.YearToDate,
-        "1Y" to DashboardDateRange.Last12Months,
-        "All" to DashboardDateRange.AllTime,
-    )
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(presets) { (label, range) ->
-            MMFilterChip(
-                label = label,
-                selected = selected == range,
-                onClick = { onSelect(range) },
-            )
-        }
-        item {
-            val isCustom = selected is DashboardDateRange.Custom
-            MMFilterChip(
-                label = if (isCustom) {
-                    val custom = selected as DashboardDateRange.Custom
-                    "${custom.start.format(chipDateFormat)} – ${custom.end.format(chipDateFormat)}"
-                } else {
-                    "Custom"
-                },
-                selected = isCustom,
-                onClick = { customOpen = true },
-                leadingIcon = {
-                    Icon(Icons.Outlined.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
-                },
-            )
-        }
-    }
-
-    if (customOpen) {
-        DashboardCustomDateRangeDialog(
-            initial = selected as? DashboardDateRange.Custom,
-            onDismiss = { customOpen = false },
-            onSelect = { start, end ->
-                onSelect(DashboardDateRange.Custom(start, end))
-                customOpen = false
-            },
-        )
-    }
-}
-
-private val chipDateFormat = DateTimeFormatter.ofPattern("d MMM")
 
 /** Twin-calendar picker for the Dashboard's custom date range. */
 @OptIn(ExperimentalMaterial3Api::class)
