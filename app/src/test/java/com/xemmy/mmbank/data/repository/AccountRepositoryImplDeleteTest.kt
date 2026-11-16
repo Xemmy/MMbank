@@ -26,6 +26,8 @@ import org.junit.Test
 class AccountRepositoryImplDeleteTest {
 
     private class FakeAccountDao(private val rows: MutableList<AccountEntity>) : AccountDao {
+        override suspend fun maxSortOrder(): Int = -1
+        override suspend fun setSortOrder(id: Long, sortOrder: Int) {}
         override suspend fun insert(entity: AccountEntity): Long { rows.add(entity); return entity.id }
         override suspend fun update(entity: AccountEntity) {}
         override suspend fun delete(entity: AccountEntity) { rows.removeAll { it.id == entity.id } }

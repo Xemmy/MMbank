@@ -27,6 +27,8 @@ import org.junit.Test
 class AccountRepositoryImplChangeLogTest {
 
     private class FakeAccountDao : AccountDao {
+        override suspend fun maxSortOrder(): Int = -1
+        override suspend fun setSortOrder(id: Long, sortOrder: Int) {}
         val rows = mutableListOf<AccountEntity>()
         private var nextId = 1L
         override suspend fun insert(entity: AccountEntity): Long {
