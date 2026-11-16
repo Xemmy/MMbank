@@ -34,6 +34,13 @@ class AppNavigationTest {
         assertEquals(AppTab.INSIGHTS, TabRouting.tabFor(Routes.CASH_FLOW_DETAIL))
     }
 
+    @Test fun transactionEditorRouteBuildsAndKeepsActivityHighlighted() {
+        assertEquals("transaction_editor?id=-1", Routes.transactionEditor())
+        assertEquals("transaction_editor?id=42", Routes.transactionEditor(42))
+        assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.TRANSACTION_EDITOR_PATTERN))
+        assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.transactionEditor(7)))
+    }
+
     @Test fun activityVariantsKeepActivityHighlighted() {
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.ACTIVITY_PATTERN))
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.ACTIVITY_UNASSIGNED))

@@ -4612,3 +4612,12 @@ Insights' **Cash flow** and **by category** cards have **See all ›**, opening 
 **Changed from the plan:** the pages share one `PeriodDetailViewModel` and start from the remembered W/M/Y unit rather than the Insights screen's current window; income rows on Cash flow are not tappable yet; no raw-ledger toggle on the pages.
 
 Not covered by CI: both pages as rendered, chart toggles, the drill into Activity, the period bar on these pages.
+
+## Part F3 — One transaction screen (0.112.0)
+Adding and editing a transaction is now a full-screen page (`transaction_editor?id=`) instead of a pop-up: ✕/back, title, **Save**; kind chips with the one-line hint; a large amount with currency; merchant; then rows for **Account**, **Category** (the existing picker sheet, "auto" shown while it follows the merchant guess, with *Reset category to auto*), **Date** and **Time** (Material pickers, no more typing `YYYY-MM-DD`), **Person**; an Exclude switch; the refund link ("Not a refund"), the why-this-category and why-this-person lines; for a saved row the original message and **Delete** (same delete / ignore-similar dialog). Adding a transfer or card payment shows From / To pickers, the received amount when the currencies differ, and the "whose account" choice. A folded "Paste a bank message…" appears in add mode when local AI is configured. Leaving with unsaved changes asks first. The form is plain data (`TransactionEditorForm`) saved with `rememberSaveable`, so rotating no longer loses it. A **+** button now also appears on Home, Insights and Accounts (Activity keeps its own); the Activity row's Edit and the detail sheet's Edit open the page. The save paths in `TransactionsViewModel` now return their job, so the page closes only after the write finishes.
+
+Tests: `TransactionEditorFormTest` (validation matrix, kind → direction, cross-currency transfer, kept time of day, saved-state round trip), route builder and tab ownership.
+
+**Changed from the plan:** the page reuses `TransactionsViewModel` (nav-entry scoped) rather than a new view model and shared save class; the read-only `TransactionDetailSheet` is kept (its Edit now opens the page); the old `TransactionEditorDialog` is deleted.
+
+Not covered by CI: the whole screen, keyboard and pickers, the discard prompt, rotation, each entry point, the + button position over each tab's content.

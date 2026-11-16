@@ -392,6 +392,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         .recoverAndRetry("TransactionsViewModel.uncategorizedCount", container) { 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /** One saved row by id, for the full-screen editor; null when it no longer exists. */
+    suspend fun loadTransaction(id: Long): Transaction? =
+        container.transactionRepository.observeTransactions().first().firstOrNull { it.id == id }
+
     /** Manual "Parse with AI" is offered only when the feature is on + a valid loopback endpoint is set. */
     val aiParsingConfigured: Boolean get() = container.localAiManager.isConfigured()
 
@@ -537,8 +541,9 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         bulkMode.value = BulkModeState()
     }
 
-    private fun safeWrite(what: String, block: suspend () -> Unit) {
-        viewModelScope.launch {
+    /** Runs [block] in the view model's scope; callers that must outlive it (the full-screen editor) join the job. */
+    private fun safeWrite(what: String, block: suspend () -> Unit): kotlinx.coroutines.Job {
+        return viewModelScope.launch {
             runCatching { block() }
                 .onFailure { container.recordError("TransactionsViewModel.$what", it) }
         }

@@ -125,6 +125,7 @@ import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import com.xemmy.mmbank.ui.theme.ambientBackground
 import com.xemmy.mmbank.ui.screens.insights.CashFlowDetailScreen
+import com.xemmy.mmbank.ui.screens.transactions.TransactionEditorScreen
 import com.xemmy.mmbank.ui.screens.insights.SpendingDetailScreen
 import android.os.Build
 import kotlinx.coroutines.delay
@@ -292,6 +293,14 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
     Scaffold(
         modifier = Modifier.fillMaxSize().ambientBackground(backgroundStyle),
         containerColor = Color.Transparent,
+        // One + on the tabs that have no add button of their own (Activity keeps its own).
+        floatingActionButton = {
+            if (TabRouting.baseRoute(currentRoute) in setOf(Routes.HOME, Routes.INSIGHTS, Routes.ACCOUNTS)) {
+                androidx.compose.material3.FloatingActionButton(onClick = { navController.navigate(Routes.transactionEditor()) }) {
+                    Icon(androidx.compose.material.icons.Icons.Filled.Add, contentDescription = "Add transaction")
+                }
+            }
+        },
         bottomBar = {
             if (chrome == NavChrome.BOTTOM_BAR) {
                 NavigationBar {
@@ -477,6 +486,16 @@ private fun AppNavHost(
                 initialDrill = entry.arguments?.getString("drill").orEmpty(),
                 onOpenUncategorizedQueue = { navController.navigate(Routes.UNCATEGORIZED_QUEUE) },
                 onOpenMerchant = { merchant -> navController.navigate(Routes.merchantDetail(Uri.encode(merchant))) },
+                onOpenEditor = { id -> navController.navigate(Routes.transactionEditor(id)) },
+            )
+        }
+        composable(
+            route = Routes.TRANSACTION_EDITOR_PATTERN,
+            arguments = listOf(navArgument("id") { type = NavType.LongType; defaultValue = -1L }),
+        ) { entry ->
+            TransactionEditorScreen(
+                transactionId = entry.arguments?.getLong("id")?.takeIf { it > 0 },
+                onClose = { navController.popBackStack() },
             )
         }
         // The old standalone Uncategorized queue was merged into the Review inbox;

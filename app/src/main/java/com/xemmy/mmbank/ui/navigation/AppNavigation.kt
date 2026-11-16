@@ -22,6 +22,7 @@ object Routes {
     const val MERCHANT_DETAIL_PATTERN = "merchant_detail/{merchant}"
     const val SPLITS_GROUP_PATTERN = "splits_group/{groupId}"
     const val RULE_EDITOR_PATTERN = "rule_editor?ruleId={ruleId}"
+    const val TRANSACTION_EDITOR_PATTERN = "transaction_editor?id={id}"
     const val ACCOUNT_HISTORY_PATTERN = "account_history/{accountId}?drift={drift}"
 
     // Plain destinations
@@ -64,6 +65,9 @@ object Routes {
     /** [encodedDrill] must already be URI-encoded. */
     fun activityDrill(encodedDrill: String) = "transactions?drill=$encodedDrill"
 
+    /** The full-screen add/edit page; no id (or a non-positive one) means a new transaction. */
+    fun transactionEditor(id: Long? = null) = "transaction_editor?id=${id ?: -1}"
+
     fun ruleEditor(ruleId: Long) = "rule_editor?ruleId=$ruleId"
 }
 
@@ -92,6 +96,7 @@ object TabRouting {
         Routes.REVIEW_TRANSACTIONS to AppTab.HOME,
         Routes.ACTIVITY to AppTab.ACTIVITY,
         Routes.UNCATEGORIZED_QUEUE to AppTab.ACTIVITY,
+        "transaction_editor" to AppTab.ACTIVITY,
         Routes.INSIGHTS to AppTab.INSIGHTS,
         Routes.CASHBACK to AppTab.PLAN,
         Routes.ANALYTICS to AppTab.INSIGHTS,

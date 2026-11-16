@@ -226,6 +226,8 @@ fun TransactionsScreen(
     initialDrill: String = "",
     onOpenUncategorizedQueue: () -> Unit = {},
     onOpenMerchant: (String) -> Unit = {},
+    /** Opens the full-screen editor: null = a new transaction, else the saved row's id. */
+    onOpenEditor: (Long?) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     // Keyed on the arg so re-navigating with it re-applies the filter, while a
@@ -241,8 +243,6 @@ fun TransactionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
     val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
-    var addOpen by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<Transaction?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var deleteTarget by remember { mutableStateOf<Transaction?>(null) }
     // Dynamic-category picker target: set by either an end-to-start swipe (see
@@ -311,7 +311,7 @@ fun TransactionsScreen(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         modifier = Modifier.nestedScroll(heroScrollBehavior.nestedScrollConnection),
         floatingActionButton = {
-            FloatingActionButton(onClick = { addOpen = true }) {
+            FloatingActionButton(onClick = { onOpenEditor(null) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add transaction")
             }
         },
@@ -464,7 +464,7 @@ fun TransactionsScreen(
                                         onOpenCategoryPicker = { categoryPickerFor = tx },
                                         onRenameSender = { label -> tx.sender?.let { viewModel.setSenderLabel(it, label) } },
                                         onResetSender = { tx.sender?.let { viewModel.clearSenderLabel(it) } },
-                                        onEdit = { editing = tx },
+                                        onEdit = { onOpenEditor(tx.id) },
                                         onDelete = { deleteTarget = tx },
                                         onCardClick = { selectedTransaction = tx },
                                         onLongPress = { viewModel.enterBulkMode(tx.id) },
@@ -486,45 +486,6 @@ fun TransactionsScreen(
                 }
             }
         }
-    }
-
-    if (addOpen) {
-        TransactionEditorDialog(
-            existing = null,
-            accounts = state.accounts,
-            knownPersons = state.assignablePersons,
-            categories = state.categories,
-            defaultCurrency = state.defaultCurrency,
-            aiEnabled = viewModel.aiParsingConfigured,
-            onAiParse = viewModel::parseWithAi,
-            onCreateCategory = viewModel::createCategory,
-            onDismiss = { addOpen = false },
-            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
-                viewModel.addManual(amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
-                addOpen = false
-            },
-            onSaveTransfer = { draft ->
-                viewModel.addTransfer(draft)
-                addOpen = false
-            },
-        )
-    }
-
-    editing?.let { tx ->
-        TransactionEditorDialog(
-            existing = tx,
-            accounts = state.accounts,
-            knownPersons = PersonLists.withCurrent(state.assignablePersons, tx.person),
-            categories = state.categories,
-            defaultCurrency = state.defaultCurrency,
-            onCreateCategory = viewModel::createCategory,
-            onUnlinkRefund = viewModel::unlinkRefund,
-            onDismiss = { editing = null },
-            onSave = { amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind ->
-                viewModel.updateTransaction(tx, amount, currency, direction, merchant, accountId, person, categoryId, timestamp, excludeFromStats, kind)
-                editing = null
-            },
-        )
     }
 
     categoryPickerFor?.let { tx ->
@@ -581,7 +542,7 @@ fun TransactionsScreen(
             categories = state.categories,
             onEditClick = {
                 selectedTransaction = null
-                editing = tx
+                onOpenEditor(tx.id)
             },
             onDeleteClick = {
                 deleteTarget = tx
