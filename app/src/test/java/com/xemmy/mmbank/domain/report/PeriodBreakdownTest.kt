@@ -41,7 +41,7 @@ class PeriodBreakdownTest {
     private fun conv(t: Transaction): Double? = if (t.currencyCode == "AED") t.amount.toDouble() else if (t.currencyCode == "USD") t.amount.toDouble() * 3.0 else null
 
     private fun build(txs: List<Transaction>, raw: Boolean = false) =
-        PeriodBreakdownBuilder.build(txs, cats, month, today, zone, raw, ::conv)
+        PeriodBreakdownBuilder.build(txs, cats, month, today, zone, raw, value = ::conv)
 
     @Test
     fun `totals equal LedgerMath`() {
