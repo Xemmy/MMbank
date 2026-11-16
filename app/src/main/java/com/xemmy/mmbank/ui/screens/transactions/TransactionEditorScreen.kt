@@ -152,7 +152,9 @@ private fun EditorBody(
     val effectiveCategoryId = form.categoryOverride ?: suggestedCategory?.id
     val effectiveCategory = state.categories.firstOrNull { it.id == effectiveCategoryId }
 
-    fun close() = if (dirty && !saving) discardOpen = true else onClose()
+    fun close() {
+        if (dirty && !saving) discardOpen = true else onClose()
+    }
     BackHandler(enabled = true) { close() }
 
     fun save() {

@@ -540,7 +540,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         computeFinancialHealth(
             // Every active account: carousel visibility is display-only and must
             // not change the balances the health card reasons about.
-            accounts = ledger.manageableAccounts,
+            accounts = ledger.manageableAccounts.filter { com.xemmy.mmbank.domain.account.NetWorthScope.counts(it.account) },
             transactions = transactions,
             subscriptions = subscriptions,
             bills = bills,
@@ -661,6 +661,25 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             runCatching { container.accountRepository.save(account.copy(hiddenFromDashboard = !account.hiddenFromDashboard)) }
                 .onFailure { container.recordError("DashboardViewModel.toggleAccountVisibility", it) }
+        }
+    }
+
+    /** Flips "Count in net worth" for [account]: its balance stays everywhere, it just leaves the net-worth sums. */
+    fun toggleAccountInNetWorth(account: Account) {
+        viewModelScope.launch {
+            runCatching { container.accountRepository.save(account.copy(excludeFromTotals = !account.excludeFromTotals)) }
+                .onFailure { container.recordError("DashboardViewModel.toggleAccountInNetWorth", it) }
+        }
+    }
+
+    /** Moves [account] one step up (-1) or down (+1) in the order shown in Manage accounts. */
+    fun moveAccount(account: Account, direction: Int) {
+        val ids = uiState.value.manageableAccounts.map { it.account.id }
+        val next = com.xemmy.mmbank.domain.budget.CategoryMerge.move(ids, account.id, direction)
+        if (next == ids) return
+        viewModelScope.launch {
+            runCatching { container.accountRepository.setOrder(next) }
+                .onFailure { container.recordError("DashboardViewModel.moveAccount", it) }
         }
     }
 
@@ -834,11 +853,14 @@ internal fun computeAccountsPresentation(
         // affects the net-worth total -- only whether its card shows in the
         // carousel, same independence as hideCreditCardBalance/excludeCreditCardFromTotal.
         .filter { !it.account.hiddenFromDashboard }
-    val totalRows = if (excludeCreditCardFromTotal) {
-        accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
-    } else {
-        accountRows
-    }
+    // "Count in net worth" off (NetWorthScope) leaves an account out of the total, whatever else is set.
+    val totalRows = (
+        if (excludeCreditCardFromTotal) {
+            accountRows.filter { it.account.type != AccountType.CREDIT_CARD }
+        } else {
+            accountRows
+        }
+        ).filter { com.xemmy.mmbank.domain.account.NetWorthScope.counts(it.account) }
     val fiatTotalInBase = totalRows.mapNotNull { it.balanceInBase }.sum()
     val hasUnconvertedFiat = totalRows.any { it.balanceInBase == null }
     return AccountsPresentation(visibleAccounts, fiatTotalInBase, hasUnconvertedFiat)
@@ -1263,22 +1285,66 @@ internal fun computeNetWorthTrend(
             com.xemmy.mmbank.domain.account.RateHistory.forBase(history, baseCurrency),
             if (month == thisMonth) null else month.atEndOfMonth(),
         )
-        val fx = com.xemmy.mmbank.domain.account.LedgerFx(baseCurrency, monthRates, accountCurrencies)
-        val ratesFromBase = monthRates.mapValues { it.value.toDouble() }
-        val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis, fx)
-        val rows = accounts.map { account ->
-            val balance = balances.getValue(account.id).toDouble()
-            AccountRow(account, balance, CurrencyMath.toBase(balance, account.currencyCode, baseCurrency, ratesFromBase))
-        }
-        val presentation = computeAccountsPresentation(
-            accountRows = rows,
-            hideCreditCardBalance = false,
-            excludeCreditCardFromTotal = excludeCreditCardFromTotal,
-        )
-        if (presentation.hasUnconvertedFiat) approximate = true
-        presentation.fiatTotalInBase
+        val (total, unconverted) = fiatNetWorthAt(accounts, transactions, endMillis, monthRates, baseCurrency, excludeCreditCardFromTotal)
+        if (unconverted) approximate = true
+        total
     }
     return NetWorthTrend(ends.map { it.first }, values, approximate)
+}
+
+/**
+ * Fiat net worth at one moment: balances replayed to [endMillis], converted at [rates] (quote per
+ * base), summed by the same rules as Home (credit-card toggle and [com.xemmy.mmbank.domain.account.NetWorthScope]).
+ * The second value is true when some balance had no rate and was left out.
+ */
+internal fun fiatNetWorthAt(
+    accounts: List<Account>,
+    transactions: List<Transaction>,
+    endMillis: Long,
+    rates: Map<String, java.math.BigDecimal>,
+    baseCurrency: String,
+    excludeCreditCardFromTotal: Boolean,
+): Pair<Double, Boolean> {
+    val accountCurrencies = accounts.associate { it.id to it.currencyCode }
+    val fx = com.xemmy.mmbank.domain.account.LedgerFx(baseCurrency, rates, accountCurrencies)
+    val ratesFromBase = rates.mapValues { it.value.toDouble() }
+    val balances = BalanceHistory.balancesAt(accounts, transactions, endMillis, fx)
+    val rows = accounts.map { account ->
+        val balance = balances.getValue(account.id).toDouble()
+        AccountRow(account, balance, CurrencyMath.toBase(balance, account.currencyCode, baseCurrency, ratesFromBase))
+    }
+    val presentation = computeAccountsPresentation(
+        accountRows = rows,
+        hideCreditCardBalance = false,
+        excludeCreditCardFromTotal = excludeCreditCardFromTotal,
+    )
+    return presentation.fiatTotalInBase to presentation.hasUnconvertedFiat
+}
+
+/** Fiat net worth on each of [days] (past days at the rates recorded for them); today uses live rates. */
+internal fun computeWealthSeries(
+    accounts: List<Account>,
+    transactions: List<Transaction>,
+    rates: List<ExchangeRate>,
+    history: List<com.xemmy.mmbank.domain.model.ExchangeRateOnDay>,
+    baseCurrency: String,
+    excludeCreditCardFromTotal: Boolean,
+    days: List<LocalDate>,
+    today: LocalDate,
+    zone: ZoneId = ZoneId.systemDefault(),
+): List<Double> {
+    val todayRates = rates
+        .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
+        .associate { it.quoteCode.uppercase() to it.rate }
+    return days.map { day ->
+        val endMillis = if (day >= today) Long.MAX_VALUE else day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        val dayRates = com.xemmy.mmbank.domain.account.RateHistory.overlay(
+            todayRates,
+            com.xemmy.mmbank.domain.account.RateHistory.forBase(history, baseCurrency),
+            if (day >= today) null else day,
+        )
+        fiatNetWorthAt(accounts, transactions, endMillis, dayRates, baseCurrency, excludeCreditCardFromTotal).first
+    }
 }
 
 /**

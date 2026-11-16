@@ -88,6 +88,18 @@ object MigrationSql {
     )
 
     /**
+     * v40: account order and "count in net worth". `sortOrder` starts as each account's current
+     * position (by name, as the lists were ordered), so nothing moves; `excludeFromTotals` starts
+     * false for every account. Purely additive; defaults match the entity's `@ColumnInfo`.
+     */
+    val MIGRATION_39_40_SQL: List<String> = listOf(
+        "ALTER TABLE `accounts` ADD COLUMN `sortOrder` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `accounts` ADD COLUMN `excludeFromTotals` INTEGER NOT NULL DEFAULT 0",
+        "UPDATE `accounts` SET `sortOrder` = (SELECT COUNT(*) FROM `accounts` AS a2 WHERE " +
+            "a2.`name` < `accounts`.`name` OR (a2.`name` = `accounts`.`name` AND a2.`id` < `accounts`.`id`))",
+    )
+
+    /**
      * v39: category order and flow. `sortOrder` starts as each category's current position in the
      * list (custom last, then by name, exactly the old ORDER BY) so nothing moves. `flow` marks
      * "Income" and any category used only by Received rows as INCOME; when that leaves no income

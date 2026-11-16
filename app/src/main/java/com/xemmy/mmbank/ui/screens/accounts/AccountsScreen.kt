@@ -196,6 +196,9 @@ fun AccountsScreen(
                     )
                 }
             }
+            if (rows.isNotEmpty()) {
+                item(key = "wealth") { WealthCard() }
+            }
             if (rows.isEmpty()) {
                 item {
                     Text(
@@ -873,5 +876,46 @@ private fun settlementRecommendation(a: Account): String? {
         "High profit rate — review early settlement; it may beat the ~1% fee."
     } else {
         "Low profit rate — early settlement rarely worth the fee."
+    }
+}
+
+
+/** Net worth over 7D / 1M / 1Y / Max as one line, with the change over the window. */
+@Composable
+private fun WealthCard(viewModel: WealthViewModel = viewModel(factory = AppViewModelProvider.Factory)) {
+    val wealth by viewModel.state.collectAsStateWithLifecycle()
+    val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
+    val colors = com.xemmy.mmbank.ui.theme.MMTheme.colors
+    com.xemmy.mmbank.ui.designsystem.MMCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Net worth", style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+            Text(
+                wealth.latest?.let { com.xemmy.mmbank.ui.designsystem.moneyLabel(it, wealth.currency, hidden) } ?: "…",
+                style = MaterialTheme.typography.headlineSmall,
+                color = colors.textPrimary,
+            )
+            wealth.change?.let { change ->
+                val sign = if (change > 0.005) "+" else if (change < -0.005) "\u2212" else ""
+                Text(
+                    "$sign${com.xemmy.mmbank.ui.designsystem.moneyLabel(kotlin.math.abs(change), wealth.currency, hidden)} over ${wealth.range.label}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+            androidx.compose.runtime.CompositionLocalProvider(
+                com.xemmy.mmbank.ui.designsystem.LocalHideBalances provides hidden,
+            ) {
+                com.xemmy.mmbank.ui.designsystem.Sparkline(
+                    values = wealth.values,
+                    title = "Net worth over ${wealth.range.label}",
+                    valueLabel = { com.xemmy.mmbank.ui.designsystem.moneyLabel(it, wealth.currency, hidden) },
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.xemmy.mmbank.domain.account.WealthRange.entries.forEach { r ->
+                    com.xemmy.mmbank.ui.designsystem.MMFilterChip(label = r.label, selected = wealth.range == r, onClick = { viewModel.setRange(r) })
+                }
+            }
+        }
     }
 }

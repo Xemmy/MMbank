@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Checklist
@@ -299,7 +300,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
         floatingActionButton = {
             if (TabRouting.baseRoute(currentRoute) in setOf(Routes.HOME, Routes.INSIGHTS, Routes.ACCOUNTS)) {
                 androidx.compose.material3.FloatingActionButton(onClick = { navController.navigate(Routes.transactionEditor()) }) {
-                    Icon(androidx.compose.material.icons.Icons.Filled.Add, contentDescription = "Add transaction")
+                    Icon(Icons.Filled.Add, contentDescription = "Add transaction")
                 }
             }
         },

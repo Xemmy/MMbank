@@ -478,4 +478,16 @@ class BackupMappersTest {
         assertEquals(0, old.toEntity().sortOrder)
         assertEquals(com.xemmy.mmbank.domain.model.CategoryFlow.EXPENSE, old.toEntity().flow)
     }
+
+    @Test
+    fun `account order and the net worth switch survive a backup, older backups default`() {
+        val entity = com.xemmy.mmbank.data.local.entity.AccountEntity(
+            id = 2, name = "Savings", type = AccountType.SAVINGS, currencyCode = "AED", openingBalance = BigDecimal.ZERO,
+            createdAt = 1, sortOrder = 3, excludeFromTotals = true,
+        )
+        assertEquals(entity, entity.toBackup().toEntity())
+        val old = entity.toBackup().copy(sortOrder = 0, excludeFromTotals = false).toEntity()
+        assertEquals(0, old.sortOrder)
+        assertFalse(old.excludeFromTotals)
+    }
 }

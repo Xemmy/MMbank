@@ -4651,3 +4651,14 @@ Tests: `CategoryMergeTest`, migration data tests (order kept, income flagged, st
 **Changed from the plan:** order changes use Move up / Move down in the menu rather than drag handles; the editor has no Expense/Income switch (use the row menu); pickers do not yet list income categories first for a received row.
 
 Not covered by CI: the tabs, menu, merge dialog and larger grids as rendered, the real Room v38→v39 upgrade on a device (export a backup first), and merge on a large ledger.
+
+## Part F8 — Accounts: order, net worth, wealth chart (0.117.0, schema v40, backup format 19)
+**Manage accounts** (Home's account carousel) now has, per account, a **Count in net worth** switch and **Up / Down** buttons. An account switched out keeps its balance, history, debts and reminders and stays in every list; its balance is left out of net worth on Home, in the Insights trend, in the monthly report's net worth and in the financial-health figures, through one rule (`domain/account/NetWorthScope`). Account lists follow the saved order. The account form has a **Colour** row (None plus the category swatches) for the existing `accentColor`. **Accounts** opens with a **Net worth** card: today's figure, the change over the window, a line, and **7D · 1M · 1Y · Max** (new `WealthViewModel`, pure `WealthRange` / `WealthDays`: every day for up to 90 points, else evenly spaced days; each past day replays the ledger at the rates recorded for that day, via the same `fiatNetWorthAt` that the month trend now uses, so the last point equals Home's total).
+
+Schema v40 is additive (`MIGRATION_39_40`): `accounts.sortOrder` (by name, so nothing moves) and `accounts.excludeFromTotals` (all counted); column defaults match the entity. `Account` / `AccountEntity` / `BackupAccount` carry both (format 19; an older backup restores with every account counted). Tests: `NetWorthScopeTest`, `WealthRangeTest`, trend and daily-series tests (excluded account, last point equals Home), presentation test, migration data test, entity and backup round trips.
+
+Fixed in the same commit (from CI run 584 on 0.113.0 to 0.114.0, which did not compile): the Home recent-activity grouping moved out of the lazy list, a missing `Icons.Filled.Add` import, and `close()` in the transaction page.
+
+**Changed from the plan:** Up / Down buttons instead of drag handles; Year in review and Copilot do not compute net worth from accounts, so they needed no change.
+
+Not covered by CI: the switch, buttons, colour row and the Net worth card as rendered, the real Room v39→v40 upgrade on a device, and replay speed on a very large ledger.

@@ -71,6 +71,10 @@ data class AccountEntity(
     val cardEndings: String? = null,
     /** See [Account.accentColor]. */
     val accentColor: Int? = null,
+    /** See [Account.sortOrder]. The default lets inserts that name no order succeed. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /** See [Account.excludeFromTotals]. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val excludeFromTotals: Boolean = false,
 )
 
 /**
@@ -516,6 +520,7 @@ fun AccountEntity.toDomain() = Account(
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
     statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings, accentColor,
+    sortOrder, excludeFromTotals,
 )
 
 fun Account.toEntity() = AccountEntity(
@@ -523,6 +528,7 @@ fun Account.toEntity() = AccountEntity(
     bankName, accountTitle, iban, swift,
     outstandingBalance, nextInstallmentAmount, dueDayOfMonth, profitRatePa, maturityDateMillis, loanNotes,
     statementCycleDay, isDemo, hiddenFromDashboard, creditLimit, cardEndings, accentColor,
+    sortOrder, excludeFromTotals,
 )
 
 fun AccountChangeEntity.toDomain() = AccountChange(

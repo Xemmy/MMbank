@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v39 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v40 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v39
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v40
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../39.json`), so
+ *     compiler exports during this same build (`app/schemas/.../40.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/39.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/39.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/40.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/40.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 39.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 40.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -66,7 +66,7 @@ class MigrationSqlTest {
     private val addedColumns = mapOf(
         "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind", "categorySource", "personSource", "refundOfId", "historyOnly", "note"),
         "parsing_rules" to listOf("assignKind"),
-        "accounts" to listOf("creditLimit", "cardEndings", "accentColor"),
+        "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor"),
     )
@@ -108,7 +108,8 @@ class MigrationSqlTest {
                 MigrationSql.MIGRATION_31_32_SQL + MigrationSql.MIGRATION_32_33_SQL +
                 MigrationSql.MIGRATION_33_34_SQL + MigrationSql.MIGRATION_34_35_SQL +
                 MigrationSql.MIGRATION_35_36_SQL + MigrationSql.MIGRATION_36_37_SQL +
-                MigrationSql.MIGRATION_37_38_SQL + MigrationSql.MIGRATION_38_39_SQL
+                MigrationSql.MIGRATION_37_38_SQL + MigrationSql.MIGRATION_38_39_SQL +
+                MigrationSql.MIGRATION_39_40_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -149,7 +150,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v39 install table for table`() {
+    fun `an upgraded database matches a fresh v40 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -309,6 +310,22 @@ class MigrationSqlTest {
         migrate()
         assertEquals(2, categoryRows().size)
         assertEquals("INCOME", categoryRows().first { it.first == "Income" }.third)
+    }
+
+    @Test
+    fun `accounts keep their by-name order and all count in net worth`() {
+        fun account(id: Int, name: String) = migrated.exec(
+            "INSERT INTO accounts (id, name, type, currencyCode, openingBalance, archived, createdAt, isDemo, hiddenFromDashboard) " +
+                "VALUES ($id, '$name', 'CHECKING', 'AED', '0', 0, 0, 0, 0)"
+        )
+        account(1, "Zed"); account(2, "Alpha"); account(3, "Mid")
+        migrate()
+        val rows = migrated.createStatement().use { st ->
+            st.executeQuery("SELECT name, sortOrder, excludeFromTotals FROM accounts ORDER BY sortOrder").use { rs ->
+                buildList { while (rs.next()) add(Triple(rs.getString(1), rs.getInt(2), rs.getInt(3))) }
+            }
+        }
+        assertEquals(listOf(Triple("Alpha", 0, 0), Triple("Mid", 1, 0), Triple("Zed", 2, 0)), rows)
     }
 
     @Test

@@ -212,6 +212,13 @@ data class Account(
     val cardEndings: String? = null,
     /** Optional user-picked ARGB colour tinting this account's card and row accents; null = theme default. */
     val accentColor: Int? = null,
+    /** Position in account lists; lower comes first. New accounts go to the end. */
+    val sortOrder: Int = 0,
+    /**
+     * "Count in net worth" switched off: the account keeps its balance, history, debts and
+     * reminders, but its balance is left out of every net-worth figure (see NetWorthScope).
+     */
+    val excludeFromTotals: Boolean = false,
 ) {
     /**
      * Rough early-settlement guidance. Most UAE lenders cap the early-settlement

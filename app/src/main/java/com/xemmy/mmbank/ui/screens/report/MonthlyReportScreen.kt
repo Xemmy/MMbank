@@ -161,7 +161,7 @@ class MonthlyReportViewModel(private val container: AppContainer) : ViewModel() 
         val balances = if (balanceMap == null) {
             emptyList<NetWorthAggregator.AccountBalance>()
         } else {
-            accounts.map { account ->
+            com.xemmy.mmbank.domain.account.NetWorthScope.filter(accounts).map { account ->
                 NetWorthAggregator.AccountBalance(
                     accountId = account.id,
                     type = account.type,

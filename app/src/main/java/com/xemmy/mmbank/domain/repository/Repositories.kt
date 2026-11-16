@@ -146,6 +146,8 @@ interface AccountRepository {
     suspend fun archive(account: Account)
     suspend fun unarchive(account: Account)
     suspend fun delete(account: Account)
+    /** Stores the given order (first id = position 0). A no-op by default so test fakes needn't implement it. */
+    suspend fun setOrder(orderedIds: List<Long>) {}
     /** The change log of one account, newest first; empty by default so test fakes needn't implement it. */
     fun observeChanges(accountId: Long): Flow<List<com.xemmy.mmbank.domain.model.AccountChange>> = kotlinx.coroutines.flow.flowOf(emptyList())
 }

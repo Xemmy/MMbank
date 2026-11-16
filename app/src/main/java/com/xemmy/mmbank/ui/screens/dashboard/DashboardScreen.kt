@@ -127,6 +127,13 @@ fun DashboardScreen(
         }
     }
 
+    // Day grouping and "today" are computed here: composable calls are not allowed inside the lazy list.
+    val today = com.xemmy.mmbank.ui.util.rememberCurrentDate()
+    val recentByDay = remember(state.recent) {
+        val zone = java.time.ZoneId.systemDefault()
+        state.recent.groupBy { java.time.Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate() }
+    }
+
     Column(Modifier.fillMaxSize()) {
         DashboardHeader()
         // This single LazyColumn hosts several separate items() blocks (accounts,
@@ -260,12 +267,7 @@ fun DashboardScreen(
                     )
                 }
             } else {
-                val today = com.xemmy.mmbank.ui.util.rememberCurrentDate()
-                val zone = remember { java.time.ZoneId.systemDefault() }
-                val byDay = state.recent.groupBy {
-                    java.time.Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
-                }
-                byDay.forEach { (day, rows) ->
+                recentByDay.forEach { (day, rows) ->
                     item(key = "recent_day_$day") {
                         Row(
                             Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -305,6 +307,8 @@ fun DashboardScreen(
             hidden = hidden,
             onRename = viewModel::renameAccount,
             onToggleVisibility = viewModel::toggleAccountVisibility,
+            onToggleNetWorth = viewModel::toggleAccountInNetWorth,
+            onMove = viewModel::moveAccount,
             onDismiss = { showManageAccounts = false },
         )
     }

@@ -441,8 +441,9 @@ class DashboardAccountsPresentationTest {
         balanceInBase: Double?,
         name: String = "Account",
         hiddenFromDashboard: Boolean = false,
+        excludeFromTotals: Boolean = false,
     ) = AccountRow(
-        account = Account(id = 1, name = name, type = type, currencyCode = "AED", hiddenFromDashboard = hiddenFromDashboard),
+        account = Account(id = 1, name = name, type = type, currencyCode = "AED", hiddenFromDashboard = hiddenFromDashboard, excludeFromTotals = excludeFromTotals),
         balance = balanceInBase ?: 0.0,
         balanceInBase = balanceInBase,
     )
@@ -488,6 +489,17 @@ class DashboardAccountsPresentationTest {
         )
         assertEquals(2, result.visibleAccounts.size)
         assertEquals(50.0, result.fiatTotalInBase, 1e-9)
+    }
+
+    @Test
+    fun `an account switched out of net worth is still listed but not summed`() {
+        val result = computeAccountsPresentation(
+            accountRows = listOf(row(AccountType.CHECKING, 100.0), row(AccountType.SAVINGS, 900.0, excludeFromTotals = true)),
+            hideCreditCardBalance = false,
+            excludeCreditCardFromTotal = false,
+        )
+        assertEquals(2, result.visibleAccounts.size)
+        assertEquals(100.0, result.fiatTotalInBase, 1e-9)
     }
 
     @Test

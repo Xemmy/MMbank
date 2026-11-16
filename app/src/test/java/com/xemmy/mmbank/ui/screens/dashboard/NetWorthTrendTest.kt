@@ -75,6 +75,35 @@ class NetWorthTrendTest {
     }
 
     @Test
+    fun `an account switched out of net worth leaves the trend and the daily series`() {
+        val kept = current.copy(excludeFromTotals = false)
+        val left = card.copy(excludeFromTotals = true)
+        // The card (-400 from 20 Sep) no longer reduces the total.
+        assertEquals(listOf(null, 6000.0, 5000.0, 8000.0), trend(accounts = listOf(kept, left)).values)
+        val today = LocalDate.of(2026, 11, 20)
+        val series = computeWealthSeries(
+            accounts = listOf(kept, left), transactions = ledger, rates = emptyList(), history = emptyList(),
+            baseCurrency = "AED", excludeCreditCardFromTotal = false,
+            days = listOf(LocalDate.of(2026, 9, 10), LocalDate.of(2026, 10, 10), today), today = today, zone = zone,
+        )
+        assertEquals(listOf(6000.0, 5000.0, 8000.0), series)
+    }
+
+    @Test
+    fun `the daily series ends on today's total and follows the ledger day by day`() {
+        val today = LocalDate.of(2026, 11, 20)
+        val days = listOf(LocalDate.of(2026, 9, 19), LocalDate.of(2026, 9, 20), LocalDate.of(2026, 10, 5), LocalDate.of(2026, 11, 1), today)
+        val series = computeWealthSeries(
+            accounts = listOf(current, card), transactions = ledger, rates = emptyList(), history = emptyList(),
+            baseCurrency = "AED", excludeCreditCardFromTotal = false, days = days, today = today, zone = zone,
+        )
+        // Before / on the card spend (the day itself counts), after the 1000 debit, after the 3000 credit.
+        assertEquals(listOf(6000.0, 5600.0, 4600.0, 7600.0, 7600.0), series)
+        val rows = accountRows(listOf(current, card), ledger)
+        assertEquals(computeAccountsPresentation(rows, false, false).fiatTotalInBase, series.last(), 1e-9)
+    }
+
+    @Test
     fun `accounts with no rate mark the trend approximate`() {
         val t = trend(accounts = listOf(current, card, usd))
         assertTrue(t.approximate)

@@ -79,6 +79,9 @@ data class BackupAccount(
     val cardEndings: String? = null,
     /** Absent (null) on backups from before accent colours; no format gate needed. */
     val accentColor: Int? = null,
+    /** Format 19. Absent on older backups: position 0, counted in net worth. */
+    val sortOrder: Int = 0,
+    val excludeFromTotals: Boolean = false,
 )
 
 @Serializable
@@ -216,6 +219,9 @@ data class BackupPayload(
      * 14 = adds [accountChanges], the per-account change log. Always replaced on
      * restore (log rows are keyed to account ids, which a restore re-issues), so an
      * older backup simply restores an empty log -- plus one marker per account.
+     *
+     * 19 = adds [BackupAccount.sortOrder] and [BackupAccount.excludeFromTotals]. No gate: absent means
+     * position 0 and counted in net worth.
      *
      * 18 = adds [BackupCategory.sortOrder] and [BackupCategory.flow]. No gate: an older category keeps
      * its backup position and counts as an expense category.
@@ -402,7 +408,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 18,
+            formatVersion = 19,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -649,6 +655,8 @@ internal fun AccountEntity.toBackup() = BackupAccount(
     creditLimit = creditLimit?.toPlainString(),
     cardEndings = cardEndings,
     accentColor = accentColor,
+    sortOrder = sortOrder,
+    excludeFromTotals = excludeFromTotals,
 )
 
 internal fun BackupAccount.toEntity() = AccountEntity(
@@ -676,6 +684,8 @@ internal fun BackupAccount.toEntity() = AccountEntity(
     creditLimit = creditLimit?.let(::BigDecimal),
     cardEndings = cardEndings,
     accentColor = accentColor,
+    sortOrder = sortOrder,
+    excludeFromTotals = excludeFromTotals,
 )
 
 internal fun TransactionEntity.toBackup() = BackupTransaction(

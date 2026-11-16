@@ -2,6 +2,10 @@ package com.xemmy.mmbank.ui.screens.accounts
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -118,6 +122,7 @@ internal fun AccountDialog(
     var openingBalance by remember { mutableStateOf(existing.openingBalance.toPlainString()) }
     var accountNumber by remember { mutableStateOf(existing.accountNumber.orEmpty()) }
     var cardEndings by remember { mutableStateOf(existing.cardEndings.orEmpty()) }
+    var accentColor by remember { mutableStateOf(existing.accentColor) }
     var bankName by remember { mutableStateOf(existing.bankName.orEmpty()) }
     var accountTitle by remember { mutableStateOf(existing.accountTitle.orEmpty()) }
     var iban by remember { mutableStateOf(existing.iban.orEmpty()) }
@@ -296,6 +301,36 @@ internal fun AccountDialog(
                     )
                 }
 
+                EditorSectionHeader("Colour")
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // "No colour" first, then the same swatches categories use.
+                    androidx.compose.material3.FilterChip(
+                        selected = accentColor == null,
+                        onClick = { accentColor = null },
+                        label = { Text("None") },
+                    )
+                    com.xemmy.mmbank.ui.components.PRESET_COLORS.forEach { hex ->
+                        val argb = com.xemmy.mmbank.ui.components.categoryColor(hex).toArgb()
+                        androidx.compose.foundation.layout.Box(
+                            Modifier
+                                .size(40.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(androidx.compose.ui.graphics.Color(argb))
+                                .clickable { accentColor = argb }
+                                .semantics { contentDescription = "Account colour $hex" },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (accentColor == argb) {
+                                Icon(Icons.Filled.Check, contentDescription = "Selected", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+
                 EditorSectionHeader("Bank details")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     CompactField(
@@ -368,7 +403,7 @@ internal fun AccountDialog(
         confirmButton = {
             TextButton(
                 enabled = valid,
-                onClick = { onSave(AccountFormValidator.apply(existing, input)) },
+                onClick = { onSave(AccountFormValidator.apply(existing, input).copy(accentColor = accentColor)) },
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

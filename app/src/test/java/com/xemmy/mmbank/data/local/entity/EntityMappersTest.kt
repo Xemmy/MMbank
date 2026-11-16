@@ -811,6 +811,17 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `account order and the net worth switch survive the round trip`() {
+        val a = Account(
+            id = 3, name = "Savings", type = AccountType.SAVINGS, currencyCode = "AED",
+            sortOrder = 4, excludeFromTotals = true, accentColor = 0xFF112233.toInt(),
+        )
+        assertEquals(4, a.toEntity().sortOrder)
+        assertTrue(a.toEntity().excludeFromTotals)
+        assertEquals(a, a.toEntity().toDomain())
+    }
+
+    @Test
     fun `label entity round trip`() {
         val label = com.xemmy.mmbank.domain.model.Label(3, "Holiday", "#56B4E9")
         assertEquals(label, label.toEntity().toDomain())

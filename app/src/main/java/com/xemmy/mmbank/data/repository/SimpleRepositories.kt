@@ -93,9 +93,15 @@ class AccountRepositoryImpl(
     override fun observeActiveReal(): Flow<List<Account>> =
         dao.observeActive(false).map { list -> list.map(AccountEntity::toDomain) }
 
+    override suspend fun setOrder(orderedIds: List<Long>) = atomically {
+        orderedIds.forEachIndexed { index, id -> dao.setSortOrder(id, index) }
+    }
+
     override suspend fun save(account: Account): Long = atomically {
         if (account.id == 0L) {
-            val id = dao.insert(account.toEntity())
+            // A new account goes to the end of the list unless the caller chose a position.
+            val order = if (account.sortOrder == 0) dao.maxSortOrder() + 1 else account.sortOrder
+            val id = dao.insert(account.copy(sortOrder = order).toEntity())
             log(AccountChangeDiff.created(account.copy(id = id), clock()))
             id
         } else {

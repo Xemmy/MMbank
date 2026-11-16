@@ -51,6 +51,8 @@ fun ManageAccountsBottomSheet(
     onRename: (Account, String) -> Unit,
     onToggleVisibility: (Account) -> Unit,
     onDismiss: () -> Unit,
+    onToggleNetWorth: (Account) -> Unit = {},
+    onMove: (Account, Int) -> Unit = { _, _ -> },
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -75,6 +77,8 @@ fun ManageAccountsBottomSheet(
                             hidden = hidden,
                             onRename = { newName -> onRename(row.account, newName) },
                             onToggleVisibility = { onToggleVisibility(row.account) },
+                            onToggleNetWorth = { onToggleNetWorth(row.account) },
+                            onMove = { direction -> onMove(row.account, direction) },
                         )
                         HorizontalDivider()
                     }
@@ -93,6 +97,8 @@ private fun ManageAccountRow(
     hidden: Boolean,
     onRename: (String) -> Unit,
     onToggleVisibility: () -> Unit,
+    onToggleNetWorth: () -> Unit,
+    onMove: (Int) -> Unit,
 ) {
     var editing by remember(row.account.id) { mutableStateOf(false) }
     var draftName by remember(row.account.id) { mutableStateOf(row.account.name) }
@@ -133,6 +139,17 @@ private fun ManageAccountRow(
                 checked = !row.account.hiddenFromDashboard,
                 onCheckedChange = { onToggleVisibility() },
             )
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Count in net worth",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(checked = !row.account.excludeFromTotals, onCheckedChange = { onToggleNetWorth() })
+            TextButton(onClick = { onMove(-1) }) { Text("Up") }
+            TextButton(onClick = { onMove(1) }) { Text("Down") }
         }
         if (editing) {
             Row(
