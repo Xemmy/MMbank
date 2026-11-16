@@ -29,6 +29,11 @@ class AppNavigationTest {
         assertEquals(5, AppTab.values().map { it.route }.toSet().size)
     }
 
+    @Test fun detailPagesKeepInsightsHighlighted() {
+        assertEquals(AppTab.INSIGHTS, TabRouting.tabFor(Routes.SPENDING_DETAIL))
+        assertEquals(AppTab.INSIGHTS, TabRouting.tabFor(Routes.CASH_FLOW_DETAIL))
+    }
+
     @Test fun activityVariantsKeepActivityHighlighted() {
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.ACTIVITY_PATTERN))
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.ACTIVITY_UNASSIGNED))

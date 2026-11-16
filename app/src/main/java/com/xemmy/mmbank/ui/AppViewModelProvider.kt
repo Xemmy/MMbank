@@ -15,6 +15,7 @@ import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatViewModel
 import com.xemmy.mmbank.ui.screens.dashboard.DashboardViewModel
+import com.xemmy.mmbank.ui.screens.insights.PeriodDetailViewModel
 import com.xemmy.mmbank.ui.screens.goals.GoalsViewModel
 import com.xemmy.mmbank.ui.screens.integrity.IntegrityViewModel
 import com.xemmy.mmbank.ui.screens.merchant.MerchantDetailViewModel
@@ -39,6 +40,7 @@ object AppViewModelProvider {
 
     val Factory = viewModelFactory {
         initializer { DashboardViewModel(mmBankApp().container) }
+        initializer { PeriodDetailViewModel(mmBankApp().container) }
         initializer { TransactionsViewModel(mmBankApp().container) }
         initializer { AccountsViewModel(mmBankApp().container) }
         initializer { AccountHistoryViewModel(createSavedStateHandle(), mmBankApp().container) }

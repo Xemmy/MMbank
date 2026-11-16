@@ -107,6 +107,8 @@ fun InsightsScreen(
     onOpenCopilot: () -> Unit = {},
     onOpenBills: () -> Unit = {},
     onOpenSplits: () -> Unit = {},
+    onOpenSpending: () -> Unit = {},
+    onOpenCashFlow: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -202,9 +204,9 @@ fun InsightsScreen(
         item(key = "category_budgets_card") { CategoryBudgetSummaryCard(onOpenBudgets = onOpenBudgets) }
 
         if (hasData) {
-            item(key = "cashflow_card") { CashFlowCard(state) }
+            item(key = "cashflow_card") { CashFlowCard(state, onOpenCashFlow) }
             if (state.stats.categorySlices.isNotEmpty()) {
-                item(key = "category_card") { CategorySpendCard(state) }
+                item(key = "category_card") { CategorySpendCard(state, onOpenSpending) }
             }
             if (state.stats.personSpends.isNotEmpty()) {
                 item(key = "person_card") { PersonSpendCard(state) }
@@ -322,7 +324,7 @@ private fun NavigationRow(
 /** Twin-calendar picker for the Dashboard's custom date range. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DashboardCustomDateRangeDialog(
+internal fun DashboardCustomDateRangeDialog(
     initial: DashboardDateRange.Custom?,
     onDismiss: () -> Unit,
     onSelect: (LocalDate, LocalDate) -> Unit,
@@ -752,14 +754,17 @@ private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Bo
 
 /** Six months of income vs spend as paired columns, base-currency valued. */
 @Composable
-private fun CashFlowCard(state: DashboardUiState) {
+private fun CashFlowCard(state: DashboardUiState, onSeeAll: () -> Unit) {
     val monthly = state.stats.monthly
     val hidden = state.hideBalances
     val maxValue = monthly.maxOf { maxOf(it.income, it.spend) }.takeIf { it > 0.0 } ?: 1.0
 
     MMCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-            Text("Cash flow — last 6 months", style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Cash flow — last 6 months", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = onSeeAll) { Text("See all ›") }
+            }
             Spacer(Modifier.height(12.dp))
             Row(
                 Modifier
@@ -843,14 +848,17 @@ private fun LegendDot(color: Color) {
 
 /** This month's spend per category as a donut chart; the legend names every slice with its share. */
 @Composable
-private fun CategorySpendCard(state: DashboardUiState) {
+private fun CategorySpendCard(state: DashboardUiState, onSeeAll: () -> Unit) {
     val slices = state.stats.categorySlices
     val hidden = state.hideBalances
     val total = slices.sumOf { it.amount }
 
     MMCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${state.stats.periodLabel} by category", style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${state.stats.periodLabel} by category", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = onSeeAll) { Text("See all ›") }
+            }
             CompositionLocalProvider(LocalHideBalances provides hidden) {
                 DonutChart(
                     slices = slices.map { DonutSlice(it.name, it.amount) },

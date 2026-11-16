@@ -54,4 +54,10 @@ class ActivityDrillDownTest {
         assertEquals("x", f.query)
         assertEquals(setOf(2L), f.categoryIds)
     }
+
+    @Test
+    fun categoryDrillWithWindowRoundTrips() {
+        val drill = ActivityDrillDown(setOf(2L, 1L), java.time.LocalDate.of(2026, 3, 1), java.time.LocalDate.of(2026, 3, 31))
+        assertEquals(drill, ActivityDrillDown.parse(drill.encode()))
+    }
 }

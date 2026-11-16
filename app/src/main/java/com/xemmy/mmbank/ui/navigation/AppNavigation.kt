@@ -29,6 +29,8 @@ object Routes {
     const val REVIEW_TRANSACTIONS = "review_transactions"
     const val INTEGRITY_CHECK = "integrity_check"
     const val ANALYTICS = "analytics"
+    const val SPENDING_DETAIL = "spending_detail"
+    const val CASH_FLOW_DETAIL = "cash_flow_detail"
     const val DEBT_PLANNER = "debt_planner"
     const val CASHBACK = "cashback"
     const val SUBSCRIPTIONS = "subscriptions"
@@ -93,6 +95,8 @@ object TabRouting {
         Routes.INSIGHTS to AppTab.INSIGHTS,
         Routes.CASHBACK to AppTab.PLAN,
         Routes.ANALYTICS to AppTab.INSIGHTS,
+        Routes.SPENDING_DETAIL to AppTab.INSIGHTS,
+        Routes.CASH_FLOW_DETAIL to AppTab.INSIGHTS,
         Routes.SUBSCRIPTIONS to AppTab.PLAN,
         Routes.GOALS to AppTab.PLAN,
         Routes.BILLS to AppTab.PLAN,

@@ -4605,3 +4605,10 @@ Insights' row of date chips is replaced by `PeriodBar`: **W · M · Y · Max**, 
 **Changed from the plan:** "Max" hides the stepper; the "…" button is a "More" chip; the bucket helper exists but is first used by F2.
 
 Not covered by CI: the bar as rendered, stepping on screen, the sheet and the picker, and the remembered unit across a restart.
+
+## Part F2 — Tap a chart, get a page (0.111.0)
+Insights' **Cash flow** and **by category** cards have **See all ›**, opening two new pages (Insights tab stays highlighted): **Spending** (total, the period bar, Donut / Bars / Line, every top-level category with count and share; a row opens Activity filtered to that category and the window through `ActivityDrillDown`) and **Cash flow** (net, money in / out as bars or a running-net line, income by category). New pure `domain/report/PeriodBreakdown` uses `LedgerMath`, so totals equal Insights; sub-categories roll into their parent; transfers, card payments, adjustments and cashback are counted separately as "not counted". Tests: `PeriodBreakdownTest`, drill round-trip, `TabRouting` for both routes.
+
+**Changed from the plan:** the pages share one `PeriodDetailViewModel` and start from the remembered W/M/Y unit rather than the Insights screen's current window; income rows on Cash flow are not tappable yet; no raw-ledger toggle on the pages.
+
+Not covered by CI: both pages as rendered, chart toggles, the drill into Activity, the period bar on these pages.

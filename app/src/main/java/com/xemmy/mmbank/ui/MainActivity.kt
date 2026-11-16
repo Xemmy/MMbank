@@ -124,6 +124,8 @@ import com.xemmy.mmbank.ui.screens.splits.SplitsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import com.xemmy.mmbank.ui.theme.ambientBackground
+import com.xemmy.mmbank.ui.screens.insights.CashFlowDetailScreen
+import com.xemmy.mmbank.ui.screens.insights.SpendingDetailScreen
 import android.os.Build
 import kotlinx.coroutines.delay
 import androidx.activity.SystemBarStyle
@@ -505,8 +507,17 @@ private fun AppNavHost(
                 onOpenCopilot = { navController.navigate("copilot") },
                 onOpenBills = { navController.navigate("bills") },
                 onOpenSplits = { navController.navigate("splits") },
+                onOpenSpending = { navController.navigate(Routes.SPENDING_DETAIL) },
+                onOpenCashFlow = { navController.navigate(Routes.CASH_FLOW_DETAIL) },
             )
         }
+        composable(Routes.SPENDING_DETAIL) {
+            SpendingDetailScreen(
+                onBack = { navController.popBackStack() },
+                onOpenActivity = { drill -> navController.navigate(Routes.activityDrill(drill)) },
+            )
+        }
+        composable(Routes.CASH_FLOW_DETAIL) { CashFlowDetailScreen(onBack = { navController.popBackStack() }) }
         composable(Routes.PLAN) {
             PlanScreen(onOpen = { route -> navController.navigate(route) })
         }
