@@ -43,4 +43,12 @@ object LabelRules {
 
     /** How many transactions use each label. */
     fun useCounts(links: List<LabelLink>): Map<Long, Int> = links.groupingBy { it.labelId }.eachCount()
+
+    /** "#Holiday #Tax +1": up to [max] label names for a transaction row, then how many more. Blank when none. */
+    fun rowSummary(names: List<String>, max: Int = 2): String {
+        if (names.isEmpty()) return ""
+        val shown = names.take(max).joinToString(" ") { "#$it" }
+        val more = names.size - max
+        return if (more > 0) "$shown +$more" else shown
+    }
 }

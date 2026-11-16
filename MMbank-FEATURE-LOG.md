@@ -4679,3 +4679,10 @@ Not covered by CI: every widget on a real launcher (normal, hidden, locked, empt
 
 ## Part F — build record
 F3 to F10 (0.112.0 to 0.119.0) went through CI together: run 43807730115 on `e0c8b49` is green (unit tests including the v37 to v40 migration tests, and the debug APK build; artifact `mmbank-debug-apk`). Earlier runs on these commits failed to compile and were fixed: missing `Icons.Filled.Add` import, a composable call inside a lazy list, `close()` written as an assignment expression, the label filter passed to the wrong composable, a day/night `ColorProvider` that this Glance version lacks (now chosen from the system night mode), three fake `AccountDao` test classes without the new order methods, and `MigrationSqlTest` rebuilding old table shapes without handling column defaults.
+
+## Part F follow-up — the deferred items (0.120.0)
+Closes three items left open by F6 and F7. **Labels on rows:** an Activity row shows its note and up to two labels after the time ("#Holiday #Tax +1", pure `LabelRules.rowSummary`). **Labels on the Spending page:** a Labels section lists what each label took in the window (net of refunds; a transaction counts under every label it carries; pure `PeriodBreakdownBuilder` / `LabelShare`). **Income first in pickers:** the category picker lists income categories first for a received row (the editor, and a row's own picker in Activity), expense first otherwise; nothing is ever hidden (`CategoryMerge.sideFirst`). Tests: row summary, side-first order, per-label spending with refunds and income.
+
+**Still different from the plan:** reordering uses Up / Down buttons rather than drag handles; widget previews are still the app icon.
+
+Not covered by CI: the new row line and Labels section as rendered, and the picker order on a device.

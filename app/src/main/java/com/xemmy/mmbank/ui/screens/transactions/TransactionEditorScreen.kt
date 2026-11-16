@@ -392,6 +392,7 @@ private fun EditorBody(
                 }
             },
             onDismiss = { categorySheetOpen = false },
+            preferIncome = form.direction(existing) == com.xemmy.mmbank.domain.model.TransactionDirection.CREDIT,
         )
     }
     if (discardOpen) {

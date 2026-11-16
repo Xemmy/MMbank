@@ -136,4 +136,29 @@ class PeriodBreakdownTest {
         assertEquals(1, b.income.size)
         assertEquals(500.0, b.income.single().amount, 1e-9)
     }
+
+    @Test
+    fun `spending per label counts a transaction under each label it carries`() {
+        val holiday = com.xemmy.mmbank.domain.model.Label(1, "Holiday", "#111111")
+        val tax = com.xemmy.mmbank.domain.model.Label(2, "Tax", "#222222")
+        val a = tx(LocalDate.of(2026, 3, 2), "100", categoryId = 3).copy(id = 10)
+        val b = tx(LocalDate.of(2026, 3, 3), "40", categoryId = 3).copy(id = 11)
+        val refund = tx(LocalDate.of(2026, 3, 4), "30", TransactionKind.REFUND, categoryId = 3).copy(id = 12)
+        val income = tx(LocalDate.of(2026, 3, 5), "900", TransactionKind.INCOME).copy(id = 13)
+        val links = mapOf(10L to setOf(1L, 2L), 11L to setOf(1L), 12L to setOf(1L), 13L to setOf(1L))
+        val r = PeriodBreakdownBuilder.build(
+            listOf(a, b, refund, income), cats, month, today, zone, labels = listOf(holiday, tax),
+            labelsOf = { links[it].orEmpty() }, value = ::conv,
+        )
+        // Holiday: 100 + 40 - 30 refund; income is not spending. Tax: 100.
+        assertEquals(listOf("Holiday", "Tax"), r.labels.map { it.label.name })
+        assertEquals(110.0, r.labels[0].amount, 1e-9)
+        assertEquals(3, r.labels[0].count)
+        assertEquals(100.0, r.labels[1].amount, 1e-9)
+    }
+
+    @Test
+    fun `no labels in use gives no label rows`() {
+        assertTrue(build(listOf(tx(LocalDate.of(2026, 3, 2), "10", categoryId = 3))).labels.isEmpty())
+    }
 }

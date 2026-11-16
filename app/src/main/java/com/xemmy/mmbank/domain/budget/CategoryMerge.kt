@@ -41,4 +41,13 @@ object CategoryMerge {
         if (i < 0 || j < 0 || j >= orderedIds.size) return orderedIds
         return orderedIds.toMutableList().also { java.util.Collections.swap(it, i, j) }
     }
+
+    /**
+     * [categories] with the side that fits the row first: income categories for money coming in,
+     * expense categories otherwise. Order inside each side is kept, and nothing is hidden.
+     */
+    fun sideFirst(categories: List<Category>, income: Boolean): List<Category> {
+        val first = if (income) com.xemmy.mmbank.domain.model.CategoryFlow.INCOME else com.xemmy.mmbank.domain.model.CategoryFlow.EXPENSE
+        return categories.sortedBy { if (it.flow == first) 0 else 1 }
+    }
 }

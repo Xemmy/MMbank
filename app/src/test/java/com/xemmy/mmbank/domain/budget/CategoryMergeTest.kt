@@ -57,4 +57,13 @@ class CategoryMergeTest {
         assertEquals(CategoryFlow.EXPENSE, CategoryFlow.fromStored("nonsense"))
         assertEquals(CategoryFlow.EXPENSE, CategoryFlow.fromStored(null))
     }
+
+    @Test
+    fun `income categories come first for money in, expense first otherwise, nothing hidden`() {
+        val all = listOf(
+            c(1), c(2).copy(flow = CategoryFlow.INCOME), c(3), c(4).copy(flow = CategoryFlow.INCOME),
+        )
+        assertEquals(listOf(2L, 4L, 1L, 3L), CategoryMerge.sideFirst(all, income = true).map { it.id })
+        assertEquals(listOf(1L, 3L, 2L, 4L), CategoryMerge.sideFirst(all, income = false).map { it.id })
+    }
 }

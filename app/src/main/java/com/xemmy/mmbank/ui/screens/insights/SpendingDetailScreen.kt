@@ -114,6 +114,18 @@ fun SpendingDetailScreen(
                     }
                 }
             }
+            if (b.labels.isNotEmpty()) {
+                item { Text("Labels", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp)) }
+                items(b.labels, key = { "label_" + it.label.id }) { share ->
+                    MMCard(Modifier.fillMaxWidth()) {
+                        ListRow(
+                            title = "#" + share.label.name,
+                            subtitle = "${share.count} transaction${if (share.count == 1) "" else "s"}",
+                            trailing = { Text(moneyLabel(share.amount, currency, hidden), style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textPrimary) },
+                        )
+                    }
+                }
+            }
             if (b.notCounted.total > 0) {
                 item {
                     Text(

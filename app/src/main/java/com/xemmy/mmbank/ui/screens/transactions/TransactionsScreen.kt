@@ -242,6 +242,13 @@ fun TransactionsScreen(
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val labels by viewModel.labels.collectAsStateWithLifecycle()
+    val labelLinks by viewModel.labelLinks.collectAsStateWithLifecycle()
+    // Label names per transaction for the row line (up to two are shown).
+    val labelNamesByTx = remember(labels, labelLinks) {
+        val nameById = labels.associate { it.id to it.name }
+        com.xemmy.mmbank.domain.label.LabelRules.byTransaction(labelLinks)
+            .mapValues { (_, ids) -> ids.mapNotNull(nameById::get).sorted() }
+    }
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
     val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -474,6 +481,7 @@ fun TransactionsScreen(
                                         onCardClick = { selectedTransaction = tx },
                                         onLongPress = { viewModel.enterBulkMode(tx.id) },
                                         onToggleSelected = { viewModel.toggleSelected(tx.id) },
+                                        labelNames = labelNamesByTx[tx.id].orEmpty(),
                                     )
                                 }
                                 // White base, not DividerDefaults: the theme's divider
@@ -506,6 +514,7 @@ fun TransactionsScreen(
                 categoryPickerFor = null
             },
             onDismiss = { categoryPickerFor = null },
+            preferIncome = tx.direction == TransactionDirection.CREDIT,
         )
     }
 
@@ -1209,6 +1218,8 @@ private fun TransactionCard(
     onLongPress: () -> Unit = {},
     /** Tap while already in bulk mode toggles this row's selection instead of opening detail. */
     onToggleSelected: () -> Unit = {},
+    /** Names of the labels on this row; shown after the time as "#Holiday #Tax +1". */
+    labelNames: List<String> = emptyList(),
 ) {
     val isCredit = tx.direction == TransactionDirection.CREDIT
     var accountMenuOpen by remember { mutableStateOf(false) }
@@ -1355,6 +1366,20 @@ private fun TransactionCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            val labelLine = listOf(
+                com.xemmy.mmbank.domain.label.LabelRules.rowSummary(labelNames),
+                tx.note?.trim().orEmpty(),
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+            if (labelLine.isNotEmpty()) {
+                Text(
+                    labelLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = metaTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
 
             // One compact meta row: account · person · category chips scroll
             // horizontally so long names never blow up the card, with edit &

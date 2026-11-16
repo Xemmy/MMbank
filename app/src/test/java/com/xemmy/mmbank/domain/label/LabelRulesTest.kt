@@ -43,4 +43,12 @@ class LabelRulesTest {
         assertEquals(mapOf(1L to setOf(10L, 20L), 2L to setOf(10L)), LabelRules.byTransaction(links))
         assertEquals(mapOf(10L to 2, 20L to 1), LabelRules.useCounts(links))
     }
+
+    @Test
+    fun `row summary shows two labels then how many more`() {
+        assertEquals("", LabelRules.rowSummary(emptyList()))
+        assertEquals("#Holiday", LabelRules.rowSummary(listOf("Holiday")))
+        assertEquals("#A #B", LabelRules.rowSummary(listOf("A", "B")))
+        assertEquals("#A #B +2", LabelRules.rowSummary(listOf("A", "B", "C", "D")))
+    }
 }

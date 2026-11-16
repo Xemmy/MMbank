@@ -31,6 +31,9 @@ data class NotCounted(val transfers: Int, val cardPayments: Int, val adjustments
     val total: Int get() = transfers + cardPayments + adjustments + cashback
 }
 
+/** What one label took in a window: its net spending and how many counted rows carry it. */
+data class LabelShare(val label: com.xemmy.mmbank.domain.model.Label, val amount: Double, val count: Int)
+
 data class PeriodBreakdown(
     val window: DateWindow?,
     val buckets: List<BucketFlow>,
@@ -39,6 +42,8 @@ data class PeriodBreakdown(
     val spending: List<CategoryShare>,
     val income: List<CategoryShare>,
     val notCounted: NotCounted,
+    /** Net spending per label, biggest first; empty when no label was used. */
+    val labels: List<LabelShare> = emptyList(),
 ) {
     val net: Double get() = incomeTotal - spendTotal
 }
@@ -57,6 +62,8 @@ object PeriodBreakdownBuilder {
         today: LocalDate,
         zone: ZoneId,
         raw: Boolean = false,
+        labels: List<com.xemmy.mmbank.domain.model.Label> = emptyList(),
+        labelsOf: (Long) -> Set<Long> = { emptySet() },
         value: (Transaction) -> Double?,
     ): PeriodBreakdown {
         val window = period.range()
@@ -92,7 +99,23 @@ object PeriodBreakdownBuilder {
             spending = shares(inWindow.filter { LedgerMath.affectsSpend(it, raw) }, categories, raw, value, spendSide = true),
             income = shares(inWindow.filter { LedgerMath.isIncome(it, raw) }, categories, raw, value, spendSide = false),
             notCounted = notCounted(inWindow, raw),
+            labels = labelShares(inWindow.filter { LedgerMath.affectsSpend(it, raw) }, labels, labelsOf, raw, value),
         )
+    }
+
+    private fun labelShares(
+        spendRows: List<Transaction>,
+        labels: List<com.xemmy.mmbank.domain.model.Label>,
+        labelsOf: (Long) -> Set<Long>,
+        raw: Boolean,
+        value: (Transaction) -> Double?,
+    ): List<LabelShare> {
+        if (labels.isEmpty()) return emptyList()
+        return labels.mapNotNull { label ->
+            val rows = spendRows.filter { label.id in labelsOf(it.id) }
+            val total = LedgerMath.netSpend(rows, raw, value)
+            if (rows.isEmpty() || total <= 0.0) null else LabelShare(label, total, rows.size)
+        }.sortedByDescending { it.amount }
     }
 
     private fun notCounted(txs: List<Transaction>, raw: Boolean): NotCounted {

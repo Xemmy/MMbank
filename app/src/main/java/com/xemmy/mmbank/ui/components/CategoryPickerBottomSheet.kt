@@ -46,12 +46,15 @@ fun CategoryPickerBottomSheet(
     onSelect: (Category) -> Unit,
     onCreateNew: (name: String, colorHex: String, icon: String, monthlyCap: BigDecimal?, parentCategoryId: Long?) -> Unit,
     onDismiss: () -> Unit,
+    /** Money coming in: list income categories first (order inside each side is kept; nothing is hidden). */
+    preferIncome: Boolean = false,
 ) {
     var creating by remember { mutableStateOf(false) }
     var newCategory by remember { mutableStateOf(CategoryEditorFormState()) }
     var query by remember { mutableStateOf("") }
-    val filteredCategories = remember(categories, query) {
-        if (query.isBlank()) categories else categories.filter { it.name.contains(query, ignoreCase = true) }
+    val filteredCategories = remember(categories, query, preferIncome) {
+        val ordered = com.xemmy.mmbank.domain.budget.CategoryMerge.sideFirst(categories, income = preferIncome)
+        if (query.isBlank()) ordered else ordered.filter { it.name.contains(query, ignoreCase = true) }
     }
 
     AlertDialog(

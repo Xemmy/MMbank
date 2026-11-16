@@ -48,9 +48,15 @@ class PeriodDetailViewModel(private val container: AppContainer) : ViewModel() {
     val breakdown: StateFlow<PeriodBreakdown?> = combine(
         container.transactionRepository.observeTransactions(),
         container.ratesRepository.observeRates(),
-        container.categoryRepository.observeAll(),
+        combine(
+            container.categoryRepository.observeAll(),
+            container.labelRepository.observeAll(),
+            container.labelRepository.observeLinks(),
+        ) { c, l, k -> Triple(c, l, k) },
         _period,
-    ) { transactions, rates, categories, period ->
+    ) { transactions, rates, catsLabelsLinks, period ->
+        val (categories, labels, links) = catsLabelsLinks
+        val labelsByTx = com.xemmy.mmbank.domain.label.LabelRules.byTransaction(links)
         val ratesFromBase = rates
             .filter { it.baseCode.equals(baseCurrency, ignoreCase = true) }
             .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
@@ -60,6 +66,8 @@ class PeriodDetailViewModel(private val container: AppContainer) : ViewModel() {
             period = period,
             today = today,
             zone = ZoneId.systemDefault(),
+            labels = labels,
+            labelsOf = { id -> labelsByTx[id].orEmpty() },
         ) { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, baseCurrency, ratesFromBase) }
     }.flowOn(Dispatchers.Default)
         .recoverAndRetry("PeriodDetailViewModel.breakdown", container) { null }
