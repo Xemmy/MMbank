@@ -83,7 +83,8 @@ class MigrationSqlTest {
         tables.filter { it.name !in addedTables }.forEach { t ->
             var sql = t.createSql
             addedColumns[t.name].orEmpty().forEach { col ->
-                val stripped = sql.replace(Regex(",\\s*`$col` [A-Z ]+"), "")
+                // Up to the next comma or closing bracket, so a column with a DEFAULT clause is removed whole.
+                val stripped = sql.replace(Regex(",\\s*`$col` [^,)]+"), "")
                 assertNotEquals("column $col not found in ${t.name}'s DDL", sql, stripped)
                 sql = stripped
             }
