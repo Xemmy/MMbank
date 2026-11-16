@@ -8,5 +8,5 @@
     android:initialLayout="@layout/daily_budget_widget_loading"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:previewImage="@mipmap/ic_launcher"
+    android:previewImage="@drawable/widget_preview_daily"
     android:description="@string/daily_budget_widget_description" />

@@ -613,6 +613,10 @@ private fun CategoryRow(
     MMCard(modifier.fillMaxWidth()) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onMoveUp != null && onMoveDown != null) {
+                    // Dragging a grip moves the row; the menu keeps Move up / Move down for the same job.
+                    com.xemmy.mmbank.ui.designsystem.ReorderHandle(onMove = { direction -> if (direction < 0) onMoveUp() else onMoveDown() })
+                }
                 Text(category.icon, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(10.dp))
                 Text(

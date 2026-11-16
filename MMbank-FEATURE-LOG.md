@@ -4688,3 +4688,8 @@ Closes three items left open by F6 and F7. **Labels on rows:** an Activity row s
 Not covered by CI: the new row line and Labels section as rendered, and the picker order on a device.
 
 **0.120.0 build record:** run 43809437272 on `ead5a02` is green (unit tests and the debug APK, artifact `mmbank-debug-apk`). Its first attempts failed only on a test that passed the conversion function positionally after a parameter was added.
+
+## Part F — the last two differences closed (0.121.0)
+**Drag to reorder:** categories (Settings → Categories & People) and accounts (Manage accounts) now have a grip on each row; dragging it up or down moves the row one place for every 56 dp of travel (pure `reorderSteps`, tested). The menu items and Up / Down buttons stay for people who cannot drag. **Widget previews:** the launcher's widget picker now shows a drawn mock of each widget (Daily budget, Net worth, Spent this month, Budgets) instead of the app icon.
+
+Not covered by CI: how dragging feels (the row re-orders under the finger as each step is stored), and the previews in a real launcher picker.

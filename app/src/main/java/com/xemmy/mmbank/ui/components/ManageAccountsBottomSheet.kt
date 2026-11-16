@@ -105,6 +105,7 @@ private fun ManageAccountRow(
 
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            com.xemmy.mmbank.ui.designsystem.ReorderHandle(onMove = onMove)
             Column(Modifier.weight(1f)) {
                 if (editing) {
                     OutlinedTextField(
