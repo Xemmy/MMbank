@@ -54,6 +54,7 @@ import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.components.CategoryEditorDialog
 import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.liftWhileDragging
 import com.xemmy.mmbank.ui.designsystem.MMProgressBar
 import com.xemmy.mmbank.ui.designsystem.MMTone
 import com.xemmy.mmbank.ui.designsystem.MoneyText
@@ -192,11 +193,21 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Moves [categoryId] one step up (-1) or down (+1) among [orderedIds] (the ids as currently shown). */
     fun move(orderedIds: List<Long>, categoryId: Long, direction: Int) {
-        val next = com.xemmy.mmbank.domain.budget.CategoryMerge.move(orderedIds, categoryId, direction)
+        val next = com.xemmy.mmbank.domain.ReorderList.move(orderedIds, categoryId, direction)
         if (next == orderedIds) return
         viewModelScope.launch {
             runCatching { container.categoryRepository.setOrder(next) }
                 .onFailure { container.recordError("CategoriesViewModel.move", it) }
+        }
+    }
+
+    /** Moves child [categoryId] one step among its [siblingIds]; [allIds] is the full stored order. */
+    fun moveChild(allIds: List<Long>, siblingIds: List<Long>, categoryId: Long, direction: Int) {
+        val next = com.xemmy.mmbank.domain.ReorderList.moveAmongSiblings(allIds, siblingIds, categoryId, direction)
+        if (next == allIds) return
+        viewModelScope.launch {
+            runCatching { container.categoryRepository.setOrder(next) }
+                .onFailure { container.recordError("CategoriesViewModel.moveChild", it) }
         }
     }
 
@@ -264,6 +275,7 @@ fun CategoriesTabContent(
     val tree = remember(fullTree, side) { fullTree.filter { it.category.flow == side } }
     // The order as shown, so a move up/down acts on what the user sees.
     val shownIds = remember(tree) { tree.map { it.category.id } }
+    val allIds = remember(state.categories) { state.categories.map { it.id } }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().obsidianCanvas(),
@@ -275,6 +287,13 @@ fun CategoriesTabContent(
                 com.xemmy.mmbank.ui.designsystem.MMFilterChip(label = "Expenses", selected = !showIncome, onClick = { showIncome = false })
                 com.xemmy.mmbank.ui.designsystem.MMFilterChip(label = "Income", selected = showIncome, onClick = { showIncome = true })
             }
+        }
+        item(key = "reorder_hint") {
+            Text(
+                "Drag the ≡ grip to reorder",
+                style = MaterialTheme.typography.bodySmall,
+                color = MMTheme.colors.textSecondary,
+            )
         }
         state.uncountedNotice?.let { notice ->
             item(key = "uncounted_notice") {
@@ -299,6 +318,7 @@ fun CategoriesTabContent(
         tree.forEach { node ->
             item(key = "cat_${node.category.id}") {
                 CategoryRow(
+                    modifier = Modifier.animateItem(),
                     category = node.category,
                     status = statusByCategoryId[node.category.id],
                     currency = state.currency,
@@ -313,12 +333,15 @@ fun CategoriesTabContent(
                     sideLabel = if (showIncome) "Move to Expenses" else "Move to Income",
                 )
             }
+            val childIds = node.children.map { it.id }
             items(node.children, key = { "cat_${it.id}" }) { child ->
                 CategoryRow(
+                    onMoveUp = { viewModel.moveChild(allIds, childIds, child.id, -1) },
+                    onMoveDown = { viewModel.moveChild(allIds, childIds, child.id, 1) },
                     category = child,
                     status = statusByCategoryId[child.id],
                     currency = state.currency,
-                    modifier = Modifier.padding(start = 20.dp),
+                    modifier = Modifier.animateItem().padding(start = 20.dp),
                     onEdit = { editing = child },
                     onDelete = { confirmingDelete = child },
                 )
@@ -610,12 +633,16 @@ private fun CategoryRow(
     onSwitchSide: (() -> Unit)? = null,
     sideLabel: String = "",
 ) {
-    MMCard(modifier.fillMaxWidth()) {
+    var lifted by remember { mutableStateOf(false) }
+    MMCard(modifier.fillMaxWidth().then(Modifier.liftWhileDragging(lifted))) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onMoveUp != null && onMoveDown != null) {
-                    // Dragging a grip moves the row; the menu keeps Move up / Move down for the same job.
-                    com.xemmy.mmbank.ui.designsystem.ReorderHandle(onMove = { direction -> if (direction < 0) onMoveUp() else onMoveDown() })
+                    // Dragging the grip moves the row; TalkBack gets Move up / Move down actions on it.
+                    com.xemmy.mmbank.ui.designsystem.ReorderHandle(
+                        onMove = { direction -> if (direction < 0) onMoveUp() else onMoveDown() },
+                        onDragStateChange = { lifted = it },
+                    )
                 }
                 Text(category.icon, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(10.dp))
@@ -629,15 +656,13 @@ private fun CategoryRow(
                     modifier = Modifier.weight(1f),
                 )
                 RowActions(onEdit = onEdit, onDelete = onDelete)
-                if (onMoveUp != null || onMerge != null) {
+                if (onMerge != null) {
                     var menuOpen by remember { mutableStateOf(false) }
                     androidx.compose.foundation.layout.Box {
                         IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More actions", modifier = Modifier.size(18.dp))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            onMoveUp?.let { DropdownMenuItem(text = { Text("Move up") }, onClick = { menuOpen = false; it() }) }
-                            onMoveDown?.let { DropdownMenuItem(text = { Text("Move down") }, onClick = { menuOpen = false; it() }) }
                             onMerge?.let { DropdownMenuItem(text = { Text("Merge into…") }, onClick = { menuOpen = false; it() }) }
                             onSwitchSide?.let { DropdownMenuItem(text = { Text(sideLabel) }, onClick = { menuOpen = false; it() }) }
                         }

@@ -675,7 +675,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     /** Moves [account] one step up (-1) or down (+1) in the order shown in Manage accounts. */
     fun moveAccount(account: Account, direction: Int) {
         val ids = uiState.value.manageableAccounts.map { it.account.id }
-        val next = com.xemmy.mmbank.domain.budget.CategoryMerge.move(ids, account.id, direction)
+        val next = com.xemmy.mmbank.domain.ReorderList.move(ids, account.id, direction)
         if (next == ids) return
         viewModelScope.launch {
             runCatching { container.accountRepository.setOrder(next) }

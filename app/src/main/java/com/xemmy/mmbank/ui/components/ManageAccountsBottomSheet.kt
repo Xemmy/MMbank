@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xemmy.mmbank.domain.model.Account
+import com.xemmy.mmbank.ui.designsystem.liftWhileDragging
 import com.xemmy.mmbank.ui.screens.dashboard.AccountRow
 import com.xemmy.mmbank.ui.util.asMoneyOrMask
 
@@ -65,6 +66,12 @@ fun ManageAccountsBottomSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
+                Column {
+                Text(
+                    "Drag the ≡ grip to reorder",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -73,6 +80,7 @@ fun ManageAccountsBottomSheet(
                 ) {
                     items(accounts, key = { it.account.id }) { row ->
                         ManageAccountRow(
+                            modifier = Modifier.animateItem(),
                             row = row,
                             hidden = hidden,
                             onRename = { newName -> onRename(row.account, newName) },
@@ -80,8 +88,9 @@ fun ManageAccountsBottomSheet(
                             onToggleNetWorth = { onToggleNetWorth(row.account) },
                             onMove = { direction -> onMove(row.account, direction) },
                         )
-                        HorizontalDivider()
+                        HorizontalDivider(Modifier.animateItem())
                     }
+                }
                 }
             }
         },
@@ -93,6 +102,7 @@ fun ManageAccountsBottomSheet(
 
 @Composable
 private fun ManageAccountRow(
+    modifier: Modifier = Modifier,
     row: AccountRow,
     hidden: Boolean,
     onRename: (String) -> Unit,
@@ -103,9 +113,10 @@ private fun ManageAccountRow(
     var editing by remember(row.account.id) { mutableStateOf(false) }
     var draftName by remember(row.account.id) { mutableStateOf(row.account.name) }
 
-    Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+    var lifted by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth().liftWhileDragging(lifted).padding(vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            com.xemmy.mmbank.ui.designsystem.ReorderHandle(onMove = onMove)
+            com.xemmy.mmbank.ui.designsystem.ReorderHandle(onMove = onMove, onDragStateChange = { lifted = it })
             Column(Modifier.weight(1f)) {
                 if (editing) {
                     OutlinedTextField(
@@ -149,8 +160,6 @@ private fun ManageAccountRow(
                 modifier = Modifier.weight(1f),
             )
             Switch(checked = !row.account.excludeFromTotals, onCheckedChange = { onToggleNetWorth() })
-            TextButton(onClick = { onMove(-1) }) { Text("Up") }
-            TextButton(onClick = { onMove(1) }) { Text("Down") }
         }
         if (editing) {
             Row(

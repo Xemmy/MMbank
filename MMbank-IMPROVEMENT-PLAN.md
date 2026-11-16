@@ -886,3 +886,5 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 
 **Not covered by CI (to check on a device):** tab bar, gear and search placement, the tablet rail, AI notice look, the retention-preview text and refresh timing, predictive-back preview (Android 14+), transition feel, the "≈" note and the Budgets "not counted" / "carried over" notices as rendered, the global-search, statement-compare and year-in-review screens, the real Room v32→v33 migration, a live request to an online AI provider with redaction on, and the weekly prune actually running once a backup exists.
 
+
+- ✅ (0.122.0) Reordering polish: visible grip + hint, lift and slide animations, one consistent control on Categories and Manage accounts, child categories reorderable.

@@ -4695,3 +4695,10 @@ Not covered by CI: the new row line and Labels section as rendered, and the pick
 Not covered by CI: how dragging feels (the row re-orders under the finger as each step is stored), and the previews in a real launcher picker.
 
 **0.121.0 build record:** run 43810889425 on `45a8829` is green (unit tests and the debug APK, artifact `mmbank-debug-apk`). With this, nothing in the Part F plan is left open except how the features look and feel on a device, which CI cannot show.
+
+## Reorder polish (0.122.0)
+Categories and Manage accounts now reorder the same way. The grip is accent-coloured with a haptic tick on pick-up and on each step; the dragged row lifts (slight grow + shadow); neighbours slide into place with `animateItem()`; a "Drag the ≡ grip to reorder" hint shows on both screens. Child categories get a grip too and reorder among their siblings (`ReorderList.moveAmongSiblings`; every other row keeps its slot). The Up/Down buttons and the "Move up/down" menu items are gone: TalkBack gets "Move up"/"Move down" actions on the grip instead. The handle now always calls the latest callbacks, so several steps in one drag use the current order. The swap helper moved to `domain/ReorderList` (`CategoryMerge.move` delegates to it). Tests: `ReorderListTest`.
+
+**Not done:** saved People has no `sortOrder` column, so it cannot be reordered without a schema migration.
+
+Not covered by CI: drag feel, lift and slide animations, haptics, TalkBack actions, and the hint text as rendered.
