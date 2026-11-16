@@ -420,6 +420,22 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     val labelLinks: StateFlow<List<com.xemmy.mmbank.domain.label.LabelLink>> = container.labelRepository.observeLinks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** One saved bill by id, for "Log payment" prefill; null when it is gone. */
+    suspend fun loadBill(id: Long): com.xemmy.mmbank.domain.model.Bill? =
+        container.billRepository.observeAll().first().firstOrNull { it.id == id }
+
+    /** Saves the reminder a repeating transaction creates (see RepeatPlanner). */
+    suspend fun createRepeatBill(bill: com.xemmy.mmbank.domain.model.Bill) {
+        runCatching { container.billRepository.save(bill) }
+            .onFailure { container.recordError("TransactionsViewModel.createRepeatBill", it) }
+    }
+
+    /** Advances (or removes) a bill whose payment was just logged from the transaction page. */
+    suspend fun markBillPaid(id: Long) {
+        runCatching { container.billRepository.markPaid(id) }
+            .onFailure { container.recordError("TransactionsViewModel.markBillPaid", it) }
+    }
+
     /** The label ids one saved transaction carries, read once for the editor. */
     suspend fun labelIdsOf(transactionId: Long): Set<Long> =
         container.labelRepository.observeLinks().first().filter { it.transactionId == transactionId }.map { it.labelId }.toSet()

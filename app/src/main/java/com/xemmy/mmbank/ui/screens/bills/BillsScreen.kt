@@ -120,6 +120,8 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
 @Composable
 fun BillsScreen(
     onBack: () -> Unit,
+    /** Opens the transaction page prefilled from this bill; saving it also marks the bill paid. */
+    onLogPayment: (Long) -> Unit = {},
     viewModel: BillsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -163,6 +165,7 @@ fun BillsScreen(
                     BillRow(
                         bill = bill,
                         onMarkPaid = { viewModel.markPaid(bill.id) },
+                        onLogPayment = { onLogPayment(bill.id) },
                         onDelete = { viewModel.delete(bill.id) },
                     )
                 }
@@ -183,7 +186,7 @@ fun BillsScreen(
 }
 
 @Composable
-private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onDelete: () -> Unit) {
+private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onLogPayment: () -> Unit, onDelete: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
     if (confirming) {
         AlertDialog(
@@ -228,6 +231,7 @@ private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onDelete: () -> Unit) {
                     )
                 }
             }
+            TextButton(onClick = onLogPayment) { Text("Log payment") }
             IconButton(onClick = onMarkPaid) {
                 Icon(Icons.Filled.CheckCircle, contentDescription = "Mark ${bill.name} paid")
             }

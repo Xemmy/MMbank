@@ -112,7 +112,7 @@ class TransactionEditorFormTest {
             amount = "12.5", currency = "USD", kind = TransactionKind.TRANSFER, merchant = "x", accountId = 7, person = "Sam",
             categoryOverride = 9, excludeFromStats = true, date = LocalDate.of(2026, 2, 3), time = LocalTime.of(1, 2, 3),
             fromAccountId = 1, toAccountId = 2, toAmount = "3", outside = TransferLegs.OutsideParty.SOMEONE_ELSE,
-            note = "for Sam", labelIds = setOf(4L, 9L),
+            note = "for Sam", labelIds = setOf(4L, 9L), repeat = com.xemmy.mmbank.domain.bills.Repeat.MONTHLY,
         )
         assertEquals(f, TransactionEditorForm.fromSaveable(f.toSaveable()))
         assertEquals(blank(), TransactionEditorForm.fromSaveable(blank().toSaveable()))
@@ -125,6 +125,18 @@ class TransactionEditorFormTest {
         assertEquals("gift", f.note)
         assertEquals(setOf(2L), f.labelIds)
         assertTrue(TransactionEditorForm.initial(null, "AED", zone, now).labelIds.isEmpty())
+    }
+
+    @Test
+    fun `a bill prefills a new form but never overrides a saved row`() {
+        val bill = com.xemmy.mmbank.domain.bills.BillPrefill(BigDecimal("150.50"), "USD", "Gym")
+        val f = TransactionEditorForm.initial(null, "AED", zone, now, prefill = bill)
+        assertEquals("150.5", f.amount)
+        assertEquals("USD", f.currency)
+        assertEquals("Gym", f.merchant)
+        val saved = TransactionEditorForm.initial(existing().copy(merchant = "Own"), "AED", zone, now, prefill = bill)
+        assertEquals("Own", saved.merchant)
+        assertEquals("AED", saved.currency)
     }
 
     @Test

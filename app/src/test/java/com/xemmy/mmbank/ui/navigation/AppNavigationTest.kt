@@ -37,6 +37,8 @@ class AppNavigationTest {
     @Test fun transactionEditorRouteBuildsAndKeepsActivityHighlighted() {
         assertEquals("transaction_editor?id=-1", Routes.transactionEditor())
         assertEquals("transaction_editor?id=42", Routes.transactionEditor(42))
+        assertEquals("transaction_editor?id=-1&bill=7", Routes.transactionEditorForBill(7))
+        assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.transactionEditorForBill(7)))
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.TRANSACTION_EDITOR_PATTERN))
         assertEquals(AppTab.ACTIVITY, TabRouting.tabFor(Routes.transactionEditor(7)))
     }

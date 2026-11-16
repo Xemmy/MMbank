@@ -22,7 +22,7 @@ object Routes {
     const val MERCHANT_DETAIL_PATTERN = "merchant_detail/{merchant}"
     const val SPLITS_GROUP_PATTERN = "splits_group/{groupId}"
     const val RULE_EDITOR_PATTERN = "rule_editor?ruleId={ruleId}"
-    const val TRANSACTION_EDITOR_PATTERN = "transaction_editor?id={id}"
+    const val TRANSACTION_EDITOR_PATTERN = "transaction_editor?id={id}&bill={bill}"
     const val ACCOUNT_HISTORY_PATTERN = "account_history/{accountId}?drift={drift}"
 
     // Plain destinations
@@ -68,6 +68,9 @@ object Routes {
 
     /** The full-screen add/edit page; no id (or a non-positive one) means a new transaction. */
     fun transactionEditor(id: Long? = null) = "transaction_editor?id=${id ?: -1}"
+
+    /** A new transaction prefilled from a bill ("Log payment"); saving it also marks the bill paid. */
+    fun transactionEditorForBill(billId: Long) = "transaction_editor?id=-1&bill=$billId"
 
     fun ruleEditor(ruleId: Long) = "rule_editor?ruleId=$ruleId"
 }

@@ -84,6 +84,8 @@ private val TIME_LABEL = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
 fun TransactionEditorScreen(
     transactionId: Long?,
     onClose: () -> Unit,
+    /** Set by "Log payment" on a bill: prefills the form, and saving also advances that bill. */
+    billId: Long? = null,
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -91,22 +93,22 @@ fun TransactionEditorScreen(
     // For an edit, wait for the saved row; a row deleted meanwhile just closes the page.
     val loaded by produceState<LoadState>(LoadState.Loading, transactionId) {
         value = if (!isEdit) {
-            LoadState.Ready(null, emptySet())
+            LoadState.Ready(null, emptySet(), billId?.let { viewModel.loadBill(it) })
         } else {
-            viewModel.loadTransaction(transactionId!!)?.let { LoadState.Ready(it, viewModel.labelIdsOf(it.id)) } ?: LoadState.Missing
+            viewModel.loadTransaction(transactionId!!)?.let { LoadState.Ready(it, viewModel.labelIdsOf(it.id), null) } ?: LoadState.Missing
         }
     }
     when (val l = loaded) {
         LoadState.Loading -> MMScaffold(title = "Transaction", onBack = onClose) { }
         LoadState.Missing -> LaunchedEffect(Unit) { onClose() }
-        is LoadState.Ready -> EditorBody(l.transaction, l.labelIds, state, viewModel, onClose)
+        is LoadState.Ready -> EditorBody(l.transaction, l.labelIds, l.bill, state, viewModel, onClose)
     }
 }
 
 private sealed interface LoadState {
     data object Loading : LoadState
     data object Missing : LoadState
-    data class Ready(val transaction: Transaction?, val labelIds: Set<Long>) : LoadState
+    data class Ready(val transaction: Transaction?, val labelIds: Set<Long>, val bill: com.xemmy.mmbank.domain.model.Bill?) : LoadState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,6 +116,7 @@ private sealed interface LoadState {
 private fun EditorBody(
     existing: Transaction?,
     existingLabelIds: Set<Long>,
+    bill: com.xemmy.mmbank.domain.model.Bill?,
     state: TransactionsUiState,
     viewModel: TransactionsViewModel,
     onClose: () -> Unit,
@@ -122,7 +125,10 @@ private fun EditorBody(
     val isEdit = existing != null
     val allLabels by viewModel.labels.collectAsStateWithLifecycle()
     val initial = remember(existing) {
-        TransactionEditorForm.initial(existing, state.defaultCurrency, zone, LocalDateTime.now(), existingLabelIds)
+        TransactionEditorForm.initial(
+            existing, state.defaultCurrency, zone, LocalDateTime.now(), existingLabelIds,
+            prefill = bill?.let(com.xemmy.mmbank.domain.bills.RepeatPlanner::prefillFor),
+        )
     }
     var form by rememberSaveable(
         stateSaver = listSaver<TransactionEditorForm, Any?>(
@@ -181,6 +187,14 @@ private fun EditorBody(
                 )
             }
             job.join()
+            // A repeat is a reminder only; it never writes ledger rows (captured payments would count twice).
+            if (!isEdit && !transferMode) {
+                com.xemmy.mmbank.domain.bills.RepeatPlanner.billFor(
+                    repeat = form.repeat, name = form.merchant, fallbackName = form.kind.label, amount = value,
+                    currency = form.currency, date = form.date, zone = zone, createdAtMillis = System.currentTimeMillis(),
+                )?.let { viewModel.createRepeatBill(it) }
+            }
+            if (bill != null) viewModel.markBillPaid(bill.id)
             onClose()
         }
     }
@@ -275,6 +289,15 @@ private fun EditorBody(
                         title = "Category",
                         subtitle = effectiveCategory?.let { "${it.icon} ${it.name}" + if (form.categoryOverride == null) " · auto" else "" } ?: "Uncategorized",
                         onClick = { categorySheetOpen = true },
+                    )
+                }
+                if (!isEdit && !transferMode) {
+                    PickerRow(
+                        title = "Repeat",
+                        value = form.repeat.label,
+                        options = com.xemmy.mmbank.domain.bills.Repeat.entries,
+                        label = { it.label },
+                        onPick = { form = form.copy(repeat = it) },
                     )
                 }
                 ListRow(title = "Date", subtitle = form.date.format(DATE_LABEL), onClick = { datePickerOpen = true })

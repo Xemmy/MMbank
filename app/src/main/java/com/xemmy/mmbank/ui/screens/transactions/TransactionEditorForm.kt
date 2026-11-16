@@ -37,6 +37,7 @@ data class TransactionEditorForm(
     val outside: TransferLegs.OutsideParty = TransferLegs.OutsideParty.MY_OTHER_ACCOUNT,
     val note: String = "",
     val labelIds: Set<Long> = emptySet(),
+    val repeat: com.xemmy.mmbank.domain.bills.Repeat = com.xemmy.mmbank.domain.bills.Repeat.NEVER,
 ) {
     /** Only used for a kind that goes either way: an edited transfer leg keeps the side it was on. */
     fun direction(existing: Transaction?): TransactionDirection =
@@ -97,7 +98,7 @@ data class TransactionEditorForm(
     fun toSaveable(): List<Any?> = listOf(
         amount, currency, kind.name, merchant, accountId, person, categoryOverride, excludeFromStats,
         date.toString(), time.toString(), fromAccountId, toAccountId, toAmount, outside.name,
-        note, labelIds.sorted().joinToString(","),
+        note, labelIds.sorted().joinToString(","), repeat.name,
     )
 
     companion object {
@@ -108,13 +109,14 @@ data class TransactionEditorForm(
             zone: ZoneId,
             now: LocalDateTime,
             existingLabelIds: Set<Long> = emptySet(),
+            prefill: com.xemmy.mmbank.domain.bills.BillPrefill? = null,
         ): TransactionEditorForm {
             val at = existing?.let { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDateTime() } ?: now
             return TransactionEditorForm(
-                amount = existing?.amount?.stripTrailingZeros()?.toPlainString() ?: "",
-                currency = existing?.currencyCode ?: defaultCurrency,
+                amount = existing?.amount?.stripTrailingZeros()?.toPlainString() ?: prefill?.amount?.stripTrailingZeros()?.toPlainString() ?: "",
+                currency = existing?.currencyCode ?: prefill?.currency ?: defaultCurrency,
                 kind = existing?.kind ?: TransactionKind.SPEND,
-                merchant = existing?.merchant.orEmpty(),
+                merchant = existing?.merchant ?: prefill?.merchant.orEmpty(),
                 accountId = existing?.accountId,
                 person = existing?.person,
                 categoryOverride = existing?.categoryId,
@@ -145,6 +147,7 @@ data class TransactionEditorForm(
                 outside = TransferLegs.OutsideParty.valueOf(values[13] as String),
                 note = values[14] as String,
                 labelIds = (values[15] as String).split(',').mapNotNull { it.trim().toLongOrNull() }.toSet(),
+                repeat = com.xemmy.mmbank.domain.bills.Repeat.fromStored(values[16] as String?),
             )
         }.getOrNull()
     }

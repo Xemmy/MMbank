@@ -495,10 +495,14 @@ private fun AppNavHost(
         }
         composable(
             route = Routes.TRANSACTION_EDITOR_PATTERN,
-            arguments = listOf(navArgument("id") { type = NavType.LongType; defaultValue = -1L }),
+            arguments = listOf(
+                navArgument("id") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("bill") { type = NavType.LongType; defaultValue = -1L },
+            ),
         ) { entry ->
             TransactionEditorScreen(
                 transactionId = entry.arguments?.getLong("id")?.takeIf { it > 0 },
+                billId = entry.arguments?.getLong("bill")?.takeIf { it > 0 },
                 onClose = { navController.popBackStack() },
             )
         }
@@ -571,7 +575,12 @@ private fun AppNavHost(
             )
         }
         composable("goals") { GoalsScreen(onBack = { navController.popBackStack() }) }
-        composable("bills") { BillsScreen(onBack = { navController.popBackStack() }) }
+        composable("bills") {
+            BillsScreen(
+                onBack = { navController.popBackStack() },
+                onLogPayment = { billId -> navController.navigate(Routes.transactionEditorForBill(billId)) },
+            )
+        }
         composable("splits") {
             SplitsScreen(
                 onBack = { navController.popBackStack() },

@@ -4662,3 +4662,10 @@ Fixed in the same commit (from CI run 584 on 0.113.0 to 0.114.0, which did not c
 **Changed from the plan:** Up / Down buttons instead of drag handles; Year in review and Copilot do not compute net worth from accounts, so they needed no change.
 
 Not covered by CI: the switch, buttons, colour row and the Net worth card as rendered, the real Room v39→v40 upgrade on a device, and replay speed on a very large ledger.
+
+## Part F9 — Repeat a manual transaction (0.118.0)
+The add-transaction page has a **Repeat** row (Never / Weekly / Monthly / Yearly). Saving with a repeat also creates a **Bill** due one cycle after the payment you just logged (the day of month is kept through short months), so it shows up under Upcoming payments and gets the usual reminders. A repeat is a reminder only: it never writes ledger rows by itself, because a captured payment would then be counted twice. On **Bills**, each row gains **Log payment**: it opens the transaction page prefilled with the bill's amount, currency and name, and saving it also marks that bill paid (the existing check-mark still just advances the due date). New pure `domain/bills/RepeatPlanner` (uses `BillAdvancer`); route `transaction_editor?id=&bill=`. Tests: `RepeatPlannerTest` (first due date, month-end anchor, fallbacks, prefill), form prefill and saved-state round trip, route builder.
+
+**Changed from the plan:** "Log payment" is an added button beside the existing "Mark paid" check-mark rather than replacing it, since many bills are paid by card and captured automatically.
+
+Not covered by CI: the Repeat row, the new bill appearing under Upcoming payments, the prefilled page and the bill advancing after save.
