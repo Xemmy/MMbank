@@ -49,16 +49,18 @@ internal class WidgetColors(
 
 internal fun widgetColors(context: Context): WidgetColors {
     val palette = (context.applicationContext as MMBankApp).container.preferences.colorPalette
-    val day = mmColors(palette, dark = false)
-    val night = mmColors(palette, dark = true)
-    fun cp(d: Color, n: Color) = ColorProvider(day = d, night = n)
+    // This Glance version has no day/night provider, so the matching token set is picked here.
+    val night = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+    val c = mmColors(palette, dark = night)
+    fun cp(color: Color) = ColorProvider(color)
     return WidgetColors(
-        background = cp(day.surface, night.surface),
-        text = cp(day.textPrimary, night.textPrimary),
-        muted = cp(day.textSecondary, night.textSecondary),
-        accent = cp(day.accent, night.accent),
-        track = cp(day.borderSubtle, night.borderSubtle),
-        danger = cp(day.danger, night.danger),
+        background = cp(c.surface),
+        text = cp(c.textPrimary),
+        muted = cp(c.textSecondary),
+        accent = cp(c.accent),
+        track = cp(c.borderSubtle),
+        danger = cp(c.danger),
     )
 }
 
