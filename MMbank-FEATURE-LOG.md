@@ -4676,3 +4676,6 @@ Three more home-screen widgets beside Daily budget: **Net worth** (today's fiat 
 **Changed from the plan:** previews are still the app icon (no rendered preview images); the net-worth widget is fiat only (no crypto).
 
 Not covered by CI: every widget on a real launcher (normal, hidden, locked, empty), day/night colours, the refresh after a capture, and the pin request on different launchers.
+
+## Part F — build record
+F3 to F10 (0.112.0 to 0.119.0) went through CI together: run 43807730115 on `e0c8b49` is green (unit tests including the v37 to v40 migration tests, and the debug APK build; artifact `mmbank-debug-apk`). Earlier runs on these commits failed to compile and were fixed: missing `Icons.Filled.Add` import, a composable call inside a lazy list, `close()` written as an assignment expression, the label filter passed to the wrong composable, a day/night `ColorProvider` that this Glance version lacks (now chosen from the system night mode), three fake `AccountDao` test classes without the new order methods, and `MigrationSqlTest` rebuilding old table shapes without handling column defaults.

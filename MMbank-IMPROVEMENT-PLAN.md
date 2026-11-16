@@ -851,14 +851,14 @@ Full design in **MMbank-UNASSIGNED-PLAN.md**.
 | F0 | Colour theme (Obsidian / Graphite) and one background | 0.109.0 | ✅ 0.109.0 (CI run 43755085855 green) |
 | F1 | One period control | 0.110.0 | ✅ 0.110.0 (CI run 43758441518 green) |
 | F2 | Tap a chart, get a page | 0.111.0 | ✅ 0.111.0 (CI run 43805042512 green) |
-| F3 | One transaction screen | 0.112.0 | ✅ 0.112.0 (CI run pending) |
-| F4 | Home at a glance, day totals | 0.113.0 | ✅ 0.113.0 (CI run pending) |
-| F5 | Set a budget in one tap | 0.114.0 | ✅ 0.114.0 (CI run pending) |
-| F6 | Notes and labels | 0.115.0 | ✅ 0.115.0 (CI run pending) |
-| F7 | Category housekeeping | 0.116.0 | ✅ 0.116.0 (CI run pending) |
-| F8 | Accounts: order, net worth, wealth chart | 0.117.0 | ✅ 0.117.0 (CI run pending) |
-| F9 | Repeat a manual transaction | 0.118.0 | ✅ 0.118.0 (CI run pending) |
-| F10 | Widgets | 0.119.0 | ✅ 0.119.0 (CI run pending) |
+| F3 | One transaction screen | 0.112.0 | ✅ 0.112.0 (CI run 43807730115 green) |
+| F4 | Home at a glance, day totals | 0.113.0 | ✅ 0.113.0 (CI run 43807730115 green) |
+| F5 | Set a budget in one tap | 0.114.0 | ✅ 0.114.0 (CI run 43807730115 green) |
+| F6 | Notes and labels | 0.115.0 | ✅ 0.115.0 (CI run 43807730115 green) |
+| F7 | Category housekeeping | 0.116.0 | ✅ 0.116.0 (CI run 43807730115 green) |
+| F8 | Accounts: order, net worth, wealth chart | 0.117.0 | ✅ 0.117.0 (CI run 43807730115 green) |
+| F9 | Repeat a manual transaction | 0.118.0 | ✅ 0.118.0 (CI run 43807730115 green) |
+| F10 | Widgets | 0.119.0 | ✅ 0.119.0 (CI run 43807730115 green) |
 
 ## Where things stand after 0.99.0
 
