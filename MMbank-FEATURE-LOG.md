@@ -4693,3 +4693,5 @@ Not covered by CI: the new row line and Labels section as rendered, and the pick
 **Drag to reorder:** categories (Settings → Categories & People) and accounts (Manage accounts) now have a grip on each row; dragging it up or down moves the row one place for every 56 dp of travel (pure `reorderSteps`, tested). The menu items and Up / Down buttons stay for people who cannot drag. **Widget previews:** the launcher's widget picker now shows a drawn mock of each widget (Daily budget, Net worth, Spent this month, Budgets) instead of the app icon.
 
 Not covered by CI: how dragging feels (the row re-orders under the finger as each step is stored), and the previews in a real launcher picker.
+
+**0.121.0 build record:** run 43810889425 on `45a8829` is green (unit tests and the debug APK, artifact `mmbank-debug-apk`). With this, nothing in the Part F plan is left open except how the features look and feel on a device, which CI cannot show.
