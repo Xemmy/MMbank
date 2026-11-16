@@ -386,6 +386,24 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         SpendSummaryState()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpendSummaryState())
 
+    val hideBalances: StateFlow<Boolean> = container.hideBalances
+
+    /** Per-day totals of exactly the rows the filtered feed shows, in the base currency (Activity's day headers). */
+    val dayTotals: StateFlow<Map<java.time.LocalDate, com.xemmy.mmbank.domain.report.DayTotal>> = combine(
+        uiState,
+        container.ratesRepository.observeRates(),
+    ) { state, rates ->
+        val base = container.preferences.defaultCurrency
+        val ratesFromBase = rates
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+        com.xemmy.mmbank.domain.report.DayTotals.byDay(state.transactions, java.time.ZoneId.systemDefault()) { tx ->
+            CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase)
+        }
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default)
+        .recoverAndRetry("TransactionsViewModel.dayTotals", container) { emptyMap() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** How many real transactions still need a dynamic category -- drives the Uncategorized queue entry point. */
     val uncategorizedCount: StateFlow<Int> = container.transactionRepository.observeUncategorized()
         .map { it.size }

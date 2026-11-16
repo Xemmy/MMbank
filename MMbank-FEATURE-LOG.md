@@ -4621,3 +4621,8 @@ Tests: `TransactionEditorFormTest` (validation matrix, kind → direction, cross
 **Changed from the plan:** the page reuses `TransactionsViewModel` (nav-entry scoped) rather than a new view model and shared save class; the read-only `TransactionDetailSheet` is kept (its Edit now opens the page); the old `TransactionEditorDialog` is deleted.
 
 Not covered by CI: the whole screen, keyboard and pickers, the discard prompt, rotation, each entry point, the + button position over each tab's content.
+
+## Part F4 — Home at a glance, day totals (0.113.0)
+Home gets a **This month** card under the net-worth and health cards: net (with + or −), money in, money out and a six-month net line; tap opens the Cash flow page. Home's **Recent activity** is now grouped by day with a total on each day header, and Activity's floating day pill shows the same total. New pure `domain/report/DayTotals` (via `LedgerMath`, so refunds lower spending and transfers, card payments and adjustments count for nothing; other currencies converted to the base currency, unconvertible rows skipped). Home totals cover every transaction of the day (not only the capped feed) and follow the account chosen in the carousel; Activity totals cover exactly the rows its filters show. Masked while balances are hidden. Tests: `DayTotalsTest`.
+
+Not covered by CI: the card and the day headers as rendered, the pill widening on narrow screens, the totals matching the rows on a real ledger with several currencies.

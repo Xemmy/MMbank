@@ -429,6 +429,8 @@ fun TransactionsScreen(
                 // section. groupBy preserves first-encounter key order, which
                 // matches the feed's order as long as it stays date-sorted.
                 val today = rememberCurrentDate()
+                val dayTotals by viewModel.dayTotals.collectAsStateWithLifecycle()
+                val hideBalances by viewModel.hideBalances.collectAsStateWithLifecycle()
                 val grouped = remember(state.transactions) {
                     state.transactions.groupBy { it.timestampMillis.toLocalDate() }
                 }
@@ -440,7 +442,7 @@ fun TransactionsScreen(
                 ) {
                     grouped.forEach { (day, dayTransactions) ->
                         stickyHeader(key = "day-$day") {
-                            DayPill(day = day, today = today)
+                            DayPill(day = day, today = today, total = dayTotals[day], currency = state.defaultCurrency, hidden = hideBalances)
                         }
                         items(dayTransactions, key = { it.id }) { tx ->
                             Column {
@@ -570,7 +572,13 @@ fun TransactionsScreen(
  * hovers over its section while scrolling, labeling the calendar day below it.
  */
 @Composable
-private fun DayPill(day: LocalDate, today: LocalDate) {
+private fun DayPill(
+    day: LocalDate,
+    today: LocalDate,
+    total: com.xemmy.mmbank.domain.report.DayTotal? = null,
+    currency: String = "",
+    hidden: Boolean = false,
+) {
     val colors = MMTheme.colors
     Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
@@ -579,12 +587,20 @@ private fun DayPill(day: LocalDate, today: LocalDate) {
                 .background(colors.surfaceRaised, CircleShape)
                 .border(1.dp, colors.borderSubtle, CircleShape)
                 .padding(horizontal = 12.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 dayPillLabel(day, today),
                 color = colors.textSecondary,
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.18.em),
             )
+            if (total != null && total.netSign != 0) {
+                Text(
+                    com.xemmy.mmbank.ui.util.dayTotalLabel(total, currency, hidden),
+                    color = colors.textPrimary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }

@@ -461,6 +461,7 @@ private fun AppNavHost(
                 onOpenCaptureSettings = { navController.navigate("settings_capture") },
                 onOpenAccounts = { navController.navigate("accounts") },
                 onOpenBackup = { navController.navigate("settings_backup") },
+                onOpenCashFlow = { navController.navigate(Routes.CASH_FLOW_DETAIL) },
             )
         }
         // The optional args let Home and Accounts deep-link straight into the

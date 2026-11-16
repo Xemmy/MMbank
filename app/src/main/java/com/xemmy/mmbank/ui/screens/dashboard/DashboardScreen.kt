@@ -94,6 +94,8 @@ fun DashboardScreen(
     onOpenCaptureSettings: () -> Unit = {},
     onOpenAccounts: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    /** The month card at the top opens the Cash flow page. */
+    onOpenCashFlow: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -111,6 +113,7 @@ fun DashboardScreen(
     }
     val weeklyDigest by viewModel.weeklyDigest.collectAsStateWithLifecycle()
     val financialHealth by viewModel.financialHealth.collectAsStateWithLifecycle()
+    val dayTotals by viewModel.dayTotals.collectAsStateWithLifecycle()
     val pendingReviewCount by viewModel.pendingReviewCount.collectAsStateWithLifecycle()
     val cardsDue by viewModel.cardsDue.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -197,6 +200,10 @@ fun DashboardScreen(
                 }
             }
 
+            item(key = "month_card") {
+                MonthCard(state, hidden, onOpenCashFlow)
+            }
+
             item(key = "account_carousel") {
                 AccountCarousel(
                     accounts = state.accounts,
@@ -253,12 +260,39 @@ fun DashboardScreen(
                     )
                 }
             } else {
-                items(state.recent, key = { "recent_${it.id}" }) { tx ->
-                    // User-defined label wins, then the built-in bank map — so
-                    // "com.adib.mobile" shows as "ADIB", not the raw package.
-                    val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
-                    RecentTransactionRow(tx, bankName, hidden)
-                    HorizontalDivider(color = MMTheme.colors.borderSubtle)
+                val today = com.xemmy.mmbank.ui.util.rememberCurrentDate()
+                val zone = remember { java.time.ZoneId.systemDefault() }
+                val byDay = state.recent.groupBy {
+                    java.time.Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDate()
+                }
+                byDay.forEach { (day, rows) ->
+                    item(key = "recent_day_$day") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                com.xemmy.mmbank.ui.util.dayPillLabel(day, today),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MMTheme.colors.textSecondary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            dayTotals[day]?.takeIf { it.netSign != 0 }?.let { total ->
+                                Text(
+                                    com.xemmy.mmbank.ui.util.dayTotalLabel(total, state.baseCurrency, hidden),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MMTheme.colors.textPrimary,
+                                )
+                            }
+                        }
+                    }
+                    items(rows, key = { "recent_${it.id}" }) { tx ->
+                        // User-defined label wins, then the built-in bank map — so
+                        // "com.adib.mobile" shows as "ADIB", not the raw package.
+                        val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
+                        RecentTransactionRow(tx, bankName, hidden)
+                        HorizontalDivider(color = MMTheme.colors.borderSubtle)
+                    }
                 }
             }
         }
@@ -792,6 +826,43 @@ fun RecentTransactionRow(tx: Transaction, bankName: String? = null, hidden: Bool
                 modifier = Modifier.padding(start = MMSpacing.xs).size(14.dp),
                 tint = MMTheme.colors.textSecondary,
             )
+        }
+    }
+}
+
+
+/** This month at a glance: net, money in and out, and the last six months' net as a line. Tap for Cash flow. */
+@Composable
+private fun MonthCard(state: DashboardUiState, hidden: Boolean, onOpen: () -> Unit) {
+    val monthly = state.stats.monthly
+    val current = monthly.lastOrNull() ?: return
+    if (monthly.all { it.income == 0.0 && it.spend == 0.0 }) return
+    val net = current.income - current.spend
+    val currency = state.baseCurrency
+    MMCard(Modifier.fillMaxWidth(), onClick = onOpen) {
+        Column(verticalArrangement = Arrangement.spacedBy(MMSpacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("This month", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary, modifier = Modifier.weight(1f))
+                Text("Cash flow ›", style = MaterialTheme.typography.labelMedium, color = MMTheme.colors.textSecondary)
+            }
+            Text(
+                (if (net < 0) "\u2212" else if (net > 0) "+" else "") + moneyLabel(kotlin.math.abs(net), currency, hidden),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MMTheme.colors.textPrimary,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("In ${moneyLabel(current.income, currency, hidden)}", style = MaterialTheme.typography.bodySmall, color = MMTheme.colors.moneyIn)
+                Text("Out ${moneyLabel(current.spend, currency, hidden)}", style = MaterialTheme.typography.bodySmall, color = MMTheme.colors.moneyOut)
+            }
+            androidx.compose.runtime.CompositionLocalProvider(
+                com.xemmy.mmbank.ui.designsystem.LocalHideBalances provides hidden,
+            ) {
+                com.xemmy.mmbank.ui.designsystem.Sparkline(
+                    values = monthly.map { it.income - it.spend },
+                    title = "Net per month, last six months",
+                    valueLabel = { moneyLabel(it, currency, hidden) },
+                )
+            }
         }
     }
 }

@@ -31,6 +31,8 @@ import com.xemmy.mmbank.ui.util.recoverAndRetry
 import java.time.Instant
 import java.time.LocalDate
 import com.xemmy.mmbank.domain.filter.PeriodUnit
+import com.xemmy.mmbank.domain.report.DayTotal
+import com.xemmy.mmbank.domain.report.DayTotals
 import com.xemmy.mmbank.domain.filter.PeriodWindow
 import java.time.YearMonth
 import java.time.ZoneId
@@ -614,6 +616,27 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 recent = bundle.feed,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
+
+    /**
+     * Per-day totals behind the Home feed's day headers: every transaction of the day (not just the
+     * capped feed), narrowed to the carousel's account when one is selected, in the base currency.
+     */
+    val dayTotals: StateFlow<Map<LocalDate, DayTotal>> = combine(
+        container.transactionRepository.observeTransactions(),
+        container.ratesRepository.observeRates(),
+        selectedAccountId,
+    ) { transactions, rates, accountId ->
+        val base = container.preferences.defaultCurrency
+        val ratesFromBase = rates
+            .filter { it.baseCode.equals(base, ignoreCase = true) }
+            .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+        DayTotals.byDay(
+            transactions = if (accountId == null) transactions else transactions.filter { it.accountId == accountId },
+            zone = java.time.ZoneId.systemDefault(),
+        ) { tx -> CurrencyMath.toBase(tx.amount.toDouble(), tx.currencyCode, base, ratesFromBase) }
+    }.flowOn(Dispatchers.Default)
+        .recoverAndRetry("DashboardViewModel.dayTotals", container) { emptyMap() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Flips analytics between "clean" (default) and raw-ledger figures. */
     fun toggleShowAllLedgerTransactions() {
