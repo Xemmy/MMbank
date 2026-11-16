@@ -463,4 +463,19 @@ class BackupMappersTest {
         assertEquals(withLabels.labels, again.labels)
         assertEquals(withLabels.transactionLabels, again.transactionLabels)
     }
+
+    @Test
+    fun `category order and flow survive a backup, and an older backup category is an expense at position zero`() {
+        val entity = com.xemmy.mmbank.data.local.entity.CategoryEntity(
+            id = 3, name = "Wages", icon = "x", colorHex = "#000000", sortOrder = 5,
+            flow = com.xemmy.mmbank.domain.model.CategoryFlow.INCOME,
+        )
+        assertEquals(entity, entity.toBackup().toEntity())
+        val old = json.decodeFromString(
+            BackupCategory.serializer(),
+            """{"id":1,"name":"Food","icon":"x","colorHex":"#000000","isCustom":false,"monthlyCap":null,"parentCategoryId":null}""",
+        )
+        assertEquals(0, old.toEntity().sortOrder)
+        assertEquals(com.xemmy.mmbank.domain.model.CategoryFlow.EXPENSE, old.toEntity().flow)
+    }
 }

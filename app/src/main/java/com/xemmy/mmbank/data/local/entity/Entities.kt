@@ -250,6 +250,11 @@ data class CategoryEntity(
     val monthlyCap: BigDecimal? = null,
     /** Parent category id, for a two-level hierarchy; null = top-level. */
     val parentCategoryId: Long? = null,
+    /** See [Category.sortOrder]. The default also lets raw inserts that name no order succeed. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /** See [Category.flow]. */
+    @androidx.room.ColumnInfo(defaultValue = "'EXPENSE'") val flow: com.xemmy.mmbank.domain.model.CategoryFlow =
+        com.xemmy.mmbank.domain.model.CategoryFlow.EXPENSE,
 )
 
 @Entity(
@@ -632,8 +637,8 @@ fun Transaction.toEntity() = TransactionEntity(
     note = note,
 )
 
-fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)
-fun Category.toEntity() = CategoryEntity(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)
+fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId, sortOrder, flow)
+fun Category.toEntity() = CategoryEntity(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId, sortOrder, flow)
 
 fun MerchantCategoryMappingEntity.toDomain() = MerchantCategoryMapping(
     id, merchantPattern, categoryId, isExactMatch, pending, suggestedName, suggestedIcon, suggestedColorHex,

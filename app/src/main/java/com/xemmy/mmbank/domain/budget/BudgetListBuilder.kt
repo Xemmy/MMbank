@@ -52,7 +52,7 @@ object BudgetListBuilder {
         val previous = (1..3).map { spendOf(thisMonthStart.minusMonths(it.toLong())) }
 
         return categories
-            .filter { it.parentCategoryId == null }
+            .filter { it.parentCategoryId == null && it.flow == com.xemmy.mmbank.domain.model.CategoryFlow.EXPENSE }
             .map { c ->
                 val avg = previous.fold(BigDecimal.ZERO) { acc, m -> acc + (m[c.id] ?: BigDecimal.ZERO) }
                     .divide(BigDecimal(3), 2, RoundingMode.HALF_EVEN)

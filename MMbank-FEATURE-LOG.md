@@ -4640,3 +4640,14 @@ Tests: `LabelRulesTest`, filter by label and by note, entity round trips, backup
 **Changed from the plan:** label names are unique case-insensitively in code (`LabelRules.isDuplicate`, `findByName`) while the database index is plain unique, to keep the Room schema simple; **not done yet:** showing up to two labels on a transaction row, and a Labels section on the Spending page.
 
 Not covered by CI: the real Room v37→v38 upgrade on a device (export a backup first), the Note box and chips as rendered, the Labels screen, the filter group, and restore from a format 17 backup.
+
+## Part F7 — Category housekeeping (0.116.0, schema v39, backup format 18)
+The Categories screen (Settings → Categories & People) now has **Expenses / Income** chips, and each category row has a **⋮** menu: **Move up / Move down**, **Merge into…** and **Move to Income / Expenses**. A category created while Income is showing starts on the income side. The editor's icon and colour pickers are wrapping grids with 44 and 40 dp targets and more presets (38 icons, 20 colours). **Merge** moves the category's transactions (demo rows too) and learned merchant rules to the one you pick, moves its sub-categories under it, gives the kept category the other's cap when it has none, and deletes the merged one, all in one transaction. The Budgets list shows expense categories only; `flow` only sorts and groups, it never hides a category from a picker.
+
+Schema v39 is additive (`MIGRATION_38_39`): `categories.sortOrder` (starts as each category's current list position, so nothing moves) and `categories.flow` (`Income` and any category used only by Received rows become INCOME; four starters, Salary / Business / Gifts received / Other income, are added only when that leaves no income category). The entity declares matching column defaults, so the fresh-install starter inserts and the migration agree. New pure `domain/budget/CategoryMerge` (merge plan, move up/down). `Category` / `CategoryEntity` / `BackupCategory` carry both fields (format 18; an older backup restores as expenses in their old order).
+
+Tests: `CategoryMergeTest`, migration data tests (order kept, income flagged, starters only when none), starter-insert test, entity and backup round trips; `MigrationSqlTest` now reads the v39 schema.
+
+**Changed from the plan:** order changes use Move up / Move down in the menu rather than drag handles; the editor has no Expense/Income switch (use the row menu); pickers do not yet list income categories first for a received row.
+
+Not covered by CI: the tabs, menu, merge dialog and larger grids as rendered, the real Room v38→v39 upgrade on a device (export a backup first), and merge on a large ledger.

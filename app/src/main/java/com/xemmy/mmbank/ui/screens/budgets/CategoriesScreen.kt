@@ -28,6 +28,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.xemmy.mmbank.domain.model.CategoryFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -129,7 +133,14 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CategoriesUiState())
 
     /** Creates a brand-new category from the FAB's [CategoryEditorDialog]. */
-    fun create(name: String, icon: String, colorHex: String, monthlyCap: BigDecimal?, parentCategoryId: Long?) {
+    fun create(
+        name: String,
+        icon: String,
+        colorHex: String,
+        monthlyCap: BigDecimal?,
+        parentCategoryId: Long?,
+        flow: com.xemmy.mmbank.domain.model.CategoryFlow = com.xemmy.mmbank.domain.model.CategoryFlow.EXPENSE,
+    ) {
         val clean = name.trim()
         if (clean.isEmpty()) return
         viewModelScope.launch {
@@ -142,6 +153,7 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
                         isCustom = true,
                         monthlyCap = monthlyCap?.takeIf { it.signum() > 0 },
                         parentCategoryId = parentCategoryId,
+                        flow = flow,
                     )
                 )
             }.onFailure { container.recordError("CategoriesViewModel.create", it) }
@@ -175,6 +187,30 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
                     )
                 )
             }.onFailure { container.recordError("CategoriesViewModel.save", it) }
+        }
+    }
+
+    /** Moves [categoryId] one step up (-1) or down (+1) among [orderedIds] (the ids as currently shown). */
+    fun move(orderedIds: List<Long>, categoryId: Long, direction: Int) {
+        val next = com.xemmy.mmbank.domain.budget.CategoryMerge.move(orderedIds, categoryId, direction)
+        if (next == orderedIds) return
+        viewModelScope.launch {
+            runCatching { container.categoryRepository.setOrder(next) }
+                .onFailure { container.recordError("CategoriesViewModel.move", it) }
+        }
+    }
+
+    fun setFlow(categoryId: Long, flow: com.xemmy.mmbank.domain.model.CategoryFlow) {
+        viewModelScope.launch {
+            runCatching { container.categoryRepository.setFlow(categoryId, flow) }
+                .onFailure { container.recordError("CategoriesViewModel.setFlow", it) }
+        }
+    }
+
+    fun merge(fromId: Long, intoId: Long) {
+        viewModelScope.launch {
+            runCatching { container.categoryRepository.merge(fromId, intoId) }
+                .onFailure { container.recordError("CategoriesViewModel.merge", it) }
         }
     }
 
@@ -221,13 +257,25 @@ fun CategoriesTabContent(
     var confirmingDelete by remember { mutableStateOf<Category?>(null) }
 
     val statusByCategoryId = remember(state.statuses) { state.statuses.associateBy { it.category.id } }
-    val tree = remember(state.categories) { CategoryHierarchy.buildTree(state.categories) }
+    val fullTree = remember(state.categories) { CategoryHierarchy.buildTree(state.categories) }
+    var showIncome by remember { mutableStateOf(false) }
+    var mergingFrom by remember { mutableStateOf<Category?>(null) }
+    val side = if (showIncome) CategoryFlow.INCOME else CategoryFlow.EXPENSE
+    val tree = remember(fullTree, side) { fullTree.filter { it.category.flow == side } }
+    // The order as shown, so a move up/down acts on what the user sees.
+    val shownIds = remember(tree) { tree.map { it.category.id } }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().obsidianCanvas(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(key = "flow_tabs") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.xemmy.mmbank.ui.designsystem.MMFilterChip(label = "Expenses", selected = !showIncome, onClick = { showIncome = false })
+                com.xemmy.mmbank.ui.designsystem.MMFilterChip(label = "Income", selected = showIncome, onClick = { showIncome = true })
+            }
+        }
         state.uncountedNotice?.let { notice ->
             item(key = "uncounted_notice") {
                 Text(
@@ -256,6 +304,13 @@ fun CategoriesTabContent(
                     currency = state.currency,
                     onEdit = { editing = node.category },
                     onDelete = { confirmingDelete = node.category },
+                    onMoveUp = { viewModel.move(shownIds, node.category.id, -1) },
+                    onMoveDown = { viewModel.move(shownIds, node.category.id, 1) },
+                    onMerge = { mergingFrom = node.category },
+                    onSwitchSide = {
+                        viewModel.setFlow(node.category.id, if (showIncome) CategoryFlow.EXPENSE else CategoryFlow.INCOME)
+                    },
+                    sideLabel = if (showIncome) "Move to Expenses" else "Move to Income",
                 )
             }
             items(node.children, key = { "cat_${it.id}" }) { child ->
@@ -278,9 +333,31 @@ fun CategoriesTabContent(
             allCategories = state.categories,
             onDismiss = { onCreatingNewChange(false) },
             onSave = { name, icon, colorHex, cap, parentId ->
-                viewModel.create(name, icon, colorHex, cap, parentId)
+                viewModel.create(name, icon, colorHex, cap, parentId, side)
                 onCreatingNewChange(false)
             },
+        )
+    }
+
+    mergingFrom?.let { from ->
+        AlertDialog(
+            onDismissRequest = { mergingFrom = null },
+            title = { Text("Merge “${from.name}” into") },
+            text = {
+                Column {
+                    Text(
+                        "Its transactions, merchant rules and sub-categories move to the one you pick, then “${from.name}” is deleted.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    state.categories.filter { it.id != from.id }.forEach { target ->
+                        TextButton(onClick = { viewModel.merge(from.id, target.id); mergingFrom = null }) {
+                            Text("${target.icon} ${target.name}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { mergingFrom = null }) { Text("Cancel") } },
         )
     }
 
@@ -527,6 +604,11 @@ private fun CategoryRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
+    onMerge: (() -> Unit)? = null,
+    onSwitchSide: (() -> Unit)? = null,
+    sideLabel: String = "",
 ) {
     MMCard(modifier.fillMaxWidth()) {
         Column {
@@ -543,6 +625,20 @@ private fun CategoryRow(
                     modifier = Modifier.weight(1f),
                 )
                 RowActions(onEdit = onEdit, onDelete = onDelete)
+                if (onMoveUp != null || onMerge != null) {
+                    var menuOpen by remember { mutableStateOf(false) }
+                    androidx.compose.foundation.layout.Box {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More actions", modifier = Modifier.size(18.dp))
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            onMoveUp?.let { DropdownMenuItem(text = { Text("Move up") }, onClick = { menuOpen = false; it() }) }
+                            onMoveDown?.let { DropdownMenuItem(text = { Text("Move down") }, onClick = { menuOpen = false; it() }) }
+                            onMerge?.let { DropdownMenuItem(text = { Text("Merge into…") }, onClick = { menuOpen = false; it() }) }
+                            onSwitchSide?.let { DropdownMenuItem(text = { Text(sideLabel) }, onClick = { menuOpen = false; it() }) }
+                        }
+                    }
+                }
             }
             if (status != null) {
                 Spacer(Modifier.height(8.dp))

@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.Color
 val PRESET_COLORS = listOf(
     "#4CAF50", "#FF7043", "#29B6F6", "#FFCA28", "#AB47BC",
     "#EC407A", "#26A69A", "#66BB6A", "#8D6E63", "#78909C",
+    "#EF5350", "#7E57C2", "#5C6BC0", "#26C6DA", "#9CCC65",
+    "#D4E157", "#FFA726", "#FF8A65", "#A1887F", "#BDBDBD",
 )
 
 /**
@@ -17,6 +19,8 @@ val PRESET_COLORS = listOf(
  */
 val PRESET_ICONS: List<String> = listOf(
     "🏷️", "🛒", "🍽️", "🚕", "⛽", "🛍️", "💡", "🎬", "🩺", "✈️", "🔁", "💰", "🏦", "•",
+    "🏠", "🔧", "📱", "💻", "🎓", "👶", "🐾", "🎁", "🏋️", "💇", "👕", "☕",
+    "🍺", "🚌", "🚗", "🛡️", "📚", "🎮", "🧾", "🌴", "💼", "🏢", "💳", "🧴",
 ).distinct()
 
 /** Best-effort "#RRGGBB" -> [Color]; falls back to a neutral grey on a malformed hex. */

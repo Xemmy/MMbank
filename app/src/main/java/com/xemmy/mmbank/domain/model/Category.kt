@@ -24,7 +24,22 @@ data class Category(
      * combined budget. Null = a top-level category.
      */
     val parentCategoryId: Long? = null,
+    /** Position in lists and pickers; lower comes first. New categories go to the end. */
+    val sortOrder: Int = 0,
+    /** Whether this category is for money going out or coming in. Only sorts and groups; never hides one. */
+    val flow: CategoryFlow = CategoryFlow.EXPENSE,
 )
+
+/** Which side of the ledger a [Category] mostly belongs to. */
+enum class CategoryFlow {
+    EXPENSE,
+    INCOME,
+    ;
+
+    companion object {
+        fun fromStored(value: String?): CategoryFlow = entries.firstOrNull { it.name == value } ?: EXPENSE
+    }
+}
 
 /**
  * A learned merchant -> category rule, consulted at capture time (see

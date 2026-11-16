@@ -801,6 +801,16 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `category order and flow survive the domain and entity round trip`() {
+        val c = com.xemmy.mmbank.domain.model.Category(
+            id = 4, name = "Wages", icon = "x", colorHex = "#000000", sortOrder = 7,
+            flow = com.xemmy.mmbank.domain.model.CategoryFlow.INCOME,
+        )
+        assertEquals(7, c.toEntity().sortOrder)
+        assertEquals(c, c.toEntity().toDomain())
+    }
+
+    @Test
     fun `label entity round trip`() {
         val label = com.xemmy.mmbank.domain.model.Label(3, "Holiday", "#56B4E9")
         assertEquals(label, label.toEntity().toDomain())

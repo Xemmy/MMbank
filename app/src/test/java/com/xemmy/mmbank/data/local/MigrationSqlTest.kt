@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v38 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v39 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v38
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v39
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../38.json`), so
+ *     compiler exports during this same build (`app/schemas/.../39.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/38.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/38.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/39.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/39.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 38.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 39.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -67,6 +67,7 @@ class MigrationSqlTest {
         "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind", "categorySource", "personSource", "refundOfId", "historyOnly", "note"),
         "parsing_rules" to listOf("assignKind"),
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor"),
+        "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor"),
     )
     private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels")
@@ -107,7 +108,7 @@ class MigrationSqlTest {
                 MigrationSql.MIGRATION_31_32_SQL + MigrationSql.MIGRATION_32_33_SQL +
                 MigrationSql.MIGRATION_33_34_SQL + MigrationSql.MIGRATION_34_35_SQL +
                 MigrationSql.MIGRATION_35_36_SQL + MigrationSql.MIGRATION_36_37_SQL +
-                MigrationSql.MIGRATION_37_38_SQL
+                MigrationSql.MIGRATION_37_38_SQL + MigrationSql.MIGRATION_38_39_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -148,7 +149,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v38 install table for table`() {
+    fun `an upgraded database matches a fresh v39 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -253,6 +254,61 @@ class MigrationSqlTest {
                 assertEquals(null, rs.getString(4))
             }
         }
+    }
+
+    private fun category(id: Int, name: String, custom: Int) =
+        migrated.exec("INSERT INTO categories (id, name, icon, colorHex, isCustom) VALUES ($id, '$name', 'x', '#000000', $custom)")
+
+    private fun categoryRows(): List<Triple<String, Int, String>> =
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT name, sortOrder, flow FROM categories ORDER BY sortOrder, id").use { rs ->
+                buildList { while (rs.next()) add(Triple(rs.getString(1), rs.getInt(2), rs.getString(3))) }
+            }
+        }
+
+    @Test
+    fun `categories keep their list order, a category used only for income is flagged, and no seeds are added when one exists`() {
+        category(1, "Zebra", 0)
+        category(2, "Apple", 0)
+        category(3, "Custom A", 1)
+        category(4, "Wages", 0)
+        migrated.exec(
+            "INSERT INTO transactions (id, accountId, amount, currencyCode, direction, merchant, source, matchedRuleName, " +
+                "timestamp, createdAt, category, spendingCategory, excludeFromStats, linkedTransactionId, isDemo, " +
+                "needsCategoryApproval, categoryId) VALUES (1, NULL, '5000', 'AED', 'CREDIT', 'Employer', 'SMS', NULL, " +
+                "0, 0, 'NORMAL', 'UNCATEGORIZED', 0, NULL, 0, 0, 4)"
+        )
+        migrate()
+        // The old ORDER BY isCustom, name: Apple, Wages, Zebra, then the custom one.
+        assertEquals(
+            listOf(
+                Triple("Apple", 0, "EXPENSE"), Triple("Wages", 1, "INCOME"),
+                Triple("Zebra", 2, "EXPENSE"), Triple("Custom A", 3, "EXPENSE"),
+            ),
+            categoryRows(),
+        )
+    }
+
+    @Test
+    fun `a category named Income is flagged, and with no income category at all four starters are added after the rest`() {
+        category(1, "Groceries", 0)
+        migrate()
+        assertEquals(listOf(Triple("Groceries", 0, "EXPENSE")), categoryRows().take(1))
+        assertEquals(
+            listOf("Salary", "Business", "Gifts received", "Other income"),
+            categoryRows().drop(1).map { it.first },
+        )
+        assertTrue(categoryRows().drop(1).all { it.third == "INCOME" })
+        assertEquals(listOf(1, 2, 3, 4), categoryRows().drop(1).map { it.second })
+    }
+
+    @Test
+    fun `an existing Income category suppresses the starters`() {
+        category(1, "Income", 0)
+        category(2, "Food", 0)
+        migrate()
+        assertEquals(2, categoryRows().size)
+        assertEquals("INCOME", categoryRows().first { it.first == "Income" }.third)
     }
 
     @Test

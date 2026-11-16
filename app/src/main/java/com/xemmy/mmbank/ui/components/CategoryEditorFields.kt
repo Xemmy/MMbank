@@ -84,15 +84,16 @@ fun CategoryEditorFields(
 
         Text("Icon", style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(6.dp))
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             PRESET_ICONS.forEach { emoji ->
                 val selected = emoji == state.icon
                 Box(
                     Modifier
-                        .size(36.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
                         .background(
                             if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -115,12 +116,16 @@ fun CategoryEditorFields(
 
         Text("Color", style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             PRESET_COLORS.forEach { hex ->
                 val selected = hex == state.colorHex
                 Box(
                     Modifier
-                        .size(28.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
                         .background(categoryColor(hex))
                         .clickable { onStateChange(state.copy(colorHex = hex)) },

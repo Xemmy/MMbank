@@ -174,6 +174,9 @@ data class BackupCategory(
     val isCustom: Boolean,
     val monthlyCap: String?,
     val parentCategoryId: Long?,
+    /** Format 18. Absent on older backups: the category keeps its place in the list. */
+    val sortOrder: Int = 0,
+    val flow: String = "EXPENSE",
 )
 
 @Serializable
@@ -213,6 +216,9 @@ data class BackupPayload(
      * 14 = adds [accountChanges], the per-account change log. Always replaced on
      * restore (log rows are keyed to account ids, which a restore re-issues), so an
      * older backup simply restores an empty log -- plus one marker per account.
+     *
+     * 18 = adds [BackupCategory.sortOrder] and [BackupCategory.flow]. No gate: an older category keeps
+     * its backup position and counts as an expense category.
      *
      * 17 = adds [BackupTransaction.note], [labels] and [transactionLabels]. Labels are gated on the
      * version: an older backup has none, so a restore leaves no labels.
@@ -396,7 +402,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 17,
+            formatVersion = 18,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -814,6 +820,8 @@ internal fun CategoryEntity.toBackup() = BackupCategory(
     isCustom = isCustom,
     monthlyCap = monthlyCap?.toPlainString(),
     parentCategoryId = parentCategoryId,
+    sortOrder = sortOrder,
+    flow = flow.name,
 )
 
 internal fun BackupCategory.toEntity() = CategoryEntity(
@@ -824,6 +832,8 @@ internal fun BackupCategory.toEntity() = CategoryEntity(
     isCustom = isCustom,
     monthlyCap = monthlyCap?.let(::BigDecimal),
     parentCategoryId = parentCategoryId,
+    sortOrder = sortOrder,
+    flow = com.xemmy.mmbank.domain.model.CategoryFlow.fromStored(flow),
 )
 
 internal fun MerchantAccountMappingEntity.toBackup() = BackupMerchantAccountMapping(

@@ -20,7 +20,7 @@ interface CategoryDao {
     @Update
     suspend fun update(entity: CategoryEntity)
 
-    @Query("SELECT * FROM categories ORDER BY isCustom, name")
+    @Query("SELECT * FROM categories ORDER BY sortOrder, isCustom, name")
     fun observeAll(): Flow<List<CategoryEntity>>
 
     @Query("SELECT * FROM categories WHERE id = :id")
@@ -43,6 +43,19 @@ interface CategoryDao {
 
     @Query("SELECT COUNT(*) FROM categories")
     suspend fun count(): Int
+
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM categories")
+    suspend fun maxSortOrder(): Int
+
+    @Query("UPDATE categories SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun setSortOrder(id: Long, sortOrder: Int)
+
+    @Query("UPDATE categories SET flow = :flow WHERE id = :id")
+    suspend fun setFlow(id: Long, flow: String)
+
+    /** Moves every direct child of [fromId] under [toId] (null = top level); used when categories are merged. */
+    @Query("UPDATE categories SET parentCategoryId = :toId WHERE parentCategoryId = :fromId")
+    suspend fun reparentChildren(fromId: Long, toId: Long?): Int
 
     // --- Backup support ---
 

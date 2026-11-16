@@ -88,6 +88,32 @@ object MigrationSql {
     )
 
     /**
+     * v39: category order and flow. `sortOrder` starts as each category's current position in the
+     * list (custom last, then by name, exactly the old ORDER BY) so nothing moves. `flow` marks
+     * "Income" and any category used only by Received rows as INCOME; when that leaves no income
+     * category at all, four starter ones are added. Purely additive. The defaults match the
+     * entity's `@ColumnInfo(defaultValue)`.
+     */
+    val MIGRATION_38_39_SQL: List<String> = listOf(
+        "ALTER TABLE `categories` ADD COLUMN `sortOrder` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `categories` ADD COLUMN `flow` TEXT NOT NULL DEFAULT 'EXPENSE'",
+        "UPDATE `categories` SET `sortOrder` = (SELECT COUNT(*) FROM `categories` AS c2 WHERE " +
+            "c2.`isCustom` < `categories`.`isCustom` OR (c2.`isCustom` = `categories`.`isCustom` AND " +
+            "(c2.`name` < `categories`.`name` OR (c2.`name` = `categories`.`name` AND c2.`id` < `categories`.`id`))))",
+        "UPDATE `categories` SET `flow` = 'INCOME' WHERE lower(`name`) = 'income'",
+        "UPDATE `categories` SET `flow` = 'INCOME' WHERE `id` IN (" +
+            "SELECT `categoryId` FROM `transactions` WHERE `categoryId` IS NOT NULL " +
+            "GROUP BY `categoryId` HAVING SUM(CASE WHEN `kind` = 'INCOME' THEN 0 ELSE 1 END) = 0)",
+        "INSERT INTO `categories` (`name`, `icon`, `colorHex`, `isCustom`, `sortOrder`, `flow`) " +
+            "SELECT `name`, `icon`, `colorHex`, 0, (SELECT COUNT(*) FROM `categories`) + `pos`, 'INCOME' FROM (" +
+            "SELECT 'Salary' AS `name`, '💼' AS `icon`, '#4CAF50' AS `colorHex`, 0 AS `pos` " +
+            "UNION ALL SELECT 'Business', '🏢', '#29B6F6', 1 " +
+            "UNION ALL SELECT 'Gifts received', '🎁', '#EC407A', 2 " +
+            "UNION ALL SELECT 'Other income', '💰', '#FFCA28', 3) " +
+            "WHERE NOT EXISTS (SELECT 1 FROM `categories` WHERE `flow` = 'INCOME')",
+    )
+
+    /**
      * v38: a free-text note on transactions, plus labels and the transaction <-> label junction
      * (see Label). Purely additive. Column order and index names mirror what Room exports for
      * LabelEntity / TransactionLabelEntity (MigrationSqlTest compares them).

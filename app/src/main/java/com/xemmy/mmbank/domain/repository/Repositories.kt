@@ -230,6 +230,20 @@ interface CategoryRepository {
     /** Inserts a new category (id = 0) or updates an existing one; returns its id. */
     suspend fun save(category: Category): Long
     suspend fun delete(id: Long)
+
+    /** Stores the given order: the first id gets sortOrder 0, and so on. Ids not listed keep their place after them. */
+    suspend fun setOrder(orderedIds: List<Long>)
+
+    /** Moves a category to the Income or Expense side; never changes what it is used for. */
+    suspend fun setFlow(id: Long, flow: com.xemmy.mmbank.domain.model.CategoryFlow)
+
+    /**
+     * Merges [fromId] into [intoId] in one transaction: its transactions and learned merchant rules
+     * move, its sub-categories are re-parented, the kept category inherits its cap when it has none,
+     * and [fromId] is deleted. Returns false when the merge is not allowed.
+     */
+    suspend fun merge(fromId: Long, intoId: Long): Boolean
+
     /**
      * Re-homes the learned merchant rules that pointed at a category being
      * deleted: onto [newCategoryId], or dropped entirely when it is null.

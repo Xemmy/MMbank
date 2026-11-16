@@ -4,7 +4,11 @@ import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.toDomain
 import com.xemmy.mmbank.data.local.entity.toEntity
+import androidx.room.withTransaction
+import com.xemmy.mmbank.domain.budget.CategoryMerge
 import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.model.CategoryFlow
+import kotlinx.coroutines.flow.first
 import com.xemmy.mmbank.domain.model.MerchantCategoryMapping
 import com.xemmy.mmbank.domain.parser.CategoryMatcher
 import com.xemmy.mmbank.domain.repository.CategoryRepository
@@ -26,7 +30,9 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
 
     override suspend fun save(category: Category): Long =
         if (category.id == 0L) {
-            categoryDao.insert(category.toEntity())
+            // A new category goes to the end of the list unless the caller chose a position.
+            val order = if (category.sortOrder == 0) categoryDao.maxSortOrder() + 1 else category.sortOrder
+            categoryDao.insert(category.copy(sortOrder = order).toEntity())
         } else {
             categoryDao.update(category.toEntity())
             category.id
@@ -35,6 +41,31 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
     override suspend fun delete(id: Long) {
         categoryDao.clearParent(id)
         categoryDao.deleteById(id)
+    }
+
+    override suspend fun setOrder(orderedIds: List<Long>) {
+        database.withTransaction {
+            orderedIds.forEachIndexed { index, id -> categoryDao.setSortOrder(id, index) }
+        }
+    }
+
+    override suspend fun setFlow(id: Long, flow: CategoryFlow) = categoryDao.setFlow(id, flow.name)
+
+    override suspend fun merge(fromId: Long, intoId: Long): Boolean {
+        var ok = false
+        database.withTransaction {
+            val all = categoryDao.observeAll().first().map { it.toDomain() }
+            val plan = CategoryMerge.plan(all, fromId, intoId) ?: return@withTransaction
+            database.transactionDao().reassignCategory(fromId, intoId, false)
+            database.transactionDao().reassignCategory(fromId, intoId, true)
+            repointMappings(fromId, intoId)
+            categoryDao.reparentChildren(fromId, intoId)
+            val into = categoryDao.getById(intoId) ?: return@withTransaction
+            categoryDao.update(into.copy(parentCategoryId = plan.newParentOfInto, monthlyCap = plan.newCap))
+            categoryDao.deleteById(fromId)
+            ok = true
+        }
+        return ok
     }
 
     override suspend fun repointMappings(oldCategoryId: Long, newCategoryId: Long?): Int =

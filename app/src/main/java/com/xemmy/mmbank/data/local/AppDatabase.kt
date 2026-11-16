@@ -84,7 +84,7 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         LabelEntity::class,
         TransactionLabelEntity::class,
     ],
-    version = 38,
+    version = 39,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -687,9 +687,9 @@ abstract class AppDatabase : RoomDatabase() {
          * databases already have them from the migrations).
          */
         fun starterCategoryInserts(): List<Pair<String, Array<Any?>>> =
-            (DEFAULT_CATEGORIES + DEFAULT_CATEGORIES_V22).map { (name, icon, colorHex) ->
-                "INSERT INTO categories (name, icon, colorHex, isCustom) VALUES (?, ?, ?, 0)" to
-                    arrayOf<Any?>(name, icon, colorHex)
+            (DEFAULT_CATEGORIES + DEFAULT_CATEGORIES_V22).mapIndexed { index, (name, icon, colorHex) ->
+                "INSERT INTO categories (name, icon, colorHex, isCustom, sortOrder, flow) VALUES (?, ?, ?, 0, ?, ?)" to
+                    arrayOf<Any?>(name, icon, colorHex, index, if (name.equals("Income", ignoreCase = true)) "INCOME" else "EXPENSE")
             }
 
         /**
@@ -810,6 +810,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_29_30_SQL.forEach(db::execSQL)
         }
 
+        /** v38 -> v39: category order and flow (see [MigrationSql.MIGRATION_38_39_SQL]). */
+        val MIGRATION_38_39 = object : Migration(38, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_38_39_SQL.forEach(db::execSQL)
+        }
+
         /** v37 -> v38: note, labels and their links (see [MigrationSql.MIGRATION_37_38_SQL]). */
         val MIGRATION_37_38 = object : Migration(37, 38) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_37_38_SQL.forEach(db::execSQL)
@@ -867,7 +872,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                     MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
-                    MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
+                    MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.
