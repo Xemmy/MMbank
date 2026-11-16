@@ -3,7 +3,6 @@ package com.xemmy.mmbank.ui.widgets
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -20,7 +19,6 @@ import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.MMBankApp
 import com.xemmy.mmbank.di.AppContainer
@@ -98,14 +96,15 @@ class DailyBudgetWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = DailyBudgetWidget()
 }
 
-private val WIDGET_BACKGROUND = ColorProvider(Color(0xFF14161B))
-private val WIDGET_TEXT = ColorProvider(Color.White)
-private val WIDGET_TEXT_MUTED = ColorProvider(Color(0xFFB0B4BD))
-private val WIDGET_ACCENT = ColorProvider(Color(0xFF86E3B8))
-
 @Composable
 private fun DailyBudgetWidgetContent(pacing: WidgetPacing) {
     val context = LocalContext.current
+    // Colours come from the user's colour theme, day and night, like the other widgets.
+    val colors = widgetColors(context)
+    val WIDGET_BACKGROUND = colors.background
+    val WIDGET_TEXT = colors.text
+    val WIDGET_TEXT_MUTED = colors.muted
+    val WIDGET_ACCENT = colors.accent
 
     Column(
         modifier = GlanceModifier

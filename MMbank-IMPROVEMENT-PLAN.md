@@ -858,7 +858,7 @@ Full design in **MMbank-UNASSIGNED-PLAN.md**.
 | F7 | Category housekeeping | 0.116.0 | ✅ 0.116.0 (CI run pending) |
 | F8 | Accounts: order, net worth, wealth chart | 0.117.0 | ✅ 0.117.0 (CI run pending) |
 | F9 | Repeat a manual transaction | 0.118.0 | ✅ 0.118.0 (CI run pending) |
-| F10 | Widgets | 0.119.0 | |
+| F10 | Widgets | 0.119.0 | ✅ 0.119.0 (CI run pending) |
 
 ## Where things stand after 0.99.0
 

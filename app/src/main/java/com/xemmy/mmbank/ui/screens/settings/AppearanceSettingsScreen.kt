@@ -28,8 +28,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -122,6 +126,30 @@ fun AppearanceSettingsScreen(
                 }
             }
         }
+        Text("Widgets", style = MaterialTheme.typography.titleSmall)
+        val context = androidx.compose.ui.platform.LocalContext.current
+        var widgetNote by remember { mutableStateOf<String?>(null) }
+        com.xemmy.mmbank.ui.widgets.WidgetRefresher.Pinnable.entries.forEach { widget ->
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(widget.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    widgetNote = if (com.xemmy.mmbank.ui.widgets.WidgetRefresher.requestPin(context, widget)) null
+                    else "Your launcher can't add it from here. Long-press the home screen, choose Widgets and look for MMbank."
+                }) { Text("Add") }
+            }
+        }
+        widgetNote?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            "Widgets hide their figures while balances are hidden or the app is locked.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             "An ultra-subtle ambient glow behind the app. Pick a style below — it applies instantly.",
             style = MaterialTheme.typography.bodySmall,

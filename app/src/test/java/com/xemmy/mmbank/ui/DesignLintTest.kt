@@ -30,7 +30,6 @@ class DesignLintTest {
                 "ui/components/AccountCarousel.kt" to 3,
                 "ui/components/CategoryPresets.kt" to 1,
                 "ui/components/GlassWalletCard.kt" to 16,
-                "ui/widgets/DailyBudgetWidget.kt" to 3,
             ),
         ),
         Rule(

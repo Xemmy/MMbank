@@ -105,5 +105,41 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/daily_budget_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".ui.widgets.BalanceWidgetReceiver"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/balance_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widgets.SpendingWidgetReceiver"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/spending_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widgets.BudgetsWidgetReceiver"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/budgets_widget_info" />
+        </receiver>
     </application>
 </manifest>

@@ -103,6 +103,8 @@ import com.xemmy.mmbank.util.CategoryBudgetNotificationHelper
 import com.xemmy.mmbank.util.UnusualChargeNotificationHelper
 import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -285,6 +287,26 @@ class AppContainer(context: Context) {
                     set(v) { preferences.appLockLastActiveAt = v }
             },
         )
+    }
+
+    /**
+     * Redraws the home-screen widgets a few seconds after the ledger, "hide balances", the colour
+     * theme or the app lock changes (so a captured payment shows without waiting for the 30-minute
+     * system refresh). Called once from the Application.
+     */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    fun startWidgetRefresh() {
+        applicationScope.launch {
+            kotlinx.coroutines.flow.combine(
+                transactionRepository.observeTransactions(),
+                hideBalances,
+                colorPalette,
+                appLock.locked,
+            ) { _, _, _, _ -> }
+                .drop(1)
+                .debounce(3_000)
+                .collect { com.xemmy.mmbank.ui.widgets.WidgetRefresher.refreshAll(appContext) }
+        }
     }
 
     fun setAppLockEnabled(enabled: Boolean) {

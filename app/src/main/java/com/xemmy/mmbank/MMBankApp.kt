@@ -28,6 +28,7 @@ class MMBankApp : Application() {
         // Same idempotent re-arm for the opt-in bill due-date reminder.
         container.ensureBillReminderWork()
         container.ensureWeeklyDigestWork()
+        container.startWidgetRefresh()
         // Whole-app foreground/background transitions drive the opt-in app
         // lock (ProcessLifecycleOwner, unlike Activity onStop, doesn't fire
         // on rotation or intra-app navigation).

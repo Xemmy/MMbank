@@ -4669,3 +4669,10 @@ The add-transaction page has a **Repeat** row (Never / Weekly / Monthly / Yearly
 **Changed from the plan:** "Log payment" is an added button beside the existing "Mark paid" check-mark rather than replacing it, since many bills are paid by card and captured automatically.
 
 Not covered by CI: the Repeat row, the new bill appearing under Upcoming payments, the prefilled page and the bill advancing after save.
+
+## Part F10 — Widgets (0.119.0)
+Three more home-screen widgets beside Daily budget: **Net worth** (today's fiat net worth and the change over 30 days, by the same rules as Home, so an account switched out of net worth stays out), **Spent this month** (the total and the three biggest categories) and **Budgets** (up to four capped categories with a bar each, the fullest first; red once over). Colours come from the user's colour theme (`mmColors(palette, dark)`), day and night, so Graphite and Obsidian both apply; Daily budget now uses them too (its three fixed hex colours are gone and the `DesignLintTest` baseline for it is removed). New pure `domain/widget/WidgetState` decides what each widget may show: **locked beats hidden beats empty beats normal**, and a locked or hidden widget never even reads the ledger. Widgets redraw a few seconds after a transaction is captured or saved, and when "hide balances", the colour theme or the app lock changes (`AppContainer.startWidgetRefresh`, debounced), instead of waiting for the 30-minute system refresh. **Settings → Appearance → Widgets** has an **Add** button per widget (`requestPinAppWidget`; a note explains the manual route when a launcher cannot pin). Tests: `WidgetStateTest` (gate order, top categories, budget lines, change sign).
+
+**Changed from the plan:** previews are still the app icon (no rendered preview images); the net-worth widget is fiat only (no crypto).
+
+Not covered by CI: every widget on a real launcher (normal, hidden, locked, empty), day/night colours, the refresh after a capture, and the pin request on different launchers.
