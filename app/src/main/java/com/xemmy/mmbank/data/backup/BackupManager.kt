@@ -19,7 +19,9 @@ import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
+import com.xemmy.mmbank.data.local.entity.LabelEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
+import com.xemmy.mmbank.data.local.entity.TransactionLabelEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
@@ -139,6 +141,8 @@ data class BackupTransaction(
     val refundOfId: Long? = null,
     /** Absent (false) on backups from before format v15. */
     val historyOnly: Boolean = false,
+    /** Format 17: the user's note. Absent on older backups. */
+    val note: String? = null,
 )
 
 @Serializable
@@ -210,6 +214,9 @@ data class BackupPayload(
      * restore (log rows are keyed to account ids, which a restore re-issues), so an
      * older backup simply restores an empty log -- plus one marker per account.
      *
+     * 17 = adds [BackupTransaction.note], [labels] and [transactionLabels]. Labels are gated on the
+     * version: an older backup has none, so a restore leaves no labels.
+     *
      * 16 = adds [inactivePersonsRaw]. No gate: absent means everyone is active.
      *
      * 15 = adds [BackupTransaction.historyOnly]. No gate: absent means false.
@@ -258,7 +265,16 @@ data class BackupPayload(
     val ignoredKeywords: List<BackupIgnoredKeyword> = emptyList(),
     val extras: BackupExtras? = null,
     val accountChanges: List<BackupAccountChange> = emptyList(),
+    /** Format 17: labels and which transactions carry them. */
+    val labels: List<BackupLabel> = emptyList(),
+    val transactionLabels: List<BackupTransactionLabel> = emptyList(),
 )
+
+@Serializable
+data class BackupLabel(val id: Long, val name: String, val colorHex: String)
+
+@Serializable
+data class BackupTransactionLabel(val transactionId: Long, val labelId: Long)
 
 /**
  * Format 11: bills, savings goals, friends and group splits, plus the goal and
@@ -380,7 +396,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 16,
+            formatVersion = 17,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -397,6 +413,8 @@ class BackupManager(
             merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
             ignoredKeywords = database.ignoredKeywordDao().getAll().map { it.toBackup() },
             accountChanges = database.accountChangeDao().getAll().map { it.toBackup() },
+            labels = database.labelDao().getAll().map { BackupLabel(it.id, it.name, it.colorHex) },
+            transactionLabels = database.labelDao().getAllLinks().map { BackupTransactionLabel(it.transactionId, it.labelId) },
             extras = BackupExtras(
                 bills = database.billDao().getAll().map { it.toBackup() },
                 goals = database.savingsGoalDao().getAll().map { it.toBackup() },
@@ -507,6 +525,15 @@ class BackupManager(
             database.senderLabelDao().insertAll(
                 payload.senderLabels.map { SenderLabelEntity(it.sender, it.label) }
             )
+
+            // Format 17+ carries labels. Clearing the transactions above already dropped every link
+            // (cascade); an older backup has none, so labels from before the restore are left to
+            // their now-empty state rather than guessed at.
+            if (payload.formatVersion >= 17) {
+                database.labelDao().clearAll()
+                database.labelDao().insertAll(payload.labels.map { LabelEntity(it.id, it.name, it.colorHex) })
+                database.labelDao().insertLinks(payload.transactionLabels.map { TransactionLabelEntity(it.transactionId, it.labelId) })
+            }
 
             if (hasCategoryData) {
                 database.categoryDao().clearAll()
@@ -679,6 +706,7 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     personSource = personSource.name,
     refundOfId = refundOfId,
     historyOnly = historyOnly,
+    note = note,
 )
 
 /**
@@ -739,6 +767,7 @@ internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): Transact
         refundOfId = refundOfId,
         // The flag only means something on a row with no account.
         historyOnly = historyOnly && accountId == null,
+        note = note,
     )
 }
 

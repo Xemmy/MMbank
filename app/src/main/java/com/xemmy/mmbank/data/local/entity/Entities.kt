@@ -203,7 +203,42 @@ data class TransactionEntity(
     val refundOfId: Long? = null,
     /** "Before I started tracking": unassigned on purpose; see [Transaction.historyOnly]. */
     val historyOnly: Boolean = false,
+    /** The user's free-text note; see [Transaction.note]. */
+    val note: String? = null,
 )
+
+/** A tag the user can put on transactions (several per row); see [com.xemmy.mmbank.domain.model.Label]. */
+@Entity(tableName = "labels", indices = [Index(value = ["name"], unique = true)])
+data class LabelEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val colorHex: String,
+)
+
+/** Junction row: which labels a transaction carries. Deleting either side removes the link. */
+@Entity(
+    tableName = "transaction_labels",
+    primaryKeys = ["transactionId", "labelId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = TransactionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["transactionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = LabelEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["labelId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["labelId"])],
+)
+data class TransactionLabelEntity(val transactionId: Long, val labelId: Long)
+
+fun LabelEntity.toDomain() = com.xemmy.mmbank.domain.model.Label(id, name, colorHex)
+fun com.xemmy.mmbank.domain.model.Label.toEntity() = LabelEntity(id, name, colorHex)
 
 @Entity(tableName = "categories")
 data class CategoryEntity(
@@ -556,7 +591,7 @@ fun TransactionEntity.toDomain() = Transaction(
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
     extractedMerchant, aiConfidence, kind, kindUserSet, reportedBalance, reportedBalanceKind,
-    categorySource, personSource, refundOfId, historyOnly,
+    categorySource, personSource, refundOfId, historyOnly, note,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -594,6 +629,7 @@ fun Transaction.toEntity() = TransactionEntity(
     personSource = personSource,
     refundOfId = refundOfId,
     historyOnly = historyOnly,
+    note = note,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId)

@@ -408,3 +408,23 @@ interface LedgerRepository {
     /** Every learned merchant -> kind rule, newest first. */
     fun observeMerchantKinds(): Flow<List<com.xemmy.mmbank.domain.model.MerchantKindMapping>>
 }
+
+
+/** Labels (tags) on transactions: create, rename, delete, merge and attach. */
+interface LabelRepository {
+    fun observeAll(): Flow<List<com.xemmy.mmbank.domain.model.Label>>
+    fun observeLinks(): Flow<List<com.xemmy.mmbank.domain.label.LabelLink>>
+
+    /** Creates a label (or returns the existing one with that name, ignoring case); null for a blank name. */
+    suspend fun create(name: String): com.xemmy.mmbank.domain.model.Label?
+
+    /** Renames; false when the name is blank or another label already has it. */
+    suspend fun rename(id: Long, name: String): Boolean
+    suspend fun delete(id: Long)
+
+    /** Moves every use of [from] onto [to] and deletes [from]. */
+    suspend fun merge(from: Long, to: Long)
+
+    /** Replaces the labels on one transaction. */
+    suspend fun setLabels(transactionId: Long, labelIds: Set<Long>)
+}

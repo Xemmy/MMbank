@@ -443,4 +443,24 @@ class BackupMappersTest {
         val again = json.decodeFromString(BackupPayload.serializer(), json.encodeToString(BackupPayload.serializer(), decoded))
         assertEquals("Omar", again.inactivePersonsRaw)
     }
+
+    @Test
+    fun `a note and labels survive a backup, and an older backup decodes without them`() {
+        assertEquals("for Sam", fullTransaction.copy(note = "for Sam").toBackup().toEntity().note)
+        val v16 = """
+            {"formatVersion":16,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+             "accounts":[],"transactions":[],"rules":[],"senderLabels":[]}
+        """.trimIndent()
+        val old = json.decodeFromString(BackupPayload.serializer(), v16)
+        assertEquals(emptyList<BackupLabel>(), old.labels)
+        assertEquals(emptyList<BackupTransactionLabel>(), old.transactionLabels)
+        val withLabels = old.copy(
+            formatVersion = 17,
+            labels = listOf(BackupLabel(1, "Holiday", "#56B4E9")),
+            transactionLabels = listOf(BackupTransactionLabel(5, 1)),
+        )
+        val again = json.decodeFromString(BackupPayload.serializer(), json.encodeToString(BackupPayload.serializer(), withLabels))
+        assertEquals(withLabels.labels, again.labels)
+        assertEquals(withLabels.transactionLabels, again.transactionLabels)
+    }
 }

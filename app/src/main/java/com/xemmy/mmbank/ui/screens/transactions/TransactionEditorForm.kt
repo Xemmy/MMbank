@@ -35,6 +35,8 @@ data class TransactionEditorForm(
     val toAccountId: Long? = null,
     val toAmount: String = "",
     val outside: TransferLegs.OutsideParty = TransferLegs.OutsideParty.MY_OTHER_ACCOUNT,
+    val note: String = "",
+    val labelIds: Set<Long> = emptySet(),
 ) {
     /** Only used for a kind that goes either way: an edited transfer leg keeps the side it was on. */
     fun direction(existing: Transaction?): TransactionDirection =
@@ -95,11 +97,18 @@ data class TransactionEditorForm(
     fun toSaveable(): List<Any?> = listOf(
         amount, currency, kind.name, merchant, accountId, person, categoryOverride, excludeFromStats,
         date.toString(), time.toString(), fromAccountId, toAccountId, toAmount, outside.name,
+        note, labelIds.sorted().joinToString(","),
     )
 
     companion object {
         /** A blank form for a new entry, or one filled from [existing] keeping its exact time of day. */
-        fun initial(existing: Transaction?, defaultCurrency: String, zone: ZoneId, now: LocalDateTime): TransactionEditorForm {
+        fun initial(
+            existing: Transaction?,
+            defaultCurrency: String,
+            zone: ZoneId,
+            now: LocalDateTime,
+            existingLabelIds: Set<Long> = emptySet(),
+        ): TransactionEditorForm {
             val at = existing?.let { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).toLocalDateTime() } ?: now
             return TransactionEditorForm(
                 amount = existing?.amount?.stripTrailingZeros()?.toPlainString() ?: "",
@@ -110,6 +119,8 @@ data class TransactionEditorForm(
                 person = existing?.person,
                 categoryOverride = existing?.categoryId,
                 excludeFromStats = existing?.excludeFromStats ?: false,
+                note = existing?.note.orEmpty(),
+                labelIds = existingLabelIds,
                 date = at.toLocalDate(),
                 time = if (existing != null) at.toLocalTime() else at.toLocalTime().withSecond(0).withNano(0),
             )
@@ -132,6 +143,8 @@ data class TransactionEditorForm(
                 toAccountId = (values[11] as Number?)?.toLong(),
                 toAmount = values[12] as String,
                 outside = TransferLegs.OutsideParty.valueOf(values[13] as String),
+                note = values[14] as String,
+                labelIds = (values[15] as String).split(',').mapNotNull { it.trim().toLongOrNull() }.toSet(),
             )
         }.getOrNull()
     }

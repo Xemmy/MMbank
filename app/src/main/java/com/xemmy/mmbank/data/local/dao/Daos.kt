@@ -966,3 +966,45 @@ interface AccountChangeDao {
     @Query("DELETE FROM account_changes WHERE isDemo = 1")
     suspend fun deleteDemo(): Int
 }
+
+
+@Dao
+interface LabelDao {
+    @Query("SELECT * FROM labels ORDER BY name COLLATE NOCASE")
+    fun observeAll(): Flow<List<com.xemmy.mmbank.data.local.entity.LabelEntity>>
+
+    @Query("SELECT * FROM transaction_labels")
+    fun observeLinks(): Flow<List<com.xemmy.mmbank.data.local.entity.TransactionLabelEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(label: com.xemmy.mmbank.data.local.entity.LabelEntity): Long
+
+    @Update
+    suspend fun update(label: com.xemmy.mmbank.data.local.entity.LabelEntity)
+
+    @Query("DELETE FROM labels WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM labels WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): com.xemmy.mmbank.data.local.entity.LabelEntity?
+
+    @Query("DELETE FROM transaction_labels WHERE transactionId = :transactionId")
+    suspend fun clearLinksOf(transactionId: Long)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertLinks(links: List<com.xemmy.mmbank.data.local.entity.TransactionLabelEntity>)
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM labels")
+    suspend fun getAll(): List<com.xemmy.mmbank.data.local.entity.LabelEntity>
+
+    @Query("SELECT * FROM transaction_labels")
+    suspend fun getAllLinks(): List<com.xemmy.mmbank.data.local.entity.TransactionLabelEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(labels: List<com.xemmy.mmbank.data.local.entity.LabelEntity>)
+
+    @Query("DELETE FROM labels")
+    suspend fun clearAll()
+}

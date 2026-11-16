@@ -19,6 +19,7 @@ import com.xemmy.mmbank.data.local.dao.ExchangeRateDao
 import com.xemmy.mmbank.data.local.dao.FriendDao
 import com.xemmy.mmbank.data.local.dao.GroupExpenseDao
 import com.xemmy.mmbank.data.local.dao.IgnoredKeywordDao
+import com.xemmy.mmbank.data.local.dao.LabelDao
 import com.xemmy.mmbank.data.local.dao.IgnoredMessagePatternDao
 import com.xemmy.mmbank.data.local.dao.MerchantCategoryDao
 import com.xemmy.mmbank.data.local.dao.ParsingRuleDao
@@ -41,6 +42,8 @@ import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
+import com.xemmy.mmbank.data.local.entity.LabelEntity
+import com.xemmy.mmbank.data.local.entity.TransactionLabelEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
@@ -78,8 +81,10 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         IgnoredMessagePatternEntity::class,
         IgnoredKeywordEntity::class,
         AccountChangeEntity::class,
+        LabelEntity::class,
+        TransactionLabelEntity::class,
     ],
-    version = 37,
+    version = 38,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -107,6 +112,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ignoredMessagePatternDao(): IgnoredMessagePatternDao
     abstract fun ignoredKeywordDao(): IgnoredKeywordDao
     abstract fun accountChangeDao(): AccountChangeDao
+    abstract fun labelDao(): LabelDao
 
     companion object {
         /**
@@ -804,6 +810,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_29_30_SQL.forEach(db::execSQL)
         }
 
+        /** v37 -> v38: note, labels and their links (see [MigrationSql.MIGRATION_37_38_SQL]). */
+        val MIGRATION_37_38 = object : Migration(37, 38) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_37_38_SQL.forEach(db::execSQL)
+        }
+
         /** v36 -> v37: "history only" on transactions (see [MigrationSql.MIGRATION_36_37_SQL]). */
         val MIGRATION_36_37 = object : Migration(36, 37) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_36_37_SQL.forEach(db::execSQL)
@@ -856,7 +867,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                     MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
-                    MIGRATION_35_36, MIGRATION_36_37,
+                    MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

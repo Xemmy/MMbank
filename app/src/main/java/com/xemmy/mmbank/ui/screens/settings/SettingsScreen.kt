@@ -192,6 +192,10 @@ fun SettingsScreen(
                                 Icons.Filled.PieChart, "Categories & People",
                                 "Manage categories and saved people — add, edit, delete",
                             )
+                            SettingsEntry.LABELS -> MenuRowSpec(
+                                Icons.Filled.PieChart, "Labels",
+                                "Tags you put on transactions — rename, merge, delete",
+                            )
                             SettingsEntry.BINANCE -> MenuRowSpec(
                                 Icons.Filled.CurrencyBitcoin, "Binance",
                                 if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",

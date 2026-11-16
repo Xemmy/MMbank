@@ -54,6 +54,8 @@ internal fun MoreFiltersDialog(
     onSourceFilter: (TransactionSource?) -> Unit,
     onAnalyticsStatus: (AnalyticsStatusFilter?) -> Unit,
     onKindFilter: (com.xemmy.mmbank.domain.model.TransactionKind?) -> Unit = {},
+    labels: List<com.xemmy.mmbank.domain.model.Label> = emptyList(),
+    onToggleLabel: (Long) -> Unit = {},
     onClearAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -168,6 +170,23 @@ internal fun MoreFiltersDialog(
                                 onClick = { onKindFilter(kind) },
                                 label = kind.label,
                             )
+                        }
+                    }
+                }
+
+                if (labels.isNotEmpty()) {
+                    HorizontalDivider(color = MMTheme.colors.borderSubtle)
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SectionLabel("Labels")
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            labels.forEach { label ->
+                                FilterBarChip(
+                                    selected = f.labelIds?.contains(label.id) == true,
+                                    onClick = { onToggleLabel(label.id) },
+                                    label = label.name,
+                                )
+                            }
                         }
                     }
                 }

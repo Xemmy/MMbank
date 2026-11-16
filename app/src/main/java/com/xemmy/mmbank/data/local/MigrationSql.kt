@@ -87,6 +87,27 @@ object MigrationSql {
             "ON `account_changes` (`accountId`, `timestamp`)",
     )
 
+    /**
+     * v38: a free-text note on transactions, plus labels and the transaction <-> label junction
+     * (see Label). Purely additive. Column order and index names mirror what Room exports for
+     * LabelEntity / TransactionLabelEntity (MigrationSqlTest compares them).
+     */
+    val MIGRATION_37_38_SQL: List<String> = listOf(
+        "ALTER TABLE `transactions` ADD COLUMN `note` TEXT",
+        "CREATE TABLE IF NOT EXISTS `labels` (" +
+            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+            "`name` TEXT NOT NULL, " +
+            "`colorHex` TEXT NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS `index_labels_name` ON `labels` (`name`)",
+        "CREATE TABLE IF NOT EXISTS `transaction_labels` (" +
+            "`transactionId` INTEGER NOT NULL, " +
+            "`labelId` INTEGER NOT NULL, " +
+            "PRIMARY KEY(`transactionId`, `labelId`), " +
+            "FOREIGN KEY(`transactionId`) REFERENCES `transactions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, " +
+            "FOREIGN KEY(`labelId`) REFERENCES `labels`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        "CREATE INDEX IF NOT EXISTS `index_transaction_labels_labelId` ON `transaction_labels` (`labelId`)",
+    )
+
     /** v37: "history only" on transactions (see Transaction.historyOnly). Purely additive; every existing row is false. */
     val MIGRATION_36_37_SQL: List<String> = listOf(
         "ALTER TABLE `transactions` ADD COLUMN `historyOnly` INTEGER NOT NULL DEFAULT 0",

@@ -43,4 +43,21 @@ class TransactionFilterEngineCategoryTest {
         assertEquals(0, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters()))
         assertEquals(1, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(categoryIds = setOf(2))))
     }
+
+    @Test
+    fun `label filter keeps rows carrying any chosen label`() {
+        val labels = mapOf(1L to setOf(10L), 2L to setOf(20L, 10L), 3L to setOf(30L))
+        val out = TransactionFilterEngine.filter(
+            rows, ActivityFilters(labelIds = setOf(10)), zone = zone, today = today, labelsOf = { labels[it].orEmpty() },
+        )
+        assertEquals(listOf(1L, 2L), out.map { it.id })
+        assertEquals(1, TransactionFilterEngine.activeSecondaryFilterCount(ActivityFilters(labelIds = setOf(10))))
+    }
+
+    @Test
+    fun `search also matches the note`() {
+        val noted = rows.map { if (it.id == 3L) it.copy(note = "Birthday gift for Sam") else it }
+        val out = TransactionFilterEngine.filter(noted, ActivityFilters(query = "birthday"), zone = zone, today = today)
+        assertEquals(listOf(3L), out.map { it.id })
+    }
 }

@@ -82,6 +82,8 @@ data class ActivityFilters(
      * More filters.
      */
     val categoryIds: Set<Long>? = null,
+    /** Only rows carrying at least one of these labels. Null = any. */
+    val labelIds: Set<Long>? = null,
 ) {
     /** True when anything beyond the default (show-everything) is set. */
     val active: Boolean
@@ -114,9 +116,11 @@ object TransactionFilterEngine {
         bankNameOf: (String?) -> String? = { null },
         zone: ZoneId = ZoneId.systemDefault(),
         today: LocalDate = LocalDate.now(zone),
+        /** Label ids a transaction carries; only consulted while [ActivityFilters.labelIds] is set. */
+        labelsOf: (Long) -> Set<Long> = { emptySet() },
     ): List<Transaction> {
         val window = resolveDateWindow(filters.dateRange, activeAccount(filters.account, accounts), today)
-        return transactions.filter { matches(it, filters, window, bankNameOf, zone) }
+        return transactions.filter { matches(it, filters, window, bankNameOf, zone, labelsOf) }
     }
 
     /** The single selected account, if the filter names one that still exists. */
@@ -131,6 +135,7 @@ object TransactionFilterEngine {
     fun activeSecondaryFilterCount(filters: ActivityFilters): Int {
         var count = 0
         if (filters.categoryIds != null) count++
+        if (filters.labelIds != null) count++
         if (filters.person != PersonFilter.Any) count++
         if (filters.triageOnly) count++
         if (filters.minAmount != null || filters.maxAmount != null) count++
@@ -191,6 +196,7 @@ object TransactionFilterEngine {
         window: DateWindow?,
         bankNameOf: (String?) -> String?,
         zone: ZoneId,
+        labelsOf: (Long) -> Set<Long>,
     ): Boolean {
         if (window != null && !window.contains(tx.timestampMillis, zone)) return false
         if (f.direction != null && tx.direction != f.direction) return false
@@ -211,6 +217,7 @@ object TransactionFilterEngine {
         if (f.source != null && tx.source != f.source) return false
         if (f.kind != null && tx.kind != f.kind) return false
         if (f.categoryIds != null && tx.categoryId !in f.categoryIds) return false
+        if (f.labelIds != null && labelsOf(tx.id).none { it in f.labelIds }) return false
         when (f.analyticsStatus) {
             AnalyticsStatusFilter.INCLUDED_ONLY -> if (tx.excludeFromStats) return false
             AnalyticsStatusFilter.EXCLUDED_ONLY -> if (!tx.excludeFromStats) return false
@@ -226,6 +233,7 @@ object TransactionFilterEngine {
                 tx.amount.toPlainString(),
                 tx.currencyCode,
                 tx.spendingCategory.label,
+                tx.note,
             )
             if (haystack.none { it.contains(q, ignoreCase = true) }) return false
         }

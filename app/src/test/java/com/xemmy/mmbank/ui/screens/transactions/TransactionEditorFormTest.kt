@@ -112,9 +112,19 @@ class TransactionEditorFormTest {
             amount = "12.5", currency = "USD", kind = TransactionKind.TRANSFER, merchant = "x", accountId = 7, person = "Sam",
             categoryOverride = 9, excludeFromStats = true, date = LocalDate.of(2026, 2, 3), time = LocalTime.of(1, 2, 3),
             fromAccountId = 1, toAccountId = 2, toAmount = "3", outside = TransferLegs.OutsideParty.SOMEONE_ELSE,
+            note = "for Sam", labelIds = setOf(4L, 9L),
         )
         assertEquals(f, TransactionEditorForm.fromSaveable(f.toSaveable()))
         assertEquals(blank(), TransactionEditorForm.fromSaveable(blank().toSaveable()))
+    }
+
+    @Test
+    fun `an edited row starts with its note and labels`() {
+        val saved = existing().copy(note = "gift")
+        val f = TransactionEditorForm.initial(saved, "AED", zone, now, existingLabelIds = setOf(2L))
+        assertEquals("gift", f.note)
+        assertEquals(setOf(2L), f.labelIds)
+        assertTrue(TransactionEditorForm.initial(null, "AED", zone, now).labelIds.isEmpty())
     }
 
     @Test

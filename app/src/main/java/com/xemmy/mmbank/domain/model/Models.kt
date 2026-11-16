@@ -333,6 +333,8 @@ data class Transaction(
      * backfills leave it alone. Filing the row into an account clears it.
      */
     val historyOnly: Boolean = false,
+    /** Free-text note the user added (see the full-screen editor); searchable in Activity. */
+    val note: String? = null,
 ) {
     /** In no account and not set aside as history: the rows the app still asks the user to sort. */
     val needsAccount: Boolean get() = accountId == null && !historyOnly

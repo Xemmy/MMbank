@@ -90,32 +90,40 @@ fun TransactionEditorScreen(
     val isEdit = transactionId != null && transactionId > 0
     // For an edit, wait for the saved row; a row deleted meanwhile just closes the page.
     val loaded by produceState<LoadState>(LoadState.Loading, transactionId) {
-        value = if (!isEdit) LoadState.Ready(null) else viewModel.loadTransaction(transactionId!!)?.let { LoadState.Ready(it) } ?: LoadState.Missing
+        value = if (!isEdit) {
+            LoadState.Ready(null, emptySet())
+        } else {
+            viewModel.loadTransaction(transactionId!!)?.let { LoadState.Ready(it, viewModel.labelIdsOf(it.id)) } ?: LoadState.Missing
+        }
     }
     when (val l = loaded) {
         LoadState.Loading -> MMScaffold(title = "Transaction", onBack = onClose) { }
         LoadState.Missing -> LaunchedEffect(Unit) { onClose() }
-        is LoadState.Ready -> EditorBody(l.transaction, state, viewModel, onClose)
+        is LoadState.Ready -> EditorBody(l.transaction, l.labelIds, state, viewModel, onClose)
     }
 }
 
 private sealed interface LoadState {
     data object Loading : LoadState
     data object Missing : LoadState
-    data class Ready(val transaction: Transaction?) : LoadState
+    data class Ready(val transaction: Transaction?, val labelIds: Set<Long>) : LoadState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditorBody(
     existing: Transaction?,
+    existingLabelIds: Set<Long>,
     state: TransactionsUiState,
     viewModel: TransactionsViewModel,
     onClose: () -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
     val isEdit = existing != null
-    val initial = remember(existing) { TransactionEditorForm.initial(existing, state.defaultCurrency, zone, LocalDateTime.now()) }
+    val allLabels by viewModel.labels.collectAsStateWithLifecycle()
+    val initial = remember(existing) {
+        TransactionEditorForm.initial(existing, state.defaultCurrency, zone, LocalDateTime.now(), existingLabelIds)
+    }
     var form by rememberSaveable(
         stateSaver = listSaver<TransactionEditorForm, Any?>(
             save = { it.toSaveable() },
@@ -160,12 +168,14 @@ private fun EditorBody(
                     existing, value, form.currency.trim().uppercase(), form.direction(existing),
                     form.merchant.trim().takeIf { it.isNotBlank() }, form.accountId, form.person, effectiveCategoryId,
                     form.timestamp(zone), form.excludeFromStats, form.kind,
+                    form.note, form.labelIds,
                 )
             } else {
                 viewModel.addManual(
                     value, form.currency.trim().uppercase(), form.direction(null),
                     form.merchant.trim().takeIf { it.isNotBlank() }, form.accountId, form.person, effectiveCategoryId,
                     form.timestamp(zone), form.excludeFromStats, form.kind,
+                    form.note, form.labelIds,
                 )
             }
             job.join()
@@ -230,6 +240,24 @@ private fun EditorBody(
 
             if (transferMode) {
                 TransferSection(form, accounts, isEdit, zone) { form = it }
+            }
+
+            OutlinedTextField(
+                value = form.note,
+                onValueChange = { form = form.copy(note = it) },
+                label = { Text("Note (optional)") },
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (!transferMode) {
+                LabelPicker(
+                    allLabels = allLabels,
+                    selected = form.labelIds,
+                    onToggle = { id -> form = form.copy(labelIds = if (id in form.labelIds) form.labelIds - id else form.labelIds + id) },
+                    onCreate = { name ->
+                        scope.launch { viewModel.createLabel(name)?.let { created -> form = form.copy(labelIds = form.labelIds + created.id) } }
+                    },
+                )
             }
 
             MMCard(Modifier.fillMaxWidth()) {
@@ -359,6 +387,44 @@ private fun EditorBody(
             onDeleteIgnoreSimilar = { deleteOpen = false; viewModel.deleteAndIgnoreSimilar(existing); onClose() },
             onDeleteIgnoreKeyword = { kw -> deleteOpen = false; viewModel.deleteAndIgnoreKeyword(existing, kw); onClose() },
             onDismiss = { deleteOpen = false },
+        )
+    }
+}
+
+/** Label chips for the row plus "+ New label". Several labels per transaction. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LabelPicker(
+    allLabels: List<com.xemmy.mmbank.domain.model.Label>,
+    selected: Set<Long>,
+    onToggle: (Long) -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Labels", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            allLabels.forEach { label ->
+                MMFilterChip(label = label.name, selected = label.id in selected, onClick = { onToggle(label.id) })
+            }
+            MMFilterChip(label = "+ New label", selected = false, onClick = { creating = true })
+        }
+    }
+    if (creating) {
+        AlertDialog(
+            onDismissRequest = { creating = false },
+            title = { Text("New label") },
+            text = {
+                OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(enabled = newName.isNotBlank(), onClick = { onCreate(newName); newName = ""; creating = false }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { creating = false }) { Text("Cancel") } },
         )
     }
 }

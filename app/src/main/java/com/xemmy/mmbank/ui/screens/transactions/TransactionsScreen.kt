@@ -241,6 +241,7 @@ fun TransactionsScreen(
         ActivityDrillDown.parse(initialDrill)?.let(viewModel::applyDrillDown)
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val labels by viewModel.labels.collectAsStateWithLifecycle()
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
     val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -397,6 +398,8 @@ fun TransactionsScreen(
                         onAnalyticsStatus = viewModel::setAnalyticsStatus,
                         onClear = viewModel::clearFilters,
                         onKindFilter = viewModel::setKindFilter,
+                        labels = labels,
+                        onToggleLabel = viewModel::toggleLabelFilter,
                     )
                     // The category filter has no picker in either bar, so it
                     // is always shown here while active, with a way out.

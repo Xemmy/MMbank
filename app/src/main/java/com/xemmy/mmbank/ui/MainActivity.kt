@@ -125,6 +125,7 @@ import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import com.xemmy.mmbank.ui.theme.ambientBackground
 import com.xemmy.mmbank.ui.screens.budgets.BudgetsScreen
+import com.xemmy.mmbank.ui.screens.labels.LabelsScreen
 import com.xemmy.mmbank.ui.screens.insights.CashFlowDetailScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionEditorScreen
 import com.xemmy.mmbank.ui.screens.insights.SpendingDetailScreen
@@ -582,6 +583,7 @@ private fun AppNavHost(
         ) {
             GroupDetailScreen(onBack = { navController.popBackStack() })
         }
+        composable("labels") { LabelsScreen(onBack = { navController.popBackStack() }) }
         composable(Routes.BUDGETS) {
             BudgetsScreen(
                 onBack = { navController.popBackStack() },

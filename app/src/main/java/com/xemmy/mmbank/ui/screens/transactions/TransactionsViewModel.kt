@@ -311,14 +311,18 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         container.accountRepository.observeActive(),
         container.senderLabelRepository.observeLabels(),
         filters,
-        container.categoryRepository.observeAll(),
-    ) { transactions, accounts, senderLabels, f, categories ->
+        // Categories and label links ride together so this stays within combine's five typed slots.
+        combine(container.categoryRepository.observeAll(), container.labelRepository.observeLinks()) { c, l -> c to l },
+    ) { transactions, accounts, senderLabels, f, categoriesAndLinks ->
+        val (categories, labelLinks) = categoriesAndLinks
+        val labelsByTx = com.xemmy.mmbank.domain.label.LabelRules.byTransaction(labelLinks)
         // All predicate logic lives in the pure-Kotlin engine so it's JVM-testable.
         val visible = TransactionFilterEngine.filter(
             transactions = transactions,
             filters = f,
             accounts = accounts,
             bankNameOf = { sender -> bankNameFor(sender, senderLabels) },
+            labelsOf = { id -> labelsByTx[id].orEmpty() },
         )
         // The menu is fed ONLY by the saved list (Settings > Preferences >
         // People) so removing a person there really removes it here. Names
@@ -410,6 +414,19 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         .recoverAndRetry("TransactionsViewModel.uncategorizedCount", container) { 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    /** Every label, and which transactions carry them (the editor's chips and the Activity label filter). */
+    val labels: StateFlow<List<com.xemmy.mmbank.domain.model.Label>> = container.labelRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val labelLinks: StateFlow<List<com.xemmy.mmbank.domain.label.LabelLink>> = container.labelRepository.observeLinks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The label ids one saved transaction carries, read once for the editor. */
+    suspend fun labelIdsOf(transactionId: Long): Set<Long> =
+        container.labelRepository.observeLinks().first().filter { it.transactionId == transactionId }.map { it.labelId }.toSet()
+
+    /** Creates (or finds) a label by name for the editor's "+ New label". */
+    suspend fun createLabel(name: String): com.xemmy.mmbank.domain.model.Label? = container.labelRepository.create(name)
+
     /** One saved row by id, for the full-screen editor; null when it no longer exists. */
     suspend fun loadTransaction(id: Long): Transaction? =
         container.transactionRepository.observeTransactions().first().firstOrNull { it.id == id }
@@ -451,6 +468,13 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     fun setSourceFilter(source: TransactionSource?) { filters.value = filters.value.copy(source = source) }
     fun setKindFilter(kind: TransactionKind?) {
         filters.value = filters.value.copy(kind = kind)
+    }
+
+    /** Toggles one label in the Activity label filter; clearing the last one removes the filter. */
+    fun toggleLabelFilter(labelId: Long) {
+        val current = filters.value.labelIds.orEmpty()
+        val next = if (labelId in current) current - labelId else current + labelId
+        filters.value = filters.value.copy(labelIds = next.ifEmpty { null })
     }
 
     fun setAnalyticsStatus(status: AnalyticsStatusFilter?) {
@@ -733,9 +757,11 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         timestampMillis: Long,
         excludeFromStats: Boolean,
         kind: TransactionKind = TransactionKind.defaultFor(direction),
+        note: String? = null,
+        labelIds: Set<Long> = emptySet(),
     ) = safeWrite("addManual") {
         person?.let(container.preferences::addPerson)
-        container.transactionRepository.recordManual(
+        val newId = container.transactionRepository.recordManual(
             Transaction(
                 amount = amount,
                 currencyCode = currencyCode.trim().uppercase(),
@@ -752,8 +778,10 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 // The user picked it, so automation never second-guesses it.
                 kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(kind, direction),
                 kindUserSet = true,
+                note = note?.trim()?.takeIf { it.isNotEmpty() },
             )
         )
+        if (labelIds.isNotEmpty() && newId > 0) container.labelRepository.setLabels(newId, labelIds)
     }
 
     /** Saves both sides of a transfer/card payment the user typed in, as one linked pair. */
@@ -784,6 +812,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         timestampMillis: Long,
         excludeFromStats: Boolean,
         kind: TransactionKind = original.kind,
+        note: String? = original.note,
+        labelIds: Set<Long>? = null,
     ) = safeWrite("updateTransaction") {
         person?.let(container.preferences::addPerson)
         container.transactionRepository.update(
@@ -807,6 +837,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
                 spendingCategory = resolveLegacySpendingCategory(categoryId),
                 timestampMillis = timestampMillis,
                 excludeFromStats = excludeFromStats,
+                note = note?.trim()?.takeIf { it.isNotEmpty() },
                 // Flipping Spent <-> Received must not leave a one-sided kind
                 // on the wrong side (a "spend" credit would count as spending).
                 kind = com.xemmy.mmbank.domain.ledger.TransactionKindDetector.coerce(original.kind, direction),
@@ -815,6 +846,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         // A new kind goes through the ledger so transfer links are made or
         // released consistently.
         if (kind != original.kind) container.ledgerRepository.setKind(original.id, kind, rememberForMerchant = false)
+        labelIds?.let { container.labelRepository.setLabels(original.id, it) }
     }
 
     /**

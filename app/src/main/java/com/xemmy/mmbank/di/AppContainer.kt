@@ -478,6 +478,10 @@ class AppContainer(context: Context) {
             database = database,
         )
     }
+    val labelRepository: com.xemmy.mmbank.domain.repository.LabelRepository by lazy {
+        com.xemmy.mmbank.data.repository.LabelRepositoryImpl(database)
+    }
+
     val categoryRepository: CategoryRepository by lazy {
         CategoryRepositoryImpl(database)
     }

@@ -790,6 +790,23 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `note survives the domain and entity round trip`() {
+        val domain = Transaction(
+            amount = BigDecimal.TEN, currencyCode = "AED", direction = TransactionDirection.DEBIT,
+            source = TransactionSource.SMS, timestampMillis = 1L, note = "for Sam",
+        )
+        assertEquals("for Sam", domain.toEntity().note)
+        assertEquals("for Sam", domain.toEntity().toDomain().note)
+        assertNull(domain.copy(note = null).toEntity().note)
+    }
+
+    @Test
+    fun `label entity round trip`() {
+        val label = com.xemmy.mmbank.domain.model.Label(3, "Holiday", "#56B4E9")
+        assertEquals(label, label.toEntity().toDomain())
+    }
+
+    @Test
     fun `history only round-trips through the entity`() {
         val domain = com.xemmy.mmbank.domain.model.Transaction(
             amount = BigDecimal("10.00"), currencyCode = "AED", direction = TransactionDirection.DEBIT,
