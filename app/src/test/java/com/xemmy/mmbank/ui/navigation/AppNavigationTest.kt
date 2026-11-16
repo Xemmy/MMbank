@@ -83,7 +83,7 @@ class AppNavigationTest {
     @Test fun planToolsHighlightPlan() {
         listOf(
             Routes.CASHBACK, Routes.SUBSCRIPTIONS, Routes.GOALS, Routes.BILLS, Routes.SPLITS,
-            Routes.SPLITS_GROUP_PATTERN, Routes.splitsGroup(3), Routes.CATEGORIES, Routes.DEBT_PLANNER,
+            Routes.SPLITS_GROUP_PATTERN, Routes.splitsGroup(3), Routes.CATEGORIES, Routes.BUDGETS, Routes.DEBT_PLANNER,
         ).forEach { assertEquals(it, AppTab.PLAN, TabRouting.tabFor(it)) }
     }
 

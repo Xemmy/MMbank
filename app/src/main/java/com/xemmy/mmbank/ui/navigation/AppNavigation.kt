@@ -39,6 +39,7 @@ object Routes {
     const val BILLS = "bills"
     const val SPLITS = "splits"
     const val CATEGORIES = "categories"
+    const val BUDGETS = "budgets"
     const val MONTHLY_REPORT = "monthly_report"
     const val COPILOT = "copilot"
     const val RULES = "rules"
@@ -108,6 +109,7 @@ object TabRouting {
         Routes.SPLITS to AppTab.PLAN,
         "splits_group" to AppTab.PLAN,
         Routes.CATEGORIES to AppTab.PLAN,
+        Routes.BUDGETS to AppTab.PLAN,
         Routes.MONTHLY_REPORT to AppTab.INSIGHTS,
         Routes.YEAR_IN_REVIEW to AppTab.INSIGHTS,
         Routes.UPCOMING to AppTab.PLAN,

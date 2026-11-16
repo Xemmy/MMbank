@@ -124,6 +124,7 @@ import com.xemmy.mmbank.ui.screens.splits.SplitsScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsScreen
 import com.xemmy.mmbank.ui.theme.MMbankTheme
 import com.xemmy.mmbank.ui.theme.ambientBackground
+import com.xemmy.mmbank.ui.screens.budgets.BudgetsScreen
 import com.xemmy.mmbank.ui.screens.insights.CashFlowDetailScreen
 import com.xemmy.mmbank.ui.screens.transactions.TransactionEditorScreen
 import com.xemmy.mmbank.ui.screens.insights.SpendingDetailScreen
@@ -522,7 +523,7 @@ private fun AppNavHost(
                 onOpenSubscriptions = { navController.navigate("subscriptions") },
                 onOpenAnalytics = { navController.navigate("analytics") },
                 onOpenGoals = { navController.navigate("goals") },
-                onOpenBudgets = { navController.navigate("categories") },
+                onOpenBudgets = { navController.navigate(Routes.BUDGETS) },
                 onOpenReport = { navController.navigate("monthly_report") },
                 onOpenCopilot = { navController.navigate("copilot") },
                 onOpenBills = { navController.navigate("bills") },
@@ -580,6 +581,12 @@ private fun AppNavHost(
             arguments = listOf(navArgument("groupId") { type = NavType.LongType }),
         ) {
             GroupDetailScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.BUDGETS) {
+            BudgetsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenCategories = { navController.navigate("categories") },
+            )
         }
         composable("categories") {
             CategoriesAndPeopleScreen(onBack = { navController.popBackStack() }, initialTab = 0)

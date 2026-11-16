@@ -11,6 +11,7 @@ import com.xemmy.mmbank.ui.screens.accounts.AccountsViewModel
 import com.xemmy.mmbank.ui.screens.accounts.DebtPlannerViewModel
 import com.xemmy.mmbank.ui.screens.analytics.AnalyticsViewModel
 import com.xemmy.mmbank.ui.screens.bills.BillsViewModel
+import com.xemmy.mmbank.ui.screens.budgets.BudgetsViewModel
 import com.xemmy.mmbank.ui.screens.budgets.CategoriesViewModel
 import com.xemmy.mmbank.ui.screens.cashback.CashbackViewModel
 import com.xemmy.mmbank.ui.screens.copilot.CopilotChatViewModel
@@ -57,6 +58,7 @@ object AppViewModelProvider {
         initializer { CopilotChatViewModel(mmBankApp().container) }
         initializer { ReviewViewModel(mmBankApp().container) }
         initializer { CategoriesViewModel(mmBankApp().container) }
+        initializer { BudgetsViewModel(mmBankApp().container) }
         initializer { MonthlyReportViewModel(mmBankApp().container) }
         initializer { MerchantDetailViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { BillsViewModel(mmBankApp().container) }
