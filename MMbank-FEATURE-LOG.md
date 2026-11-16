@@ -4686,3 +4686,5 @@ Closes three items left open by F6 and F7. **Labels on rows:** an Activity row s
 **Still different from the plan:** reordering uses Up / Down buttons rather than drag handles; widget previews are still the app icon.
 
 Not covered by CI: the new row line and Labels section as rendered, and the picker order on a device.
+
+**0.120.0 build record:** run 43809437272 on `ead5a02` is green (unit tests and the debug APK, artifact `mmbank-debug-apk`). Its first attempts failed only on a test that passed the conversion function positionally after a parameter was added.
