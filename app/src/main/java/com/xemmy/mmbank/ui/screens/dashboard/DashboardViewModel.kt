@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.layout.HomeSections
+import com.xemmy.mmbank.domain.layout.InsightsSections
 import com.xemmy.mmbank.domain.layout.ScreenLayout
 import com.xemmy.mmbank.domain.layout.ScreenLayoutCodec
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
@@ -667,6 +668,25 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun resetHomeLayout() = updateHomeLayout(ScreenLayout.default(HomeSections.specs))
+
+    private val _insightsLayout = MutableStateFlow(
+        ScreenLayoutCodec.decode(container.preferences.insightsLayoutRaw, InsightsSections.specs),
+    )
+    /** Order and visibility of the customizable Insights boxes. */
+    val insightsLayout: StateFlow<ScreenLayout> = _insightsLayout.asStateFlow()
+
+    private fun updateInsightsLayout(next: ScreenLayout) {
+        _insightsLayout.value = next
+        container.preferences.insightsLayoutRaw = ScreenLayoutCodec.encode(next)
+    }
+
+    fun moveInsightsSection(id: String, direction: Int) =
+        updateInsightsLayout(_insightsLayout.value.move(id, direction))
+
+    fun toggleInsightsSection(id: String) =
+        updateInsightsLayout(_insightsLayout.value.toggle(id, InsightsSections.specs))
+
+    fun resetInsightsLayout() = updateInsightsLayout(ScreenLayout.default(InsightsSections.specs))
 
     fun selectAccount(accountId: Long?) {
         selectedAccountId.value = accountId

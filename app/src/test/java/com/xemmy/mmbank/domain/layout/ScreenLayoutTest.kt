@@ -58,4 +58,9 @@ class ScreenLayoutTest {
     @Test fun defaultIdsUnique() {
         assertEquals(HomeSections.specs.size, HomeSections.specs.map { it.id }.toSet().size)
     }
+
+    @Test fun insightsDefaultIdsUnique() {
+        assertEquals(InsightsSections.specs.size, InsightsSections.specs.map { it.id }.toSet().size)
+        assertTrue(InsightsSections.specs.all { it.removable })
+    }
 }

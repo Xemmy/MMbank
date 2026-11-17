@@ -72,3 +72,43 @@ object HomeSections {
         SectionSpec(RECENT, "Recent activity"),
     )
 }
+
+object InsightsSections {
+    const val PERIOD_TILES = "period_tiles"
+    const val INSIGHTS_CARD = "insights_card"
+    const val NET_WORTH_TREND = "net_worth_trend"
+    const val GOAL_CARD = "goal_card"
+    const val CATEGORY_BUDGETS = "category_budgets_card"
+    const val CASHFLOW = "cashflow_card"
+    const val CATEGORY = "category_card"
+    const val PERSON = "person_card"
+    const val ANALYTICS = "analytics_row"
+    const val SUBSCRIPTIONS = "subscriptions_row"
+    const val BILLS = "bills_row"
+    const val GOALS = "goals_row"
+    const val SPLITS = "splits_row"
+    const val BUDGETS = "budgets_row"
+    const val REPORT = "report_row"
+    const val COPILOT = "copilot_row"
+    const val REWARDS = "rewards_row"
+
+    val specs = listOf(
+        SectionSpec(PERIOD_TILES, "Period totals"),
+        SectionSpec(INSIGHTS_CARD, "Smart insights"),
+        SectionSpec(NET_WORTH_TREND, "Net worth trend"),
+        SectionSpec(GOAL_CARD, "Savings goal"),
+        SectionSpec(CATEGORY_BUDGETS, "Category budgets"),
+        SectionSpec(CASHFLOW, "Cash flow chart"),
+        SectionSpec(CATEGORY, "Spending by category"),
+        SectionSpec(PERSON, "Spending by person"),
+        SectionSpec(ANALYTICS, "Spending analytics"),
+        SectionSpec(SUBSCRIPTIONS, "Subscriptions radar"),
+        SectionSpec(BILLS, "Upcoming bills"),
+        SectionSpec(GOALS, "Savings goals"),
+        SectionSpec(SPLITS, "Splits & groups"),
+        SectionSpec(BUDGETS, "Budgets"),
+        SectionSpec(REPORT, "Monthly report"),
+        SectionSpec(COPILOT, "Financial Copilot"),
+        SectionSpec(REWARDS, "Cashback rewards"),
+    )
+}

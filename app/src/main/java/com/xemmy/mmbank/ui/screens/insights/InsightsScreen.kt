@@ -57,7 +57,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xemmy.mmbank.domain.layout.InsightsSections
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.components.CustomizeLayoutSheet
 import com.xemmy.mmbank.ui.screens.dashboard.NetWorthTrend
 import com.xemmy.mmbank.ui.screens.budgets.CategoryBudgetSummaryCard
 import com.xemmy.mmbank.domain.filter.PeriodWindow
@@ -114,6 +116,12 @@ fun InsightsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val netWorthTrend by viewModel.netWorthTrend.collectAsStateWithLifecycle()
     val hasData = state.stats.monthly.any { it.income > 0.0 || it.spend > 0.0 }
+    val layout by viewModel.insightsLayout.collectAsStateWithLifecycle()
+    var showCustomize by remember { mutableStateOf(false) }
+    // The "charts appear here" hint shows once, at the first visible chart box.
+    val firstChart = layout.visibleOrder.firstOrNull {
+        it == InsightsSections.CASHFLOW || it == InsightsSections.CATEGORY || it == InsightsSections.PERSON
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(MMTheme.colors.canvas),
@@ -188,104 +196,173 @@ fun InsightsScreen(
             }
         }
 
-        item(key = "period_tiles") { PeriodTiles(state) }
-
-        if (state.stats.insights.isNotEmpty()) {
-            item(key = "insights_card") { SmartInsightsCard(state) }
-        }
-
-        netWorthTrend?.takeIf { it.hasTrend }?.let { trend ->
-            item(key = "net_worth_trend") { NetWorthTrendCard(trend, state.baseCurrency, state.hideBalances) }
-        }
-
-        item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
-
-        // Renders nothing until at least one category carries a monthly cap.
-        item(key = "category_budgets_card") { CategoryBudgetSummaryCard(onOpenBudgets = onOpenBudgets) }
-
-        if (hasData) {
-            item(key = "cashflow_card") { CashFlowCard(state, onOpenCashFlow) }
-            if (state.stats.categorySlices.isNotEmpty()) {
-                item(key = "category_card") { CategorySpendCard(state, onOpenSpending) }
+        layout.visibleOrder.forEach { sectionId ->
+            when (sectionId) {
+                InsightsSections.PERIOD_TILES -> {
+                    item(key = "period_tiles") { PeriodTiles(state) }
+                }
+                InsightsSections.INSIGHTS_CARD -> {
+                    if (state.stats.insights.isNotEmpty()) {
+                        item(key = "insights_card") { SmartInsightsCard(state) }
+                    }
+                }
+                InsightsSections.NET_WORTH_TREND -> {
+                    netWorthTrend?.takeIf { it.hasTrend }?.let { trend ->
+                        item(key = "net_worth_trend") { NetWorthTrendCard(trend, state.baseCurrency, state.hideBalances) }
+                    }
+                }
+                InsightsSections.GOAL_CARD -> {
+                    item(key = "goal_card") { GoalCard(state = state, onSaveGoal = viewModel::saveGoal) }
+                }
+                InsightsSections.CATEGORY_BUDGETS -> {
+                    // Renders nothing until at least one category carries a monthly cap.
+                    item(key = "category_budgets_card") { CategoryBudgetSummaryCard(onOpenBudgets = onOpenBudgets) }
+                }
+                InsightsSections.CASHFLOW -> {
+                    if (hasData) {
+                        item(key = "cashflow_card") { CashFlowCard(state, onOpenCashFlow) }
+                    }
+                    if (!hasData && sectionId == firstChart) {
+                        item(key = "charts_placeholder") {
+                            Text(
+                                "Charts appear here once transactions are captured.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MMTheme.colors.textSecondary,
+                            )
+                        }
+                    }
+                }
+                InsightsSections.CATEGORY -> {
+                    if (hasData && state.stats.categorySlices.isNotEmpty()) {
+                        item(key = "category_card") { CategorySpendCard(state, onOpenSpending) }
+                    }
+                    if (!hasData && sectionId == firstChart) {
+                        item(key = "charts_placeholder") {
+                            Text(
+                                "Charts appear here once transactions are captured.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MMTheme.colors.textSecondary,
+                            )
+                        }
+                    }
+                }
+                InsightsSections.PERSON -> {
+                    if (hasData && state.stats.personSpends.isNotEmpty()) {
+                        item(key = "person_card") { PersonSpendCard(state) }
+                    }
+                    if (!hasData && sectionId == firstChart) {
+                        item(key = "charts_placeholder") {
+                            Text(
+                                "Charts appear here once transactions are captured.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MMTheme.colors.textSecondary,
+                            )
+                        }
+                    }
+                }
+                InsightsSections.ANALYTICS -> {
+                    item(key = "analytics_row") {
+                        NavigationRow(
+                            icon = Icons.Outlined.Insights,
+                            title = "Spending analytics",
+                            subtitle = "Heatmap, category donut and pacing gauge",
+                            onClick = onOpenAnalytics,
+                        )
+                    }
+                }
+                InsightsSections.SUBSCRIPTIONS -> {
+                    item(key = "subscriptions_row") {
+                        NavigationRow(
+                            icon = Icons.Filled.Repeat,
+                            title = "Subscriptions radar",
+                            subtitle = "Detected recurring charges and renewal dates",
+                            onClick = onOpenSubscriptions,
+                        )
+                    }
+                }
+                InsightsSections.BILLS -> {
+                    item(key = "bills_row") {
+                        NavigationRow(
+                            icon = Icons.Filled.Receipt,
+                            title = "Upcoming bills",
+                            subtitle = "Manually tracked bills, due dates and reminders",
+                            onClick = onOpenBills,
+                        )
+                    }
+                }
+                InsightsSections.GOALS -> {
+                    item(key = "goals_row") {
+                        NavigationRow(
+                            icon = Icons.Filled.Savings,
+                            title = "Savings goals",
+                            subtitle = "Progress bars, debt payoff and surplus allocation",
+                            onClick = onOpenGoals,
+                        )
+                    }
+                }
+                InsightsSections.SPLITS -> {
+                    item(key = "splits_row") {
+                        NavigationRow(
+                            icon = Icons.Filled.Groups,
+                            title = "Splits & groups",
+                            subtitle = "Shared expenses, balances and settle-up suggestions",
+                            onClick = onOpenSplits,
+                        )
+                    }
+                }
+                InsightsSections.BUDGETS -> {
+                    item(key = "budgets_row") {
+                        NavigationRow(
+                            icon = Icons.Outlined.PieChart,
+                            title = "Budgets",
+                            subtitle = "Set a monthly limit per category, with alerts at 80% and 100%",
+                            onClick = onOpenBudgets,
+                        )
+                    }
+                }
+                InsightsSections.REPORT -> {
+                    item(key = "report_row") {
+                        NavigationRow(
+                            icon = Icons.Outlined.Description,
+                            title = "Monthly report",
+                            subtitle = "A month's statement, shareable as a file",
+                            onClick = onOpenReport,
+                        )
+                    }
+                }
+                InsightsSections.COPILOT -> {
+                    item(key = "copilot_row") {
+                        NavigationRow(
+                            icon = Icons.Filled.SmartToy,
+                            title = "Financial Copilot",
+                            subtitle = "Ask questions about your spending in plain English",
+                            onClick = onOpenCopilot,
+                        )
+                    }
+                }
+                InsightsSections.REWARDS -> {
+                    item(key = "rewards_row") { RewardsRow(onOpenRewards) }
+                }
             }
-            if (state.stats.personSpends.isNotEmpty()) {
-                item(key = "person_card") { PersonSpendCard(state) }
-            }
-        } else {
-            item {
-                Text(
-                    "Charts appear here once transactions are captured.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MMTheme.colors.textSecondary,
-                )
-            }
         }
 
-        item(key = "analytics_row") {
-            NavigationRow(
-                icon = Icons.Outlined.Insights,
-                title = "Spending analytics",
-                subtitle = "Heatmap, category donut and pacing gauge",
-                onClick = onOpenAnalytics,
-            )
+        item(key = "customize_layout") {
+            TextButton(onClick = { showCustomize = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Customize Insights")
+            }
         }
-        item(key = "subscriptions_row") {
-            NavigationRow(
-                icon = Icons.Filled.Repeat,
-                title = "Subscriptions radar",
-                subtitle = "Detected recurring charges and renewal dates",
-                onClick = onOpenSubscriptions,
-            )
-        }
-        item(key = "bills_row") {
-            NavigationRow(
-                icon = Icons.Filled.Receipt,
-                title = "Upcoming bills",
-                subtitle = "Manually tracked bills, due dates and reminders",
-                onClick = onOpenBills,
-            )
-        }
-        item(key = "goals_row") {
-            NavigationRow(
-                icon = Icons.Filled.Savings,
-                title = "Savings goals",
-                subtitle = "Progress bars, debt payoff and surplus allocation",
-                onClick = onOpenGoals,
-            )
-        }
-        item(key = "splits_row") {
-            NavigationRow(
-                icon = Icons.Filled.Groups,
-                title = "Splits & groups",
-                subtitle = "Shared expenses, balances and settle-up suggestions",
-                onClick = onOpenSplits,
-            )
-        }
-        item(key = "budgets_row") {
-            NavigationRow(
-                icon = Icons.Outlined.PieChart,
-                title = "Budgets",
-                subtitle = "Set a monthly limit per category, with alerts at 80% and 100%",
-                onClick = onOpenBudgets,
-            )
-        }
-        item(key = "report_row") {
-            NavigationRow(
-                icon = Icons.Outlined.Description,
-                title = "Monthly report",
-                subtitle = "A month's statement, shareable as a file",
-                onClick = onOpenReport,
-            )
-        }
-        item(key = "copilot_row") {
-            NavigationRow(
-                icon = Icons.Filled.SmartToy,
-                title = "Financial Copilot",
-                subtitle = "Ask questions about your spending in plain English",
-                onClick = onOpenCopilot,
-            )
-        }
-        item(key = "rewards_row") { RewardsRow(onOpenRewards) }
+    }
+
+    if (showCustomize) {
+        CustomizeLayoutSheet(
+            title = "Customize Insights",
+            layout = layout,
+            specs = InsightsSections.specs,
+            onMove = viewModel::moveInsightsSection,
+            onToggle = viewModel::toggleInsightsSection,
+            onReset = viewModel::resetInsightsLayout,
+            onDismiss = { showCustomize = false },
+        )
     }
 }
 

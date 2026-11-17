@@ -4707,3 +4707,8 @@ Not covered by CI: drag feel, lift and slide animations, haptics, TalkBack actio
 Home's boxes (weekly digest, net worth, financial health, this month, accounts, cards due, unassigned money, crypto, recent activity) can be reordered and hidden from a "Customize Home" button at the foot of the screen. Unassigned money can move but not hide (it explains money missing from net worth). Capture-health, onboarding and review alerts stay pinned on top. Hiding Accounts clears any account filter. Stored as one string preference (`home_layout`, `ScreenLayoutCodec`); a box added in a later version is slotted in after its default predecessor. Pure model: `domain/layout/ScreenLayout.kt`; reusable dialog: `CustomizeLayoutSheet`. `ReorderList.move` is now generic. Tests: `ScreenLayoutTest`. Not in backups.
 
 Not covered by CI: the dialog's look, drag feel and lift, the list re-ordering live behind it, the layout surviving a restart, and the footer button's placement.
+
+## Customizable Insights (0.124.0)
+Same mechanism on the Insights tab: period totals, smart insights, net worth trend, savings goal, category budgets, the three charts and each shortcut row (analytics, subscriptions, bills, goals, splits, budgets, report, Copilot, rewards) can be reordered or hidden from "Customize Insights". The ledger toggle and date filter stay pinned. The "Charts appear here once transactions are captured" hint shows at the first visible chart box. Stored as `insights_layout`; tests extend `ScreenLayoutTest`.
+
+Not covered by CI: the dialog and footer on a device, and the placeholder's position with charts hidden/reordered.
