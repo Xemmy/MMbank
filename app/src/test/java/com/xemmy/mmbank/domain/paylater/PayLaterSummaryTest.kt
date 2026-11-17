@@ -44,7 +44,8 @@ class PayLaterSummaryTest {
 
     @Test
     fun `next due is the earliest date and sums what falls on it in that currency`() {
-        val plans = listOf(plan(1, "Carrefour"), plan(2, "Noon"), plan(3, "Amazon", currency = "USD"))
+        // Same-day rows order by merchant, so the USD plan sorts last and the first row decides the currency.
+        val plans = listOf(plan(1, "Carrefour"), plan(2, "Noon"), plan(3, "Zara", currency = "USD"))
         val rows = PayLaterSummary.unpaid(
             plans,
             listOf(inst(1, 1, 1, 9, "81.83"), inst(2, 2, 1, 9, "40.00"), inst(3, 3, 1, 9, "10"), inst(4, 1, 2, 40, "81.83")),
