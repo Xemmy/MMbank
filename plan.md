@@ -1,150 +1,193 @@
-# Plan: customizable screen layout (hide / reorder boxes)
+# Pay Later plans (Tabby-style) + manual subscription linking
 
 ## Context
+The user wants a screen like Tabby's "Pay Later purchases": an amount due next ("Due in 9 days, AED 81.83"), the total still owed, and upcoming installments grouped by date ("Carrefour · Payment 2 of 4") with a Pay action.
 
-Home and Insights are fixed stacks of cards hard-coded in one `LazyColumn` each
-(`DashboardScreen.kt:146-300`, `InsightsScreen.kt:118-290`). The user wants to
-choose which boxes appear and in what order. This plan adds one small, reusable
-"screen layout" mechanism and applies it to **Home** first, then **Insights**.
+MMbank has nothing like this today:
+- Tabby SMS rules only cover card purchases, adjustments and cashback.
+- Bills, Subscriptions and the Debt planner don't model "N payments of X".
 
-Target version: `0.123.0` / `versionCode 179` (step 1), `0.124.0` / `180` (step 2).
+What the user chose:
+- **Entry:** add plans by hand, plus a shortcut from a captured transaction.
+- **Pay:** marking an installment paid records a real transaction.
+- **Where it shows:** a Plan hub card, and inside Upcoming payments.
+- **Also:** a way to manually attach transactions to a subscription.
 
-## Design
+Ship this as two commits, each with its own version bump and green CI:
+- Part A (Pay Later) → 0.125.0 / versionCode 181
+- Part B (subscription linking) → 0.126.0 / versionCode 182
 
-### 1. Pure layout model — new `domain/layout/ScreenLayout.kt`
+---
 
-- `data class SectionSpec(val id: String, val label: String, val removable: Boolean = true)`
-- `data class ScreenLayout(val order: List<String>, val hidden: Set<String>)` with
-  - `visibleOrder` — `order` minus `hidden`
-  - `move(id, direction)` — delegates to `ReorderList.move`
-  - `toggle(id, specs)` — no-op for non-removable sections
-- `object ScreenLayoutCodec`
-  - `encode(layout): String` — `"a,b,c|x,y"` (order `|` hidden)
-  - `decode(raw, defaults: List<SectionSpec>): ScreenLayout` — forgiving:
-    blank/garbage → defaults; unknown ids dropped; duplicates dropped; sections
-    added in a later app version are inserted after their default-order
-    predecessor (so an update never loses a new card); non-removable ids are
-    stripped from `hidden`.
-- `object HomeSections` / `object InsightsSections` — the id constants and the
-  default-ordered `List<SectionSpec>` for each screen.
+## Part A: Pay Later plans
 
-Reuse: generalise `domain/ReorderList.move` from `List<Long>` to `<T> List<T>`
-(source-compatible; existing callers and `ReorderListTest` unchanged).
+### Data layer (DB 40 → 41)
 
-### 2. Persistence — `data/prefs/AppPreferences.kt`
+**New entities** in `data/local/entity/Entities.kt`, with matching domain models in `domain/model/Models.kt` and `toEntity()`/`toDomain()` mappers:
 
-Two string prefs following the existing pattern: `homeLayoutRaw`
-(`KEY_HOME_LAYOUT`) and `insightsLayoutRaw` (`KEY_INSIGHTS_LAYOUT`), default `""`.
-No Room change, no migration.
+- `PayLaterPlanEntity` (table `pay_later_plans`):
+  - id, merchant, provider (default "Tabby")
+  - totalAmount: BigDecimal, currencyCode
+  - installmentCount, cadence: `PayLaterCadence` (WEEKLY, BIWEEKLY, MONTHLY)
+  - payFromAccountId: Long?, payToAccountId: Long? (the Tabby liability account, if any)
+  - sourceTransactionId: Long? (the original purchase, if it was captured)
+  - note, createdAt, isDemo=false
+- `PayLaterInstallmentEntity` (table `pay_later_installments`):
+  - id, planId (FK → plans, ON DELETE CASCADE, indexed), number (1..n), amount
+  - dueDateMillis, paidAtMillis: Long?, paymentTransactionId: Long?
 
-### 3. ViewModel — `ui/screens/dashboard/DashboardViewModel.kt`
+**Migration:**
+- `MIGRATION_40_41_SQL` in `data/local/MigrationSql.kt`: CREATE both tables and the index.
+- Add the `Migration(40,41)` object in `AppDatabase.kt`, bump `version = 41`, and append it to `.addMigrations(...)`.
 
-Both screens use `DashboardViewModel`, and each layout is only edited from its
-own screen, so this is the "plain preference, one ViewModel" toggle shape from
-CLAUDE.md (no `AppContainer` flow needed):
+**DAO and repository:**
+- `PayLaterDao` in `data/local/dao/Daos.kt`:
+  - Flows of plans and installments; insert a plan together with its installments (`@Transaction`); update an installment; delete a plan.
+- `PayLaterRepository` (interface in `domain/repository/Repositories.kt`, implemented in `data/repository/SimpleRepositories.kt`).
+- Wire it in `di/AppContainer.kt`.
 
-- `val homeLayout: StateFlow<ScreenLayout>` and `val insightsLayout`, each a
-  `MutableStateFlow` seeded with `ScreenLayoutCodec.decode(prefs.…Raw, defaults)`.
-- `moveHomeSection(id, direction)`, `toggleHomeSection(id)`, `resetHomeLayout()`
-  (and the Insights equivalents) — update the flow and write the encoded string
-  back to prefs.
+**Backup:**
+- `BackupPayLaterPlan` / `BackupPayLaterInstallment` DTOs in `data/backup/BackupManager.kt`, following the BackupBill pattern.
+- Old backups without these sections must restore to empty.
 
-Kept as separate flows rather than added to the already-full `uiState` combine.
+### Domain (pure, unit-tested)
 
-### 4. Home screen — `ui/screens/dashboard/DashboardScreen.kt`
+**`domain/paylater/PayLaterSchedule.kt`**
+- `generate(total, count, firstDue, cadence)`:
+  - Split the total evenly to the cent; the rounding remainder goes on the last installment.
+  - Due dates step by cadence. Monthly uses `plusMonths`, which clamps the 31st correctly.
+- An option to mark installment 1 as already paid, since Tabby takes the first payment at checkout.
 
-Customizable sections (default order = today's order):
+**`domain/paylater/PayLaterSummary.kt`**
+- Next due date, its amount, and days until it.
+- Total remaining, kept per currency and never summed across currencies.
+- Unpaid installments grouped by due date (this drives the screen's date cards).
+- Per-plan progress ("Payment k of n"); a plan counts as finished once everything is paid.
 
-| id | Box | Removable |
-|---|---|---|
-| `weekly_digest` | Weekly digest | yes |
-| `net_worth` | Net worth | yes |
-| `financial_health` | Financial health | yes |
-| `month_card` | This month | yes |
-| `accounts` | Account carousel | yes |
-| `cards_due` | Cards due | yes |
-| `unassigned` | Unassigned money | **no** (it explains money missing from net worth) — reorder only |
-| `crypto` | Crypto header + card | yes |
-| `recent` | Recent activity (filter chip + header + feed) | yes |
+**`domain/paylater/PayLaterPayment.kt`** builds the transaction(s) for a payment:
+- **Purchase was already captured** (`sourceTransactionId` set) **and `payToAccountId` set:**
+  - Record a transfer pair, payFrom → payTo, linked via `linkedTransactionId`. This is the same pattern existing transfers use.
+  - Spending isn't double-counted, and the Tabby liability balance goes down.
+- **Purchase was already captured, but no payTo account:**
+  - Record a debit from payFrom with `excludeFromStats = true`, so the purchase isn't counted twice.
+- **Purchase was never captured:**
+  - Record a normal SPEND from payFrom, with merchant = plan merchant and the plan's category.
+- **Undo payment:** delete the payment transaction(s) and clear `paidAtMillis` / `paymentTransactionId`.
 
-Pinned, not customizable: capture-health banner, onboarding card, review badge
-(alerts that already have their own dismiss/snooze and must stay on top).
+### UI
 
-Refactor: each section's existing `item { … }` block moves unchanged into a
-local `LazyListScope` extension (e.g. `fun LazyListScope.netWorthSection(…)`),
-keeping its current data-availability condition and prefixed keys. The
-`LazyColumn` body becomes: pinned alerts, then
+**`ui/screens/paylater/PayLaterScreen.kt`** (+ `PayLaterViewModel`), modelled on the screenshot:
+- **Header:**
+  - "Due in N days" (or "Overdue by N days")
+  - The large next-due amount
+  - "Total due AED X"
+- **Buttons:**
+  - "Add plan"
+  - "History" toggle (paid installments and finished plans)
+- **"Upcoming payments" list:** one card per due date. Each row shows:
+  - Merchant
+  - "Payment k of n"
+  - Amount
+  - A **Pay** button
+- **Pay** opens a sheet:
+  - Choose the account to pay from (defaults to the plan's payFrom)
+  - Date (defaults to today)
+  - Confirm
+- Tabby's **Extend** button is replaced by **Reschedule**, which edits the due date.
+- Tapping a row opens plan detail.
 
-```kotlin
-layout.visibleOrder.forEach { id -> when (id) { HomeSections.NET_WORTH -> netWorthSection(…) … } }
-```
+**Plan detail screen** (`pay_later/{planId}`):
+- Every installment with its paid/unpaid state; undo on paid ones.
+- Edit the plan, or delete it (with a confirmation).
 
-then a footer `item(key = "customize")` with a low-profile "Customize Home"
-text button. The footer is always present, so a fully-hidden screen is always
-recoverable.
+**Add/edit plan form:**
+- Fields: merchant, provider, total, number of payments (default 4), cadence (default monthly), first due date, "first payment already paid", pay-from account, Tabby account (optional).
+- **Shortcut from a transaction:** add a "Split with Pay Later" action in `TransactionEditorScreen.kt`, next to the existing "Repeat" action. It opens the form prefilled with merchant, amount, date and `sourceTransactionId`, and picks the transaction's account as `payToAccountId` when that account is a CREDIT_CARD or LOAN.
 
-Edge: hiding `accounts` while an account filter is selected → the ViewModel
-clears `selectedAccountId` in `toggleHomeSection` so the feed isn't silently
-filtered with no visible control.
+**Navigation:**
+- Add `Routes.PAY_LATER`, `PAY_LATER_DETAIL` and `PAY_LATER_EDITOR` in `ui/navigation/AppNavigation.kt`.
+- Add the `composable` entries in `MainActivity.AppNavHost`.
+- Map them to `AppTab.PLAN` in `TabRouting.ownerByBaseRoute`.
 
-### 5. Editor sheet — new `ui/components/CustomizeLayoutSheet.kt`
+### Integrations
 
-One reusable sheet for both screens, modelled on `ManageAccountsBottomSheet.kt`
-(same `MMBottomSheet`, same "Drag the ≡ grip to reorder" hint):
+- **Plan hub:**
+  - Add `PlanEntry.PAY_LATER` ("Pay Later", "Tabby-style split purchases and what's due next") in `ui/screens/plan/PlanHub.kt`, after SUBSCRIPTIONS.
+  - Add `PlanStatus.payLater(...)` returning "AED 81.83 due in 9 days" (or "N overdue"), wired in `PlanViewModel.kt`.
+- **Upcoming payments:**
+  - Add `Kind.PAY_LATER("Pay Later")` in `domain/intelligence/UpcomingPayments.kt`.
+  - Add an `installments` parameter to `build()`. Each unpaid installment becomes an Item named "Carrefour · 2 of 4". The existing horizon and grouping logic then applies to it.
+  - Feed the parameter from `UpcomingPaymentsViewModel`.
 
-- One row per section in `layout.order`: `ReorderHandle` + `liftWhileDragging`
-  (`ui/designsystem/ReorderHandle.kt`, includes TalkBack move actions), the
-  label, and a `Switch` for show/hide (disabled with "Always shown" caption for
-  non-removable sections). Hidden rows are dimmed but stay reorderable.
-- "Reset to default" text button.
-- Changes apply live to the screen behind the sheet.
+### Tests (same commit)
 
-### 6. Insights screen (step 2) — `ui/screens/insights/InsightsScreen.kt`
+- `PayLaterScheduleTest`: even split, remainder on the last installment, monthly clamping at the 31st, weekly/biweekly dates, first-paid option.
+- `PayLaterSummaryTest`: next due, overdue, per-currency totals, grouping by date, a finished plan drops out.
+- `PayLaterPaymentTest`: the three transaction shapes above, and undo.
+- `UpcomingPaymentsTest`: installments included, paid ones excluded.
+- `PlanStatusTest`: payLater lines.
+- `EntityMappersTest` and `BackupMappersTest`: round-trips for both new entities.
+- `MigrationSqlTest`: 40→41 creates the tables, and cascade delete works.
+- `AppNavigationTest`: the new routes map to the PLAN tab.
 
-Same treatment. Pinned at top: ledger toggle, date filter row. Customizable:
-`period_tiles`, `insights_card`, `net_worth_trend`, `goal_card`,
-`category_budgets_card`, `cashflow_card`, `category_card`, `person_card`, and
-the shortcut rows (`analytics_row` … `rewards_row`) each as its own section.
-The "Charts appear here once transactions are captured" placeholder shows when
-no data and at least one chart section is visible. Footer "Customize Insights".
+### Housekeeping
 
-## Files
+- `app/build.gradle.kts`: versionCode 181, versionName 0.125.0.
+- Add the item to `MMbank-IMPROVEMENT-PLAN.md` marked ✅ 0.125.0, with "Not covered by CI" notes for the Compose UI.
 
-- New: `domain/layout/ScreenLayout.kt`, `ui/components/CustomizeLayoutSheet.kt`
-- Modified: `domain/ReorderList.kt`, `data/prefs/AppPreferences.kt`,
-  `ui/screens/dashboard/DashboardViewModel.kt`,
-  `ui/screens/dashboard/DashboardScreen.kt`,
-  `ui/screens/insights/InsightsScreen.kt`, `app/build.gradle.kts`,
-  `MMbank-IMPROVEMENT-PLAN.md` (✅ with version), `MMbank-FEATURE-LOG.md`
-- New tests: `app/src/test/java/com/xemmy/mmbank/domain/layout/ScreenLayoutTest.kt`
+---
 
-## Delivery steps (one commit + CI run each)
+## Part B: Manually attach transactions to a subscription
 
-1. Model + codec + prefs + ViewModel + editor sheet + Home wiring → 0.123.0.
-2. Insights wiring → 0.124.0.
+**How detection works today:**
+- `SubscriptionRadarEngine.detect` groups transactions by merchant key.
+- `SubscriptionMerge` keeps ids stable per merchant.
 
-## Out of scope
+So a charge with a differently named merchant (e.g. "APPLE.COM/BILL" vs "Apple") can't be attached.
 
-- Including the layout in encrypted backups (would need a backup format bump;
-  can follow later using the nullable-`extras` pattern in `BackupManager.kt`).
-- Customizing Activity / Plan / Accounts tabs, card resizing, or multi-column
-  layouts.
+**Data (DB 41 → 42):**
+- New table `subscription_links(transactionId PK, subscriptionId, FK cascade)`.
+- `SubscriptionLinkEntity`, a domain model and mappers.
+- `MIGRATION_41_42_SQL`.
+- DAO methods and a backup DTO.
+
+**Domain: `domain/intelligence/SubscriptionLinks.kt`**
+- `apply(transactions, links, subscriptions)` rewrites the merchant of each linked transaction to its subscription's merchant before detection runs. This happens both in `SubscriptionRepositoryImpl` (scan, `SimpleRepositories.kt:279`) and in the background scan (`AppContainer.kt:901`).
+- Linked charges therefore count toward occurrences, average, last seen and next due.
+- Rules for linked charges:
+  - They are never treated as noise.
+  - A subscription with at least one linked charge plus a matching chain survives detection.
+
+**Manual subscription:**
+- "Add subscription" on the Subscriptions screen: merchant, amount, cadence, next date.
+- Requires an `isManual` column on `subscriptions` (in the same 41→42 migration). `SubscriptionMerge` never overwrites amount/cadence on manual rows, and never drops them.
+
+**UI:**
+- **Transaction editor:** a new "Add to subscription" action. A picker lists the active subscriptions plus "New subscription from this charge".
+- **Subscriptions screen:** tapping a subscription opens a sheet with:
+  - Its linked and auto-matched charges
+  - "Add charge", which picks from recent debits that aren't already linked
+  - Unlink per row
+
+**Tests:**
+- `SubscriptionLinksTest`: merchant rewrite; a linked charge changes average/next due; a manual row survives a merge.
+- Mapper, backup and migration round-trips.
+
+**Housekeeping:** version 182 / 0.126.0, and mark the item ✅ in the improvement plan.
+
+---
 
 ## Verification
 
-Pure-JVM tests in `ScreenLayoutTest` (run by CI's `:app:testDebugUnitTest`):
-
-- encode → decode round-trip
-- blank / garbage / duplicate / unknown-id input falls back safely
-- a section new in defaults is inserted after its default predecessor
-- non-removable id can't be hidden (via `toggle` and via stored string)
-- `move` at the ends is a no-op; `visibleOrder` excludes hidden
-- `HomeSections` / `InsightsSections` default ids are unique
-- `ReorderListTest` still passes after the generic change
-
-Push to `claude/mmbank-local-ai-parsing-4cfi14`, wait for the workflow to
-finish (tests + APK build green) before the next push.
-
-**Not covered by CI (device check, to list in the feature log):** the sheet's
-look, drag feel and lift animation, live re-ordering of the list behind the
-sheet, layout surviving an app restart, and the "Customize" footer placement.
+- Push each part separately to `claude/mmbank-local-ai-parsing-4cfi14` and wait for each CI run to finish before the next push (`cancel-in-progress`).
+- A green run means:
+  - All new pure-JVM tests pass
+  - The migrations run on real SQLite
+  - The APK builds
+- Ask the user to sideload the debug APK artifact and check by hand:
+  - Add a 4-payment Carrefour plan; check the header and date cards against the screenshot.
+  - Pay one installment from a bank account; check the balances.
+  - Undo that payment.
+  - Check that the plan appears in Upcoming payments and on the Plan hub card.
+  - Link a renamed charge to a subscription.
+- **Not covered by CI:** Compose rendering, navigation, and the transaction-editor actions.
