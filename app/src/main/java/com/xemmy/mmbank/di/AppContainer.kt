@@ -907,7 +907,11 @@ class AppContainer(context: Context) {
                 val history = database.transactionDao()
                     .findRealDebitsByMerchant(merchant)
                     .map { it.toDomain() }
-                val detected = SubscriptionRadarEngine.detect(history)
+                // Charges the user linked to this subscription count too, or this
+                // scoped rescan would shrink the series a full scan had built.
+                val linked = subscriptionRepository.linkedTransactions(merchant)
+                    .map { it.copy(merchant = merchant) }
+                val detected = SubscriptionRadarEngine.detect((history + linked).distinctBy { it.id })
                 if (detected.isNotEmpty()) subscriptionRepository.replaceAll(detected)
             }.onFailure { recordError("AppContainer.refreshSubscriptionForMerchant", it) }
         }

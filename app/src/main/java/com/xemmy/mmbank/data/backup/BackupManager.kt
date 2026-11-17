@@ -16,6 +16,8 @@ import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
 import com.xemmy.mmbank.data.local.entity.PayLaterInstallmentEntity
 import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
+import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
+import com.xemmy.mmbank.data.local.entity.SubscriptionLinkEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
@@ -34,6 +36,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -306,11 +309,24 @@ data class BackupExtras(
     val expenseSplits: List<BackupExpenseSplit> = emptyList(),
     val payLaterPlans: List<BackupPayLaterPlan> = emptyList(),
     val payLaterInstallments: List<BackupPayLaterInstallment> = emptyList(),
+    val manualSubscriptions: List<BackupManualSubscription> = emptyList(),
+    val subscriptionLinks: List<BackupSubscriptionLink> = emptyList(),
     val goalTargetAmount: Double? = null,
     val goalMonthlySaving: Double? = null,
     val monthlySpendBudget: Double? = null,
     val fixedMonthlyExpenses: Double? = null,
 )
+
+/** A hand-added subscription; detected ones are rebuilt by a scan, so only manual rows are backed up. */
+@Serializable
+data class BackupManualSubscription(
+    val id: Long, val merchant: String, val averageAmount: String, val currencyCode: String,
+    val cadence: String, val nextDueDateMillis: Long, val lastSeenMillis: Long, val occurrenceCount: Int,
+    val dismissed: Boolean = false,
+)
+
+@Serializable
+data class BackupSubscriptionLink(val transactionId: Long, val merchant: String)
 
 @Serializable
 data class BackupPayLaterPlan(
@@ -450,6 +466,8 @@ class BackupManager(
                 bills = database.billDao().getAll().map { it.toBackup() },
                 payLaterPlans = database.payLaterDao().getAllPlans().map { it.toBackup() },
                 payLaterInstallments = database.payLaterDao().getAllInstallments().map { it.toBackup() },
+                manualSubscriptions = database.subscriptionDao().getManual().map { it.toBackup() },
+                subscriptionLinks = database.subscriptionDao().getAllLinks().map { BackupSubscriptionLink(it.transactionId, it.merchant) },
                 goals = database.savingsGoalDao().getAll().map { it.toBackup() },
                 friends = database.friendDao().getAll().map { it.toBackup() },
                 groups = database.splitGroupDao().getAll().map { it.toBackup() },
@@ -618,6 +636,12 @@ class BackupManager(
                 database.payLaterDao().clearAll()
                 database.payLaterDao().insertPlans(extras.payLaterPlans.map { it.toEntity() })
                 database.payLaterDao().insertInstallments(extras.payLaterInstallments.map { it.toEntity() })
+                database.subscriptionDao().deleteManual()
+                database.subscriptionDao().clearLinks()
+                extras.manualSubscriptions.forEach { database.subscriptionDao().upsert(it.toEntity()) }
+                database.subscriptionDao().insertLinks(
+                    extras.subscriptionLinks.map { SubscriptionLinkEntity(it.transactionId, it.merchant) },
+                )
                 database.savingsGoalDao().insertAll(extras.goals.map { it.toEntity() })
                 database.friendDao().insertAll(extras.friends.map { it.toEntity() })
                 database.splitGroupDao().insertAll(extras.groups.map { it.toEntity() })
@@ -997,6 +1021,19 @@ internal fun BackupBill.toEntity() = BillEntity(
     id = id, name = name, amount = BigDecimal(amount), currencyCode = currencyCode,
     recurrence = recurrence?.let { r -> BillRecurrence.values().firstOrNull { it.name == r } },
     nextDueDateMillis = nextDueDateMillis, createdAt = createdAt, dueDayAnchor = dueDayAnchor,
+)
+
+internal fun SubscriptionEntity.toBackup() = BackupManualSubscription(
+    id = id, merchant = merchant, averageAmount = averageAmount.toPlainString(), currencyCode = currencyCode,
+    cadence = cadence.name, nextDueDateMillis = nextDueDateMillis, lastSeenMillis = lastSeenMillis,
+    occurrenceCount = occurrenceCount, dismissed = dismissed,
+)
+
+internal fun BackupManualSubscription.toEntity() = SubscriptionEntity(
+    id = id, merchant = merchant, averageAmount = BigDecimal(averageAmount), currencyCode = currencyCode,
+    cadence = SubscriptionCadence.entries.firstOrNull { it.name == cadence } ?: SubscriptionCadence.MONTHLY,
+    nextDueDateMillis = nextDueDateMillis, lastSeenMillis = lastSeenMillis, occurrenceCount = occurrenceCount,
+    dismissed = dismissed, previousAmount = null, isManual = true,
 )
 
 internal fun PayLaterPlanEntity.toBackup() = BackupPayLaterPlan(

@@ -14,8 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,9 +40,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.intelligence.SubscriptionLinks
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
+import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.time.Instant
@@ -91,11 +95,72 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
             scanning.value = true
             runCatching {
                 val transactions = container.transactionRepository.observeTransactions().first()
-                val detected = SubscriptionRadarEngine.detect(transactions)
-                container.subscriptionRepository.replaceAll(detected)
+                container.subscriptionRepository.rescan(transactions)
             }.onFailure { container.recordError("SubscriptionsViewModel.scan", it) }
             hasScannedOnce.value = true
             scanning.value = false
+        }
+    }
+
+    private val _charges = MutableStateFlow<ChargesState?>(null)
+    val charges: StateFlow<ChargesState?> = _charges
+
+    val defaultCurrency: String get() = container.preferences.defaultCurrency
+
+    /** Opens the charges dialog for [subscription], loading what is linked and what could be. */
+    fun openCharges(subscription: Subscription) {
+        viewModelScope.launch {
+            runCatching { _charges.value = loadCharges(subscription) }
+                .onFailure { container.recordError("SubscriptionsViewModel.openCharges", it) }
+        }
+    }
+
+    fun closeCharges() {
+        _charges.value = null
+    }
+
+    fun addCharge(charge: Transaction) = changeLink { sub, repository -> repository.link(charge.id, sub.merchant) }
+
+    fun removeCharge(charge: Transaction) = changeLink { _, repository -> repository.unlink(charge.id) }
+
+    /** Applies a link change, rescans so the subscription reflects it, and refreshes the dialog. */
+    private fun changeLink(change: suspend (Subscription, com.xemmy.mmbank.domain.repository.SubscriptionRepository) -> Unit) {
+        val open = _charges.value?.subscription ?: return
+        viewModelScope.launch {
+            runCatching {
+                val repository = container.subscriptionRepository
+                change(open, repository)
+                repository.rescan(container.transactionRepository.observeTransactions().first())
+                // The rescan may have refreshed the row; show its current figures.
+                val fresh = repository.observeActive().first().firstOrNull { it.merchant == open.merchant } ?: open
+                _charges.value = loadCharges(fresh)
+            }.onFailure { container.recordError("SubscriptionsViewModel.changeLink", it) }
+        }
+    }
+
+    private suspend fun loadCharges(subscription: Subscription): ChargesState {
+        val repository = container.subscriptionRepository
+        val links = repository.links()
+        val all = container.transactionRepository.observeTransactions().first()
+        return ChargesState(
+            subscription = subscription,
+            linked = repository.linkedTransactions(subscription.merchant).sortedByDescending { it.timestampMillis },
+            candidates = SubscriptionLinks.candidates(all, links, subscription),
+        )
+    }
+
+    fun addManual(subscription: Subscription) {
+        viewModelScope.launch {
+            runCatching { container.subscriptionRepository.saveManual(subscription) }
+                .onFailure { container.recordError("SubscriptionsViewModel.addManual", it) }
+        }
+    }
+
+    fun deleteSubscription(id: Long) {
+        viewModelScope.launch {
+            runCatching { container.subscriptionRepository.delete(id) }
+                .onFailure { container.recordError("SubscriptionsViewModel.deleteSubscription", it) }
+            _charges.value = null
         }
     }
 
@@ -120,6 +185,30 @@ fun SubscriptionsScreen(
     viewModel: SubscriptionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val charges by viewModel.charges.collectAsStateWithLifecycle()
+    var addOpen by remember { mutableStateOf(false) }
+
+    charges?.let { open ->
+        SubscriptionChargesDialog(
+            state = open,
+            onDismiss = viewModel::closeCharges,
+            onAdd = viewModel::addCharge,
+            onRemove = viewModel::removeCharge,
+            // Only a hand-added row is really removed; a detected one would just return on the next scan.
+            onDeleteSubscription = if (open.subscription.isManual) {
+                { viewModel.deleteSubscription(open.subscription.id) }
+            } else {
+                null
+            },
+        )
+    }
+    if (addOpen) {
+        AddSubscriptionDialog(
+            defaultCurrency = viewModel.defaultCurrency,
+            onDismiss = { addOpen = false },
+            onSave = { viewModel.addManual(it); addOpen = false },
+        )
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,6 +220,11 @@ fun SubscriptionsScreen(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f),
             )
+            OutlinedButton(onClick = { addOpen = true }, modifier = Modifier.padding(end = 8.dp)) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.width(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add")
+            }
             if (state.scanning) {
                 CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
             } else {
@@ -150,7 +244,7 @@ fun SubscriptionsScreen(
                             "charges on a weekly or monthly rhythm to be detected."
                     } else {
                         "Tap Scan to detect recurring charges (subscriptions, memberships, " +
-                            "bills) from your transaction history."
+                            "bills) from your transaction history, or Add one yourself."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -165,6 +259,7 @@ fun SubscriptionsScreen(
                     SubscriptionRow(
                         subscription,
                         onDismiss = { viewModel.dismiss(subscription.id) },
+                        onCharges = { viewModel.openCharges(subscription) },
                         onClick = { onOpenMerchant(subscription.merchant) },
                     )
                 }
@@ -174,7 +269,7 @@ fun SubscriptionsScreen(
 }
 
 @Composable
-private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, onClick: () -> Unit) {
+private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, onCharges: () -> Unit, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -218,6 +313,9 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, o
                         },
                     )
                 }
+            }
+            IconButton(onClick = onCharges) {
+                Icon(Icons.Filled.Link, contentDescription = "Linked charges for ${subscription.merchant}")
             }
             IconButton(onClick = onDismiss) {
                 Icon(Icons.Filled.Close, contentDescription = "Dismiss ${subscription.merchant}")

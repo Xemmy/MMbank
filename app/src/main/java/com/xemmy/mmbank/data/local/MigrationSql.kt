@@ -121,6 +121,18 @@ object MigrationSql {
     )
 
     /**
+     * v42 (from v41): hand-added subscriptions and manual transaction links. `isManual` defaults
+     * to 0 so every detected row stays detected; the link table starts empty.
+     */
+    val MIGRATION_41_42_SQL: List<String> = listOf(
+        "ALTER TABLE `subscriptions` ADD COLUMN `isManual` INTEGER NOT NULL DEFAULT 0",
+        "CREATE TABLE IF NOT EXISTS `subscription_links` (" +
+            "`transactionId` INTEGER PRIMARY KEY NOT NULL, " +
+            "`merchant` TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS `index_subscription_links_merchant` ON `subscription_links` (`merchant`)",
+    )
+
+    /**
      * v40: account order and "count in net worth". `sortOrder` starts as each account's current
      * position (by name, as the lists were ordered), so nothing moves; `excludeFromTotals` starts
      * false for every account. Purely additive; defaults match the entity's `@ColumnInfo`.

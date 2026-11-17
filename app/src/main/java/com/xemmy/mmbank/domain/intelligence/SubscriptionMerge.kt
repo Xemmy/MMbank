@@ -14,7 +14,23 @@ object SubscriptionMerge {
         val byMerchant = existing.associateBy { it.merchant }
         return detected.map { sub ->
             val stored = byMerchant[sub.merchant]
-            if (stored == null) sub else sub.copy(id = stored.id, dismissed = stored.dismissed)
+            when {
+                stored == null -> sub
+                stored.isManual -> keepManual(stored, sub)
+                else -> sub.copy(id = stored.id, dismissed = stored.dismissed)
+            }
         }
     }
+
+    /**
+     * A hand-added row keeps what the user typed (amount, currency, cadence,
+     * price history); the scan only contributes what it observed: the last
+     * charge and how many there were. The next due date follows the scan only
+     * when it read the same cadence, otherwise the typed schedule wins.
+     */
+    private fun keepManual(stored: Subscription, scanned: Subscription): Subscription = stored.copy(
+        lastSeenMillis = maxOf(stored.lastSeenMillis, scanned.lastSeenMillis),
+        occurrenceCount = scanned.occurrenceCount,
+        nextDueDateMillis = if (scanned.cadence == stored.cadence) scanned.nextDueDateMillis else stored.nextDueDateMillis,
+    )
 }

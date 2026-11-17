@@ -25,6 +25,7 @@ import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
 import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
+import com.xemmy.mmbank.data.local.entity.SubscriptionLinkEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -733,6 +734,49 @@ interface SubscriptionDao {
 
     @Query("SELECT * FROM subscriptions")
     suspend fun getAll(): List<SubscriptionEntity>
+
+    @Query("SELECT * FROM subscriptions WHERE isManual = 1")
+    suspend fun getManual(): List<SubscriptionEntity>
+
+    @Query("DELETE FROM subscriptions WHERE isManual = 1")
+    suspend fun deleteManual()
+
+    @Query("DELETE FROM subscriptions WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    // --- Manual links (see SubscriptionLinks) ---
+
+    @Query("SELECT * FROM subscription_links")
+    fun observeLinks(): Flow<List<SubscriptionLinkEntity>>
+
+    @Query("SELECT * FROM subscription_links")
+    suspend fun getAllLinks(): List<SubscriptionLinkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLink(link: SubscriptionLinkEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLinks(links: List<SubscriptionLinkEntity>)
+
+    @Query("DELETE FROM subscription_links WHERE transactionId = :transactionId")
+    suspend fun deleteLink(transactionId: Long)
+
+    @Query("DELETE FROM subscription_links WHERE merchant = :merchant")
+    suspend fun deleteLinksFor(merchant: String)
+
+    @Query("DELETE FROM subscription_links")
+    suspend fun clearLinks()
+
+    /** The transactions the user linked to [merchant]'s subscription, oldest first. */
+    @Query(
+        """
+        SELECT t.* FROM transactions t
+        INNER JOIN subscription_links l ON l.transactionId = t.id
+        WHERE l.merchant = :merchant
+        ORDER BY t.timestamp ASC
+        """
+    )
+    suspend fun linkedTransactions(merchant: String): List<TransactionEntity>
 }
 
 @Dao

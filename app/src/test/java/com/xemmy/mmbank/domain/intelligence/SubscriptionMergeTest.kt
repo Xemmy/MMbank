@@ -31,4 +31,35 @@ class SubscriptionMergeTest {
         assertTrue(merged[0].dismissed)
         assertEquals(0L, merged[1].id)
     }
+
+    @Test fun `a manual row keeps its typed amount and cadence and takes only what the scan saw`() {
+        val stored = sub(7, "Gym", due = 500).copy(
+            averageAmount = BigDecimal("150"), cadence = SubscriptionCadence.YEARLY,
+            lastSeenMillis = 10, occurrenceCount = 0, isManual = true, dismissed = false,
+        )
+        val scanned = sub(0, "Gym", due = 900).copy(
+            averageAmount = BigDecimal("12"), cadence = SubscriptionCadence.MONTHLY, lastSeenMillis = 800, occurrenceCount = 3,
+        )
+        val merged = SubscriptionMerge.merge(listOf(stored), listOf(scanned)).single()
+        assertEquals(7L, merged.id)
+        assertTrue(merged.isManual)
+        assertEquals(BigDecimal("150"), merged.averageAmount)
+        assertEquals(SubscriptionCadence.YEARLY, merged.cadence)
+        assertEquals(800L, merged.lastSeenMillis)
+        assertEquals(3, merged.occurrenceCount)
+        assertEquals("a different cadence must not move the typed schedule", 500L, merged.nextDueDateMillis)
+    }
+
+    @Test fun `a manual row follows the scan's next date when the cadence agrees`() {
+        val stored = sub(7, "Gym", due = 500).copy(isManual = true)
+        val merged = SubscriptionMerge.merge(listOf(stored), listOf(sub(0, "Gym", due = 900))).single()
+        assertEquals(900L, merged.nextDueDateMillis)
+    }
+
+    @Test fun `a detected row is still replaced by the scan`() {
+        val stored = sub(7, "Netflix").copy(averageAmount = BigDecimal("1"))
+        val merged = SubscriptionMerge.merge(listOf(stored), listOf(sub(0, "Netflix"))).single()
+        assertEquals(BigDecimal("10"), merged.averageAmount)
+        assertEquals(false, merged.isManual)
+    }
 }

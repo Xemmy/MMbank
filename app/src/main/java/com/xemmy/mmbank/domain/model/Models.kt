@@ -659,7 +659,21 @@ data class Subscription(
      * the change, so "↑ was 45" can be shown against today's figure.
      */
     val previousAmount: BigDecimal? = null,
+    /**
+     * Added by hand rather than detected. A rescan keeps the typed amount and
+     * cadence of such a row and never removes it, even with too few charges for
+     * the radar to see a pattern.
+     */
+    val isManual: Boolean = false,
 )
+
+/**
+ * The user's decision that one transaction is a charge of the subscription
+ * named [merchant], whatever merchant text the bank printed on it. Keyed by
+ * the subscription's merchant (not its row id) so the link survives a rescan
+ * and a dismissed-then-re-added row.
+ */
+data class SubscriptionLink(val transactionId: Long, val merchant: String)
 
 /**
  * Recurrence rhythm for a manually tracked [Bill]; kept nullable on the bill

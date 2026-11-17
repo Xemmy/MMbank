@@ -146,6 +146,7 @@ private fun EditorBody(
     var timePickerOpen by rememberSaveable { mutableStateOf(false) }
     var categorySheetOpen by rememberSaveable { mutableStateOf(false) }
     var deleteOpen by rememberSaveable { mutableStateOf(false) }
+    var subscriptionPickerOpen by rememberSaveable { mutableStateOf(false) }
 
     val accounts = state.accounts
     val transferMode = form.transferMode(isEdit)
@@ -357,12 +358,22 @@ private fun EditorBody(
                     OutlinedButton(onClick = { onSplitWithPayLater(existing.id) }, modifier = Modifier.fillMaxWidth()) {
                         Text("Split with Pay Later")
                     }
+                    OutlinedButton(onClick = { subscriptionPickerOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Add to subscription")
+                    }
                 }
                 OutlinedButton(onClick = { deleteOpen = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Delete transaction", color = MMTheme.colors.danger)
                 }
             }
         }
+    }
+
+    if (subscriptionPickerOpen && existing != null) {
+        com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionPickerDialog(
+            charge = existing,
+            onDismiss = { subscriptionPickerOpen = false },
+        )
     }
 
     if (datePickerOpen) {

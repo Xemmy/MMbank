@@ -36,6 +36,7 @@ import com.xemmy.mmbank.ui.screens.settings.ImportMessagesViewModel
 import com.xemmy.mmbank.ui.screens.settings.SettingsViewModel
 import com.xemmy.mmbank.ui.screens.splits.GroupDetailViewModel
 import com.xemmy.mmbank.ui.screens.splits.SplitsViewModel
+import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionLinkViewModel
 import com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionsViewModel
 import com.xemmy.mmbank.ui.screens.transactions.TransactionsViewModel
 
@@ -75,6 +76,7 @@ object AppViewModelProvider {
         initializer { PlanViewModel(mmBankApp().container) }
         initializer { UpcomingPaymentsViewModel(mmBankApp().container) }
         initializer { PayLaterViewModel(mmBankApp().container) }
+        initializer { SubscriptionLinkViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

@@ -50,6 +50,7 @@ import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.PayLaterInstallmentEntity
 import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
+import com.xemmy.mmbank.data.local.entity.SubscriptionLinkEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
@@ -88,8 +89,9 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         TransactionLabelEntity::class,
         PayLaterPlanEntity::class,
         PayLaterInstallmentEntity::class,
+        SubscriptionLinkEntity::class,
     ],
-    version = 41,
+    version = 42,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -821,6 +823,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_40_41_SQL.forEach(db::execSQL)
         }
 
+        /** v41 -> v42: manual subscriptions and transaction links (see [MigrationSql.MIGRATION_41_42_SQL]). */
+        val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_41_42_SQL.forEach(db::execSQL)
+        }
+
         /** v39 -> v40: account order and net-worth switch (see [MigrationSql.MIGRATION_39_40_SQL]). */
         val MIGRATION_39_40 = object : Migration(39, 40) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_39_40_SQL.forEach(db::execSQL)
@@ -889,7 +896,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                     MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
                     MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40,
-                    MIGRATION_40_41,
+                    MIGRATION_40_41, MIGRATION_41_42,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

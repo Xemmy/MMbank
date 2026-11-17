@@ -33,6 +33,7 @@ import com.xemmy.mmbank.domain.model.SplitGroup
 import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
+import com.xemmy.mmbank.domain.model.SubscriptionLink
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -407,6 +408,17 @@ data class SubscriptionEntity(
     val dismissed: Boolean = false,
     /** Prior price when the charge amount changed partway through; null when steady. */
     val previousAmount: BigDecimal? = null,
+    val isManual: Boolean = false,
+)
+
+/** See [com.xemmy.mmbank.domain.model.SubscriptionLink]. No FK: a link to a deleted transaction is simply ignored. */
+@Entity(
+    tableName = "subscription_links",
+    indices = [Index(value = ["merchant"])],
+)
+data class SubscriptionLinkEntity(
+    @PrimaryKey val transactionId: Long,
+    val merchant: String,
 )
 
 @Entity(tableName = "bills")
@@ -748,13 +760,17 @@ fun ExchangeRateOnDay.toEntity() = ExchangeRateHistoryEntity(baseCode, quoteCode
 
 fun SubscriptionEntity.toDomain() = Subscription(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
-    previousAmount,
+    previousAmount, isManual,
 )
 
 fun Subscription.toEntity() = SubscriptionEntity(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
-    previousAmount,
+    previousAmount, isManual,
 )
+
+fun SubscriptionLinkEntity.toDomain() = SubscriptionLink(transactionId, merchant)
+
+fun SubscriptionLink.toEntity() = SubscriptionLinkEntity(transactionId, merchant)
 
 fun BillEntity.toDomain() = Bill(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt, dueDayAnchor)
 

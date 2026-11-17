@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v40 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v42 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v40
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v42
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../40.json`), so
+ *     compiler exports during this same build (`app/schemas/.../42.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/41.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/41.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/42.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/42.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 41.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 42.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -69,8 +69,9 @@ class MigrationSqlTest {
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor"),
+        "subscriptions" to listOf("isManual"),
     )
-    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments")
+    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links")
 
     @Before
     fun setUp() {
@@ -110,7 +111,8 @@ class MigrationSqlTest {
                 MigrationSql.MIGRATION_33_34_SQL + MigrationSql.MIGRATION_34_35_SQL +
                 MigrationSql.MIGRATION_35_36_SQL + MigrationSql.MIGRATION_36_37_SQL +
                 MigrationSql.MIGRATION_37_38_SQL + MigrationSql.MIGRATION_38_39_SQL +
-                MigrationSql.MIGRATION_39_40_SQL + MigrationSql.MIGRATION_40_41_SQL
+                MigrationSql.MIGRATION_39_40_SQL + MigrationSql.MIGRATION_40_41_SQL +
+                MigrationSql.MIGRATION_41_42_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -151,7 +153,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v41 install table for table`() {
+    fun `an upgraded database matches a fresh v42 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -410,6 +412,27 @@ class MigrationSqlTest {
         assertEquals(2, migrated.count("pay_later_installments"))
         migrated.exec("DELETE FROM pay_later_plans WHERE id = 1")
         assertEquals(0, migrated.count("pay_later_installments"))
+    }
+
+    @Test
+    fun `existing subscriptions stay detected and links start empty`() {
+        // The v25 starting point has no isManual column, so seed through the migrated shape.
+        migrated.exec(
+            "INSERT INTO subscriptions (id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed) " +
+                "VALUES (1, 'Netflix', '39.99', 'AED', 'MONTHLY', 0, 0, 4, 0)",
+        )
+        migrate()
+        assertEquals(1, migrated.count("subscriptions"))
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT isManual FROM subscriptions WHERE id = 1").use { rs ->
+                rs.next()
+                assertEquals(0, rs.getInt(1))
+            }
+        }
+        assertEquals(0, migrated.count("subscription_links"))
+        migrated.exec("INSERT INTO subscription_links (transactionId, merchant) VALUES (5, 'Netflix')")
+        migrated.exec("INSERT OR REPLACE INTO subscription_links (transactionId, merchant) VALUES (5, 'Spotify')")
+        assertEquals("one link per transaction", 1, migrated.count("subscription_links"))
     }
 
     private fun Connection.count(table: String): Int =

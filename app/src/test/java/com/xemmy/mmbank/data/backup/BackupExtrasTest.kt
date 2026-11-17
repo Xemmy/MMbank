@@ -8,9 +8,11 @@ import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
 import com.xemmy.mmbank.data.local.entity.PayLaterInstallmentEntity
 import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
+import com.xemmy.mmbank.data.local.entity.SubscriptionEntity
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.PayLaterCadence
 import com.xemmy.mmbank.domain.model.SplitType
+import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import java.math.BigDecimal
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -39,6 +41,26 @@ class BackupExtrasTest {
         assertEquals(inst, inst.toBackup().toEntity())
         val unpaid = inst.copy(paidAtMillis = null, paymentTransactionId = null)
         assertEquals(unpaid, unpaid.toBackup().toEntity())
+    }
+
+    @Test fun `manual subscription round trips and keeps its manual flag`() {
+        val e = SubscriptionEntity(
+            id = 4, merchant = "Gym", averageAmount = BigDecimal("150.00"), currencyCode = "AED",
+            cadence = SubscriptionCadence.YEARLY, nextDueDateMillis = 1_700_000_000_000, lastSeenMillis = 5,
+            occurrenceCount = 2, dismissed = true, previousAmount = null, isManual = true,
+        )
+        assertEquals(e, e.toBackup().toEntity())
+    }
+
+    @Test fun `an unknown cadence in a backup reads back as monthly`() {
+        val b = BackupManualSubscription(1, "X", "1.00", "AED", "FORTNIGHTLY", 0, 0, 0)
+        assertEquals(SubscriptionCadence.MONTHLY, b.toEntity().cadence)
+    }
+
+    @Test fun `an old backup without subscription links restores to empty`() {
+        val extras = Json { ignoreUnknownKeys = true }.decodeFromString<BackupExtras>("{}")
+        assertEquals(emptyList<BackupManualSubscription>(), extras.manualSubscriptions)
+        assertEquals(emptyList<BackupSubscriptionLink>(), extras.subscriptionLinks)
     }
 
     @Test fun `an old backup without pay later restores to empty`() {

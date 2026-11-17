@@ -453,6 +453,21 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `manual subscription and link round trip`() {
+        val manual = Subscription(
+            id = 9, merchant = "Gym", averageAmount = BigDecimal("150.00"), currencyCode = "AED",
+            cadence = SubscriptionCadence.YEARLY, nextDueDateMillis = 1_700_000_000_000, lastSeenMillis = 0,
+            occurrenceCount = 0, isManual = true,
+        )
+        assertEquals(manual, manual.toEntity().toDomain())
+        assertTrue(manual.toEntity().isManual)
+        assertFalse("a detected row is not manual by default", manual.copy(isManual = false).toEntity().isManual)
+
+        val link = com.xemmy.mmbank.domain.model.SubscriptionLink(42, "Apple")
+        assertEquals(link, link.toEntity().toDomain())
+    }
+
+    @Test
     fun `subscription round-trip preserves cadence and dismissed state`() {
         val original = Subscription(
             id = 6,

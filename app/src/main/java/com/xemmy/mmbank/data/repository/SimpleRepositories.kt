@@ -29,7 +29,9 @@ import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.data.remote.forex.ForexApi
 import com.xemmy.mmbank.domain.account.AccountChangeDiff
 import com.xemmy.mmbank.domain.intelligence.BillAdvancer
+import com.xemmy.mmbank.domain.intelligence.SubscriptionLinks
 import com.xemmy.mmbank.domain.intelligence.SubscriptionMerge
+import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountChange
 import com.xemmy.mmbank.domain.model.Bill
@@ -43,6 +45,8 @@ import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.SplitGroup
 import com.xemmy.mmbank.domain.model.Subscription
+import com.xemmy.mmbank.domain.model.SubscriptionLink
+import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.parser.MessageSimilarity
 import com.xemmy.mmbank.domain.repository.AccountRepository
 import com.xemmy.mmbank.domain.repository.BillRepository
@@ -281,6 +285,37 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
     }
 
     override suspend fun dismiss(id: Long) = dao.dismiss(id)
+
+    override suspend fun saveManual(subscription: Subscription): Long {
+        val row = subscription.copy(isManual = true, dismissed = false)
+        // Unique on merchant: saving over an existing row for the same merchant reuses its id.
+        val existing = dao.getAll().firstOrNull { it.id == row.id || it.merchant == row.merchant }
+        return dao.upsert(row.copy(id = existing?.id ?: row.id).toEntity())
+    }
+
+    override suspend fun delete(id: Long) {
+        val merchant = dao.getAll().firstOrNull { it.id == id }?.merchant ?: return
+        dao.delete(id)
+        dao.deleteLinksFor(merchant)
+    }
+
+    override fun observeLinks(): Flow<List<SubscriptionLink>> =
+        dao.observeLinks().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun links(): List<SubscriptionLink> = dao.getAllLinks().map { it.toDomain() }
+
+    override suspend fun link(transactionId: Long, merchant: String) =
+        dao.upsertLink(SubscriptionLink(transactionId, merchant).toEntity())
+
+    override suspend fun unlink(transactionId: Long) = dao.deleteLink(transactionId)
+
+    override suspend fun rescan(transactions: List<Transaction>) {
+        val applied = SubscriptionLinks.apply(transactions, links())
+        replaceAll(SubscriptionRadarEngine.detect(applied))
+    }
+
+    override suspend fun linkedTransactions(merchant: String): List<Transaction> =
+        dao.linkedTransactions(merchant).map { it.toDomain() }
 }
 
 class BillRepositoryImpl(private val dao: BillDao) : BillRepository {

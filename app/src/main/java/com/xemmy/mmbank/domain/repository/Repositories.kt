@@ -21,6 +21,7 @@ import com.xemmy.mmbank.domain.model.SenderLabel
 import com.xemmy.mmbank.domain.model.SpendingCategory
 import com.xemmy.mmbank.domain.model.SplitGroup
 import com.xemmy.mmbank.domain.model.Subscription
+import com.xemmy.mmbank.domain.model.SubscriptionLink
 import com.xemmy.mmbank.domain.model.Transaction
 import java.math.BigDecimal
 import com.xemmy.mmbank.domain.model.WalletBalance
@@ -287,6 +288,23 @@ interface SubscriptionRepository {
     /** Replaces the stored detection set with a fresh scan's results (one row per merchant). */
     suspend fun replaceAll(detected: List<Subscription>)
     suspend fun dismiss(id: Long)
+    /** Inserts or updates a hand-added subscription (see [Subscription.isManual]); returns its id. */
+    suspend fun saveManual(subscription: Subscription): Long
+    /** Removes a subscription row and any links pointing at it. Detected rows come back on the next scan. */
+    suspend fun delete(id: Long)
+    /** Every manual transaction link. */
+    fun observeLinks(): Flow<List<SubscriptionLink>>
+    suspend fun links(): List<SubscriptionLink>
+    /** Treats [transactionId] as a charge of [merchant]'s subscription (replacing any earlier link). */
+    suspend fun link(transactionId: Long, merchant: String)
+    suspend fun unlink(transactionId: Long)
+    /**
+     * Re-detects over the whole ledger with manual links applied and stores the
+     * result. [transactions] is the real ledger as the caller loaded it.
+     */
+    suspend fun rescan(transactions: List<Transaction>)
+    /** The transactions linked to [merchant]'s subscription, oldest first, with their original merchant text. */
+    suspend fun linkedTransactions(merchant: String): List<Transaction>
 }
 
 /**
