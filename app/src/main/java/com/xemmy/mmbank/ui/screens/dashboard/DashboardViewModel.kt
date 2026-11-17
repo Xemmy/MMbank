@@ -3,6 +3,9 @@ package com.xemmy.mmbank.ui.screens.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
+import com.xemmy.mmbank.domain.layout.HomeSections
+import com.xemmy.mmbank.domain.layout.ScreenLayout
+import com.xemmy.mmbank.domain.layout.ScreenLayoutCodec
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.filter.DateWindow
@@ -644,6 +647,27 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** Selects an [com.xemmy.mmbank.ui.components.AccountCarousel] card; null selects "All Accounts" and clears the feed filter. */
+    private val _homeLayout = MutableStateFlow(
+        ScreenLayoutCodec.decode(container.preferences.homeLayoutRaw, HomeSections.specs),
+    )
+    /** Order and visibility of the customizable Home boxes. */
+    val homeLayout: StateFlow<ScreenLayout> = _homeLayout.asStateFlow()
+
+    private fun updateHomeLayout(next: ScreenLayout) {
+        _homeLayout.value = next
+        container.preferences.homeLayoutRaw = ScreenLayoutCodec.encode(next)
+    }
+
+    fun moveHomeSection(id: String, direction: Int) = updateHomeLayout(_homeLayout.value.move(id, direction))
+
+    fun toggleHomeSection(id: String) {
+        updateHomeLayout(_homeLayout.value.toggle(id, HomeSections.specs))
+        // The carousel is the only control for the account filter; don't leave it filtering invisibly.
+        if (HomeSections.ACCOUNTS in _homeLayout.value.hidden) selectedAccountId.value = null
+    }
+
+    fun resetHomeLayout() = updateHomeLayout(ScreenLayout.default(HomeSections.specs))
+
     fun selectAccount(accountId: Long?) {
         selectedAccountId.value = accountId
     }

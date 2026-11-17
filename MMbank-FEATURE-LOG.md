@@ -4702,3 +4702,8 @@ Categories and Manage accounts now reorder the same way. The grip is accent-colo
 **Not done:** saved People has no `sortOrder` column, so it cannot be reordered without a schema migration.
 
 Not covered by CI: drag feel, lift and slide animations, haptics, TalkBack actions, and the hint text as rendered.
+
+## Customizable Home (0.123.0)
+Home's boxes (weekly digest, net worth, financial health, this month, accounts, cards due, unassigned money, crypto, recent activity) can be reordered and hidden from a "Customize Home" button at the foot of the screen. Unassigned money can move but not hide (it explains money missing from net worth). Capture-health, onboarding and review alerts stay pinned on top. Hiding Accounts clears any account filter. Stored as one string preference (`home_layout`, `ScreenLayoutCodec`); a box added in a later version is slotted in after its default predecessor. Pure model: `domain/layout/ScreenLayout.kt`; reusable dialog: `CustomizeLayoutSheet`. `ReorderList.move` is now generic. Tests: `ScreenLayoutTest`. Not in backups.
+
+Not covered by CI: the dialog's look, drag feel and lift, the list re-ordering live behind it, the layout surviving a restart, and the footer button's placement.

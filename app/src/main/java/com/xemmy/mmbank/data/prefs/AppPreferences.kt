@@ -33,6 +33,16 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_HIDE_ZERO_BALANCES, true)
         set(value) = prefs.edit().putBoolean(KEY_HIDE_ZERO_BALANCES, value).apply()
 
+    /** Home screen section order/visibility, encoded by ScreenLayoutCodec; "" = default layout. */
+    var homeLayoutRaw: String
+        get() = prefs.getString(KEY_HOME_LAYOUT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_HOME_LAYOUT, value).apply()
+
+    /** Insights screen section order/visibility, encoded by ScreenLayoutCodec; "" = default layout. */
+    var insightsLayoutRaw: String
+        get() = prefs.getString(KEY_INSIGHTS_LAYOUT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_INSIGHTS_LAYOUT, value).apply()
+
     /** The user waved the Home "finish setting up" checklist away; it never returns. */
     var onboardingDismissed: Boolean
         get() = prefs.getBoolean(KEY_ONBOARDING_DISMISSED, false)
@@ -466,6 +476,8 @@ class AppPreferences(context: Context) {
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"
         const val KEY_HIDE_ZERO_BALANCES = "hide_zero_balances"
+        const val KEY_HOME_LAYOUT = "home_layout"
+        const val KEY_INSIGHTS_LAYOUT = "insights_layout"
         const val KEY_BUDGET_ROLLOVER = "budget_rollover"
         const val KEY_LAST_BACKUP_AT = "last_backup_at"
         const val KEY_ONBOARDING_DISMISSED = "onboarding_dismissed"

@@ -60,7 +60,9 @@ import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.ui.screens.accounts.UnassignedTotal
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.domain.layout.HomeSections
 import com.xemmy.mmbank.ui.components.AccountCarousel
+import com.xemmy.mmbank.ui.components.CustomizeLayoutSheet
 import com.xemmy.mmbank.ui.components.ManageAccountsBottomSheet
 import com.xemmy.mmbank.ui.designsystem.Banner
 import com.xemmy.mmbank.ui.designsystem.MMAssistChip
@@ -119,6 +121,8 @@ fun DashboardScreen(
     val snackbar = remember { SnackbarHostState() }
     val hidden = state.hideBalances
     var showManageAccounts by remember { mutableStateOf(false) }
+    var showCustomize by remember { mutableStateOf(false) }
+    val layout by viewModel.homeLayout.collectAsStateWithLifecycle()
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -181,124 +185,157 @@ fun DashboardScreen(
                 }
             }
 
-            weeklyDigest?.let { digest ->
-                item(key = "weekly_digest") {
-                    WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
-                }
-            }
-
-            item(key = "net_worth") {
-                NetWorthCard(
-                    netWorth = state.netWorthInBase,
-                    currency = state.baseCurrency,
-                    approximate = state.hasUnconvertedAmounts,
-                    cryptoExcluded = state.cryptoExcludedFromTotal,
-                    creditCardExcluded = state.creditCardExcludedFromTotal,
-                    refreshing = state.refreshing,
-                    hidden = hidden,
-                    onToggleHide = viewModel::toggleHideBalances,
-                    onRefresh = viewModel::refreshRemote,
-                )
-            }
-
-            financialHealth.metrics?.let { metrics ->
-                item(key = "financial_health") {
-                    FinancialHealthCard(metrics, financialHealth.cashFlow, state.baseCurrency, hidden)
-                }
-            }
-
-            item(key = "month_card") {
-                MonthCard(state, hidden, onOpenCashFlow)
-            }
-
-            item(key = "account_carousel") {
-                AccountCarousel(
-                    accounts = state.accounts,
-                    selectedAccountId = state.selectedAccountId,
-                    hidden = hidden,
-                    allAccountsTotal = state.fiatTotalInBase,
-                    baseCurrency = state.baseCurrency,
-                    onSelectAccount = viewModel::selectAccount,
-                    onManageAccounts = { showManageAccounts = true },
-                )
-            }
-
-            if (cardsDue.isNotEmpty()) {
-                item(key = "cards_due") { CardsDueCard(cardsDue, hidden) }
-            }
-
-            // Money in no account is in no balance above -- say so rather than
-            // letting it silently vanish from the net worth figure.
-            if (!state.unassigned.isEmpty) {
-                item(key = "unassigned_total") {
-                    UnassignedRow(
-                        unassigned = state.unassigned,
-                        hidden = hidden,
-                        onClick = onOpenUnassigned,
-                    )
-                }
-            }
-
-            state.selectedAccountId?.let { accountId ->
-                val accountName = state.accounts.firstOrNull { it.account.id == accountId }?.account?.name
-                item(key = "account_filter_chip") {
-                    AccountFilterChip(
-                        label = accountName ?: "Account",
-                        onClear = { viewModel.selectAccount(null) },
-                    )
-                }
-            }
-
-            if (state.cryptoBalances.isNotEmpty() || state.cryptoWallets.isNotEmpty()) {
-                item { SectionHeader("Crypto (Binance)") }
-                item(key = "crypto_group") {
-                    CryptoCard(state)
-                }
-            }
-
-            item { SectionHeader("Recent activity") }
-            if (state.recent.isEmpty()) {
-                item {
-                    Text(
-                        "No transactions captured yet. Enable notification access and SMS " +
-                            "permission in Settings, then wait for a bank message.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MMTheme.colors.textSecondary,
-                    )
-                }
-            } else {
-                recentByDay.forEach { (day, rows) ->
-                    item(key = "recent_day_$day") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                com.xemmy.mmbank.ui.util.dayPillLabel(day, today),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MMTheme.colors.textSecondary,
-                                modifier = Modifier.weight(1f),
+            layout.visibleOrder.forEach { sectionId ->
+                when (sectionId) {
+                    HomeSections.WEEKLY_DIGEST -> {
+                        weeklyDigest?.let { digest ->
+                            item(key = "weekly_digest") {
+                                WeeklyDigestCard(digest = digest, currency = state.baseCurrency, hidden = hidden)
+                            }
+                        }
+                    }
+                    HomeSections.NET_WORTH -> {
+                        item(key = "net_worth") {
+                            NetWorthCard(
+                                netWorth = state.netWorthInBase,
+                                currency = state.baseCurrency,
+                                approximate = state.hasUnconvertedAmounts,
+                                cryptoExcluded = state.cryptoExcludedFromTotal,
+                                creditCardExcluded = state.creditCardExcludedFromTotal,
+                                refreshing = state.refreshing,
+                                hidden = hidden,
+                                onToggleHide = viewModel::toggleHideBalances,
+                                onRefresh = viewModel::refreshRemote,
                             )
-                            dayTotals[day]?.takeIf { it.netSign != 0 }?.let { total ->
-                                Text(
-                                    com.xemmy.mmbank.ui.util.dayTotalLabel(total, state.baseCurrency, hidden),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MMTheme.colors.textPrimary,
+                        }
+                    }
+                    HomeSections.FINANCIAL_HEALTH -> {
+                        financialHealth.metrics?.let { metrics ->
+                            item(key = "financial_health") {
+                                FinancialHealthCard(metrics, financialHealth.cashFlow, state.baseCurrency, hidden)
+                            }
+                        }
+                    }
+                    HomeSections.MONTH_CARD -> {
+                        item(key = "month_card") {
+                            MonthCard(state, hidden, onOpenCashFlow)
+                        }
+                    }
+                    HomeSections.ACCOUNTS -> {
+                        item(key = "account_carousel") {
+                            AccountCarousel(
+                                accounts = state.accounts,
+                                selectedAccountId = state.selectedAccountId,
+                                hidden = hidden,
+                                allAccountsTotal = state.fiatTotalInBase,
+                                baseCurrency = state.baseCurrency,
+                                onSelectAccount = viewModel::selectAccount,
+                                onManageAccounts = { showManageAccounts = true },
+                            )
+                        }
+                    }
+                    HomeSections.CARDS_DUE -> {
+                        if (cardsDue.isNotEmpty()) {
+                            item(key = "cards_due") { CardsDueCard(cardsDue, hidden) }
+                        }
+                    }
+                    HomeSections.UNASSIGNED -> {
+                        // Money in no account is in no balance above -- say so rather than
+                        // letting it silently vanish from the net worth figure.
+                        if (!state.unassigned.isEmpty) {
+                            item(key = "unassigned_total") {
+                                UnassignedRow(
+                                    unassigned = state.unassigned,
+                                    hidden = hidden,
+                                    onClick = onOpenUnassigned,
                                 )
                             }
                         }
                     }
-                    items(rows, key = { "recent_${it.id}" }) { tx ->
-                        // User-defined label wins, then the built-in bank map — so
-                        // "com.adib.mobile" shows as "ADIB", not the raw package.
-                        val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
-                        RecentTransactionRow(tx, bankName, hidden)
-                        HorizontalDivider(color = MMTheme.colors.borderSubtle)
+                    HomeSections.CRYPTO -> {
+                        if (state.cryptoBalances.isNotEmpty() || state.cryptoWallets.isNotEmpty()) {
+                            item { SectionHeader("Crypto (Binance)") }
+                            item(key = "crypto_group") {
+                                CryptoCard(state)
+                            }
+                        }
+                    }
+                    HomeSections.RECENT -> {
+                        state.selectedAccountId?.let { accountId ->
+                            val accountName = state.accounts.firstOrNull { it.account.id == accountId }?.account?.name
+                            item(key = "account_filter_chip") {
+                                AccountFilterChip(
+                                    label = accountName ?: "Account",
+                                    onClear = { viewModel.selectAccount(null) },
+                                )
+                            }
+                        }
+
+                        item { SectionHeader("Recent activity") }
+                        if (state.recent.isEmpty()) {
+                            item {
+                                Text(
+                                    "No transactions captured yet. Enable notification access and SMS " +
+                                        "permission in Settings, then wait for a bank message.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MMTheme.colors.textSecondary,
+                                )
+                            }
+                        } else {
+                            recentByDay.forEach { (day, rows) ->
+                                item(key = "recent_day_$day") {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            com.xemmy.mmbank.ui.util.dayPillLabel(day, today),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MMTheme.colors.textSecondary,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        dayTotals[day]?.takeIf { it.netSign != 0 }?.let { total ->
+                                            Text(
+                                                com.xemmy.mmbank.ui.util.dayTotalLabel(total, state.baseCurrency, hidden),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MMTheme.colors.textPrimary,
+                                            )
+                                        }
+                                    }
+                                }
+                                items(rows, key = { "recent_${it.id}" }) { tx ->
+                                    // User-defined label wins, then the built-in bank map — so
+                                    // "com.adib.mobile" shows as "ADIB", not the raw package.
+                                    val bankName = tx.sender?.let { state.senderLabels[it] ?: BankNames.displayName(it) }
+                                    RecentTransactionRow(tx, bankName, hidden)
+                                    HorizontalDivider(color = MMTheme.colors.borderSubtle)
+                                }
+                            }
+                        }
                     }
                 }
             }
+
+            item(key = "customize_layout") {
+                TextButton(
+                    onClick = { showCustomize = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Customize Home") }
+            }
         }
         SnackbarHost(snackbar)
+    }
+
+    if (showCustomize) {
+        CustomizeLayoutSheet(
+            title = "Customize Home",
+            layout = layout,
+            specs = HomeSections.specs,
+            onMove = viewModel::moveHomeSection,
+            onToggle = viewModel::toggleHomeSection,
+            onReset = viewModel::resetHomeLayout,
+            onDismiss = { showCustomize = false },
+        )
     }
 
     if (showManageAccounts) {

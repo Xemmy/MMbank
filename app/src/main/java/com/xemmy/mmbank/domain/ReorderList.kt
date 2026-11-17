@@ -3,7 +3,7 @@ package com.xemmy.mmbank.domain
 /** Pure helpers for the one-step moves behind every reorderable list. */
 object ReorderList {
     /** The ids in their new order after moving [id] one step up (-1) or down (+1); unchanged at the ends. */
-    fun move(orderedIds: List<Long>, id: Long, direction: Int): List<Long> {
+    fun <T> move(orderedIds: List<T>, id: T, direction: Int): List<T> {
         val i = orderedIds.indexOf(id)
         val j = i + direction
         if (i < 0 || j < 0 || j >= orderedIds.size) return orderedIds
