@@ -444,3 +444,39 @@ interface LabelRepository {
     /** Replaces the labels on one transaction. */
     suspend fun setLabels(transactionId: Long, labelIds: Set<Long>)
 }
+
+/**
+ * Pay Later plans -- see [com.xemmy.mmbank.domain.model.PayLaterPlan]. Paying an installment
+ * records a real transaction; undoing it removes that transaction again.
+ */
+interface PayLaterRepository {
+
+    enum class PayResult { PAID, ALREADY_PAID, NOT_FOUND, NO_ACCOUNT }
+
+    fun observePlans(): Flow<List<com.xemmy.mmbank.domain.model.PayLaterPlan>>
+    fun observeInstallments(): Flow<List<com.xemmy.mmbank.domain.model.PayLaterInstallment>>
+
+    suspend fun getPlan(planId: Long): com.xemmy.mmbank.domain.model.PayLaterPlan?
+    suspend fun getInstallments(planId: Long): List<com.xemmy.mmbank.domain.model.PayLaterInstallment>
+
+    /** Saves a new plan with its installments (their planId is filled in); returns the plan id. */
+    suspend fun createPlan(
+        plan: com.xemmy.mmbank.domain.model.PayLaterPlan,
+        installments: List<com.xemmy.mmbank.domain.model.PayLaterInstallment>,
+    ): Long
+
+    /** Updates a plan's details (merchant, provider, accounts, note); its installments are untouched. */
+    suspend fun updatePlan(plan: com.xemmy.mmbank.domain.model.PayLaterPlan)
+
+    /** Deletes the plan and its installments; transactions already recorded for paid ones stay. */
+    suspend fun deletePlan(planId: Long)
+
+    /** Moves one installment's due date. */
+    suspend fun reschedule(installmentId: Long, dueDateMillis: Long)
+
+    /** Records the payment of an installment from [fromAccountId] on [paidAtMillis] and stamps it paid. */
+    suspend fun pay(installmentId: Long, fromAccountId: Long, paidAtMillis: Long): PayResult
+
+    /** Removes the transaction(s) a payment recorded and marks the installment unpaid again. */
+    suspend fun undoPayment(installmentId: Long)
+}

@@ -4,6 +4,7 @@ import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.intelligence.BillReminders
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.SavingsGoal
+import com.xemmy.mmbank.domain.paylater.PayLaterSummary
 import com.xemmy.mmbank.domain.model.Subscription
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -61,6 +62,19 @@ object PlanStatus {
         return perMonth.entries.singleOrNull()?.let { (currency, total) -> "$count · ${money(total, currency)}/month" } ?: count
     }
 
+    /** "AED 81.83 due in 9 days" / "2 overdue" / "AED 81.83 due today"; null with nothing owed. */
+    fun payLater(unpaid: List<PayLaterSummary.Row>, money: (BigDecimal, String) -> String): String? {
+        val overdue = PayLaterSummary.overdue(unpaid).size
+        val next = PayLaterSummary.nextDue(unpaid) ?: return null
+        if (overdue > 0) return "$overdue overdue"
+        val whenText = when (next.daysUntil) {
+            0L -> "today"
+            1L -> "tomorrow"
+            else -> "in ${next.daysUntil} days"
+        }
+        return "${money(next.amount, next.currencyCode)} due $whenText"
+    }
+
     fun goals(goals: List<SavingsGoal>): String? {
         val active = goals.filter { !it.archived }
         if (active.isEmpty()) return null
@@ -80,10 +94,12 @@ object PlanStatus {
         goals: List<SavingsGoal>,
         nowMillis: Long,
         money: (BigDecimal, String) -> String,
+        payLater: List<PayLaterSummary.Row> = emptyList(),
     ): Map<PlanEntry, String> = buildMap {
         budgets(budgets)?.let { put(PlanEntry.BUDGETS, it) }
         bills(bills, nowMillis)?.let { put(PlanEntry.BILLS, it) }
         subscriptions(subscriptions, money)?.let { put(PlanEntry.SUBSCRIPTIONS, it) }
+        payLater(payLater, money)?.let { put(PlanEntry.PAY_LATER, it) }
         goals(goals)?.let { put(PlanEntry.GOALS, it) }
     }
 }

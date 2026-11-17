@@ -45,6 +45,9 @@ import com.xemmy.mmbank.ui.navigation.NavChrome
 import com.xemmy.mmbank.ui.screens.search.SearchScreen
 import com.xemmy.mmbank.ui.screens.statement.StatementReconcileScreen
 import com.xemmy.mmbank.ui.screens.upcoming.UpcomingPaymentsScreen
+import com.xemmy.mmbank.ui.screens.paylater.PayLaterDetailScreen
+import com.xemmy.mmbank.ui.screens.paylater.PayLaterEditorScreen
+import com.xemmy.mmbank.ui.screens.paylater.PayLaterScreen
 import com.xemmy.mmbank.ui.screens.year.YearInReviewScreen
 import com.xemmy.mmbank.ui.screens.search.SearchTarget
 import com.xemmy.mmbank.ui.navigation.AdaptiveLayout
@@ -504,6 +507,7 @@ private fun AppNavHost(
                 transactionId = entry.arguments?.getLong("id")?.takeIf { it > 0 },
                 billId = entry.arguments?.getLong("bill")?.takeIf { it > 0 },
                 onClose = { navController.popBackStack() },
+                onSplitWithPayLater = { id -> navController.navigate(Routes.payLaterEditor(fromTransactionId = id)) },
             )
         }
         // The old standalone Uncategorized queue was merged into the Review inbox;
@@ -613,6 +617,36 @@ private fun AppNavHost(
             UpcomingPaymentsScreen(
                 onBack = { navController.popBackStack() },
                 onOpen = { route -> navController.navigate(route) },
+            )
+        }
+        composable(Routes.PAY_LATER) {
+            PayLaterScreen(
+                onBack = { navController.popBackStack() },
+                onAddPlan = { navController.navigate(Routes.payLaterEditor()) },
+                onOpenPlan = { id -> navController.navigate(Routes.payLaterDetail(id)) },
+            )
+        }
+        composable(
+            route = Routes.PAY_LATER_DETAIL_PATTERN,
+            arguments = listOf(navArgument("planId") { type = NavType.LongType }),
+        ) { entry ->
+            PayLaterDetailScreen(
+                planId = entry.arguments?.getLong("planId") ?: -1L,
+                onBack = { navController.popBackStack() },
+                onEdit = { id -> navController.navigate(Routes.payLaterEditor(planId = id)) },
+            )
+        }
+        composable(
+            route = Routes.PAY_LATER_EDITOR_PATTERN,
+            arguments = listOf(
+                navArgument("planId") { type = NavType.LongType; defaultValue = -1L },
+                navArgument("txId") { type = NavType.LongType; defaultValue = -1L },
+            ),
+        ) { entry ->
+            PayLaterEditorScreen(
+                planId = entry.arguments?.getLong("planId")?.takeIf { it > 0 },
+                transactionId = entry.arguments?.getLong("txId")?.takeIf { it > 0 },
+                onClose = { navController.popBackStack() },
             )
         }
         composable(Routes.YEAR_IN_REVIEW) { YearInReviewScreen(onBack = { navController.popBackStack() }) }

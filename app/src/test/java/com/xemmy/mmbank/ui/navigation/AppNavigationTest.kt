@@ -163,4 +163,16 @@ class AdaptiveLayoutTest {
         assertEquals(640, AdaptiveLayout.contentWidthDp(1200))
         assertEquals(0, AdaptiveLayout.contentWidthDp(-5))
     }
+
+    @Test fun payLaterRoutesKeepThePlanTabHighlighted() {
+        assertEquals("pay_later_detail/9", Routes.payLaterDetail(9))
+        assertEquals("pay_later_editor?planId=-1&txId=-1", Routes.payLaterEditor())
+        assertEquals("pay_later_editor?planId=4&txId=-1", Routes.payLaterEditor(planId = 4))
+        assertEquals("pay_later_editor?planId=-1&txId=12", Routes.payLaterEditor(fromTransactionId = 12))
+        assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.PAY_LATER))
+        assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.PAY_LATER_DETAIL_PATTERN))
+        assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.payLaterDetail(9)))
+        assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.PAY_LATER_EDITOR_PATTERN))
+        assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.payLaterEditor(fromTransactionId = 12)))
+    }
 }

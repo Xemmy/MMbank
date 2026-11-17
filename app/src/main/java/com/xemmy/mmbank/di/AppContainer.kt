@@ -536,6 +536,15 @@ class AppContainer(context: Context) {
     val savingsGoalRepository: SavingsGoalRepository by lazy {
         SavingsGoalRepositoryImpl(database.savingsGoalDao())
     }
+    val payLaterRepository: com.xemmy.mmbank.domain.repository.PayLaterRepository by lazy {
+        com.xemmy.mmbank.data.repository.PayLaterRepositoryImpl(
+            database = database,
+            dao = database.payLaterDao(),
+            transactionDao = database.transactionDao(),
+            accountDao = database.accountDao(),
+            transactions = transactionRepository,
+        )
+    }
     val billRepository: BillRepository by lazy {
         BillRepositoryImpl(database.billDao())
     }

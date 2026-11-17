@@ -3,6 +3,7 @@ package com.xemmy.mmbank.data.local
 import androidx.room.TypeConverter
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.BillRecurrence
+import com.xemmy.mmbank.domain.model.PayLaterCadence
 import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -100,6 +101,14 @@ class Converters {
     @TypeConverter
     fun stringToBillRecurrence(value: String?): BillRecurrence? =
         value?.let { BillRecurrence.valueOf(it) }
+
+    @TypeConverter
+    fun payLaterCadenceToString(value: PayLaterCadence?): String? = value?.name
+
+    /** Lenient: an unknown name reads back as MONTHLY rather than crashing. */
+    @TypeConverter
+    fun stringToPayLaterCadence(value: String?): PayLaterCadence? =
+        value?.let { n -> PayLaterCadence.entries.firstOrNull { it.name == n } ?: PayLaterCadence.MONTHLY }
 
     @TypeConverter
     fun splitTypeToString(value: SplitType?): String? = value?.name

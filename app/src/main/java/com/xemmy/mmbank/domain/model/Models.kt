@@ -698,6 +698,47 @@ data class Bill(
     val dueDayAnchor: Int? = null,
 )
 
+/** How often a [PayLaterPlan]'s installments fall due. */
+enum class PayLaterCadence { WEEKLY, BIWEEKLY, MONTHLY }
+
+/**
+ * A "split into N payments" purchase (Tabby and the like). The money owed is tracked as
+ * [PayLaterInstallment]s; paying one records a real transaction.
+ */
+data class PayLaterPlan(
+    val id: Long = 0,
+    val merchant: String,
+    val provider: String = "Tabby",
+    val totalAmount: BigDecimal,
+    val currencyCode: String,
+    val installmentCount: Int,
+    val cadence: PayLaterCadence = PayLaterCadence.MONTHLY,
+    /** Default account installments are paid from. */
+    val payFromAccountId: Long? = null,
+    /** The provider's liability account (card/loan), when the user tracks one. */
+    val payToAccountId: Long? = null,
+    /** The captured purchase this plan splits, if any; its spending is then already counted. */
+    val sourceTransactionId: Long? = null,
+    val categoryId: Long? = null,
+    val note: String? = null,
+    val createdAt: Long,
+    val isDemo: Boolean = false,
+)
+
+data class PayLaterInstallment(
+    val id: Long = 0,
+    val planId: Long,
+    /** 1..installmentCount. */
+    val number: Int,
+    val amount: BigDecimal,
+    val dueDateMillis: Long,
+    val paidAtMillis: Long? = null,
+    /** The transaction recorded when this was paid (the paying leg). */
+    val paymentTransactionId: Long? = null,
+) {
+    val isPaid: Boolean get() = paidAtMillis != null
+}
+
 /**
  * A person shared expenses are split with -- a lightweight name, not a
  * bank-linked contact. See [SplitGroup] / [GroupExpense].

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.budget.BudgetStatusBuilder
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
+import com.xemmy.mmbank.domain.paylater.PayLaterSummary
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.time.LocalDate
 import java.time.ZoneId
@@ -30,13 +31,21 @@ class PlanViewModel(private val container: AppContainer) : ViewModel() {
         container.ratesRepository.observeRates(),
     ) { categories, transactions, rates -> Budgeting(categories, transactions, rates) }
 
+    private val payLaterRows = combine(
+        container.payLaterRepository.observePlans(),
+        container.payLaterRepository.observeInstallments(),
+    ) { plans, installments ->
+        val zone = ZoneId.systemDefault()
+        PayLaterSummary.unpaid(plans, installments, LocalDate.now(zone), zone)
+    }
+
     val statuses: StateFlow<Map<PlanEntry, String>> = combine(
         budgeting,
         container.billRepository.observeAll(),
         container.subscriptionRepository.observeActive(),
         container.savingsGoalRepository.observeActive(),
-        container.hideBalances,
-    ) { b, bills, subscriptions, goals, hidden ->
+        combine(container.hideBalances, payLaterRows) { hidden, rows -> hidden to rows },
+    ) { b, bills, subscriptions, goals, (hidden, payRows) ->
         val base = container.preferences.defaultCurrency
         val zone = ZoneId.systemDefault()
         val built = BudgetStatusBuilder.build(
@@ -58,6 +67,7 @@ class PlanViewModel(private val container: AppContainer) : ViewModel() {
             goals = goals,
             nowMillis = System.currentTimeMillis(),
             money = { amount, currency -> moneyLabel(amount, currency, hidden) },
+            payLater = payRows,
         )
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())

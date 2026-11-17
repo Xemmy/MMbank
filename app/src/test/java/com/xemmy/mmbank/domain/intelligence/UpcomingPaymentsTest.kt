@@ -5,7 +5,10 @@ import com.xemmy.mmbank.domain.account.CreditCardStatusCalculator
 import com.xemmy.mmbank.domain.intelligence.UpcomingPayments.Kind
 import com.xemmy.mmbank.domain.intelligence.UpcomingPayments.Section
 import com.xemmy.mmbank.domain.model.Bill
+import com.xemmy.mmbank.domain.model.PayLaterInstallment
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.Subscription
+import com.xemmy.mmbank.domain.paylater.PayLaterSummary
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -113,5 +116,41 @@ class UpcomingPaymentsTest {
     fun `nothing tracked means an empty list`() {
         assertTrue(build().isEmpty())
         assertTrue(UpcomingPayments.grouped(emptyList()).isEmpty())
+    }
+
+    private fun payLaterRow(number: Int, inDays: Long, paid: Boolean = false): PayLaterSummary.Row {
+        val plan = PayLaterPlan(id = 1, merchant = "Carrefour", totalAmount = BigDecimal("327.32"), currencyCode = "aed", installmentCount = 4, createdAt = 0)
+        val due = today.plusDays(inDays)
+        return PayLaterSummary.Row(
+            plan = plan,
+            installment = PayLaterInstallment(
+                planId = 1, number = number, amount = BigDecimal("81.83"), dueDateMillis = millis(due),
+                paidAtMillis = if (paid) 1L else null,
+            ),
+            dueDate = due, daysUntil = inDays,
+        )
+    }
+
+    @Test
+    fun `pay later installments join the list named by their position, and paid ones are left out`() {
+        val items = UpcomingPayments.build(
+            emptyList(), emptyList(), emptyList(), today, utc, UpcomingPayments.DEFAULT_HORIZON_DAYS,
+            payLater = listOf(payLaterRow(2, 9), payLaterRow(1, -2, paid = true)),
+        )
+        assertEquals(1, items.size)
+        val item = items.single()
+        assertEquals(Kind.PAY_LATER, item.kind)
+        assertEquals("Carrefour · 2 of 4", item.name)
+        assertEquals("AED", item.currencyCode)
+        assertEquals(9L, item.daysUntil)
+    }
+
+    @Test
+    fun `pay later respects the horizon like everything else`() {
+        val items = UpcomingPayments.build(
+            emptyList(), emptyList(), emptyList(), today, utc, 30L,
+            payLater = listOf(payLaterRow(2, 9), payLaterRow(3, 40)),
+        )
+        assertEquals(listOf("Carrefour · 2 of 4"), items.map { it.name })
     }
 }

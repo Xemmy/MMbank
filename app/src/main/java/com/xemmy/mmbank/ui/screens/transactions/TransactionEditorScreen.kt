@@ -86,6 +86,8 @@ fun TransactionEditorScreen(
     onClose: () -> Unit,
     /** Set by "Log payment" on a bill: prefills the form, and saving also advances that bill. */
     billId: Long? = null,
+    /** "Split with Pay Later" on a saved purchase: opens the plan form prefilled from it. */
+    onSplitWithPayLater: (Long) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,7 +103,7 @@ fun TransactionEditorScreen(
     when (val l = loaded) {
         LoadState.Loading -> MMScaffold(title = "Transaction", onBack = onClose) { }
         LoadState.Missing -> LaunchedEffect(Unit) { onClose() }
-        is LoadState.Ready -> EditorBody(l.transaction, l.labelIds, l.bill, state, viewModel, onClose)
+        is LoadState.Ready -> EditorBody(l.transaction, l.labelIds, l.bill, state, viewModel, onClose, onSplitWithPayLater)
     }
 }
 
@@ -120,6 +122,7 @@ private fun EditorBody(
     state: TransactionsUiState,
     viewModel: TransactionsViewModel,
     onClose: () -> Unit,
+    onSplitWithPayLater: (Long) -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
     val isEdit = existing != null
@@ -347,6 +350,13 @@ private fun EditorBody(
                     HorizontalDivider(color = MMTheme.colors.borderSubtle)
                     Text("Original message", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
                     Text(raw, style = MaterialTheme.typography.bodySmall)
+                }
+                if (existing.direction == com.xemmy.mmbank.domain.model.TransactionDirection.DEBIT &&
+                    existing.kind == TransactionKind.SPEND
+                ) {
+                    OutlinedButton(onClick = { onSplitWithPayLater(existing.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Split with Pay Later")
+                    }
                 }
                 OutlinedButton(onClick = { deleteOpen = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Delete transaction", color = MMTheme.colors.danger)

@@ -10,6 +10,8 @@ import com.xemmy.mmbank.data.local.entity.AccountChangeEntity
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.AssetBalanceEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
+import com.xemmy.mmbank.data.local.entity.PayLaterInstallmentEntity
+import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateHistoryEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
@@ -1013,4 +1015,67 @@ interface LabelDao {
 
     @Query("DELETE FROM labels")
     suspend fun clearAll()
+}
+
+@Dao
+interface PayLaterDao {
+
+    @Query("SELECT * FROM pay_later_plans ORDER BY createdAt DESC, id DESC")
+    fun observePlans(): Flow<List<PayLaterPlanEntity>>
+
+    @Query("SELECT * FROM pay_later_installments ORDER BY dueDateMillis ASC, number ASC")
+    fun observeInstallments(): Flow<List<PayLaterInstallmentEntity>>
+
+    @Query("SELECT * FROM pay_later_plans WHERE id = :id")
+    suspend fun getPlan(id: Long): PayLaterPlanEntity?
+
+    @Query("SELECT * FROM pay_later_installments WHERE planId = :planId ORDER BY number ASC")
+    suspend fun getInstallments(planId: Long): List<PayLaterInstallmentEntity>
+
+    @Query("SELECT * FROM pay_later_installments WHERE id = :id")
+    suspend fun getInstallment(id: Long): PayLaterInstallmentEntity?
+
+    @Insert
+    suspend fun insertPlan(entity: PayLaterPlanEntity): Long
+
+    @Update
+    suspend fun updatePlan(entity: PayLaterPlanEntity)
+
+    @Insert
+    suspend fun insertInstallments(entities: List<PayLaterInstallmentEntity>)
+
+    @Update
+    suspend fun updateInstallment(entity: PayLaterInstallmentEntity)
+
+    @Query("DELETE FROM pay_later_installments WHERE planId = :planId")
+    suspend fun deleteInstallments(planId: Long)
+
+    @Query("DELETE FROM pay_later_plans WHERE id = :id")
+    suspend fun deletePlan(id: Long)
+
+    /** Inserts the plan and its installments (given with a placeholder planId) atomically. */
+    @androidx.room.Transaction
+    suspend fun insertPlanWithInstallments(
+        plan: PayLaterPlanEntity,
+        installments: List<PayLaterInstallmentEntity>,
+    ): Long {
+        val id = insertPlan(plan)
+        insertInstallments(installments.map { it.copy(planId = id) })
+        return id
+    }
+
+    // --- Backup support ---
+
+    @Query("SELECT * FROM pay_later_plans")
+    suspend fun getAllPlans(): List<PayLaterPlanEntity>
+
+    @Query("SELECT * FROM pay_later_installments")
+    suspend fun getAllInstallments(): List<PayLaterInstallmentEntity>
+
+    /** Installments go with it (cascade). */
+    @Query("DELETE FROM pay_later_plans")
+    suspend fun clearAll()
+
+    @Insert
+    suspend fun insertPlans(entities: List<PayLaterPlanEntity>)
 }

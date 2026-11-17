@@ -6,7 +6,10 @@ import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
+import com.xemmy.mmbank.data.local.entity.PayLaterInstallmentEntity
+import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
 import com.xemmy.mmbank.domain.model.BillRecurrence
+import com.xemmy.mmbank.domain.model.PayLaterCadence
 import com.xemmy.mmbank.domain.model.SplitType
 import java.math.BigDecimal
 import kotlinx.serialization.encodeToString
@@ -21,6 +24,27 @@ class BackupExtrasTest {
         assertEquals(e, e.toBackup().toEntity())
         val oneOff = e.copy(recurrence = null)
         assertEquals(oneOff, oneOff.toBackup().toEntity())
+    }
+
+    @Test fun `pay later plan and installment round trip`() {
+        val plan = PayLaterPlanEntity(
+            id = 3, merchant = "Carrefour", provider = "Tabby", totalAmount = BigDecimal("327.32"), currencyCode = "AED",
+            installmentCount = 4, cadence = PayLaterCadence.BIWEEKLY, payFromAccountId = 1, payToAccountId = 2,
+            sourceTransactionId = 99, categoryId = 7, note = "groceries", createdAt = 5, isDemo = true,
+        )
+        assertEquals(plan, plan.toBackup().toEntity())
+        val bare = plan.copy(payFromAccountId = null, payToAccountId = null, sourceTransactionId = null, categoryId = null, note = null)
+        assertEquals(bare, bare.toBackup().toEntity())
+        val inst = PayLaterInstallmentEntity(8, 3, 2, BigDecimal("81.83"), 1_700_000_000_000, 1_700_000_100_000, 55)
+        assertEquals(inst, inst.toBackup().toEntity())
+        val unpaid = inst.copy(paidAtMillis = null, paymentTransactionId = null)
+        assertEquals(unpaid, unpaid.toBackup().toEntity())
+    }
+
+    @Test fun `an old backup without pay later restores to empty`() {
+        val extras = Json { ignoreUnknownKeys = true }.decodeFromString<BackupExtras>("{}")
+        assertEquals(emptyList<BackupPayLaterPlan>(), extras.payLaterPlans)
+        assertEquals(emptyList<BackupPayLaterInstallment>(), extras.payLaterInstallments)
     }
 
     @Test fun `goal and friend round trip`() {

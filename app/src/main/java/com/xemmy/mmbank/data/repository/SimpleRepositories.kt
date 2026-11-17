@@ -15,6 +15,7 @@ import com.xemmy.mmbank.data.local.dao.SenderLabelDao
 import com.xemmy.mmbank.data.local.dao.SplitGroupDao
 import com.xemmy.mmbank.data.local.dao.SubscriptionDao
 import androidx.room.withTransaction
+import com.xemmy.mmbank.domain.repository.PayLaterRepository.PayResult
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.entity.AccountEntity
 import com.xemmy.mmbank.data.local.entity.ExchangeRateEntity
@@ -399,4 +400,78 @@ class SplitGroupRepositoryImpl(
     }
 
     override suspend fun deleteExpense(expenseId: Long) = expenseDao.delete(expenseId)
+}
+
+class PayLaterRepositoryImpl(
+    private val database: com.xemmy.mmbank.data.local.AppDatabase,
+    private val dao: com.xemmy.mmbank.data.local.dao.PayLaterDao,
+    private val transactionDao: com.xemmy.mmbank.data.local.dao.TransactionDao,
+    private val accountDao: com.xemmy.mmbank.data.local.dao.AccountDao,
+    private val transactions: com.xemmy.mmbank.domain.repository.TransactionRepository,
+) : com.xemmy.mmbank.domain.repository.PayLaterRepository {
+
+    override fun observePlans(): Flow<List<com.xemmy.mmbank.domain.model.PayLaterPlan>> =
+        dao.observePlans().map { list -> list.map { it.toDomain() } }
+
+    override fun observeInstallments(): Flow<List<com.xemmy.mmbank.domain.model.PayLaterInstallment>> =
+        dao.observeInstallments().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun getPlan(planId: Long) = dao.getPlan(planId)?.toDomain()
+
+    override suspend fun getInstallments(planId: Long) = dao.getInstallments(planId).map { it.toDomain() }
+
+    override suspend fun createPlan(
+        plan: com.xemmy.mmbank.domain.model.PayLaterPlan,
+        installments: List<com.xemmy.mmbank.domain.model.PayLaterInstallment>,
+    ): Long = dao.insertPlanWithInstallments(plan.copy(id = 0).toEntity(), installments.map { it.copy(id = 0).toEntity() })
+
+    override suspend fun updatePlan(plan: com.xemmy.mmbank.domain.model.PayLaterPlan) = dao.updatePlan(plan.toEntity())
+
+    override suspend fun deletePlan(planId: Long) = dao.deletePlan(planId)
+
+    override suspend fun reschedule(installmentId: Long, dueDateMillis: Long) {
+        val row = dao.getInstallment(installmentId) ?: return
+        dao.updateInstallment(row.copy(dueDateMillis = dueDateMillis))
+    }
+
+    override suspend fun pay(
+        installmentId: Long,
+        fromAccountId: Long,
+        paidAtMillis: Long,
+    ): PayResult {
+        val installment = dao.getInstallment(installmentId)?.toDomain() ?: return PayResult.NOT_FOUND
+        if (installment.isPaid) return PayResult.ALREADY_PAID
+        val plan = dao.getPlan(installment.planId)?.toDomain() ?: return PayResult.NOT_FOUND
+        suspend fun endpoint(id: Long?) = id?.let { accountDao.getById(it) }?.let {
+            com.xemmy.mmbank.domain.ledger.TransferLegs.Endpoint(it.id, it.name, it.type, it.currencyCode)
+        }
+        val from = endpoint(fromAccountId) ?: return PayResult.NO_ACCOUNT
+        val to = endpoint(plan.payToAccountId)?.takeIf { it.accountId != from.accountId }
+        val legs = com.xemmy.mmbank.domain.paylater.PayLaterPayment.build(plan, installment, from, to, paidAtMillis)
+        database.withTransaction {
+            val payingId = transactionDao.insert(legs.paying.copy(isDemo = plan.isDemo).toEntity())
+            if (legs.counterpart != null) {
+                val otherId = transactionDao.insert(legs.counterpart.copy(isDemo = plan.isDemo).toEntity())
+                val kind = legs.paying.kind
+                val category = com.xemmy.mmbank.domain.model.SpendingCategory.TRANSFERS
+                transactionDao.linkAsTransfer(payingId, otherId, kind, category)
+                transactionDao.linkAsTransfer(otherId, payingId, kind, category)
+            }
+            dao.updateInstallment(
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, payingId, paidAtMillis).toEntity(),
+            )
+        }
+        return PayResult.PAID
+    }
+
+    override suspend fun undoPayment(installmentId: Long) {
+        val installment = dao.getInstallment(installmentId)?.toDomain() ?: return
+        if (!installment.isPaid) return
+        val payingId = installment.paymentTransactionId
+        if (payingId != null) {
+            val partnerId = transactionDao.getById(payingId)?.linkedTransactionId
+            transactions.deleteMany(listOfNotNull(payingId, partnerId))
+        }
+        dao.updateInstallment(com.xemmy.mmbank.domain.paylater.PayLaterPayment.markUnpaid(installment).toEntity())
+    }
 }

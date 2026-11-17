@@ -20,7 +20,9 @@ import java.time.temporal.ChronoUnit
  */
 object UpcomingPayments {
 
-    enum class Kind(val label: String) { BILL("Bill"), SUBSCRIPTION("Subscription"), CARD("Card payment") }
+    enum class Kind(val label: String) {
+        BILL("Bill"), SUBSCRIPTION("Subscription"), CARD("Card payment"), PAY_LATER("Pay Later"),
+    }
 
     data class Item(
         val kind: Kind,
@@ -49,6 +51,8 @@ object UpcomingPayments {
         today: LocalDate,
         zone: ZoneId = ZoneId.systemDefault(),
         horizonDays: Long = DEFAULT_HORIZON_DAYS,
+        /** Unpaid Pay Later installments (see [com.xemmy.mmbank.domain.paylater.PayLaterSummary.unpaid]). */
+        payLater: List<com.xemmy.mmbank.domain.paylater.PayLaterSummary.Row> = emptyList(),
     ): List<Item> {
         fun dateOf(millis: Long): LocalDate = Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
         fun days(date: LocalDate): Long = ChronoUnit.DAYS.between(today, date)
@@ -68,7 +72,13 @@ object UpcomingPayments {
             if (c.status.amountDue.signum() <= 0) return@mapNotNull null
             Item(Kind.CARD, c.accountName, c.status.amountDue, c.currencyCode.uppercase(), due, days(due))
         }
-        return (billItems + subscriptionItems + cardItems)
+        val payLaterItems = payLater.filter { !it.installment.isPaid }.map { r ->
+            Item(
+                Kind.PAY_LATER, "${r.plan.merchant} · ${r.installment.number} of ${r.plan.installmentCount}",
+                r.installment.amount, r.plan.currencyCode.uppercase(), r.dueDate, days(r.dueDate),
+            )
+        }
+        return (billItems + subscriptionItems + cardItems + payLaterItems)
             .filter { it.daysUntil <= horizonDays }
             .sortedWith(compareBy<Item> { it.dueDate }.thenBy { it.kind.ordinal }.thenBy { it.name.lowercase() })
     }

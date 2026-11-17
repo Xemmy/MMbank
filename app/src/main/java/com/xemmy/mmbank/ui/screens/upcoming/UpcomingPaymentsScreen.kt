@@ -27,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.account.CardPaymentReminders
 import com.xemmy.mmbank.domain.intelligence.UpcomingPayments
+import com.xemmy.mmbank.domain.paylater.PayLaterSummary
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.navigation.Routes
@@ -61,7 +62,11 @@ class UpcomingPaymentsViewModel(container: AppContainer) : ViewModel() {
         container.billRepository.observeAll(),
         container.subscriptionRepository.observeActive(),
         cards,
-    ) { bills, subscriptions, c ->
+        combine(
+            container.payLaterRepository.observePlans(),
+            container.payLaterRepository.observeInstallments(),
+        ) { plans, installments -> plans to installments },
+    ) { bills, subscriptions, c, payLater ->
         val today = LocalDate.now()
         UpcomingUiState(
             items = UpcomingPayments.build(
@@ -69,6 +74,7 @@ class UpcomingPaymentsViewModel(container: AppContainer) : ViewModel() {
                 subscriptions = subscriptions,
                 cards = CardPaymentReminders.build(c.accounts, c.transactions, c.entries, today),
                 today = today,
+                payLater = PayLaterSummary.unpaid(payLater.first, payLater.second, today, java.time.ZoneId.systemDefault()),
             ),
             loaded = true,
         )
@@ -142,6 +148,7 @@ private fun routeFor(kind: UpcomingPayments.Kind): String = when (kind) {
     UpcomingPayments.Kind.BILL -> Routes.BILLS
     UpcomingPayments.Kind.SUBSCRIPTION -> Routes.SUBSCRIPTIONS
     UpcomingPayments.Kind.CARD -> Routes.ACCOUNTS
+    UpcomingPayments.Kind.PAY_LATER -> Routes.PAY_LATER
 }
 
 /** "Today", "Tomorrow", "in 5 days", "3 days overdue", with the date. */

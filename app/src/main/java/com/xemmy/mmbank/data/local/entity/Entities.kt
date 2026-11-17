@@ -15,6 +15,9 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssetBalance
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.BillRecurrence
+import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.model.PayLaterInstallment
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.ExchangeRate
 import com.xemmy.mmbank.domain.model.ExchangeRateOnDay
@@ -419,6 +422,59 @@ data class BillEntity(
     /** Day of month the user picked; lets a 31st bill return to the 31st after February. Null on legacy rows. */
     val dueDayAnchor: Int? = null,
 )
+
+@Entity(tableName = "pay_later_plans")
+data class PayLaterPlanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val merchant: String,
+    val provider: String,
+    val totalAmount: BigDecimal,
+    val currencyCode: String,
+    val installmentCount: Int,
+    val cadence: PayLaterCadence,
+    val payFromAccountId: Long? = null,
+    val payToAccountId: Long? = null,
+    val sourceTransactionId: Long? = null,
+    val categoryId: Long? = null,
+    val note: String? = null,
+    val createdAt: Long,
+    val isDemo: Boolean = false,
+)
+
+@Entity(
+    tableName = "pay_later_installments",
+    foreignKeys = [
+        ForeignKey(
+            entity = PayLaterPlanEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["planId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["planId"])],
+)
+data class PayLaterInstallmentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val planId: Long,
+    val number: Int,
+    val amount: BigDecimal,
+    val dueDateMillis: Long,
+    val paidAtMillis: Long? = null,
+    val paymentTransactionId: Long? = null,
+)
+
+fun PayLaterPlanEntity.toDomain() = PayLaterPlan(
+    id, merchant, provider, totalAmount, currencyCode, installmentCount, cadence,
+    payFromAccountId, payToAccountId, sourceTransactionId, categoryId, note, createdAt, isDemo,
+)
+fun PayLaterPlan.toEntity() = PayLaterPlanEntity(
+    id, merchant, provider, totalAmount, currencyCode, installmentCount, cadence,
+    payFromAccountId, payToAccountId, sourceTransactionId, categoryId, note, createdAt, isDemo,
+)
+fun PayLaterInstallmentEntity.toDomain() =
+    PayLaterInstallment(id, planId, number, amount, dueDateMillis, paidAtMillis, paymentTransactionId)
+fun PayLaterInstallment.toEntity() =
+    PayLaterInstallmentEntity(id, planId, number, amount, dueDateMillis, paidAtMillis, paymentTransactionId)
 
 @Entity(tableName = "savings_goals")
 data class SavingsGoalEntity(

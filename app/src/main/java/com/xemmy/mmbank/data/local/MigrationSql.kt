@@ -88,6 +88,39 @@ object MigrationSql {
     )
 
     /**
+     * v41: Pay Later plans and their installments. Purely additive: two new tables and an
+     * index. Column order and types mirror what Room exports for PayLaterPlanEntity /
+     * PayLaterInstallmentEntity (MigrationSqlTest compares them).
+     */
+    val MIGRATION_40_41_SQL: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS `pay_later_plans` (" +
+            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+            "`merchant` TEXT NOT NULL, " +
+            "`provider` TEXT NOT NULL, " +
+            "`totalAmount` TEXT NOT NULL, " +
+            "`currencyCode` TEXT NOT NULL, " +
+            "`installmentCount` INTEGER NOT NULL, " +
+            "`cadence` TEXT NOT NULL, " +
+            "`payFromAccountId` INTEGER, " +
+            "`payToAccountId` INTEGER, " +
+            "`sourceTransactionId` INTEGER, " +
+            "`categoryId` INTEGER, " +
+            "`note` TEXT, " +
+            "`createdAt` INTEGER NOT NULL, " +
+            "`isDemo` INTEGER NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS `pay_later_installments` (" +
+            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+            "`planId` INTEGER NOT NULL, " +
+            "`number` INTEGER NOT NULL, " +
+            "`amount` TEXT NOT NULL, " +
+            "`dueDateMillis` INTEGER NOT NULL, " +
+            "`paidAtMillis` INTEGER, " +
+            "`paymentTransactionId` INTEGER, " +
+            "FOREIGN KEY(`planId`) REFERENCES `pay_later_plans`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        "CREATE INDEX IF NOT EXISTS `index_pay_later_installments_planId` ON `pay_later_installments` (`planId`)",
+    )
+
+    /**
      * v40: account order and "count in net worth". `sortOrder` starts as each account's current
      * position (by name, as the lists were ordered), so nothing moves; `excludeFromTotals` starts
      * false for every account. Purely additive; defaults match the entity's `@ColumnInfo`.

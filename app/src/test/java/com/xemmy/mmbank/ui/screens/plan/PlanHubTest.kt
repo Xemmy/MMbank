@@ -17,7 +17,7 @@ class PlanHubTest {
 
     @Test fun listsThePlannedTools() {
         assertEquals(
-            listOf("Upcoming payments", "Budgets", "Bills", "Subscriptions", "Goals", "Debt payoff", "Splits", "Rewards"),
+            listOf("Upcoming payments", "Budgets", "Bills", "Subscriptions", "Pay Later", "Goals", "Debt payoff", "Splits", "Rewards"),
             PlanEntry.entries.map { it.title },
         )
     }

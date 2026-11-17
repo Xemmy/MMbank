@@ -8,6 +8,7 @@ enum class PlanEntry(val route: String, val title: String, val subtitle: String)
     BUDGETS(Routes.BUDGETS, "Budgets", "Set a monthly limit per category and see how much is used"),
     BILLS(Routes.BILLS, "Bills", "Recurring bills and what's due soon"),
     SUBSCRIPTIONS(Routes.SUBSCRIPTIONS, "Subscriptions", "Recurring charges the app has detected"),
+    PAY_LATER(Routes.PAY_LATER, "Pay Later", "Tabby-style split purchases and what's due next"),
     GOALS(Routes.GOALS, "Goals", "Savings targets and progress"),
     DEBT(Routes.DEBT_PLANNER, "Debt payoff", "Plan the fastest or cheapest way out"),
     SPLITS(Routes.SPLITS, "Splits", "Shared expenses and who owes whom"),

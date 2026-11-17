@@ -4,7 +4,10 @@ import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator
 import com.xemmy.mmbank.domain.budget.CategoryBudgetCalculator.BudgetState
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.Category
+import com.xemmy.mmbank.domain.model.PayLaterInstallment
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.SavingsGoal
+import com.xemmy.mmbank.domain.paylater.PayLaterSummary
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import java.math.BigDecimal
@@ -99,5 +102,29 @@ class PlanStatusTest {
         val map = PlanStatus.forEntries(emptyList(), listOf(bill("Rent", 3)), emptyList(), emptyList(), now, money)
         assertEquals(setOf(PlanEntry.BILLS), map.keys)
         assertTrue(map.getValue(PlanEntry.BILLS).contains("due this week"))
+    }
+
+    private fun payLaterRow(inDays: Long, amount: String = "81.83") = PayLaterSummary.Row(
+        plan = PayLaterPlan(id = 1, merchant = "Carrefour", totalAmount = BigDecimal("327.32"), currencyCode = "AED", installmentCount = 4, createdAt = 0),
+        installment = PayLaterInstallment(planId = 1, number = 1, amount = BigDecimal(amount), dueDateMillis = 0),
+        dueDate = java.time.LocalDate.of(2026, 1, 1).plusDays(inDays),
+        daysUntil = inDays,
+    )
+
+    @Test
+    fun `payLater says what is due next, or how many are overdue`() {
+        assertNull(PlanStatus.payLater(emptyList(), money))
+        assertEquals("AED 81.83 due in 9 days", PlanStatus.payLater(listOf(payLaterRow(9)), money))
+        assertEquals("AED 81.83 due today", PlanStatus.payLater(listOf(payLaterRow(0)), money))
+        assertEquals("AED 81.83 due tomorrow", PlanStatus.payLater(listOf(payLaterRow(1)), money))
+        assertEquals("2 overdue", PlanStatus.payLater(listOf(payLaterRow(-3), payLaterRow(-1), payLaterRow(5)), money))
+    }
+
+    @Test
+    fun `forEntries includes the Pay Later card only when something is owed`() {
+        val with = PlanStatus.forEntries(emptyList(), emptyList(), emptyList(), emptyList(), now, money, listOf(payLaterRow(9)))
+        assertEquals(setOf(PlanEntry.PAY_LATER), with.keys)
+        val without = PlanStatus.forEntries(emptyList(), emptyList(), emptyList(), emptyList(), now, money)
+        assertTrue(without.isEmpty())
     }
 }

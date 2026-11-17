@@ -848,4 +848,21 @@ class EntityMappersTest {
         assertFalse(base.copy(historyOnly = true).needsAccount)
         assertFalse(base.copy(accountId = 3).needsAccount)
     }
+
+    @Test
+    fun `pay later plan and installment survive a round trip through their entities`() {
+        val plan = com.xemmy.mmbank.domain.model.PayLaterPlan(
+            id = 2, merchant = "Carrefour", provider = "Tabby", totalAmount = BigDecimal("327.32"), currencyCode = "AED",
+            installmentCount = 4, cadence = com.xemmy.mmbank.domain.model.PayLaterCadence.WEEKLY,
+            payFromAccountId = 1, payToAccountId = 3, sourceTransactionId = 40, categoryId = 6, note = "n",
+            createdAt = 77, isDemo = true,
+        )
+        assertEquals(plan, plan.toEntity().toDomain())
+        val installment = com.xemmy.mmbank.domain.model.PayLaterInstallment(
+            id = 5, planId = 2, number = 3, amount = BigDecimal("81.83"), dueDateMillis = 1000, paidAtMillis = 2000, paymentTransactionId = 9,
+        )
+        assertEquals(installment, installment.toEntity().toDomain())
+        val unpaid = installment.copy(paidAtMillis = null, paymentTransactionId = null)
+        assertEquals(unpaid, unpaid.toEntity().toDomain())
+    }
 }

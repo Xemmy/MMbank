@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/40.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/40.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/41.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/41.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 40.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 41.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -70,7 +70,7 @@ class MigrationSqlTest {
         "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor"),
     )
-    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels")
+    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments")
 
     @Before
     fun setUp() {
@@ -110,7 +110,7 @@ class MigrationSqlTest {
                 MigrationSql.MIGRATION_33_34_SQL + MigrationSql.MIGRATION_34_35_SQL +
                 MigrationSql.MIGRATION_35_36_SQL + MigrationSql.MIGRATION_36_37_SQL +
                 MigrationSql.MIGRATION_37_38_SQL + MigrationSql.MIGRATION_38_39_SQL +
-                MigrationSql.MIGRATION_39_40_SQL
+                MigrationSql.MIGRATION_39_40_SQL + MigrationSql.MIGRATION_40_41_SQL
         )
             .forEach { migrated.exec(it) }
     }
@@ -151,7 +151,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v40 install table for table`() {
+    fun `an upgraded database matches a fresh v41 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -395,4 +395,23 @@ class MigrationSqlTest {
             }
         }
     }
+
+    @Test
+    fun `pay later starts empty and deleting a plan removes its installments`() {
+        migrate()
+        migrated.exec("PRAGMA foreign_keys = ON")
+        assertEquals(0, migrated.count("pay_later_plans"))
+        migrated.exec(
+            "INSERT INTO pay_later_plans (id, merchant, provider, totalAmount, currencyCode, installmentCount, cadence, createdAt, isDemo) " +
+                "VALUES (1, 'Carrefour', 'Tabby', '327.32', 'AED', 4, 'MONTHLY', 0, 0)",
+        )
+        migrated.exec("INSERT INTO pay_later_installments (planId, number, amount, dueDateMillis) VALUES (1, 1, '81.83', 0)")
+        migrated.exec("INSERT INTO pay_later_installments (planId, number, amount, dueDateMillis) VALUES (1, 2, '81.83', 1)")
+        assertEquals(2, migrated.count("pay_later_installments"))
+        migrated.exec("DELETE FROM pay_later_plans WHERE id = 1")
+        assertEquals(0, migrated.count("pay_later_installments"))
+    }
+
+    private fun Connection.count(table: String): Int =
+        createStatement().use { st -> st.executeQuery("SELECT COUNT(*) FROM `$table`").use { rs -> rs.next(); rs.getInt(1) } }
 }

@@ -48,6 +48,9 @@ object Routes {
     const val STATEMENT_RECONCILE = "statement_reconcile"
     const val YEAR_IN_REVIEW = "year_in_review"
     const val UPCOMING = "upcoming_payments"
+    const val PAY_LATER = "pay_later"
+    const val PAY_LATER_DETAIL_PATTERN = "pay_later_detail/{planId}"
+    const val PAY_LATER_EDITOR_PATTERN = "pay_later_editor?planId={planId}&txId={txId}"
 
     /** Activity, pre-filtered to transactions that belong to no account. */
     const val ACTIVITY_UNASSIGNED = "transactions?accountFilter=unassigned"
@@ -71,6 +74,12 @@ object Routes {
 
     /** A new transaction prefilled from a bill ("Log payment"); saving it also marks the bill paid. */
     fun transactionEditorForBill(billId: Long) = "transaction_editor?id=-1&bill=$billId"
+
+    fun payLaterDetail(planId: Long) = "pay_later_detail/$planId"
+
+    /** A new plan; [fromTransactionId] prefills it from a captured purchase ("Split with Pay Later"). */
+    fun payLaterEditor(planId: Long? = null, fromTransactionId: Long? = null) =
+        "pay_later_editor?planId=${planId ?: -1}&txId=${fromTransactionId ?: -1}"
 
     fun ruleEditor(ruleId: Long) = "rule_editor?ruleId=$ruleId"
 }
@@ -116,6 +125,9 @@ object TabRouting {
         Routes.MONTHLY_REPORT to AppTab.INSIGHTS,
         Routes.YEAR_IN_REVIEW to AppTab.INSIGHTS,
         Routes.UPCOMING to AppTab.PLAN,
+        Routes.PAY_LATER to AppTab.PLAN,
+        "pay_later_detail" to AppTab.PLAN,
+        "pay_later_editor" to AppTab.PLAN,
         Routes.ACCOUNTS to AppTab.ACCOUNTS,
         "account_history" to AppTab.ACCOUNTS,
         Routes.DEBT_PLANNER to AppTab.PLAN,

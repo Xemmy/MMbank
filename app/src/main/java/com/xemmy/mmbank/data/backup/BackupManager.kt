@@ -14,6 +14,8 @@ import com.xemmy.mmbank.data.local.entity.MerchantCategoryMappingEntity
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.BillEntity
+import com.xemmy.mmbank.data.local.entity.PayLaterInstallmentEntity
+import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
 import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
@@ -31,6 +33,7 @@ import com.xemmy.mmbank.domain.model.AccountChangeType
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.BillRecurrence
+import com.xemmy.mmbank.domain.model.PayLaterCadence
 import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -301,10 +304,26 @@ data class BackupExtras(
     val groupMembers: List<BackupGroupMember> = emptyList(),
     val groupExpenses: List<BackupGroupExpense> = emptyList(),
     val expenseSplits: List<BackupExpenseSplit> = emptyList(),
+    val payLaterPlans: List<BackupPayLaterPlan> = emptyList(),
+    val payLaterInstallments: List<BackupPayLaterInstallment> = emptyList(),
     val goalTargetAmount: Double? = null,
     val goalMonthlySaving: Double? = null,
     val monthlySpendBudget: Double? = null,
     val fixedMonthlyExpenses: Double? = null,
+)
+
+@Serializable
+data class BackupPayLaterPlan(
+    val id: Long, val merchant: String, val provider: String, val totalAmount: String,
+    val currencyCode: String, val installmentCount: Int, val cadence: String,
+    val payFromAccountId: Long?, val payToAccountId: Long?, val sourceTransactionId: Long?,
+    val categoryId: Long?, val note: String?, val createdAt: Long, val isDemo: Boolean,
+)
+
+@Serializable
+data class BackupPayLaterInstallment(
+    val id: Long, val planId: Long, val number: Int, val amount: String,
+    val dueDateMillis: Long, val paidAtMillis: Long?, val paymentTransactionId: Long?,
 )
 
 @Serializable
@@ -429,6 +448,8 @@ class BackupManager(
             transactionLabels = database.labelDao().getAllLinks().map { BackupTransactionLabel(it.transactionId, it.labelId) },
             extras = BackupExtras(
                 bills = database.billDao().getAll().map { it.toBackup() },
+                payLaterPlans = database.payLaterDao().getAllPlans().map { it.toBackup() },
+                payLaterInstallments = database.payLaterDao().getAllInstallments().map { it.toBackup() },
                 goals = database.savingsGoalDao().getAll().map { it.toBackup() },
                 friends = database.friendDao().getAll().map { it.toBackup() },
                 groups = database.splitGroupDao().getAll().map { it.toBackup() },
@@ -594,6 +615,9 @@ class BackupManager(
                 database.billDao().clearAll()
                 database.savingsGoalDao().clearAll()
                 database.billDao().insertAll(extras.bills.map { it.toEntity() })
+                database.payLaterDao().clearAll()
+                database.payLaterDao().insertPlans(extras.payLaterPlans.map { it.toEntity() })
+                database.payLaterDao().insertInstallments(extras.payLaterInstallments.map { it.toEntity() })
                 database.savingsGoalDao().insertAll(extras.goals.map { it.toEntity() })
                 database.friendDao().insertAll(extras.friends.map { it.toEntity() })
                 database.splitGroupDao().insertAll(extras.groups.map { it.toEntity() })
@@ -973,6 +997,33 @@ internal fun BackupBill.toEntity() = BillEntity(
     id = id, name = name, amount = BigDecimal(amount), currencyCode = currencyCode,
     recurrence = recurrence?.let { r -> BillRecurrence.values().firstOrNull { it.name == r } },
     nextDueDateMillis = nextDueDateMillis, createdAt = createdAt, dueDayAnchor = dueDayAnchor,
+)
+
+internal fun PayLaterPlanEntity.toBackup() = BackupPayLaterPlan(
+    id = id, merchant = merchant, provider = provider, totalAmount = totalAmount.toPlainString(),
+    currencyCode = currencyCode, installmentCount = installmentCount, cadence = cadence.name,
+    payFromAccountId = payFromAccountId, payToAccountId = payToAccountId,
+    sourceTransactionId = sourceTransactionId, categoryId = categoryId, note = note,
+    createdAt = createdAt, isDemo = isDemo,
+)
+
+internal fun BackupPayLaterPlan.toEntity() = PayLaterPlanEntity(
+    id = id, merchant = merchant, provider = provider, totalAmount = BigDecimal(totalAmount),
+    currencyCode = currencyCode, installmentCount = installmentCount,
+    cadence = PayLaterCadence.entries.firstOrNull { it.name == cadence } ?: PayLaterCadence.MONTHLY,
+    payFromAccountId = payFromAccountId, payToAccountId = payToAccountId,
+    sourceTransactionId = sourceTransactionId, categoryId = categoryId, note = note,
+    createdAt = createdAt, isDemo = isDemo,
+)
+
+internal fun PayLaterInstallmentEntity.toBackup() = BackupPayLaterInstallment(
+    id = id, planId = planId, number = number, amount = amount.toPlainString(),
+    dueDateMillis = dueDateMillis, paidAtMillis = paidAtMillis, paymentTransactionId = paymentTransactionId,
+)
+
+internal fun BackupPayLaterInstallment.toEntity() = PayLaterInstallmentEntity(
+    id = id, planId = planId, number = number, amount = BigDecimal(amount),
+    dueDateMillis = dueDateMillis, paidAtMillis = paidAtMillis, paymentTransactionId = paymentTransactionId,
 )
 
 internal fun SavingsGoalEntity.toBackup() = BackupGoal(
