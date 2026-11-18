@@ -60,6 +60,27 @@ object SubscriptionLinks {
     }
 
     /**
+     * Purchases to start a subscription from: real spending not already linked
+     * to a subscription, newest first. [query] filters by merchant text.
+     */
+    fun pickable(
+        transactions: List<Transaction>,
+        links: List<SubscriptionLink>,
+        query: String = "",
+        limit: Int = 100,
+    ): List<Transaction> {
+        val linked = links.map { it.transactionId }.toSet()
+        val needle = query.trim().lowercase()
+        return transactions
+            .asSequence()
+            .filter { it.isLinkable() && it.id !in linked }
+            .filter { needle.isEmpty() || it.merchant?.lowercase()?.contains(needle) == true }
+            .sortedByDescending { it.timestampMillis }
+            .take(limit)
+            .toList()
+    }
+
+    /**
      * A manual subscription seeded from one charge ("New subscription from this
      * charge"): monthly at the charge's amount, next due a month after it. The
      * user's own edits to cadence come later; the link itself is saved separately.

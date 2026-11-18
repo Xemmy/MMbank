@@ -309,3 +309,63 @@ private fun ChargeRow(tx: Transaction, action: String, onAction: () -> Unit) {
         TextButton(onClick = onAction) { Text(action) }
     }
 }
+
+/** First step of "Add subscription": pick from existing transactions, or type one in. */
+@Composable
+fun AddSubscriptionChooser(onDismiss: () -> Unit, onFromTransaction: () -> Unit, onManual: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add subscription") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onFromTransaction, modifier = Modifier.fillMaxWidth()) { Text("From an existing transaction") }
+                OutlinedButton(onClick = onManual, modifier = Modifier.fillMaxWidth()) { Text("Add new") }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** A searchable list of purchases; tapping one starts a subscription from it. */
+@Composable
+fun TransactionPickDialog(transactions: List<Transaction>, onDismiss: () -> Unit, onPick: (Transaction) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val shown = remember(transactions, query) {
+        val needle = query.trim().lowercase()
+        if (needle.isEmpty()) transactions else transactions.filter { it.merchant?.lowercase()?.contains(needle) == true }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose a transaction") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    label = { Text("Search merchant") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                if (shown.isEmpty()) {
+                    Text(
+                        "No matching purchases.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(shown, key = { it.id }) { tx ->
+                        Column(Modifier.fillMaxWidth().clickable { onPick(tx) }.padding(vertical = 8.dp)) {
+                            Text(chargeLabel(tx), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                moneyLabel(tx.amount, tx.currencyCode),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}

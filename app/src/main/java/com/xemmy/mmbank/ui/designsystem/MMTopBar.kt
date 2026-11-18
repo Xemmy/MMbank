@@ -83,6 +83,7 @@ fun MMScaffold(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    floatingActionButton: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val behavior = if (onBack == null) {
@@ -97,6 +98,7 @@ fun MMScaffold(
         topBar = {
             MMTopBar(title = title, onBack = onBack, actions = actions, scrollBehavior = behavior)
         },
+        floatingActionButton = floatingActionButton,
         content = content,
     )
 }

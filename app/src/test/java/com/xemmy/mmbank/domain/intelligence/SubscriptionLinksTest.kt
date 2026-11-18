@@ -115,4 +115,16 @@ class SubscriptionLinksTest {
         assertEquals("Subscription", SubscriptionLinks.manualFrom(tx(1, null, LocalDate.of(2026, 1, 1)), utc).merchant)
         assertFalse(SubscriptionLinks.manualFrom(tx(1, "  ", LocalDate.of(2026, 1, 1)), utc).merchant.isBlank())
     }
+
+    @Test fun `pickable lists unlinked real spending newest first and filters by merchant`() {
+        val a = tx(1, "Netflix", LocalDate.of(2026, 3, 1))
+        val b = tx(2, "Spotify", LocalDate.of(2026, 4, 1))
+        val linked = tx(3, "Apple", LocalDate.of(2026, 5, 1))
+        val income = tx(4, "Salary", LocalDate.of(2026, 6, 1), direction = TransactionDirection.CREDIT, kind = TransactionKind.INCOME)
+        val all = listOf(a, b, linked, income)
+        val links = listOf(SubscriptionLink(3, "Apple"))
+        assertEquals(listOf(2L, 1L), SubscriptionLinks.pickable(all, links).map { it.id })
+        assertEquals(listOf(1L), SubscriptionLinks.pickable(all, links, query = " net ").map { it.id })
+        assertEquals(1, SubscriptionLinks.pickable(all, links, limit = 1).size)
+    }
 }

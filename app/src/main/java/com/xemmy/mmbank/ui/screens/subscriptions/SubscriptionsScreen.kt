@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Card
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +48,7 @@ import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMScaffold
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.time.Instant
 import java.time.LocalDate
@@ -149,6 +152,37 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         )
     }
 
+    private val _pickable = MutableStateFlow<List<Transaction>?>(null)
+    val pickable: StateFlow<List<Transaction>?> = _pickable
+
+    /** Loads the purchases "Add from a transaction" lets the user choose from. */
+    fun openPicker() {
+        viewModelScope.launch {
+            runCatching {
+                val all = container.transactionRepository.observeTransactions().first()
+                _pickable.value = SubscriptionLinks.pickable(all, container.subscriptionRepository.links())
+            }.onFailure { container.recordError("SubscriptionsViewModel.openPicker", it) }
+        }
+    }
+
+    fun closePicker() {
+        _pickable.value = null
+    }
+
+    /** Starts a subscription from [charge], linking it so the charge counts toward the series. */
+    fun createFrom(charge: Transaction) {
+        _pickable.value = null
+        viewModelScope.launch {
+            runCatching {
+                val repository = container.subscriptionRepository
+                val manual = SubscriptionLinks.manualFrom(charge)
+                repository.saveManual(manual)
+                repository.link(charge.id, manual.merchant)
+                repository.rescan(container.transactionRepository.observeTransactions().first())
+            }.onFailure { container.recordError("SubscriptionsViewModel.createFrom", it) }
+        }
+    }
+
     fun addManual(subscription: Subscription) {
         viewModelScope.launch {
             runCatching { container.subscriptionRepository.saveManual(subscription) }
@@ -187,6 +221,8 @@ fun SubscriptionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val charges by viewModel.charges.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
+    var chooserOpen by remember { mutableStateOf(false) }
+    val pickable by viewModel.pickable.collectAsStateWithLifecycle()
 
     charges?.let { open ->
         SubscriptionChargesDialog(
@@ -202,6 +238,20 @@ fun SubscriptionsScreen(
             },
         )
     }
+    if (chooserOpen) {
+        AddSubscriptionChooser(
+            onDismiss = { chooserOpen = false },
+            onFromTransaction = { chooserOpen = false; viewModel.openPicker() },
+            onManual = { chooserOpen = false; addOpen = true },
+        )
+    }
+    pickable?.let { list ->
+        TransactionPickDialog(
+            transactions = list,
+            onDismiss = viewModel::closePicker,
+            onPick = viewModel::createFrom,
+        )
+    }
     if (addOpen) {
         AddSubscriptionDialog(
             defaultCurrency = viewModel.defaultCurrency,
@@ -210,50 +260,44 @@ fun SubscriptionsScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                "Subscriptions",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedButton(onClick = { addOpen = true }, modifier = Modifier.padding(end = 8.dp)) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.width(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Add")
-            }
+    MMScaffold(
+        title = "Subscriptions",
+        onBack = onBack,
+        actions = {
             if (state.scanning) {
-                CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp).width(24.dp))
             } else {
-                OutlinedButton(onClick = viewModel::scan) {
-                    Icon(Icons.Filled.Autorenew, contentDescription = null, modifier = Modifier.width(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Scan")
+                IconButton(onClick = viewModel::scan) {
+                    Icon(Icons.Filled.Autorenew, contentDescription = "Scan for subscriptions")
                 }
             }
-        }
-
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { chooserOpen = true }) {
+                Icon(Icons.Filled.Add, contentDescription = "Add subscription")
+            }
+        },
+    ) { padding ->
         if (state.subscriptions.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     if (state.hasScannedOnce) {
                         "No recurring charges found. Subscriptions need at least 3 matching " +
                             "charges on a weekly or monthly rhythm to be detected."
                     } else {
-                        "Tap Scan to detect recurring charges (subscriptions, memberships, " +
-                            "bills) from your transaction history, or Add one yourself."
+                        "Tap the scan icon to detect recurring charges (subscriptions, memberships, " +
+                            "bills) from your transaction history, or tap + to add one yourself."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(24.dp),
                 )
             }
         } else {
             LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 8.dp),
             ) {
                 items(state.subscriptions, key = { it.id }) { subscription ->
                     SubscriptionRow(
