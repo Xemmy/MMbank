@@ -271,6 +271,36 @@ object BillAutoMatch {
     }
 }
 
+/** A provider bill's past payments, and the captured ones that could still be attached to it. */
+object BillHistory {
+
+    private const val LOOKBACK_DAYS = 365L
+
+    private fun isProviderSpend(bill: Bill, tx: Transaction): Boolean =
+        bill.providerKey != null &&
+            tx.kind == TransactionKind.SPEND && !tx.excludeFromStats && tx.direction == TransactionDirection.DEBIT &&
+            BillDetector.providerKey(tx.merchant) == bill.providerKey &&
+            tx.currencyCode.equals(bill.currencyCode, ignoreCase = true)
+
+    /** Payments that count for [bill]: its own line when it has a number, else the number-less ones. Newest first. */
+    fun paymentsFor(bill: Bill, transactions: List<Transaction>): List<Transaction> =
+        transactions
+            .filter { isProviderSpend(bill, it) && BillDetector.lineOf(it) == bill.accountRef }
+            .sortedByDescending { it.timestampMillis }
+
+    /**
+     * Number-less payments of the same provider in the last year that a numbered bill could take
+     * (their SMS names no line). Empty for a bill without a line, which already counts them all.
+     */
+    fun candidates(bill: Bill, transactions: List<Transaction>, nowMillis: Long): List<Transaction> {
+        if (bill.accountRef == null) return emptyList()
+        val since = nowMillis - LOOKBACK_DAYS * 24L * 60 * 60 * 1000
+        return transactions
+            .filter { isProviderSpend(bill, it) && BillDetector.lineOf(it) == null && it.timestampMillis >= since }
+            .sortedByDescending { it.timestampMillis }
+    }
+}
+
 /**
  * Payments recorded twice before 0.137.0 merged them at capture: the bank's deduction SMS and the
  * provider's receipt (which names the line), same provider, same amount, within a day.

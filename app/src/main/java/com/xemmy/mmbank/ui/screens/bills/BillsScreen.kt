@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.bills
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,17 +17,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -47,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.intelligence.BillDetector
+import com.xemmy.mmbank.domain.intelligence.BillHistory
 import com.xemmy.mmbank.domain.intelligence.BillReminders
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.BillRecurrence
@@ -71,6 +74,8 @@ data class BillsUiState(
     val suggestions: List<BillDetector.DetectedBill> = emptyList(),
     /** Bill payments recorded twice (bank SMS + provider receipt) before they were merged at capture. */
     val duplicateCount: Int = 0,
+    /** Real transactions, for each bill's payment history. */
+    val ledger: List<com.xemmy.mmbank.domain.model.Transaction> = emptyList(),
 )
 
 class BillsViewModel(private val container: AppContainer) : ViewModel() {
@@ -79,12 +84,15 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
     private val notBills = MutableStateFlow(container.preferences.notBillIds)
     private val duplicates = MutableStateFlow<List<com.xemmy.mmbank.domain.intelligence.BillDuplicateFinder.Duplicate>>(emptyList())
 
-    val uiState: StateFlow<BillsUiState> = combine(container.billRepository.observeAll(), detected, notBills, duplicates) { bills, found, hidden, dups ->
+    private val ledgerFlow = MutableStateFlow<List<com.xemmy.mmbank.domain.model.Transaction>>(emptyList())
+
+    val uiState: StateFlow<BillsUiState> = combine(container.billRepository.observeAll(), detected, notBills, duplicates, ledgerFlow) { bills, found, hidden, dups, ledger ->
         BillsUiState(
             bills = bills,
             currency = container.preferences.defaultCurrency,
             suggestions = found.filter { d -> d.id !in hidden && bills.none { BillDetector.tracks(it, d) } },
             duplicateCount = dups.size,
+            ledger = ledger,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BillsUiState())
 
@@ -96,6 +104,7 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             runCatching {
                 val ledger = container.transactionRepository.getAllReal()
+                ledgerFlow.value = ledger
                 detected.value = BillDetector.detect(ledger, java.time.LocalDate.now())
                 duplicates.value = com.xemmy.mmbank.domain.intelligence.BillDuplicateFinder.pairs(ledger)
             }.onFailure { container.recordError("BillsViewModel.detect", it) }
@@ -153,6 +162,19 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Attaches an earlier number-less payment to [bill]'s line so it counts in the bill's history. Spending totals are unchanged. */
+    fun attachPayment(bill: Bill, tx: com.xemmy.mmbank.domain.model.Transaction) {
+        val ref = bill.accountRef ?: return
+        viewModelScope.launch {
+            runCatching {
+                container.transactionRepository.setBillRef(tx.id, ref)
+                val latest = maxOf(bill.lastPaidMillis ?: 0L, tx.timestampMillis)
+                container.billRepository.save(bill.copy(lastPaidMillis = latest))
+            }.onFailure { container.recordError("BillsViewModel.attachPayment", it) }
+            refreshDetection()
+        }
+    }
+
     fun markPaid(billId: Long) {
         viewModelScope.launch {
             runCatching { container.billRepository.markPaid(billId) }
@@ -184,6 +206,7 @@ fun BillsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
+    var historyFor by remember { mutableStateOf<Bill?>(null) }
 
     Scaffold(
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
@@ -274,6 +297,7 @@ fun BillsScreen(
                 items(state.bills, key = { it.id }) { bill ->
                     BillRow(
                         bill = bill,
+                        onOpen = { historyFor = bill },
                         onMarkPaid = { viewModel.markPaid(bill.id) },
                         onLogPayment = { onLogPayment(bill.id) },
                         onDelete = { viewModel.delete(bill.id) },
@@ -281,6 +305,18 @@ fun BillsScreen(
                 }
             }
         }
+    }
+
+    historyFor?.let { shown ->
+        // Re-read the bill so the dialog follows saves made while it is open.
+        val live = state.bills.firstOrNull { it.id == shown.id } ?: shown
+        BillHistoryDialog(
+            bill = live,
+            payments = BillHistory.paymentsFor(live, state.ledger),
+            candidates = BillHistory.candidates(live, state.ledger, System.currentTimeMillis()),
+            onAttach = { viewModel.attachPayment(live, it) },
+            onDismiss = { historyFor = null },
+        )
     }
 
     if (addOpen) {
@@ -296,8 +332,9 @@ fun BillsScreen(
 }
 
 @Composable
-private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onLogPayment: () -> Unit, onDelete: () -> Unit) {
+private fun BillRow(bill: Bill, onOpen: () -> Unit, onMarkPaid: () -> Unit, onLogPayment: () -> Unit, onDelete: () -> Unit) {
     var confirming by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
     if (confirming) {
         AlertDialog(
             onDismissRequest = { confirming = false },
@@ -315,49 +352,114 @@ private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onLogPayment: () -> Unit
         days == 1L -> "due tomorrow"
         else -> "due in ${days}d"
     }
+    val repeats = bill.recurrence?.let { it.name.lowercase().replaceFirstChar(Char::uppercase) } ?: "One-off"
 
-    Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Receipt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(bill.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                bill.lastPaidMillis?.let { paid ->
-                    Text(
-                        "Paid automatically on " + java.time.Instant.ofEpochMilli(paid).atZone(java.time.ZoneId.systemDefault())
-                            .toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("d MMM")),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MMTheme.colors.textSecondary,
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    MoneyText(
-                        amount = bill.amount.toDouble(),
-                        currencyCode = bill.currencyCode,
-                        kind = TransactionKind.TRANSFER,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MMTheme.colors.textSecondary,
-                    )
-                    Text(
-                        (if (bill.providerKey != null) " ≈" else "") + " · $whenText" +
-                            (bill.recurrence?.let { " · ${it.name.lowercase().replaceFirstChar(Char::uppercase)}" } ?: " · One-off"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MMTheme.colors.textSecondary,
-                    )
+    Card(Modifier.fillMaxWidth().clickable(enabled = bill.providerKey != null, onClick = onOpen)) {
+        Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Receipt, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    bill.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Box {
+                    IconButton(onClick = { menu = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More for ${bill.name}")
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Delete bill") }, onClick = { menu = false; confirming = true })
+                    }
                 }
             }
-            TextButton(onClick = onLogPayment) { Text("Log payment") }
-            IconButton(onClick = onMarkPaid) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = "Mark ${bill.name} paid")
+            MoneyText(
+                amount = bill.amount.toDouble(),
+                currencyCode = bill.currencyCode,
+                kind = TransactionKind.TRANSFER,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                "$repeats · $whenText" + (if (bill.providerKey != null) " · usual amount" else ""),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MMTheme.colors.textSecondary,
+            )
+            bill.lastPaidMillis?.let { paid ->
+                Text(
+                    "Last paid " + java.time.Instant.ofEpochMilli(paid).atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy")) +
+                        if (bill.providerKey != null) " (from SMS). Tap for history." else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MMTheme.colors.textSecondary,
+                )
             }
-            IconButton(onClick = { confirming = true }) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete ${bill.name}")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onLogPayment) { Text("Log payment") }
+                FilledTonalButton(onClick = onMarkPaid) { Text("Mark paid") }
             }
         }
     }
+}
+
+@Composable
+private fun BillHistoryDialog(
+    bill: Bill,
+    payments: List<com.xemmy.mmbank.domain.model.Transaction>,
+    candidates: List<com.xemmy.mmbank.domain.model.Transaction>,
+    onAttach: (com.xemmy.mmbank.domain.model.Transaction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy")
+    fun day(t: com.xemmy.mmbank.domain.model.Transaction) =
+        java.time.Instant.ofEpochMilli(t.timestampMillis).atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(fmt)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(bill.name) },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                item {
+                    Text("Payments counted", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                if (payments.isEmpty()) {
+                    item { Text("None yet.", style = MaterialTheme.typography.bodySmall, color = MMTheme.colors.textSecondary) }
+                }
+                items(payments, key = { "p-${it.id}" }) { t ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(day(t), style = MaterialTheme.typography.bodyMedium)
+                        MoneyText(
+                            amount = t.amount.toDouble(), currencyCode = t.currencyCode, kind = TransactionKind.TRANSFER,
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                if (candidates.isNotEmpty()) {
+                    item {
+                        Text("Earlier payments to add", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 8.dp))
+                        Text(
+                            "Bank SMS with no line number. Tap Add to count one for this line. Your spending totals do not change.",
+                            style = MaterialTheme.typography.bodySmall, color = MMTheme.colors.textSecondary,
+                        )
+                    }
+                    items(candidates, key = { "c-${it.id}" }) { t ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(day(t), style = MaterialTheme.typography.bodyMedium)
+                                MoneyText(
+                                    amount = t.amount.toDouble(), currencyCode = t.currencyCode, kind = TransactionKind.TRANSFER,
+                                    style = MaterialTheme.typography.bodySmall, color = MMTheme.colors.textSecondary,
+                                )
+                            }
+                            TextButton(onClick = { onAttach(t) }) { Text("Add") }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
 
 @Composable

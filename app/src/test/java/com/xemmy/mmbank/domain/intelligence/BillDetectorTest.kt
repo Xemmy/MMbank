@@ -113,6 +113,21 @@ class BillDetectorTest {
         providerKey = "etisalat", accountRef = ref, lastPaidMillis = lastPaid?.let(::millis),
     )
 
+    @Test fun `history lists a bills own line newest first, candidates are number-less payments`() {
+        val numbered = tx(1, "E& TELECOM CORP", LocalDate.of(2026, 10, 20), "300", "paid for 0501234567")
+        val plainRecent = tx(2, "E& TELECOM CORP", LocalDate.of(2026, 9, 20), "310")
+        val plainOld = tx(3, "E& TELECOM CORP", LocalDate.of(2024, 1, 20), "310")
+        val otherLine = tx(4, "E& TELECOM CORP", LocalDate.of(2026, 8, 20), "300", "paid for 0509999999")
+        val otherProvider = tx(5, "DEWA", LocalDate.of(2026, 9, 21), "310")
+        val all = listOf(plainRecent, numbered, plainOld, otherLine, otherProvider)
+        val line = bill(LocalDate.of(2026, 12, 9), ref = "4567")
+        assertEquals(listOf(1L), BillHistory.paymentsFor(line, all).map { it.id })
+        assertEquals(listOf(2L), BillHistory.candidates(line, all, millis(today)).map { it.id })
+        val noLine = bill(LocalDate.of(2026, 12, 9))
+        assertEquals(listOf(2L, 3L), BillHistory.paymentsFor(noLine, all).map { it.id })
+        assertTrue(BillHistory.candidates(noLine, all, millis(today)).isEmpty())
+    }
+
     @Test fun `a late payment of any amount pays the cycle and advances the bill`() {
         val paid = tx(9, "E& TELECOM CORP", LocalDate.of(2026, 11, 19), "442.58")
         val result = BillAutoMatch.match(listOf(bill(LocalDate.of(2026, 11, 9))), paid, utc)!!
