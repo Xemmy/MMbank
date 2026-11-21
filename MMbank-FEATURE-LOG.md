@@ -4799,3 +4799,11 @@ Not covered by CI: real SMS wording the user receives. Older payments whose SMS 
 User screenshot: a 7-digit negative net worth showed as "-Đ1,064,866.…" and the two "excluded from total" lines wrapped into four. The amount now uses `AmountText(fitWidth = true)` (shrinks down to 11sp instead of an ellipsis) and the notes are one line from `netWorthExclusionNote` ("Crypto and credit cards excluded · change in Settings").
 
 Not covered by CI: how the card renders on device at narrow widths and large font sizes.
+
+## Integrity check: hints you can act on (0.140.0)
+User screenshot: four "N transactions in another currency" cards (ADIB CB, Binance, Exness, Other) and two "add a payment due day" hints (ADCB Cashback, Tabby) could not be removed; their only button opened the accounts list. Now:
+- **Another currency:** **It's expected** hides the card for that account (trading/wallet accounts legitimately mix currencies); the balance still isn't checked. **Edit account** opens that account's editor right there (e.g. to change its currency).
+- **Card setup:** **Set up card** opens the card's editor; **No due day** mutes the due-day hint (a missing credit limit still shows).
+- Muted hints are per account (`IntegrityChecker.mutedCurrencyKey/mutedDueDayKey`, `AppPreferences.integrityMutedKeys`, not in backups), shared live through `AppContainer.integrityMuted` so the Accounts badge count drops too. **Show N hidden hints** at the bottom brings them all back.
+
+Not covered by CI: the buttons and editor dialog as rendered on the Integrity screen, and the Accounts badge updating after muting.

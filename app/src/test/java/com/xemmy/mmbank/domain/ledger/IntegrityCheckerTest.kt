@@ -310,4 +310,52 @@ class IntegrityCheckerTest {
         val report = check(listOf(current), listOf(history, tx(account = null, amount = "6")))
         assertEquals(1, report.issues.single().count)
     }
+
+    // ---- muted hints ---------------------------------------------------
+
+    @Test
+    fun `a currency hint muted for its account is hidden, other accounts still flag`() {
+        val other = current.copy(id = 3, name = "Other")
+        val txs = listOf(
+            tx(amount = "200", reported = "9999"),
+            tx(amount = "10", currency = "USD"),
+            tx(account = 3, amount = "5", currency = "USD"),
+        )
+        val muted = setOf(IntegrityChecker.mutedCurrencyKey(1))
+        val report = IntegrityChecker.check(listOf(current, other), txs, now, muted = muted)
+        val left = report.issues.ofType(Type.CURRENCY_MISMATCH)
+        assertEquals(listOf(3L), left.map { it.accountId })
+        // The balance still can't be checked; muting only hides the hint.
+        assertEquals(Why.MIXED_CURRENCY, report.reconciliations.getValue(1).why)
+        assertEquals(1, report.actionableCount)
+    }
+
+    @Test
+    fun `a muted due day drops the hint, but a missing limit still shows`() {
+        val noDue = card.copy(dueDayOfMonth = null)
+        val muted = setOf(IntegrityChecker.mutedDueDayKey(2))
+        assertTrue(IntegrityChecker.check(listOf(noDue), emptyList(), now, muted = muted).issues.isEmpty())
+
+        val noBoth = noDue.copy(creditLimit = null)
+        val setup = IntegrityChecker.check(listOf(noBoth), emptyList(), now, muted = muted).issues.single()
+        assertEquals(listOf(IntegrityChecker.SetupItem.CREDIT_LIMIT), setup.setupMissing)
+        assertNull(IntegrityChecker.muteKeyFor(setup))
+    }
+
+    @Test
+    fun `mute keys come from the issue they would hide`() {
+        val report = check(listOf(current, card.copy(dueDayOfMonth = null)), listOf(tx(amount = "10", currency = "USD")))
+        val currency = report.issues.ofType(Type.CURRENCY_MISMATCH).single()
+        val setup = report.issues.ofType(Type.CARD_SETUP).single()
+        assertEquals("currency:1", IntegrityChecker.muteKeyFor(currency))
+        assertEquals("dueday:2", IntegrityChecker.muteKeyFor(setup))
+        val unassigned = check(listOf(current), listOf(tx(account = null, amount = "5"))).issues.single()
+        assertNull(IntegrityChecker.muteKeyFor(unassigned))
+    }
+
+    @Test
+    fun `live mutes drop keys of accounts that are gone`() {
+        val muted = setOf("currency:1", "dueday:2", "currency:99", "junk")
+        assertEquals(setOf("currency:1", "dueday:2"), IntegrityChecker.liveMutes(muted, listOf(current, card)))
+    }
 }

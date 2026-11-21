@@ -18,8 +18,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -39,6 +43,7 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.ui.AppViewModelProvider
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
+import com.xemmy.mmbank.ui.screens.accounts.AccountDialog
 import com.xemmy.mmbank.ui.screens.accounts.buildBalanceAdjustment
 import com.xemmy.mmbank.ui.util.asDate
 import com.xemmy.mmbank.ui.util.recoverAndRetry
@@ -53,6 +58,8 @@ data class IntegrityUiState(
     val accounts: List<Account> = emptyList(),
     val transactions: Map<Long, Transaction> = emptyMap(),
     val loaded: Boolean = false,
+    /** Hints the user muted that still name a live account. */
+    val mutedCount: Int = 0,
 )
 
 /**
@@ -65,15 +72,17 @@ class IntegrityViewModel(private val container: AppContainer) : ViewModel() {
     val uiState: StateFlow<IntegrityUiState> = combine(
         container.accountRepository.observeActive(),
         container.transactionRepository.observeTransactions(),
-    ) { accounts, transactions ->
+        container.integrityMuted,
+    ) { accounts, transactions, muted ->
         val now = System.currentTimeMillis()
         val months = container.preferences.transactionRetentionMonths
         val cutoff = if (months > 0) TransactionRetentionPlanner.cutoffMillis(now, months) else null
         IntegrityUiState(
-            report = IntegrityChecker.check(accounts, transactions, now, cutoff),
+            report = IntegrityChecker.check(accounts, transactions, now, cutoff, muted),
             accounts = accounts,
             transactions = transactions.associateBy { it.id },
             loaded = true,
+            mutedCount = IntegrityChecker.liveMutes(muted, accounts).size,
         )
     }.recoverAndRetry("IntegrityViewModel", container) { IntegrityUiState(loaded = true) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IntegrityUiState())
@@ -109,6 +118,20 @@ class IntegrityViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** "It's expected" / "No due day": hides that hint for this account. */
+    fun mute(issue: Issue) {
+        val key = IntegrityChecker.muteKeyFor(issue) ?: return
+        container.setIntegrityMuted(container.integrityMuted.value + key)
+    }
+
+    /** Brings every muted hint back. */
+    fun unmuteAll() = container.setIntegrityMuted(emptySet())
+
+    /** Saves an account edited from a card-setup hint. */
+    fun saveAccount(account: Account) = launchSafely("saveAccount") {
+        container.accountRepository.save(account)
+    }
+
     private fun launchSafely(what: String, block: suspend () -> Unit) {
         viewModelScope.launch {
             runCatching { block() }.onFailure { container.recordError("IntegrityViewModel.$what", it) }
@@ -129,6 +152,7 @@ fun IntegrityScreen(
     val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     val names = state.accounts.associate { it.id to it.name }
     val reconciled = state.report.reconciliations.values.count { it.status == IntegrityChecker.Status.MATCHES }
+    var editing by remember { mutableStateOf<Account?>(null) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -182,13 +206,35 @@ fun IntegrityScreen(
                         onRecordDifference = { viewModel.recordDifference(issue) },
                         onMarkCorrect = { viewModel.markCorrect(issue) },
                         onMakeOrdinary = { viewModel.makeOrdinary(issue) },
-                        onOpenAccounts = onOpenAccounts,
+                        onEditAccount = {
+                            editing = state.accounts.firstOrNull { it.id == issue.accountId }
+                            if (editing == null) onOpenAccounts()
+                        },
+                        onMute = { viewModel.mute(issue) },
                         onOpenUnassigned = onOpenUnassigned,
                         onSeeWhatChanged = { issue.accountId?.let(onOpenDrift) },
                     )
                 }
             }
+            if (state.mutedCount > 0) {
+                item(key = "muted") {
+                    TextButton(onClick = viewModel::unmuteAll) {
+                        Text("Show ${state.mutedCount} hidden ${if (state.mutedCount == 1) "hint" else "hints"}")
+                    }
+                }
+            }
         }
+    }
+
+    editing?.let { account ->
+        AccountDialog(
+            existing = account,
+            onDismiss = { editing = null },
+            onSave = { saved ->
+                viewModel.saveAccount(saved)
+                editing = null
+            },
+        )
     }
 }
 
@@ -218,7 +264,8 @@ private fun IssueActions(
     onRecordDifference: () -> Unit,
     onMarkCorrect: () -> Unit,
     onMakeOrdinary: () -> Unit,
-    onOpenAccounts: () -> Unit,
+    onEditAccount: () -> Unit,
+    onMute: () -> Unit,
     onOpenUnassigned: () -> Unit,
     onSeeWhatChanged: () -> Unit,
 ) {
@@ -233,6 +280,13 @@ private fun IssueActions(
         }
         Type.BROKEN_LINK -> OutlinedButton(onClick = onMakeOrdinary) { Text("Unlink") }
         Type.UNASSIGNED -> OutlinedButton(onClick = onOpenUnassigned) { Text("Assign accounts") }
-        Type.CURRENCY_MISMATCH, Type.CARD_SETUP -> OutlinedButton(onClick = onOpenAccounts) { Text("Open accounts") }
+        Type.CURRENCY_MISMATCH -> {
+            Button(onClick = onMute) { Text("It's expected") }
+            OutlinedButton(onClick = onEditAccount) { Text("Edit account") }
+        }
+        Type.CARD_SETUP -> {
+            OutlinedButton(onClick = onEditAccount) { Text("Set up card") }
+            if (IntegrityChecker.muteKeyFor(issue) != null) TextButton(onClick = onMute) { Text("No due day") }
+        }
     }
 }

@@ -37,9 +37,36 @@ import java.math.BigDecimal
  * that don't add up, rows in no account, rows in another currency than their
  * account, and card setup that blocks checks or reminders.
  *
+ * Two hints can be muted per account (see [mutedCurrencyKey], [mutedDueDayKey]):
+ * "other currencies are expected here" (a trading or wallet account) and "this
+ * card has no due day" (e.g. a pay-later card). Muting hides only that hint;
+ * the balance check itself is unchanged.
+ *
  * Pure -- everything is passed in -- so the whole matrix is unit tested.
  */
 object IntegrityChecker {
+
+    /** Mute key: this account is expected to hold other-currency rows. */
+    fun mutedCurrencyKey(accountId: Long) = "currency:$accountId"
+
+    /** Mute key: this card has no payment due day, don't ask for one. */
+    fun mutedDueDayKey(accountId: Long) = "dueday:$accountId"
+
+    /** The mute key that would hide [issue], or null if it can't be muted. */
+    fun muteKeyFor(issue: Issue): String? {
+        val id = issue.accountId ?: return null
+        return when {
+            issue.type == Type.CURRENCY_MISMATCH -> mutedCurrencyKey(id)
+            issue.type == Type.CARD_SETUP && SetupItem.DUE_DAY in issue.setupMissing -> mutedDueDayKey(id)
+            else -> null
+        }
+    }
+
+    /** Keys in [muted] that still name one of [accounts] (drops keys of deleted accounts). */
+    fun liveMutes(muted: Set<String>, accounts: List<Account>): Set<String> {
+        val ids = accounts.map { it.id }.toSet()
+        return muted.filterTo(LinkedHashSet()) { key -> key.substringAfter(':').toLongOrNull() in ids }
+    }
 
     /** Below this a difference is rounding noise, not a discrepancy. */
     private val TOLERANCE = BigDecimal("0.01")
@@ -107,12 +134,14 @@ object IntegrityChecker {
      * @param accounts the accounts to check (active ones); rows on any other account are left alone
      * @param transactions the ledger in the same view (real or demo) as [accounts]
      * @param retentionCutoffMillis when retention pruning is on, the oldest instant still reconcilable
+     * @param muted hints the user dismissed ([mutedCurrencyKey], [mutedDueDayKey])
      */
     fun check(
         accounts: List<Account>,
         transactions: List<Transaction>,
         nowMillis: Long,
         retentionCutoffMillis: Long? = null,
+        muted: Set<String> = emptySet(),
     ): Report {
         val byId = transactions.associateBy { it.id }
         val byAccount = transactions.filter { it.accountId != null }.groupBy { it.accountId!! }
@@ -138,7 +167,7 @@ object IntegrityChecker {
             }
 
             val wrongCurrency = own.filter { !it.currencyCode.equals(account.currencyCode, ignoreCase = true) }
-            if (wrongCurrency.isNotEmpty()) {
+            if (wrongCurrency.isNotEmpty() && mutedCurrencyKey(account.id) !in muted) {
                 issues += Issue(
                     type = Type.CURRENCY_MISMATCH,
                     severity = Severity.WARNING,
@@ -152,7 +181,7 @@ object IntegrityChecker {
             if (account.type == AccountType.CREDIT_CARD) {
                 val missing = buildList {
                     if (account.creditLimit == null || account.creditLimit.signum() <= 0) add(SetupItem.CREDIT_LIMIT)
-                    if (account.dueDayOfMonth == null) add(SetupItem.DUE_DAY)
+                    if (account.dueDayOfMonth == null && mutedDueDayKey(account.id) !in muted) add(SetupItem.DUE_DAY)
                 }
                 if (missing.isNotEmpty()) {
                     issues += Issue(

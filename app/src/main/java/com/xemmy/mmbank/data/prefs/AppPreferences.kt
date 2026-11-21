@@ -341,6 +341,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getStringSet(KEY_NOT_BILL, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_NOT_BILL, value).apply()
 
+    /** Integrity-check hints the user muted (IntegrityChecker.mutedCurrencyKey / mutedDueDayKey); not in backups. */
+    var integrityMutedKeys: Set<String>
+        get() = prefs.getStringSet(KEY_INTEGRITY_MUTED, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_INTEGRITY_MUTED, value).apply()
+
     /** Brand keys the user marked "never a subscription" (see NeverSubscription); not in backups. */
     var neverSubscriptionKeys: Set<String>
         get() = prefs.getStringSet(KEY_NEVER_SUBSCRIPTION, emptySet()) ?: emptySet()
@@ -520,6 +525,7 @@ class AppPreferences(context: Context) {
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
         const val KEY_NEVER_SUBSCRIPTION = "never_subscription_keys"
         const val KEY_NOT_BILL = "not_bill_ids"
+        const val KEY_INTEGRITY_MUTED = "integrity_muted_keys"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
         const val KEY_LEDGER_KIND_BACKFILL_VERSION = "ledger_kind_backfill_version"
         const val KEY_CARD_REMINDERS_SENT = "card_reminders_sent"

@@ -157,7 +157,8 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
         container.accountRepository.observeArchived(),
         container.transactionRepository.observeLedgerEntries(),
         container.transactionRepository.observeTransactions(),
-    ) { accounts, archived, entries, transactions ->
+        container.integrityMuted,
+    ) { accounts, archived, entries, transactions, muted ->
         val net = AccountBalanceCalculator.netByAccount(entries)
         val approximate = AccountBalanceCalculator.approximateAccounts(entries)
         val cards = CardPaymentReminders.build(accounts, transactions, entries, LocalDate.now())
@@ -169,6 +170,7 @@ class AccountsViewModel(private val container: AppContainer) : ViewModel() {
             transactions = transactions,
             nowMillis = now,
             retentionCutoffMillis = if (retentionMonths > 0) TransactionRetentionPlanner.cutoffMillis(now, retentionMonths) else null,
+            muted = muted,
         )
         AccountsUiState(
             integrity = integrity,

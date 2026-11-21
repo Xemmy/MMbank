@@ -155,6 +155,16 @@ class AppContainer(context: Context) {
 
     fun toggleHideBalances() = setHideBalances(!_hideBalances.value)
 
+    // Integrity hints the user muted: read by both the Accounts badge and the
+    // Integrity screen, so it's a container-level flow (see hideBalances).
+    private val _integrityMuted by lazy { MutableStateFlow(preferences.integrityMutedKeys) }
+    val integrityMuted: StateFlow<Set<String>> by lazy { _integrityMuted.asStateFlow() }
+
+    fun setIntegrityMuted(keys: Set<String>) {
+        preferences.integrityMutedKeys = keys
+        _integrityMuted.value = keys
+    }
+
     // Single reactive source of truth for the Dark/Light/System theme: every
     // screen renders through it, so it's a container-level flow.
     private val _themeMode by lazy { MutableStateFlow(preferences.themeMode) }
