@@ -353,6 +353,7 @@ data class BackupPayLaterPlan(
     val currencyCode: String, val installmentCount: Int, val cadence: String,
     val payFromAccountId: Long?, val payToAccountId: Long?, val sourceTransactionId: Long?,
     val categoryId: Long?, val note: String?, val createdAt: Long, val isDemo: Boolean,
+    val sourceIsInstallment: Boolean = false,
 )
 
 @Serializable
@@ -462,7 +463,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 20,
+            formatVersion = 21,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -1061,7 +1062,7 @@ internal fun PayLaterPlanEntity.toBackup() = BackupPayLaterPlan(
     currencyCode = currencyCode, installmentCount = installmentCount, cadence = cadence.name,
     payFromAccountId = payFromAccountId, payToAccountId = payToAccountId,
     sourceTransactionId = sourceTransactionId, categoryId = categoryId, note = note,
-    createdAt = createdAt, isDemo = isDemo,
+    createdAt = createdAt, isDemo = isDemo, sourceIsInstallment = sourceIsInstallment,
 )
 
 internal fun BackupPayLaterPlan.toEntity() = PayLaterPlanEntity(
@@ -1070,7 +1071,7 @@ internal fun BackupPayLaterPlan.toEntity() = PayLaterPlanEntity(
     cadence = PayLaterCadence.entries.firstOrNull { it.name == cadence } ?: PayLaterCadence.MONTHLY,
     payFromAccountId = payFromAccountId, payToAccountId = payToAccountId,
     sourceTransactionId = sourceTransactionId, categoryId = categoryId, note = note,
-    createdAt = createdAt, isDemo = isDemo,
+    createdAt = createdAt, isDemo = isDemo, sourceIsInstallment = sourceIsInstallment,
 )
 
 internal fun PayLaterInstallmentEntity.toBackup() = BackupPayLaterInstallment(

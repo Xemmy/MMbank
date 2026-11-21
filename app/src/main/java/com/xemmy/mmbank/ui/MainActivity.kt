@@ -503,6 +503,7 @@ private fun AppNavHost(
                 onOpenUncategorizedQueue = { navController.navigate(Routes.UNCATEGORIZED_QUEUE) },
                 onOpenMerchant = { merchant -> navController.navigate(Routes.merchantDetail(Uri.encode(merchant))) },
                 onOpenEditor = { id -> navController.navigate(Routes.transactionEditor(id)) },
+                onSplitWithPayLater = { id -> navController.navigate(Routes.payLaterEditor(fromTransactionId = id)) },
             )
         }
         composable(

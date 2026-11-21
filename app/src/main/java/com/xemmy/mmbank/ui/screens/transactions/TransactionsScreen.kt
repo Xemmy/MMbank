@@ -228,6 +228,8 @@ fun TransactionsScreen(
     onOpenMerchant: (String) -> Unit = {},
     /** Opens the full-screen editor: null = a new transaction, else the saved row's id. */
     onOpenEditor: (Long?) -> Unit = {},
+    /** Opens the full Pay Later plan editor prefilled from a charge (the quick split's "More options"). */
+    onSplitWithPayLater: (Long) -> Unit = {},
     viewModel: TransactionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     // Keyed on the arg so re-navigating with it re-applies the filter, while a
@@ -253,6 +255,8 @@ fun TransactionsScreen(
     val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var deleteTarget by remember { mutableStateOf<Transaction?>(null) }
+    var splitTarget by remember { mutableStateOf<Transaction?>(null) }
+    var subscriptionTarget by remember { mutableStateOf<Transaction?>(null) }
     // Dynamic-category picker target: set by either an end-to-start swipe (see
     // SwipeToActionBox) or tapping a row's category chip, cleared once a
     // category is picked/created or the picker is dismissed.
@@ -546,6 +550,17 @@ fun TransactionsScreen(
         )
     }
 
+    splitTarget?.let { tx ->
+        com.xemmy.mmbank.ui.screens.paylater.QuickSplitDialog(
+            charge = tx,
+            onDismiss = { splitTarget = null },
+            onMoreOptions = { splitTarget = null; onSplitWithPayLater(tx.id) },
+        )
+    }
+    subscriptionTarget?.let { tx ->
+        com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionPickerDialog(charge = tx, onDismiss = { subscriptionTarget = null })
+    }
+
     selectedTransaction?.let { tx ->
         val anomaly by produceState<SpendAnomalyDetector.Anomaly?>(null, tx) { value = viewModel.anomalyFor(tx) }
         TransactionDetailSheet(
@@ -575,6 +590,8 @@ fun TransactionsScreen(
                 viewModel.setHistoryOnly(tx, historyOnly)
                 selectedTransaction = null
             },
+            onSplitClick = if (isSplittable(tx)) { { splitTarget = tx; selectedTransaction = null } } else null,
+            onAddToSubscriptionClick = if (isSplittable(tx)) { { subscriptionTarget = tx; selectedTransaction = null } } else null,
         )
     }
 }
@@ -1535,3 +1552,7 @@ internal fun collapsedVisibleHeight(fullHeight: Int, fraction: Float): Int {
     val f = if (fraction.isNaN()) 0f else fraction.coerceIn(0f, 1f)
     return (fullHeight * (1f - f)).roundToInt().coerceIn(0, fullHeight.coerceAtLeast(0))
 }
+
+/** Quick actions (split with Tabby, add to subscription) apply to saved spending debits. */
+internal fun isSplittable(tx: Transaction): Boolean =
+    tx.direction == TransactionDirection.DEBIT && tx.kind == TransactionKind.SPEND && tx.id != 0L

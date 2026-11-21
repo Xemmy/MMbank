@@ -485,6 +485,7 @@ class AppContainer(context: Context) {
                 checkDailyBudgetPacing(transaction)
                 checkCategoryBudget(transaction)
                 refreshSubscriptionForMerchant(transaction)
+                matchPayLaterInstallment(transaction)
                 checkUnusualCharge(transaction)
             },
         )
@@ -894,6 +895,20 @@ class AppContainer(context: Context) {
      * user to tap "Scan", and an unambiguous new charge joins the user-owned
      * row it belongs to. One code path for capture and the Scan button.
      */
+    /** A captured debit that is the next Tabby installment of an open plan marks it paid rather than double counting. */
+    private fun matchPayLaterInstallment(transaction: Transaction) {
+        if (transaction.kind != TransactionKind.SPEND || transaction.excludeFromStats) return
+        applicationScope.launch {
+            runCatching {
+                val plans = payLaterRepository.observePlans().first()
+                val installments = payLaterRepository.observeInstallments().first()
+                com.xemmy.mmbank.domain.paylater.PayLaterAutoMatch.match(plans, installments, transaction)?.let {
+                    payLaterRepository.matchInstallment(it.installment.id, transaction.id, transaction.timestampMillis)
+                }
+            }.onFailure { recordError("AppContainer.matchPayLaterInstallment", it) }
+        }
+    }
+
     private fun refreshSubscriptionForMerchant(transaction: Transaction) {
         if (transaction.kind != TransactionKind.SPEND || transaction.excludeFromStats) return
 

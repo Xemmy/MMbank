@@ -454,6 +454,7 @@ data class PayLaterPlanEntity(
     val note: String? = null,
     val createdAt: Long,
     val isDemo: Boolean = false,
+    val sourceIsInstallment: Boolean = false,
 )
 
 @Entity(
@@ -480,11 +481,11 @@ data class PayLaterInstallmentEntity(
 
 fun PayLaterPlanEntity.toDomain() = PayLaterPlan(
     id, merchant, provider, totalAmount, currencyCode, installmentCount, cadence,
-    payFromAccountId, payToAccountId, sourceTransactionId, categoryId, note, createdAt, isDemo,
+    payFromAccountId, payToAccountId, sourceTransactionId, categoryId, note, createdAt, isDemo, sourceIsInstallment,
 )
 fun PayLaterPlan.toEntity() = PayLaterPlanEntity(
     id, merchant, provider, totalAmount, currencyCode, installmentCount, cadence,
-    payFromAccountId, payToAccountId, sourceTransactionId, categoryId, note, createdAt, isDemo,
+    payFromAccountId, payToAccountId, sourceTransactionId, categoryId, note, createdAt, isDemo, sourceIsInstallment,
 )
 fun PayLaterInstallmentEntity.toDomain() =
     PayLaterInstallment(id, planId, number, amount, dueDateMillis, paidAtMillis, paymentTransactionId)

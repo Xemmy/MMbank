@@ -32,9 +32,10 @@ class BackupExtrasTest {
         val plan = PayLaterPlanEntity(
             id = 3, merchant = "Carrefour", provider = "Tabby", totalAmount = BigDecimal("327.32"), currencyCode = "AED",
             installmentCount = 4, cadence = PayLaterCadence.BIWEEKLY, payFromAccountId = 1, payToAccountId = 2,
-            sourceTransactionId = 99, categoryId = 7, note = "groceries", createdAt = 5, isDemo = true,
+            sourceTransactionId = 99, categoryId = 7, note = "groceries", createdAt = 5, isDemo = true, sourceIsInstallment = true,
         )
         assertEquals(plan, plan.toBackup().toEntity())
+        assertEquals(false, plan.copy(sourceIsInstallment = false).toBackup().toEntity().sourceIsInstallment)
         val bare = plan.copy(payFromAccountId = null, payToAccountId = null, sourceTransactionId = null, categoryId = null, note = null)
         assertEquals(bare, bare.toBackup().toEntity())
         val inst = PayLaterInstallmentEntity(8, 3, 2, BigDecimal("81.83"), 1_700_000_000_000, 1_700_000_100_000, 55)

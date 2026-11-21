@@ -743,6 +743,11 @@ data class PayLaterPlan(
     val note: String? = null,
     val createdAt: Long,
     val isDemo: Boolean = false,
+    /**
+     * The captured purchase was itself one installment (e.g. a Tabby x4 SMS for 1/4): only that
+     * share was counted as spending, so later payments must count as ordinary spending too.
+     */
+    val sourceIsInstallment: Boolean = false,
 )
 
 data class PayLaterInstallment(

@@ -870,9 +870,10 @@ class EntityMappersTest {
             id = 2, merchant = "Carrefour", provider = "Tabby", totalAmount = BigDecimal("327.32"), currencyCode = "AED",
             installmentCount = 4, cadence = com.xemmy.mmbank.domain.model.PayLaterCadence.WEEKLY,
             payFromAccountId = 1, payToAccountId = 3, sourceTransactionId = 40, categoryId = 6, note = "n",
-            createdAt = 77, isDemo = true,
+            createdAt = 77, isDemo = true, sourceIsInstallment = true,
         )
         assertEquals(plan, plan.toEntity().toDomain())
+        assertTrue(plan.toEntity().sourceIsInstallment)
         val installment = com.xemmy.mmbank.domain.model.PayLaterInstallment(
             id = 5, planId = 2, number = 3, amount = BigDecimal("81.83"), dueDateMillis = 1000, paidAtMillis = 2000, paymentTransactionId = 9,
         )

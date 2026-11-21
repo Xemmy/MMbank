@@ -120,6 +120,11 @@ object MigrationSql {
         "CREATE INDEX IF NOT EXISTS `index_pay_later_installments_planId` ON `pay_later_installments` (`planId`)",
     )
 
+    /** v45 (from v44): a Pay Later plan whose captured purchase was itself one installment. */
+    val MIGRATION_44_45_SQL: List<String> = listOf(
+        "ALTER TABLE `pay_later_plans` ADD COLUMN `sourceIsInstallment` INTEGER NOT NULL DEFAULT 0",
+    )
+
     /**
      * v44 (from v43): `confidence` for detected subscriptions. 1.0 for every existing row, so
      * nothing already shown moves into the "Possible" list; only new low-confidence detections do.

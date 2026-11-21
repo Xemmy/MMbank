@@ -87,4 +87,14 @@ class PayLaterPaymentTest {
         assertNull(undone.paymentTransactionId)
         assertEquals(installment, undone)
     }
+
+    @Test
+    fun `later payments of a plan whose charge was one installment are ordinary spending`() {
+        val p = plan(source = 40).copy(sourceIsInstallment = true)
+        assertEquals(Shape.SPEND, PayLaterPayment.shapeOf(p, hasProviderAccount = true))
+        val legs = PayLaterPayment.build(p, installment, from, tabby, paidAtMillis = 5)
+        assertEquals(Shape.SPEND, legs.shape)
+        assertEquals(false, legs.paying.excludeFromStats)
+        assertNull(legs.counterpart)
+    }
 }

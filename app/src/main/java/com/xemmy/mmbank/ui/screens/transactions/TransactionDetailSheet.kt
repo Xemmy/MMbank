@@ -87,6 +87,10 @@ fun TransactionDetailSheet(
     anomaly: SpendAnomalyDetector.Anomaly? = null,
     /** Sets or clears "history only" on a row with no account. Null hides the action. */
     onHistoryOnlyChange: ((Boolean) -> Unit)? = null,
+    /** "Split with Tabby" quick action; null hides it. */
+    onSplitClick: (() -> Unit)? = null,
+    /** "Add to subscription" quick action; null hides it. */
+    onAddToSubscriptionClick: (() -> Unit)? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -154,6 +158,12 @@ fun TransactionDetailSheet(
                         color = MMTheme.colors.warning,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
+                }
+                if (onSplitClick != null || onAddToSubscriptionClick != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                        onSplitClick?.let { OutlinedButton(onClick = it) { Text("Split with Tabby") } }
+                        onAddToSubscriptionClick?.let { OutlinedButton(onClick = it) { Text("Add to subscription") } }
+                    }
                 }
                 val assignedCategory = categories.firstOrNull { it.id == transaction.categoryId }
                 DetailRow(

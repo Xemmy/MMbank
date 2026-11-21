@@ -77,6 +77,7 @@ object AppViewModelProvider {
         initializer { UpcomingPaymentsViewModel(mmBankApp().container) }
         initializer { PayLaterViewModel(mmBankApp().container) }
         initializer { SubscriptionLinkViewModel(mmBankApp().container) }
+        initializer { com.xemmy.mmbank.ui.screens.paylater.QuickSplitViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

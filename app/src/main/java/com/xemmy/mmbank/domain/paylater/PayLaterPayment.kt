@@ -17,7 +17,7 @@ import com.xemmy.mmbank.domain.model.TransactionSource
  *  - the purchase was already captured **and** a provider account is tracked: a linked transfer
  *    pair (the paying account goes down, the provider's liability goes down);
  *  - the purchase was already captured but no provider account: a debit hidden from analytics;
- *  - the purchase was never captured: an ordinary spend.
+ *  - the purchase was never captured, or the captured SMS was itself one installment: an ordinary spend.
  */
 object PayLaterPayment {
 
@@ -27,6 +27,8 @@ object PayLaterPayment {
     data class Legs(val shape: Shape, val paying: Transaction, val counterpart: Transaction?)
 
     fun shapeOf(plan: PayLaterPlan, hasProviderAccount: Boolean): Shape = when {
+        // Only one installment was counted when the purchase was captured, so the rest are real spending.
+        plan.sourceIsInstallment -> Shape.SPEND
         plan.sourceTransactionId != null && hasProviderAccount -> Shape.TRANSFER_PAIR
         plan.sourceTransactionId != null -> Shape.EXCLUDED_DEBIT
         else -> Shape.SPEND

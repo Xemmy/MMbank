@@ -222,6 +222,17 @@ private fun EditorBody(
                 }
             }
 
+            if (existing != null && isSplittable(existing)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { onSplitWithPayLater(existing.id) }, modifier = Modifier.weight(1f)) {
+                        Text("Split with Pay Later")
+                    }
+                    OutlinedButton(onClick = { subscriptionPickerOpen = true }, modifier = Modifier.weight(1f)) {
+                        Text("Add to subscription")
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 editorKindsFor(existing?.kind).forEach { entry ->
                     MMFilterChip(label = entry.label, selected = form.kind == entry, onClick = { form = form.copy(kind = entry) })
@@ -351,16 +362,6 @@ private fun EditorBody(
                     HorizontalDivider(color = MMTheme.colors.borderSubtle)
                     Text("Original message", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
                     Text(raw, style = MaterialTheme.typography.bodySmall)
-                }
-                if (existing.direction == com.xemmy.mmbank.domain.model.TransactionDirection.DEBIT &&
-                    existing.kind == TransactionKind.SPEND
-                ) {
-                    OutlinedButton(onClick = { onSplitWithPayLater(existing.id) }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Split with Pay Later")
-                    }
-                    OutlinedButton(onClick = { subscriptionPickerOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Add to subscription")
-                    }
                 }
                 OutlinedButton(onClick = { deleteOpen = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Delete transaction", color = MMTheme.colors.danger)
