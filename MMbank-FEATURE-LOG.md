@@ -4794,3 +4794,8 @@ Review of every place that reads numbers of 6+ digits. Fixed:
 5. **Arabic digits:** one helper (`util/Digits`) used by account matching, card-ending conflicts, unknown-account suggestions, money fields and Quick add, so "١٢٣٤" equals "1234"; money fields also accept "1,00,000".
 
 Not covered by CI: real SMS wording the user receives. Older payments whose SMS now yields a line number (e.g. "for account 1.2345678") move from the number-less bill to a "line …5678" suggestion; and if the bank SMS names the du account number while the receipt names the mobile, they are two different line numbers and are not paired.
+
+## Net worth card: full amount, one note (0.139.1)
+User screenshot: a 7-digit negative net worth showed as "-Đ1,064,866.…" and the two "excluded from total" lines wrapped into four. The amount now uses `AmountText(fitWidth = true)` (shrinks down to 11sp instead of an ellipsis) and the notes are one line from `netWorthExclusionNote` ("Crypto and credit cards excluded · change in Settings").
+
+Not covered by CI: how the card renders on device at narrow widths and large font sizes.

@@ -10,6 +10,14 @@ import java.math.BigDecimal
 internal fun netWorthDisplay(netWorth: Double, currency: String, approximate: Boolean, hidden: Boolean): String =
     if (hidden) AMOUNT_MASK else (if (approximate) "≈ " else "") + moneyLabel(netWorth, currency)
 
+/** One short line under the net worth saying what the total leaves out; null when nothing is excluded. */
+internal fun netWorthExclusionNote(cryptoExcluded: Boolean, creditCardExcluded: Boolean): String? = when {
+    cryptoExcluded && creditCardExcluded -> "Crypto and credit cards excluded · change in Settings"
+    cryptoExcluded -> "Crypto excluded · change in Settings"
+    creditCardExcluded -> "Credit cards excluded · change in Settings"
+    else -> null
+}
+
 /** Home rows only know credit vs debit, so credits read as income and debits as spending. */
 internal fun homeRowKind(direction: TransactionDirection): TransactionKind =
     if (direction == TransactionDirection.CREDIT) TransactionKind.INCOME else TransactionKind.SPEND

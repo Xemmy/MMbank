@@ -571,6 +571,7 @@ private fun NetWorthCard(
                     display = netWorthDisplay(netWorth, currency, approximate, hidden),
                     color = if (!hidden && netWorth < 0) colors.moneyOut else colors.accent,
                     style = MaterialTheme.typography.headlineMedium,
+                    fitWidth = true,
                 )
                 if (approximate && !hidden) {
                     Text(
@@ -579,18 +580,12 @@ private fun NetWorthCard(
                         color = colors.textSecondary,
                     )
                 }
-                if (cryptoExcluded && !hidden) {
+                netWorthExclusionNote(cryptoExcluded, creditCardExcluded)?.takeIf { !hidden }?.let { note ->
                     Text(
-                        "Crypto excluded from total — change in Settings.",
+                        note,
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary,
-                    )
-                }
-                if (creditCardExcluded && !hidden) {
-                    Text(
-                        "Credit card excluded from total — change in Settings.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
+                        maxLines = 2,
                     )
                 }
             }

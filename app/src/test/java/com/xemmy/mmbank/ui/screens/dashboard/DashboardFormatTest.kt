@@ -56,4 +56,12 @@ class DashboardFormatTest {
         assertEquals("1,235 AED", moneyLabelWhole(1234.6, "AED"))
         assertEquals(AMOUNT_MASK, moneyLabelWhole(1234.6, "AED", hidden = true))
     }
+
+    @Test
+    fun `net worth exclusion note names only what is excluded`() {
+        assertEquals(null, netWorthExclusionNote(false, false))
+        assertEquals("Crypto excluded · change in Settings", netWorthExclusionNote(true, false))
+        assertEquals("Credit cards excluded · change in Settings", netWorthExclusionNote(false, true))
+        assertEquals("Crypto and credit cards excluded · change in Settings", netWorthExclusionNote(true, true))
+    }
 }
