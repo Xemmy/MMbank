@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.intelligence.SubscriptionForm
 import com.xemmy.mmbank.domain.intelligence.SubscriptionLinks
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
@@ -162,21 +163,32 @@ fun SubscriptionPickerDialog(
     )
 }
 
-/** Type a subscription in by hand: merchant, amount, how often, and when it renews next. */
+/** Add (initial == null) or edit a subscription: name, amount, currency, how often, and when it renews next. */
 @Composable
-fun AddSubscriptionDialog(defaultCurrency: String, onDismiss: () -> Unit, onSave: (Subscription) -> Unit) {
-    var merchant by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var currency by remember { mutableStateOf(defaultCurrency) }
-    var cadence by remember { mutableStateOf(SubscriptionCadence.MONTHLY) }
+fun SubscriptionEditorDialog(
+    initial: Subscription?,
+    defaultCurrency: String,
+    onDismiss: () -> Unit,
+    onSave: (Subscription) -> Unit,
+) {
+    val zone = ZoneId.systemDefault()
+    var merchant by remember { mutableStateOf(initial?.merchant.orEmpty()) }
+    var amount by remember { mutableStateOf(initial?.averageAmount?.toPlainString().orEmpty()) }
+    var currency by remember { mutableStateOf(initial?.currencyCode ?: defaultCurrency) }
+    var cadence by remember { mutableStateOf(initial?.cadence ?: SubscriptionCadence.MONTHLY) }
     var cadenceOpen by remember { mutableStateOf(false) }
-    var nextDue by remember { mutableStateOf(LocalDate.now().plusMonths(1)) }
-    val amountValue = amount.trim().toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
-    val valid = merchant.isNotBlank() && amountValue != null && currency.trim().length == 3
+    var nextDue by remember {
+        mutableStateOf(
+            initial?.nextDueDateMillis?.takeIf { it > 0L }
+                ?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }
+                ?: LocalDate.now().plusMonths(1),
+        )
+    }
+    val parsed = SubscriptionForm.validate(merchant, amount, currency)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add subscription") },
+        title = { Text(if (initial == null) "Add subscription" else "Edit subscription") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
@@ -188,7 +200,7 @@ fun AddSubscriptionDialog(defaultCurrency: String, onDismiss: () -> Unit, onSave
                         value = amount, onValueChange = { amount = it },
                         label = { Text("Amount") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        isError = amount.isNotBlank() && amountValue == null,
+                        isError = amount.isNotBlank() && SubscriptionForm.validate("x", amount, "AED") == null,
                         modifier = Modifier.weight(0.6f),
                     )
                     OutlinedTextField(
@@ -210,23 +222,12 @@ fun AddSubscriptionDialog(defaultCurrency: String, onDismiss: () -> Unit, onSave
         },
         confirmButton = {
             TextButton(
-                enabled = valid,
+                enabled = parsed != null,
                 onClick = {
-                    val zone = ZoneId.systemDefault()
-                    onSave(
-                        Subscription(
-                            merchant = merchant.trim(),
-                            averageAmount = amountValue!!.setScale(2, java.math.RoundingMode.HALF_UP),
-                            currencyCode = currency.trim().uppercase(),
-                            cadence = cadence,
-                            nextDueDateMillis = nextDue.atStartOfDay(zone).toInstant().toEpochMilli(),
-                            lastSeenMillis = 0L,
-                            occurrenceCount = 0,
-                            isManual = true,
-                        ),
-                    )
+                    val nextMillis = nextDue.atStartOfDay(zone).toInstant().toEpochMilli()
+                    onSave(SubscriptionForm.build(initial, parsed!!, cadence, nextMillis))
                 },
-            ) { Text("Add") }
+            ) { Text(if (initial == null) "Add" else "Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -241,7 +242,10 @@ data class ChargesState(
     val similar: List<Transaction> = emptyList(),
 )
 
-/** The charges the user attached to a subscription, with unlink, and recent debits that could be added. */
+/**
+ * A subscription's detail: summary, Edit, its linked charges (unlink), recent debits to add,
+ * the merchant page, and Dismiss (detected rows) or Remove (user-owned rows).
+ */
 @Composable
 fun SubscriptionChargesDialog(
     state: ChargesState,
@@ -249,13 +253,34 @@ fun SubscriptionChargesDialog(
     onAdd: (Transaction) -> Unit,
     onRemove: (Transaction) -> Unit,
     onLinkSimilar: () -> Unit,
+    onEdit: () -> Unit,
+    onOpenMerchant: () -> Unit,
+    onDismissRow: (() -> Unit)?,
     onDeleteSubscription: (() -> Unit)?,
 ) {
+    val sub = state.subscription
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(state.subscription.merchant) },
+        title = { Text(sub.merchant) },
         text = {
-            LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LazyColumn(Modifier.heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                item {
+                    Text(
+                        "${moneyLabel(sub.averageAmount, sub.currencyCode)} · ${cadenceName(sub.cadence)}" +
+                            (if (sub.lines > 1) " · ${sub.lines} per cycle" else ""),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        "Next renewal ${Instant.ofEpochMilli(sub.nextDueDateMillis).atZone(ZoneId.systemDefault()).toLocalDate().format(CHARGE_DATE)}" +
+                            " · ${if (sub.isManual) "Yours" else "Detected"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = onEdit) { Text("Edit") }
+                        TextButton(onClick = onOpenMerchant) { Text("Merchant page") }
+                    }
+                }
                 item { SectionLabel("Linked charges") }
                 if (state.similar.isNotEmpty()) {
                     item {
@@ -278,7 +303,7 @@ fun SubscriptionChargesDialog(
                 if (state.candidates.isEmpty()) {
                     item {
                         Text(
-                            "No other recent ${state.subscription.currencyCode} purchases to add.",
+                            "No other recent ${sub.currencyCode} purchases to add.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -290,8 +315,11 @@ fun SubscriptionChargesDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = onDeleteSubscription?.let { delete ->
-            { TextButton(onClick = delete) { Text("Remove subscription") } }
+        dismissButton = {
+            Row {
+                onDismissRow?.let { TextButton(onClick = it) { Text("Dismiss") } }
+                onDeleteSubscription?.let { TextButton(onClick = it) { Text("Remove") } }
+            }
         },
     )
 }

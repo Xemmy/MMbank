@@ -4735,3 +4735,8 @@ Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phase 3. `SubscriptionRadarEngine.scan` kee
 **Not done from the plan:** the "Split into 2" action for a `lines = 2` row, the merchantless (sender-keyed) debit group, a per-account 12% FX tolerance (the loose pass applies it to any merchant), the "after bulk SMS import" scan trigger, and the debounce being kept in AppPreferences (it is per app run).
 
 Not covered by CI: the Possible section and the ? dialog as rendered, the auto-scan on open, and how well detection does on the user's real history (open the ? dialog and report what it says).
+
+## Subscription detail, edit, undo (0.130.0)
+Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phase 4. Tapping a subscription now opens its detail dialog (summary, Yours/Detected, Edit, Merchant page, linked charges with Unlink, Add a charge, Link similar) instead of jumping to the merchant page; the link and ✕ icon buttons on the row are gone. **Edit** reuses `SubscriptionEditorDialog` (name, amount, currency, cadence, next renewal), validated by the pure `SubscriptionForm.validate` and built by `SubscriptionForm.build`, which keeps the row's id, counts and last seen and makes it user-owned. **Dismiss** (detected rows) and **Remove** (user-owned rows) show a "… · Undo" snackbar (`MMScaffold` gained `snackbarHost`); Remove undoes through `SubscriptionSnapshot` + `SubscriptionRepository.restoreRow`, which puts the row back with its id and links. "Not a subscription" on a Possible row is undoable too. A **Dismissed (N)** list at the bottom has Restore. The scan spinner now uses `size`.
+
+Not covered by CI: the dialogs and snackbar as rendered, Undo timing on a device, and Edit of a detected row followed by a rescan on real data.

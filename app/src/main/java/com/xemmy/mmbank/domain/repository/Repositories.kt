@@ -311,6 +311,8 @@ interface SubscriptionRepository {
     suspend fun rescan(transactions: List<Transaction>): RescanCounts
     /** The transactions linked to subscription [subscriptionId], oldest first, with their original merchant text. */
     suspend fun linkedTransactions(subscriptionId: Long): List<Transaction>
+    /** Puts a removed row back with its original id and links (Undo of Remove). */
+    suspend fun restoreRow(snapshot: com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot)
 }
 
 /** What a rescan changed, for the "Found 2 new · 1 updated · 1 removed" message. */
@@ -506,4 +508,10 @@ interface PayLaterRepository {
 
     /** Removes the transaction(s) a payment recorded and marks the installment unpaid again. */
     suspend fun undoPayment(installmentId: Long)
+
+    /**
+     * Stamps an installment as paid by an already-captured transaction (an auto-matched SMS),
+     * recording nothing new. Undo then only unmarks it; the captured transaction stays.
+     */
+    suspend fun matchInstallment(installmentId: Long, transactionId: Long, paidAtMillis: Long)
 }

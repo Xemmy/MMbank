@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,8 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material3.Card
@@ -45,6 +44,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.intelligence.SubscriptionLinks
+import com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
@@ -68,12 +68,20 @@ data class SubscriptionsUiState(
     val subscriptions: List<Subscription> = emptyList(),
     /** Low-confidence detections the user can Track or dismiss as "Not a subscription". */
     val possible: List<Subscription> = emptyList(),
+    /** Rows the user dismissed, listed at the bottom with Restore. */
+    val dismissed: List<Subscription> = emptyList(),
     val scanning: Boolean = false,
     /** True only after a scan has run at least once this session/launch with nothing detected. */
     val hasScannedOnce: Boolean = false,
 )
 
 class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() {
+
+    /** A message with an Undo action, shown as a snackbar. */
+    class UndoEvent(val message: String, val undo: () -> Unit)
+
+    private val _events = kotlinx.coroutines.flow.MutableSharedFlow<UndoEvent>(extraBufferCapacity = 4)
+    val events: kotlinx.coroutines.flow.SharedFlow<UndoEvent> = _events
 
     private val scanning = MutableStateFlow(false)
     /** The last rescan's counts; the screen turns them into the "Found 2 new..." message. */
@@ -83,10 +91,11 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
     val uiState: StateFlow<SubscriptionsUiState> = combine(
         container.subscriptionRepository.observeActive(),
         container.subscriptionRepository.observePossible(),
+        container.subscriptionRepository.observeDismissed(),
         scanning,
         hasScannedOnce,
-    ) { subscriptions, possible, isScanning, scannedOnce ->
-        SubscriptionsUiState(subscriptions, possible, isScanning, scannedOnce)
+    ) { subscriptions, possible, dismissed, isScanning, scannedOnce ->
+        SubscriptionsUiState(subscriptions, possible, dismissed, isScanning, scannedOnce)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SubscriptionsUiState())
 
     init {
@@ -241,18 +250,60 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         }
     }
 
-    fun deleteSubscription(id: Long) {
+    /** Removes a row and its links, with an Undo that puts both back. */
+    fun deleteSubscription(subscription: Subscription) {
         viewModelScope.launch {
-            runCatching { container.subscriptionRepository.delete(id) }
-                .onFailure { container.recordError("SubscriptionsViewModel.deleteSubscription", it) }
+            runCatching {
+                val repository = container.subscriptionRepository
+                val snapshot = SubscriptionSnapshot.of(subscription, repository.links())
+                repository.delete(subscription.id)
+                _events.tryEmit(
+                    UndoEvent("Removed ${subscription.merchant}") {
+                        viewModelScope.launch {
+                            runCatching { repository.restoreRow(snapshot) }
+                                .onFailure { container.recordError("SubscriptionsViewModel.undoRemove", it) }
+                        }
+                    },
+                )
+            }.onFailure { container.recordError("SubscriptionsViewModel.deleteSubscription", it) }
             _charges.value = null
         }
     }
 
-    fun dismiss(id: Long) {
+    fun dismiss(subscription: Subscription) {
         viewModelScope.launch {
-            runCatching { container.subscriptionRepository.dismiss(id) }
-                .onFailure { container.recordError("SubscriptionsViewModel.dismiss", it) }
+            runCatching {
+                container.subscriptionRepository.dismiss(subscription.id)
+                _events.tryEmit(
+                    UndoEvent("Dismissed ${subscription.merchant}") {
+                        viewModelScope.launch {
+                            runCatching { container.subscriptionRepository.restore(subscription.id) }
+                                .onFailure { container.recordError("SubscriptionsViewModel.undoDismiss", it) }
+                        }
+                    },
+                )
+            }.onFailure { container.recordError("SubscriptionsViewModel.dismiss", it) }
+            _charges.value = null
+        }
+    }
+
+    fun restore(id: Long) {
+        viewModelScope.launch {
+            runCatching { container.subscriptionRepository.restore(id) }
+                .onFailure { container.recordError("SubscriptionsViewModel.restore", it) }
+        }
+    }
+
+    /** Saves an edit (keeping the row's id), rescans so its figures follow, and refreshes the open dialog. */
+    fun saveEdit(subscription: Subscription) {
+        viewModelScope.launch {
+            runCatching {
+                val repository = container.subscriptionRepository
+                repository.saveManual(subscription)
+                repository.rescan(container.transactionRepository.observeTransactions().first())
+                val fresh = repository.observeActive().first().firstOrNull { it.id == subscription.id } ?: subscription
+                if (_charges.value != null) _charges.value = loadCharges(fresh)
+            }.onFailure { container.recordError("SubscriptionsViewModel.saveEdit", it) }
         }
     }
 }
@@ -272,6 +323,16 @@ fun SubscriptionsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val charges by viewModel.charges.collectAsStateWithLifecycle()
     var addOpen by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Subscription?>(null) }
+    var dismissedOpen by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(event.message, actionLabel = "Undo")
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) event.undo()
+        }
+    }
     var chooserOpen by remember { mutableStateOf(false) }
     val pickable by viewModel.pickable.collectAsStateWithLifecycle()
     val verdicts by viewModel.verdicts.collectAsStateWithLifecycle()
@@ -284,9 +345,12 @@ fun SubscriptionsScreen(
             onAdd = viewModel::addCharge,
             onRemove = viewModel::removeCharge,
             onLinkSimilar = viewModel::linkSimilar,
-            // Only a hand-added row is really removed; a detected one would just return on the next scan.
+            onEdit = { editing = open.subscription },
+            onOpenMerchant = { viewModel.closeCharges(); onOpenMerchant(open.subscription.merchant) },
+            // A detected row is dismissed (it would just return on the next scan); a user-owned one is removed.
+            onDismissRow = if (open.subscription.isManual) null else { { viewModel.dismiss(open.subscription) } },
             onDeleteSubscription = if (open.subscription.isManual) {
-                { viewModel.deleteSubscription(open.subscription.id) }
+                { viewModel.deleteSubscription(open.subscription) }
             } else {
                 null
             },
@@ -307,10 +371,19 @@ fun SubscriptionsScreen(
         )
     }
     if (addOpen) {
-        AddSubscriptionDialog(
+        SubscriptionEditorDialog(
+            initial = null,
             defaultCurrency = viewModel.defaultCurrency,
             onDismiss = { addOpen = false },
             onSave = { viewModel.addManual(it); addOpen = false },
+        )
+    }
+    editing?.let { row ->
+        SubscriptionEditorDialog(
+            initial = row,
+            defaultCurrency = viewModel.defaultCurrency,
+            onDismiss = { editing = null },
+            onSave = { viewModel.saveEdit(it); editing = null },
         )
     }
 
@@ -322,20 +395,21 @@ fun SubscriptionsScreen(
                 Icon(Icons.Outlined.HelpOutline, contentDescription = "Why isn't something detected?")
             }
             if (state.scanning) {
-                CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp).width(24.dp))
+                CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp).size(24.dp))
             } else {
                 IconButton(onClick = viewModel::scan) {
                     Icon(Icons.Filled.Autorenew, contentDescription = "Scan for subscriptions")
                 }
             }
         },
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { chooserOpen = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add subscription")
             }
         },
     ) { padding ->
-        if (state.subscriptions.isEmpty() && state.possible.isEmpty()) {
+        if (state.subscriptions.isEmpty() && state.possible.isEmpty() && state.dismissed.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     if (state.hasScannedOnce) {
@@ -358,12 +432,7 @@ fun SubscriptionsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(state.subscriptions, key = { it.id }) { subscription ->
-                    SubscriptionRow(
-                        subscription,
-                        onDismiss = { viewModel.dismiss(subscription.id) },
-                        onCharges = { viewModel.openCharges(subscription) },
-                        onClick = { onOpenMerchant(subscription.merchant) },
-                    )
+                    SubscriptionRow(subscription, onClick = { viewModel.openCharges(subscription) })
                 }
                 if (state.possible.isNotEmpty()) {
                     item(key = "possible-header") {
@@ -383,8 +452,20 @@ fun SubscriptionsScreen(
                         PossibleRow(
                             subscription,
                             onTrack = { viewModel.track(subscription.id) },
-                            onReject = { viewModel.dismiss(subscription.id) },
+                            onReject = { viewModel.dismiss(subscription) },
                         )
+                    }
+                }
+                if (state.dismissed.isNotEmpty()) {
+                    item(key = "dismissed-header") {
+                        androidx.compose.material3.TextButton(onClick = { dismissedOpen = !dismissedOpen }) {
+                            Text("Dismissed (${state.dismissed.size}) ${if (dismissedOpen) "▲" else "▼"}")
+                        }
+                    }
+                    if (dismissedOpen) {
+                        items(state.dismissed, key = { "d${it.id}" }) { subscription ->
+                            DismissedRow(subscription, onRestore = { viewModel.restore(subscription.id) })
+                        }
                     }
                 }
             }
@@ -393,7 +474,27 @@ fun SubscriptionsScreen(
 }
 
 @Composable
-private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, onCharges: () -> Unit, onClick: () -> Unit) {
+private fun DismissedRow(subscription: Subscription, onRestore: () -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(subscription.merchant, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "${cadenceLabel(subscription.cadence)} · ${moneyLabel(subscription.averageAmount, subscription.currencyCode)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            androidx.compose.material3.TextButton(onClick = onRestore) { Text("Restore") }
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionRow(subscription: Subscription, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -437,12 +538,6 @@ private fun SubscriptionRow(subscription: Subscription, onDismiss: () -> Unit, o
                         },
                     )
                 }
-            }
-            IconButton(onClick = onCharges) {
-                Icon(Icons.Filled.Link, contentDescription = "Linked charges for ${subscription.merchant}")
-            }
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss ${subscription.merchant}")
             }
         }
     }

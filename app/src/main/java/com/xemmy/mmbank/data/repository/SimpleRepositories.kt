@@ -330,6 +330,11 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
 
     override suspend fun linkedTransactions(subscriptionId: Long): List<Transaction> =
         dao.linkedTransactions(subscriptionId).map { it.toDomain() }
+
+    override suspend fun restoreRow(snapshot: com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot) {
+        dao.upsert(snapshot.row.toEntity())
+        snapshot.links.forEach { dao.upsertLink(it.toEntity()) }
+    }
 }
 
 class BillRepositoryImpl(private val dao: BillDao) : BillRepository {
@@ -513,11 +518,20 @@ class PayLaterRepositoryImpl(
         return PayResult.PAID
     }
 
+    override suspend fun matchInstallment(installmentId: Long, transactionId: Long, paidAtMillis: Long) {
+        val installment = dao.getInstallment(installmentId)?.toDomain() ?: return
+        if (installment.isPaid) return
+        dao.updateInstallment(
+            com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, transactionId, paidAtMillis).toEntity(),
+        )
+    }
+
     override suspend fun undoPayment(installmentId: Long) {
         val installment = dao.getInstallment(installmentId)?.toDomain() ?: return
         if (!installment.isPaid) return
         val payingId = installment.paymentTransactionId
-        if (payingId != null) {
+        // Only transactions this feature recorded are removed; a matched SMS or the split's own charge stays.
+        if (payingId != null && transactionDao.getById(payingId)?.matchedRuleName == com.xemmy.mmbank.domain.paylater.PayLaterPayment.LABEL) {
             val partnerId = transactionDao.getById(payingId)?.linkedTransactionId
             transactions.deleteMany(listOfNotNull(payingId, partnerId))
         }
