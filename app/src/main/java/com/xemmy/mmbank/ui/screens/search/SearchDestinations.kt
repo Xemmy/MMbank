@@ -21,6 +21,7 @@ object SearchDestinations {
         SettingsEntry.PREFERENCES to ("Currency & preferences" to "default currency forex rates exchange default person retention"),
         SettingsEntry.CATEGORIES_PEOPLE to ("Categories & People" to "category people person manage"),
         SettingsEntry.LABELS to ("Labels" to "tags label tag transactions rename merge"),
+        SettingsEntry.MERCHANT_RENAMES to ("Merchant renames" to "merchant rename alias name subscription"),
         SettingsEntry.APPEARANCE to ("Appearance & Backgrounds" to "theme dark light background style colours colors palette graphite obsidian green"),
         SettingsEntry.SECURITY to ("App lock & PIN" to "pin biometric fingerprint password lock security screenshot"),
         SettingsEntry.BACKUP to ("Backup & restore" to "export import encrypted file mmb"),
