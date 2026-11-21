@@ -150,6 +150,7 @@ class SubscriptionRadarTest {
             tx("Netflix", "39.99", daysAgo = 60),
             tx("Netflix", "39.99", daysAgo = 30),
             tx("Netflix", "39.99", daysAgo = 0),
+            tx("Gym Class", "20.00", daysAgo = 21),
             tx("Gym Class", "20.00", daysAgo = 14),
             tx("Gym Class", "20.00", daysAgo = 7),
             tx("Gym Class", "20.00", daysAgo = 1),
