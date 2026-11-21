@@ -144,6 +144,13 @@ data class IgnoredKeywordEntity(
     val createdAt: Long,
 )
 
+/** A user rename applied to future captures: messages from [fromKey] (trimmed, lower-cased) are filed under [toName]. */
+@Entity(tableName = "merchant_aliases")
+data class MerchantAliasEntity(
+    @PrimaryKey val fromKey: String,
+    val toName: String,
+)
+
 @Entity(
     tableName = "transactions",
     foreignKeys = [
@@ -667,6 +674,10 @@ fun com.xemmy.mmbank.domain.model.IgnoredKeyword.toEntity() = IgnoredKeywordEnti
     keyword = keyword,
     createdAt = createdAt,
 )
+
+fun MerchantAliasEntity.toDomain() = com.xemmy.mmbank.domain.model.MerchantAlias(fromKey = fromKey, toName = toName)
+
+fun com.xemmy.mmbank.domain.model.MerchantAlias.toEntity() = MerchantAliasEntity(fromKey = fromKey, toName = toName)
 
 fun TransactionEntity.toDomain() = Transaction(
     id, accountId, amount, currencyCode, direction, merchant, source, sender,

@@ -196,6 +196,10 @@ fun SettingsScreen(
                                 Icons.Filled.PieChart, "Labels",
                                 "Tags you put on transactions — rename, merge, delete",
                             )
+                            SettingsEntry.MERCHANT_RENAMES -> MenuRowSpec(
+                                Icons.Filled.Tune, "Merchant renames",
+                                "Names you chose for future messages — review or delete",
+                            )
                             SettingsEntry.BINANCE -> MenuRowSpec(
                                 Icons.Filled.CurrencyBitcoin, "Binance",
                                 if (viewModel.hasBinanceKeys) "Connected (read-only keys saved)" else "Not configured",

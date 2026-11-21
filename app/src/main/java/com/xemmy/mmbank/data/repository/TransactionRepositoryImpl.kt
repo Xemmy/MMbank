@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.data.repository
 
+import com.xemmy.mmbank.domain.intelligence.MerchantAliases
 import androidx.room.withTransaction
 import com.xemmy.mmbank.data.local.AppDatabase
 import com.xemmy.mmbank.data.local.dao.TransactionDao
@@ -132,6 +133,12 @@ class TransactionRepositoryImpl(
         message: CapturedMessage,
         dedupWindow: Boolean,
     ): IngestResult = database.withTransaction {
+        // The user's "also rename future messages" rules apply first, so category,
+        // account and person learning all see the name the user chose.
+        val parsed = parsed.merchant?.let { name ->
+            val renamed = MerchantAliases.apply(name, database.merchantAliasDao().getAll().map { it.toDomain() })
+            if (renamed == name) parsed else parsed.copy(merchant = renamed)
+        } ?: parsed
         val existing = if (dedupWindow) {
             val incoming = CaptureDedupPolicy.Side(message.source, message.body, parsed.accountNumberSuffix)
             dao.findDuplicateCandidatesInWindow(

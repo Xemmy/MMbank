@@ -18,6 +18,7 @@ import com.xemmy.mmbank.data.local.entity.ExpenseSplitEntity
 import com.xemmy.mmbank.data.local.entity.FriendEntity
 import com.xemmy.mmbank.data.local.entity.GroupExpenseEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredKeywordEntity
+import com.xemmy.mmbank.data.local.entity.MerchantAliasEntity
 import com.xemmy.mmbank.data.local.entity.IgnoredMessagePatternEntity
 import com.xemmy.mmbank.data.local.entity.ParsingRuleEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
@@ -406,6 +407,14 @@ interface TransactionDao {
         """
     )
     suspend fun findRealDebitsByMerchant(merchant: String): List<TransactionEntity>
+
+    /** How many real rows carry [merchant] (trimmed, ignoring case): the N in "Rename all N transactions". */
+    @Query("SELECT COUNT(*) FROM transactions WHERE isDemo = 0 AND merchant IS NOT NULL AND LOWER(TRIM(merchant)) = LOWER(TRIM(:merchant))")
+    suspend fun countByMerchant(merchant: String): Int
+
+    /** Renames every real row whose merchant matches [from] (trimmed, ignoring case) to [to]. Returns the count. */
+    @Query("UPDATE transactions SET merchant = :to WHERE isDemo = 0 AND merchant IS NOT NULL AND LOWER(TRIM(merchant)) = LOWER(TRIM(:from))")
+    suspend fun renameMerchant(from: String, to: String): Int
 
     /**
      * The persons the user explicitly assigned to the two most recent rows at
@@ -976,6 +985,28 @@ interface GroupExpenseDao {
     @Insert
     suspend fun insertAll(entities: List<GroupExpenseEntity>)
 
+}
+
+@Dao
+interface MerchantAliasDao {
+
+    @Query("SELECT * FROM merchant_aliases ORDER BY toName COLLATE NOCASE ASC")
+    fun observeAll(): Flow<List<MerchantAliasEntity>>
+
+    @Query("SELECT * FROM merchant_aliases")
+    suspend fun getAll(): List<MerchantAliasEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: MerchantAliasEntity)
+
+    @Query("DELETE FROM merchant_aliases WHERE fromKey = :fromKey")
+    suspend fun delete(fromKey: String)
+
+    @Query("DELETE FROM merchant_aliases")
+    suspend fun clearAll()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<MerchantAliasEntity>)
 }
 
 @Dao

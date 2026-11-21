@@ -697,6 +697,12 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `merchant alias round-trip preserves every field`() {
+        val original = com.xemmy.mmbank.domain.model.MerchantAlias(fromKey = "apple.com/bill", toName = "Apple")
+        assertEquals(original, original.toEntity().toDomain())
+    }
+
+    @Test
     fun `transaction kind and kindUserSet survive both directions`() {
         TransactionKind.entries.forEach { kind ->
             val original = transaction(excludeFromStats = false).copy(kind = kind, kindUserSet = true)

@@ -255,6 +255,25 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         }
     }
 
+    /** The merchant being renamed and how many transactions carry that name, or null. */
+    val renaming = MutableStateFlow<Pair<String, Int>?>(null)
+
+    fun startRename(merchant: String) {
+        viewModelScope.launch {
+            runCatching { renaming.value = merchant to container.merchantAliasRepository.countMerchant(merchant) }
+                .onFailure { container.recordError("SubscriptionsViewModel.startRename", it) }
+        }
+    }
+
+    fun confirmRename(from: String, to: String, alsoFuture: Boolean) {
+        renaming.value = null
+        viewModelScope.launch {
+            runCatching { container.merchantAliasRepository.renameMerchant(from, to, alsoFuture) }
+                .onFailure { container.recordError("SubscriptionsViewModel.confirmRename", it) }
+            _charges.value = null
+        }
+    }
+
     /** Removes a row and its links, with an Undo that puts both back. */
     fun deleteSubscription(subscription: Subscription) {
         viewModelScope.launch {
@@ -323,6 +342,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
 fun SubscriptionsScreen(
     onBack: () -> Unit,
     onOpenMerchant: (String) -> Unit = {},
+    onEditTransaction: (Long) -> Unit = {},
     viewModel: SubscriptionsViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -342,6 +362,16 @@ fun SubscriptionsScreen(
     val pickable by viewModel.pickable.collectAsStateWithLifecycle()
     val verdicts by viewModel.verdicts.collectAsStateWithLifecycle()
 
+    val renaming by viewModel.renaming.collectAsStateWithLifecycle()
+    renaming?.let { (from, count) ->
+        RenameMerchantDialog(
+            from = from,
+            count = count,
+            initialTo = from,
+            onDismiss = { viewModel.renaming.value = null },
+            onConfirm = { to, future -> viewModel.confirmRename(from, to, future) },
+        )
+    }
     verdicts?.let { list -> WhyNotDetectedDialog(list, onDismiss = viewModel::closeExplain) }
     charges?.let { open ->
         SubscriptionChargesDialog(
@@ -351,6 +381,9 @@ fun SubscriptionsScreen(
             onRemove = viewModel::removeCharge,
             onLinkSimilar = viewModel::linkSimilar,
             onEdit = { editing = open.subscription },
+            onRename = { viewModel.startRename(open.subscription.merchant) },
+            // The dialog closes so it never shows stale charges after the edit; reopen the row to see the change.
+            onEditTransaction = { tx -> viewModel.closeCharges(); onEditTransaction(tx.id) },
             onOpenMerchant = { viewModel.closeCharges(); onOpenMerchant(open.subscription.merchant) },
             // A detected row is dismissed (it would just return on the next scan); a user-owned one is removed.
             onDismissRow = if (open.subscription.isManual) null else { { viewModel.dismiss(open.subscription) } },

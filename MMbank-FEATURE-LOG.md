@@ -4752,3 +4752,10 @@ Not covered by CI: the dialog and the new buttons as rendered, auto-match on a l
 Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phases 5 and 7. The pickers ("From an existing transaction" and the detail dialog's Add a charge) search merchant, SMS text, note and amount (`ChargeFilter`: "39.99" exact, "40" prefix) with date chips (All / This month / Last 3 months / This year / Custom) and show an SMS snippet; the search now runs before the limit, so a charge older than the newest 100 is found (`SubscriptionLinks.pickable`). The Subscriptions screen has a summary card (count plus per-month and per-year per currency via the shared `SubscriptionTotals`, which counts parallel lines and also feeds the Plan card), Overdue / Due this week / Later groups (`SubscriptionGroups`), `MMCard` rows with a Yours/Detected tag, hidden-balance masking, an accurate empty-state text and a "Found 2 new · 1 updated · 1 removed" snackbar after a scan.
 
 Not covered by CI: how the search bar, chips, summary card and groups look and scroll on a device.
+
+## Edit a charge + rename a merchant everywhere (0.133.0, DB v46)
+Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phase 6. Every charge in the subscription detail has **Edit** (opens the transaction editor), and **Rename…** renames all transactions with that merchant name (trimmed, case-insensitive) after showing the count, with "Also rename future messages" saving an alias (`merchant_aliases`, `MIGRATION_45_46`, backup format 22) that `recordParsed` applies at capture (`MerchantAliases.apply`, one hop). A subscription rescan runs afterwards, so renamed charges join their series. Settings → Money → **Merchant renames** lists the saved rules with delete.
+
+Detail dialog closes when you edit a charge (it is not live-backed by flows yet): reopen the row to see the change. The editor is not told which subscription you came from.
+
+Not covered by CI: the rename dialog and Settings list as rendered, an alias being applied to a live SMS, upgrading a real v45 database, and the editor round trip from the Subscriptions screen.

@@ -282,6 +282,8 @@ data class BackupPayload(
     val merchantAccountMappings: List<BackupMerchantAccountMapping> = emptyList(),
     val merchantKindMappings: List<BackupMerchantKindMapping> = emptyList(),
     val ignoredKeywords: List<BackupIgnoredKeyword> = emptyList(),
+    /** Format 22: "also rename future messages" rules. */
+    val merchantAliases: List<BackupMerchantAlias> = emptyList(),
     val extras: BackupExtras? = null,
     val accountChanges: List<BackupAccountChange> = emptyList(),
     /** Format 17: labels and which transactions carry them. */
@@ -431,6 +433,9 @@ data class BackupAccountChange(
 )
 
 @Serializable
+data class BackupMerchantAlias(val fromKey: String, val toName: String)
+
+@Serializable
 data class BackupIgnoredKeyword(
     val id: Long,
     val keyword: String,
@@ -463,7 +468,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 21,
+            formatVersion = 22,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -479,6 +484,7 @@ class BackupManager(
             merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
             merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
             ignoredKeywords = database.ignoredKeywordDao().getAll().map { it.toBackup() },
+            merchantAliases = database.merchantAliasDao().getAll().map { BackupMerchantAlias(it.fromKey, it.toName) },
             accountChanges = database.accountChangeDao().getAll().map { it.toBackup() },
             labels = database.labelDao().getAll().map { BackupLabel(it.id, it.name, it.colorHex) },
             transactionLabels = database.labelDao().getAllLinks().map { BackupTransactionLabel(it.transactionId, it.labelId) },
@@ -620,6 +626,13 @@ class BackupManager(
                 database.ignoredMessagePatternDao().clearAll()
                 database.ignoredMessagePatternDao().insertAll(
                     payload.ignoredMessagePatterns.map { it.toEntity() }
+                )
+            }
+
+            if (payload.formatVersion >= 22) {
+                database.merchantAliasDao().clearAll()
+                database.merchantAliasDao().insertAll(
+                    payload.merchantAliases.map { com.xemmy.mmbank.data.local.entity.MerchantAliasEntity(it.fromKey, it.toName) },
                 )
             }
 

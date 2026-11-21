@@ -120,6 +120,14 @@ object MigrationSql {
         "CREATE INDEX IF NOT EXISTS `index_pay_later_installments_planId` ON `pay_later_installments` (`planId`)",
     )
 
+    /** v46 (from v45): user merchant renames applied to future captures. Purely additive: one new table. */
+    val MIGRATION_45_46_SQL: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS `merchant_aliases` (" +
+            "`fromKey` TEXT NOT NULL, " +
+            "`toName` TEXT NOT NULL, " +
+            "PRIMARY KEY(`fromKey`))",
+    )
+
     /** v45 (from v44): a Pay Later plan whose captured purchase was itself one installment. */
     val MIGRATION_44_45_SQL: List<String> = listOf(
         "ALTER TABLE `pay_later_plans` ADD COLUMN `sourceIsInstallment` INTEGER NOT NULL DEFAULT 0",

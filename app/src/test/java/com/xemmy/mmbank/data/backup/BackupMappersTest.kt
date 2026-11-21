@@ -362,6 +362,18 @@ class BackupMappersTest {
     }
 
     @Test
+    fun `merchant aliases survive the backup round-trip and an old payload has none`() {
+        val alias = BackupMerchantAlias(fromKey = "apple.com/bill", toName = "Apple")
+        val encoded = json.encodeToString(BackupMerchantAlias.serializer(), alias)
+        assertEquals(alias, json.decodeFromString(BackupMerchantAlias.serializer(), encoded))
+        val old = json.decodeFromString<BackupPayload>(
+            """{"formatVersion":21,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",
+               "accounts":[],"transactions":[],"rules":[],"senderLabels":[]}"""
+        )
+        assertEquals(emptyList<BackupMerchantAlias>(), old.merchantAliases)
+    }
+
+    @Test
     fun `a pre-v10 payload decodes with no ignored keywords`() {
         val decoded = json.decodeFromString<BackupPayload>(
             """{"formatVersion":9,"exportedAtMillis":1,"defaultCurrency":"AED","cashbackSpendRaw":"0",

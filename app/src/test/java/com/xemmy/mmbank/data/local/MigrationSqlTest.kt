@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v45 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v46 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v45
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v46
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../45.json`), so
+ *     compiler exports during this same build (`app/schemas/.../46.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/45.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/45.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/46.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/46.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 45.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 46.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -71,7 +71,7 @@ class MigrationSqlTest {
         "bills" to listOf("dueDayAnchor"),
         "subscriptions" to listOf("isManual", "merchantKey", "lines", "confidence"),
     )
-    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links")
+    private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links", "merchant_aliases")
 
     @Before
     fun setUp() {
@@ -107,6 +107,7 @@ class MigrationSqlTest {
         MigrationSql.MIGRATION_42_43_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_43_44_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_44_45_SQL.forEach { migrated.exec(it) }
+        MigrationSql.MIGRATION_45_46_SQL.forEach { migrated.exec(it) }
     }
 
     private fun migrateTo42() {
@@ -160,7 +161,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v45 install table for table`() {
+    fun `an upgraded database matches a fresh v46 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -507,6 +508,21 @@ class MigrationSqlTest {
                 assertEquals(0, rs.getInt(1))
             }
         }
+    }
+
+    @Test
+    fun `v46 adds an empty merchant_aliases table that accepts and replaces rules`() {
+        migrate()
+        assertEquals(0, migrated.count("merchant_aliases"))
+        migrated.exec("INSERT INTO merchant_aliases (fromKey, toName) VALUES ('apple.com/bill', 'Apple')")
+        migrated.exec("INSERT OR REPLACE INTO merchant_aliases (fromKey, toName) VALUES ('apple.com/bill', 'Apple One')")
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT toName FROM merchant_aliases").use { rs ->
+                rs.next()
+                assertEquals("Apple One", rs.getString(1))
+            }
+        }
+        assertEquals(1, migrated.count("merchant_aliases"))
     }
 
     private fun Connection.count(table: String): Int =

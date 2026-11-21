@@ -56,6 +56,7 @@ object AppViewModelProvider {
         initializer { RuleEditorViewModel(createSavedStateHandle(), mmBankApp().container) }
         initializer { SettingsViewModel(mmBankApp().container) }
         initializer { ImportMessagesViewModel(mmBankApp().container) }
+        initializer { com.xemmy.mmbank.ui.screens.settings.MerchantRenamesViewModel(mmBankApp().container) }
         initializer { SubscriptionsViewModel(mmBankApp().container) }
         initializer { AnalyticsViewModel(mmBankApp().container) }
         initializer { GoalsViewModel(mmBankApp().container) }

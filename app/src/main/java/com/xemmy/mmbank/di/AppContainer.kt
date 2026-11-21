@@ -531,6 +531,14 @@ class AppContainer(context: Context) {
     val ignoredMessageRepository: IgnoredMessageRepository by lazy {
         IgnoredMessageRepositoryImpl(database.ignoredMessagePatternDao())
     }
+    val merchantAliasRepository: com.xemmy.mmbank.domain.repository.MerchantAliasRepository by lazy {
+        com.xemmy.mmbank.data.repository.MerchantAliasRepositoryImpl(
+            database = database,
+            transactionDao = database.transactionDao(),
+            dao = database.merchantAliasDao(),
+            afterRename = { subscriptionRepository.rescan(transactionRepository.getAllReal()) },
+        )
+    }
     val subscriptionRepository: SubscriptionRepository by lazy {
         SubscriptionRepositoryImpl(database.subscriptionDao())
     }

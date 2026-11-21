@@ -337,6 +337,37 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
     }
 }
 
+class MerchantAliasRepositoryImpl(
+    private val database: com.xemmy.mmbank.data.local.AppDatabase,
+    private val transactionDao: com.xemmy.mmbank.data.local.dao.TransactionDao,
+    private val dao: com.xemmy.mmbank.data.local.dao.MerchantAliasDao,
+    /** Re-evaluates subscriptions after a rename (wired to the subscription rescan by AppContainer). */
+    private val afterRename: suspend () -> Unit = {},
+) : com.xemmy.mmbank.domain.repository.MerchantAliasRepository {
+
+    override fun observeAll(): Flow<List<com.xemmy.mmbank.domain.model.MerchantAlias>> =
+        dao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun countMerchant(name: String): Int = transactionDao.countByMerchant(name)
+
+    override suspend fun renameMerchant(from: String, to: String, alsoFuture: Boolean): Int {
+        val target = to.trim()
+        if (target.isEmpty()) return 0
+        val count = database.withTransaction {
+            val renamed = transactionDao.renameMerchant(from, target)
+            val key = com.xemmy.mmbank.domain.intelligence.MerchantAliases.keyOf(from)
+            if (alsoFuture && key.isNotEmpty() && key != com.xemmy.mmbank.domain.intelligence.MerchantAliases.keyOf(target)) {
+                dao.upsert(com.xemmy.mmbank.data.local.entity.MerchantAliasEntity(key, target))
+            }
+            renamed
+        }
+        afterRename()
+        return count
+    }
+
+    override suspend fun delete(fromKey: String) = dao.delete(fromKey)
+}
+
 class BillRepositoryImpl(private val dao: BillDao) : BillRepository {
 
     override fun observeAll(): Flow<List<Bill>> =

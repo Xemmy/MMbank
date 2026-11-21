@@ -476,6 +476,9 @@ data class IgnoredMessagePattern(
  * [IgnoredMessagePattern], for "anything mentioning X" rather than "this
  * template". [keyword] is stored trimmed and lowercased.
  */
+/** A rename the user asked to apply to future captures; see MerchantAliases. */
+data class MerchantAlias(val fromKey: String, val toName: String)
+
 data class IgnoredKeyword(
     val id: Long = 0,
     val keyword: String,

@@ -310,6 +310,8 @@ fun SubscriptionChargesDialog(
     onLinkSimilar: () -> Unit,
     onEdit: () -> Unit,
     onOpenMerchant: () -> Unit,
+    onRename: () -> Unit,
+    onEditTransaction: (Transaction) -> Unit,
     onDismissRow: (() -> Unit)?,
     onDeleteSubscription: (() -> Unit)?,
 ) {
@@ -336,6 +338,7 @@ fun SubscriptionChargesDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = onEdit) { Text("Edit") }
                         TextButton(onClick = onOpenMerchant) { Text("Merchant page") }
+                        TextButton(onClick = onRename) { Text("Rename…") }
                     }
                 }
                 item { SectionLabel("Linked charges") }
@@ -354,7 +357,7 @@ fun SubscriptionChargesDialog(
                     }
                 }
                 items(state.linked, key = { "l${it.id}" }) { tx ->
-                    ChargeRow(tx, action = "Unlink", onAction = { onRemove(tx) })
+                    ChargeRow(tx, action = "Unlink", onAction = { onRemove(tx) }, onEdit = { onEditTransaction(tx) })
                 }
                 item { SectionLabel("Add a charge") }
                 item { ChargeSearchBar(search) }
@@ -368,7 +371,7 @@ fun SubscriptionChargesDialog(
                     }
                 }
                 items(shownCandidates, key = { "c${it.id}" }) { tx ->
-                    ChargeRow(tx, action = "Add", onAction = { onAdd(tx) })
+                    ChargeRow(tx, action = "Add", onAction = { onAdd(tx) }, onEdit = { onEditTransaction(tx) })
                 }
             }
         },
@@ -393,7 +396,7 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun ChargeRow(tx: Transaction, action: String, onAction: () -> Unit) {
+private fun ChargeRow(tx: Transaction, action: String, onAction: () -> Unit, onEdit: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(chargeLabel(tx), style = MaterialTheme.typography.bodyMedium)
@@ -406,6 +409,7 @@ private fun ChargeRow(tx: Transaction, action: String, onAction: () -> Unit) {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             }
         }
+        TextButton(onClick = onEdit) { Text("Edit") }
         TextButton(onClick = onAction) { Text(action) }
     }
 }

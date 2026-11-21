@@ -8,6 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.xemmy.mmbank.data.local.dao.MerchantAccountDao
+import com.xemmy.mmbank.data.local.dao.MerchantAliasDao
 import com.xemmy.mmbank.data.local.dao.MerchantKindDao
 import com.xemmy.mmbank.data.local.dao.AccountChangeDao
 import com.xemmy.mmbank.data.local.dao.AccountDao
@@ -53,6 +54,7 @@ import com.xemmy.mmbank.data.local.entity.PayLaterPlanEntity
 import com.xemmy.mmbank.data.local.entity.SubscriptionLinkEntity
 import com.xemmy.mmbank.data.local.entity.SavingsGoalEntity
 import com.xemmy.mmbank.domain.model.CategoryMigrationMapping
+import com.xemmy.mmbank.data.local.entity.MerchantAliasEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupEntity
 import com.xemmy.mmbank.data.local.entity.SplitGroupMemberEntity
@@ -90,8 +92,9 @@ import com.xemmy.mmbank.data.local.entity.WalletBalanceEntity
         PayLaterPlanEntity::class,
         PayLaterInstallmentEntity::class,
         SubscriptionLinkEntity::class,
+        MerchantAliasEntity::class,
     ],
-    version = 45,
+    version = 46,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -121,6 +124,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun accountChangeDao(): AccountChangeDao
     abstract fun labelDao(): LabelDao
     abstract fun payLaterDao(): PayLaterDao
+    abstract fun merchantAliasDao(): MerchantAliasDao
 
     companion object {
         /**
@@ -823,6 +827,11 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_40_41_SQL.forEach(db::execSQL)
         }
 
+        /** v45 -> v46: merchant_aliases (see [MigrationSql.MIGRATION_45_46_SQL]). */
+        val MIGRATION_45_46 = object : Migration(45, 46) {
+            override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_45_46_SQL.forEach(db::execSQL)
+        }
+
         /** v44 -> v45: Pay Later sourceIsInstallment (see [MigrationSql.MIGRATION_44_45_SQL]). */
         val MIGRATION_44_45 = object : Migration(44, 45) {
             override fun migrate(db: SupportSQLiteDatabase) = MigrationSql.MIGRATION_44_45_SQL.forEach(db::execSQL)
@@ -911,7 +920,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
                     MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
                     MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40,
-                    MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45,
+                    MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46,
                 )
                 // Sideloaded test builds get installed out of order; reinstalling
                 // an older APK over a newer DB must not hard-crash at launch.

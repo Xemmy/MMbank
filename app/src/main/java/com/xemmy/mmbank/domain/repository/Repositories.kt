@@ -315,6 +315,21 @@ interface SubscriptionRepository {
     suspend fun restoreRow(snapshot: com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot)
 }
 
+/** Renaming a merchant on past charges, and optionally on future messages. */
+interface MerchantAliasRepository {
+    /** The saved "rename future messages" rules, by new name. */
+    fun observeAll(): Flow<List<com.xemmy.mmbank.domain.model.MerchantAlias>>
+    /** How many real transactions carry [name] (trimmed, ignoring case). */
+    suspend fun countMerchant(name: String): Int
+    /**
+     * Renames every transaction named [from] to [to], remembers the rule when [alsoFuture],
+     * then rescans subscriptions so renamed charges join their series. Returns the count renamed
+     * (0 when [to] is blank).
+     */
+    suspend fun renameMerchant(from: String, to: String, alsoFuture: Boolean): Int
+    suspend fun delete(fromKey: String)
+}
+
 /** What a rescan changed, for the "Found 2 new · 1 updated · 1 removed" message. */
 data class RescanCounts(val created: Int, val updated: Int, val removed: Int)
 
