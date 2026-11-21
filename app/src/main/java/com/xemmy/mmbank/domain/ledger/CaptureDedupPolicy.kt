@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.domain.ledger
 
+import com.xemmy.mmbank.domain.intelligence.BillDetector
 import com.xemmy.mmbank.domain.model.TransactionSource
 
 /**
@@ -20,16 +21,33 @@ object CaptureDedupPolicy {
         val source: TransactionSource,
         val rawMessage: String?,
         val cardEnding: String?,
+        val merchant: String? = null,
+        /** Bill line already stored on the row (transactions.billRef), if any. */
+        val billRef: String? = null,
     )
 
     fun isSameTransaction(existing: Side, incoming: Side): Boolean {
         if (endingsConflict(existing.cardEnding, incoming.cardEnding)) return false
+        // A telecom / utility payment arrives as the bank's deduction SMS AND the provider's
+        // receipt SMS: same channel, different text, same payment -- unless they name different lines.
+        if (isBillPair(existing, incoming)) return true
         if (existing.source == incoming.source) {
             val a = existing.rawMessage?.trim()
             val b = incoming.rawMessage?.trim()
             return !a.isNullOrEmpty() && a == b
         }
         return true
+    }
+
+    /** Both messages are the same provider's payment, exactly one names a line, and they don't name two different lines. */
+    fun isBillPair(existing: Side, incoming: Side): Boolean {
+        val a = BillDetector.providerKey(existing.merchant) ?: return false
+        if (a != BillDetector.providerKey(incoming.merchant)) return false
+        val existingRef = existing.billRef ?: BillDetector.accountRef(existing.rawMessage)
+        val incomingRef = BillDetector.accountRef(incoming.rawMessage)
+        if (existingRef != null && incomingRef != null) return existingRef == incomingRef && existing.rawMessage?.trim() != incoming.rawMessage?.trim()
+        // Two number-less bank SMS are two payments (two lines); one numbered + one plain is the pair.
+        return existingRef != null || incomingRef != null
     }
 
     /** True when both endings are known (digits) and neither is a suffix of the other. */

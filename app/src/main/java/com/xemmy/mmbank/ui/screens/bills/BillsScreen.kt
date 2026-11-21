@@ -69,26 +69,50 @@ data class BillsUiState(
     val currency: String = "USD",
     /** Telecom / utility providers paid most months that are not tracked yet. */
     val suggestions: List<BillDetector.DetectedBill> = emptyList(),
+    /** Bill payments recorded twice (bank SMS + provider receipt) before they were merged at capture. */
+    val duplicateCount: Int = 0,
 )
 
 class BillsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val detected = MutableStateFlow<List<BillDetector.DetectedBill>>(emptyList())
     private val notBills = MutableStateFlow(container.preferences.notBillIds)
+    private val duplicates = MutableStateFlow<List<com.xemmy.mmbank.domain.intelligence.BillDuplicateFinder.Duplicate>>(emptyList())
 
-    val uiState: StateFlow<BillsUiState> = combine(container.billRepository.observeAll(), detected, notBills) { bills, found, hidden ->
+    val uiState: StateFlow<BillsUiState> = combine(container.billRepository.observeAll(), detected, notBills, duplicates) { bills, found, hidden, dups ->
         BillsUiState(
             bills = bills,
             currency = container.preferences.defaultCurrency,
             suggestions = found.filter { d -> d.id !in hidden && bills.none { BillDetector.tracks(it, d) } },
+            duplicateCount = dups.size,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BillsUiState())
 
     init {
+        refreshDetection()
+    }
+
+    private fun refreshDetection() {
         viewModelScope.launch {
             runCatching {
-                detected.value = BillDetector.detect(container.transactionRepository.getAllReal(), java.time.LocalDate.now())
+                val ledger = container.transactionRepository.getAllReal()
+                detected.value = BillDetector.detect(ledger, java.time.LocalDate.now())
+                duplicates.value = com.xemmy.mmbank.domain.intelligence.BillDuplicateFinder.pairs(ledger)
             }.onFailure { container.recordError("BillsViewModel.detect", it) }
+        }
+    }
+
+    /** Deletes the second copy of each doubly recorded bill payment, keeping its line number on the row that stays. */
+    fun mergeDuplicates() {
+        val pairs = duplicates.value
+        viewModelScope.launch {
+            runCatching {
+                pairs.forEach { d ->
+                    container.transactionRepository.setBillRef(d.keep.id, d.ref)
+                    container.transactionRepository.delete(d.remove.id)
+                }
+            }.onFailure { container.recordError("BillsViewModel.mergeDuplicates", it) }
+            refreshDetection()
         }
     }
 
@@ -179,7 +203,7 @@ fun BillsScreen(
             }
         },
     ) { padding ->
-        if (state.bills.isEmpty() && state.suggestions.isEmpty()) {
+        if (state.bills.isEmpty() && state.suggestions.isEmpty() && state.duplicateCount == 0) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     "No bills tracked yet. Tap + to add rent, an EMI, a variable-amount " +
@@ -195,6 +219,25 @@ fun BillsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (state.duplicateCount > 0) {
+                    item(key = "duplicates") {
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    "${state.duplicateCount} bill payments were recorded twice (bank SMS + provider SMS)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    "Merging deletes the second copy, so your spending stops counting them twice. The line number is kept.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MMTheme.colors.textSecondary,
+                                )
+                                TextButton(onClick = viewModel::mergeDuplicates) { Text("Merge") }
+                            }
+                        }
+                    }
+                }
                 if (state.suggestions.isNotEmpty()) {
                     item(key = "suggested-header") {
                         Text(
@@ -211,6 +254,8 @@ fun BillsScreen(
                     items(state.suggestions, key = { "s-${it.id}" }) { suggestion ->
                         SuggestedBillRow(
                             suggestion,
+                            otherLine = suggestion.accountRef == null &&
+                                state.suggestions.any { it.providerKey == suggestion.providerKey && it.accountRef != null },
                             onTrack = { viewModel.track(suggestion) },
                             onNotABill = { viewModel.notABill(suggestion) },
                         )
@@ -397,7 +442,7 @@ private fun AddBillDialog(
 }
 
 @Composable
-private fun SuggestedBillRow(suggestion: BillDetector.DetectedBill, onTrack: () -> Unit, onNotABill: () -> Unit) {
+private fun SuggestedBillRow(suggestion: BillDetector.DetectedBill, otherLine: Boolean, onTrack: () -> Unit, onNotABill: () -> Unit) {
     val money = { a: BigDecimal -> com.xemmy.mmbank.ui.designsystem.moneyLabel(a, suggestion.currencyCode) }
     val range = if (suggestion.minAmount.compareTo(suggestion.maxAmount) == 0) {
         money(suggestion.typicalAmount)
@@ -407,7 +452,7 @@ private fun SuggestedBillRow(suggestion: BillDetector.DetectedBill, onTrack: () 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp).fillMaxWidth()) {
             Text(
-                suggestion.displayName + (suggestion.accountRef?.let { " · line …$it" } ?: ""),
+                suggestion.displayName + (suggestion.accountRef?.let { " · line …$it" } ?: if (otherLine) " · other line (no number in SMS)" else ""),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )

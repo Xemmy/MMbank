@@ -38,6 +38,7 @@ class BackupMappersTest {
 
     private val fullTransaction = TransactionEntity(
         id = 42,
+        billRef = "4567",
         accountId = 7,
         amount = BigDecimal("1234.56"),
         currencyCode = "AED",

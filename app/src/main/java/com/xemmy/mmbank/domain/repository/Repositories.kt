@@ -87,6 +87,8 @@ interface TransactionRepository {
     /** Renames a person on every transaction carrying it; null [to] clears them. */
     suspend fun renamePerson(from: String, to: String?)
     suspend fun delete(transactionId: Long)
+    /** Stores the bill line a provider SMS named on [transactionId] (only when none is stored yet). */
+    suspend fun setBillRef(transactionId: Long, ref: String) {}
     /** Multi-select edit: sets spending category on every id in [ids] at once. Returns affected count. */
     suspend fun bulkSetCategory(ids: List<Long>, category: SpendingCategory): Int
     /** Multi-select edit: sets the analytics-exclusion flag on every id in [ids] at once. Returns affected count. */

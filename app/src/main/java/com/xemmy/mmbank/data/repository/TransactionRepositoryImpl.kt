@@ -10,6 +10,7 @@ import com.xemmy.mmbank.data.local.entity.toEntity
 import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.account.AccountNumberMatcher
 import com.xemmy.mmbank.data.local.entity.MerchantKindMappingEntity
+import com.xemmy.mmbank.domain.intelligence.BillDetector
 import com.xemmy.mmbank.domain.ledger.CaptureDedupPolicy
 import com.xemmy.mmbank.domain.ledger.MerchantKindMatcher
 import com.xemmy.mmbank.domain.ledger.PersonLearner
@@ -74,6 +75,8 @@ class TransactionRepositoryImpl(
      * ingest pipeline's own result.
      */
     private val onTransactionRecorded: (Transaction) -> Unit = {},
+    /** A merged provider receipt just named the line of an already recorded payment (see BillAutoMatch.reassign). */
+    private val onBillRefLearned: (Transaction) -> Unit = {},
     /**
      * Live foreign-currency converter for balances ([LedgerFx]). Null keeps
      * entries at face value, so hand-written test fakes behave as before.
@@ -139,24 +142,32 @@ class TransactionRepositoryImpl(
             val renamed = MerchantAliases.apply(name, database.merchantAliasDao().getAll().map { it.toDomain() })
             if (renamed == name) parsed else parsed.copy(merchant = renamed)
         } ?: parsed
+        // A telecom / utility payment: the provider's receipt can trail the bank SMS by hours.
+        val isBillPayment = BillDetector.isBiller(parsed.merchant)
+        val incomingBillRef = if (isBillPayment) BillDetector.accountRef(message.body) else null
         val existing = if (dedupWindow) {
-            val incoming = CaptureDedupPolicy.Side(message.source, message.body, parsed.accountNumberSuffix)
+            val incoming = CaptureDedupPolicy.Side(message.source, message.body, parsed.accountNumberSuffix, parsed.merchant)
             dao.findDuplicateCandidatesInWindow(
                 amount = parsed.amount,
                 currencyCode = parsed.currencyCode,
                 direction = parsed.direction,
                 timestamp = message.timestampMillis,
-                windowMillis = DEDUP_WINDOW_MILLIS,
+                windowMillis = if (isBillPayment) BILL_DEDUP_WINDOW_MILLIS else DEDUP_WINDOW_MILLIS,
             ).firstOrNull { row ->
-                CaptureDedupPolicy.isSameTransaction(
-                    CaptureDedupPolicy.Side(row.source, row.rawMessage, row.accountNumberSuffix),
-                    incoming,
-                )
+                val near = kotlin.math.abs(row.timestamp - message.timestampMillis) <= DEDUP_WINDOW_MILLIS
+                val side = CaptureDedupPolicy.Side(row.source, row.rawMessage, row.accountNumberSuffix, row.merchant, row.billRef)
+                // Beyond the normal 2 minutes only the provider-receipt pairing may merge.
+                if (near) CaptureDedupPolicy.isSameTransaction(side, incoming) else CaptureDedupPolicy.isBillPair(side, incoming)
             }
         } else {
             null
         }
         if (existing != null) {
+            // Keep the line number the provider's receipt named, whichever message arrived first.
+            if (incomingBillRef != null && existing.billRef == null) {
+                dao.setBillRef(existing.id, incomingBillRef)
+                onBillRefLearned(existing.copy(billRef = incomingBillRef).toDomain())
+            }
             IngestResult.Duplicate(existing.id)
         } else {
             // Rule pin > account number printed in the message > learned
@@ -301,6 +312,7 @@ class TransactionRepositoryImpl(
                 kind = kind,
                 reportedBalance = parsed.reportedBalance,
                 reportedBalanceKind = parsed.reportedBalanceKind,
+                billRef = incomingBillRef,
             )
             val id = dao.insert(entity)
             tryLinkTransfer(entity.copy(id = id))
@@ -511,6 +523,8 @@ class TransactionRepositoryImpl(
     override suspend fun renamePerson(from: String, to: String?) =
         dao.renamePerson(from, to?.trim()?.takeIf { it.isNotBlank() }, demoMode.value)
 
+    override suspend fun setBillRef(transactionId: Long, ref: String) = dao.setBillRef(transactionId, ref)
+
     override suspend fun delete(transactionId: Long) {
         deleteAndRelease(listOf(transactionId))
     }
@@ -576,6 +590,9 @@ class TransactionRepositoryImpl(
     companion object {
         /** ±2 minutes, per the dedup strategy. */
         const val DEDUP_WINDOW_MILLIS: Long = 2 * 60 * 1000
+
+        /** How far apart a bank deduction SMS and the provider's receipt for one bill payment may arrive. */
+        const val BILL_DEDUP_WINDOW_MILLIS: Long = 24 * 60 * 60 * 1000
 
         /** matchedRuleName on both legs of a transfer the user entered by hand. */
         const val MANUAL_TRANSFER_LABEL = "Manual transfer"

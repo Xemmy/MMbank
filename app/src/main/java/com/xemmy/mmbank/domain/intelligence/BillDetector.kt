@@ -66,6 +66,9 @@ object BillDetector {
         return SERVICE_NUMBER.find(text)?.groupValues?.get(1)?.takeLast(4)
     }
 
+    /** The line a payment was for: stored on the row (merged receipt) or read from its own SMS. */
+    fun lineOf(tx: Transaction): String? = tx.billRef ?: accountRef(tx.rawMessage)
+
     private val BILL_WORDING = Regex("\\bbill\\b|invoice|postpaid", RegexOption.IGNORE_CASE)
 
     data class DetectedBill(
@@ -93,11 +96,16 @@ object BillDetector {
      */
     fun detect(transactions: List<Transaction>, today: LocalDate, zone: ZoneId = ZoneId.systemDefault()): List<DetectedBill> {
         val window = (0L..3L).map { YearMonth.from(today).minusMonths(it) }.toSet()
+        // A payment recorded twice (bank SMS + provider receipt) counts once, under the receipt's line number.
+        val duplicates = BillDuplicateFinder.pairs(transactions)
+        val dropped = duplicates.map { it.remove.id }.toSet()
+        val refFor = duplicates.associate { it.keep.id to it.ref }
         return transactions
             .asSequence()
             .filter { it.kind == TransactionKind.SPEND && !it.excludeFromStats && it.direction == TransactionDirection.DEBIT }
+            .filter { it.id !in dropped }
             .mapNotNull { tx -> providerKey(tx.merchant)?.let { key -> key to tx } }
-            .groupBy({ (key, tx) -> Triple(key, tx.currencyCode.uppercase(), accountRef(tx.rawMessage)) }, { it.second })
+            .groupBy({ (key, tx) -> Triple(key, tx.currencyCode.uppercase(), refFor[tx.id] ?: lineOf(tx)) }, { it.second })
             .mapNotNull { (group, txs) -> build(group.first, group.second, group.third, txs, window, zone) }
             .sortedWith(compareBy({ it.displayName.lowercase() }, { it.accountRef.orEmpty() }))
     }
@@ -189,14 +197,22 @@ object BillAutoMatch {
     fun match(bills: List<Bill>, tx: Transaction, zone: ZoneId = ZoneId.systemDefault()): Bill? {
         if (tx.kind != TransactionKind.SPEND || tx.direction != TransactionDirection.DEBIT || tx.excludeFromStats) return null
         val key = BillDetector.providerKey(tx.merchant) ?: return null
-        val ref = BillDetector.accountRef(tx.rawMessage)
+        val ref = BillDetector.lineOf(tx)
         val sameProvider = bills.filter {
             it.providerKey == key && it.recurrence != null && it.currencyCode.equals(tx.currencyCode, ignoreCase = true)
         }
         // A bill for one line never takes a payment that names another line.
         val eligible = sameProvider.filter { b -> b.accountRef == null || ref == null || b.accountRef == ref }
         val exact = eligible.filter { ref != null && it.accountRef == ref }
-        val pool = exact.ifEmpty { if (ref == null && eligible.size > 1) eligible.filter { it.accountRef == null }.ifEmpty { eligible } else eligible }
+        // A number-less payment (bank SMS only) belongs to the provider's number-less bill when there is one.
+        val pool = exact.ifEmpty { if (ref == null) eligible.filter { it.accountRef == null }.ifEmpty { eligible } else eligible }
+        // ...unless it is the bank's copy of a numbered line's payment the provider SMS already paid.
+        if (ref == null && sameProvider.any { b ->
+                b.accountRef != null && b.lastPaidMillis != null &&
+                    kotlin.math.abs(tx.timestampMillis - b.lastPaidMillis) <= DAY_MILLIS &&
+                    b.amount.compareTo(tx.amount.setScale(2, RoundingMode.HALF_UP)) == 0
+            }
+        ) return null
 
         return pool
             .mapNotNull { bill -> catchUp(bill, tx.timestampMillis, zone)?.let { bill to it } }
@@ -207,6 +223,37 @@ object BillAutoMatch {
                 val advanced = BillAdvancer.advance(due, zone) ?: return null
                 advanced.copy(amount = tx.amount.setScale(2, RoundingMode.HALF_UP), lastPaidMillis = tx.timestampMillis)
             }
+    }
+
+    /**
+     * A payment's line became known after it was matched (the bank SMS arrived first and paid the
+     * number-less bill; the provider receipt then named the line). Returns the bills to save: the
+     * wrongly paid number-less bill put back one cycle, and the numbered line's bill paid instead.
+     */
+    fun reassign(bills: List<Bill>, tx: Transaction, zone: ZoneId = ZoneId.systemDefault()): List<Bill> {
+        val key = BillDetector.providerKey(tx.merchant) ?: return emptyList()
+        val ref = BillDetector.lineOf(tx) ?: return emptyList()
+        val changed = mutableListOf<Bill>()
+        val wrong = bills.firstOrNull {
+            it.providerKey == key && it.accountRef == null && it.lastPaidMillis == tx.timestampMillis
+        }
+        if (wrong != null) changed += wrong.copy(nextDueDateMillis = retreat(wrong, zone), lastPaidMillis = null)
+        val numbered = bills.filter { it.providerKey == key && it.accountRef == ref }
+        if (numbered.none { it.lastPaidMillis == tx.timestampMillis }) {
+            match(numbered, tx, zone)?.let { changed += it }
+        }
+        return changed
+    }
+
+    /** One cycle back (the inverse of [BillAdvancer.advance] for a monthly-or-longer bill). */
+    private fun retreat(bill: Bill, zone: ZoneId): Long {
+        val period = bill.recurrence?.period ?: return bill.nextDueDateMillis
+        var prev = Instant.ofEpochMilli(bill.nextDueDateMillis).atZone(zone).minus(period)
+        val anchor = bill.dueDayAnchor
+        if (period.toTotalMonths() > 0 && anchor != null) {
+            prev = prev.withDayOfMonth(minOf(anchor, prev.toLocalDate().lengthOfMonth()))
+        }
+        return prev.toInstant().toEpochMilli()
     }
 
     private fun paysCycle(bill: Bill, paidAt: Long): Boolean =
@@ -221,5 +268,45 @@ object BillAutoMatch {
             steps++
         }
         return current
+    }
+}
+
+/**
+ * Payments recorded twice before 0.137.0 merged them at capture: the bank's deduction SMS and the
+ * provider's receipt (which names the line), same provider, same amount, within a day.
+ */
+object BillDuplicateFinder {
+
+    private const val WINDOW_MILLIS = 24L * 60 * 60 * 1000
+
+    /** [keep] stays (the bank row, which carries the account), [remove] is the receipt copy, [ref] its line. */
+    data class Duplicate(val keep: Transaction, val remove: Transaction, val ref: String)
+
+    fun pairs(transactions: List<Transaction>): List<Duplicate> {
+        val bills = transactions.filter {
+            it.kind == TransactionKind.SPEND && !it.excludeFromStats && it.direction == TransactionDirection.DEBIT &&
+                BillDetector.providerKey(it.merchant) != null
+        }
+        val numbered = bills.filter { BillDetector.lineOf(it) != null }
+        val plain = bills.filter { BillDetector.lineOf(it) == null }.toMutableList()
+        val result = mutableListOf<Duplicate>()
+        for (receipt in numbered.sortedBy { it.timestampMillis }) {
+            val key = BillDetector.providerKey(receipt.merchant)
+            val bank = plain
+                .filter {
+                    BillDetector.providerKey(it.merchant) == key &&
+                        it.currencyCode.equals(receipt.currencyCode, ignoreCase = true) &&
+                        it.amount.compareTo(receipt.amount) == 0 &&
+                        kotlin.math.abs(it.timestampMillis - receipt.timestampMillis) <= WINDOW_MILLIS
+                }
+                .minByOrNull { kotlin.math.abs(it.timestampMillis - receipt.timestampMillis) } ?: continue
+            plain.remove(bank)
+            // Keep whichever row is filed into an account (normally the bank's), else the bank row.
+            val keepBank = bank.accountId != null || receipt.accountId == null
+            val keep = if (keepBank) bank else receipt
+            val remove = if (keepBank) receipt else bank
+            result += Duplicate(keep, remove, BillDetector.lineOf(receipt)!!)
+        }
+        return result
     }
 }

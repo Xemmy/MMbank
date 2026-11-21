@@ -133,6 +133,18 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `transaction round-trip keeps the bill line`() {
+        val tx = com.xemmy.mmbank.domain.model.Transaction(
+            id = 5, amount = BigDecimal("168.41"), currencyCode = "AED",
+            direction = com.xemmy.mmbank.domain.model.TransactionDirection.DEBIT, merchant = "DU",
+            source = com.xemmy.mmbank.domain.model.TransactionSource.SMS, timestampMillis = 1_700_000_000_000,
+            billRef = "4567",
+        )
+        assertEquals(tx, tx.toEntity().toDomain())
+        assertEquals("4567", tx.toEntity().billRef)
+    }
+
+    @Test
     fun `transaction entity defaults excludeFromStats to false`() {
         // Mirrors the migration's NOT NULL DEFAULT 0: rows predating v9 load unflagged.
         val entity = TransactionEntity(

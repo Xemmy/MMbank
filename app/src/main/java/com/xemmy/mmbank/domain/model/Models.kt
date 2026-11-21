@@ -342,6 +342,11 @@ data class Transaction(
     val historyOnly: Boolean = false,
     /** Free-text note the user added (see the full-screen editor); searchable in Activity. */
     val note: String? = null,
+    /**
+     * Phone line / contract (last 4 digits) a telecom or utility payment was for, read from the
+     * provider's own SMS -- kept even when that SMS was merged into the bank's deduction SMS.
+     */
+    val billRef: String? = null,
 ) {
     /** In no account and not set aside as history: the rows the app still asks the user to sort. */
     val needsAccount: Boolean get() = accountId == null && !historyOnly

@@ -220,6 +220,8 @@ data class TransactionEntity(
     val historyOnly: Boolean = false,
     /** The user's free-text note; see [Transaction.note]. */
     val note: String? = null,
+    /** Bill line (last 4 digits) read from a provider SMS; see [Transaction.billRef]. */
+    val billRef: String? = null,
 )
 
 /** A tag the user can put on transactions (several per row); see [com.xemmy.mmbank.domain.model.Label]. */
@@ -688,7 +690,7 @@ fun TransactionEntity.toDomain() = Transaction(
     spendingCategory, excludeFromStats, linkedTransactionId, isDemo,
     categoryId, needsCategoryApproval, suggestedCategoryName, suggestedCategoryIcon, suggestedCategoryColorHex,
     extractedMerchant, aiConfidence, kind, kindUserSet, reportedBalance, reportedBalanceKind,
-    categorySource, personSource, refundOfId, historyOnly, note,
+    categorySource, personSource, refundOfId, historyOnly, note, billRef,
 )
 
 fun Transaction.toEntity() = TransactionEntity(
@@ -727,6 +729,7 @@ fun Transaction.toEntity() = TransactionEntity(
     refundOfId = refundOfId,
     historyOnly = historyOnly,
     note = note,
+    billRef = billRef,
 )
 
 fun CategoryEntity.toDomain() = Category(id, name, icon, colorHex, isCustom, monthlyCap, parentCategoryId, sortOrder, flow)

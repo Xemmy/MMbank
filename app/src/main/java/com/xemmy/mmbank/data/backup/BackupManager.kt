@@ -153,6 +153,8 @@ data class BackupTransaction(
     val historyOnly: Boolean = false,
     /** Format 17: the user's note. Absent on older backups. */
     val note: String? = null,
+    /** Format 24: bill line from a provider SMS. Absent on older backups. */
+    val billRef: String? = null,
 )
 
 @Serializable
@@ -471,7 +473,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 23,
+            formatVersion = 24,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -807,6 +809,7 @@ internal fun TransactionEntity.toBackup() = BackupTransaction(
     refundOfId = refundOfId,
     historyOnly = historyOnly,
     note = note,
+    billRef = billRef,
 )
 
 /**
@@ -868,6 +871,7 @@ internal fun BackupTransaction.toEntity(onCreditCard: Boolean = false): Transact
         // The flag only means something on a row with no account.
         historyOnly = historyOnly && accountId == null,
         note = note,
+        billRef = billRef,
     )
 }
 

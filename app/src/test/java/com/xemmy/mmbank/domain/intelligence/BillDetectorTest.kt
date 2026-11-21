@@ -152,4 +152,67 @@ class BillDetectorTest {
         assertEquals(listOf("1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "31st"),
             listOf(1, 2, 3, 4, 11, 12, 13, 21, 22, 31).map(::ordinal))
     }
+
+    @Test fun `a payment recorded twice counts once under the receipt's line, the other line stays separate`() {
+        val ledger = listOf(9, 10, 11).flatMap { m ->
+            listOf(
+                // Line A: bank SMS + du receipt for the same payment.
+                tx(m * 10L, "DU", LocalDate.of(2026, m, 5), "150.00").copy(accountId = 3),
+                tx(m * 10L + 1, "du", LocalDate.of(2026, m, 5), "150.00", "Payment received for 0551234567"),
+                // Line B: bank SMS only.
+                tx(m * 10L + 2, "DU", LocalDate.of(2026, m, 20), "320.00").copy(accountId = 3),
+            )
+        }
+        val pairs = BillDuplicateFinder.pairs(ledger)
+        assertEquals(3, pairs.size)
+        assertTrue(pairs.all { it.ref == "4567" && it.keep.accountId == 3L })
+
+        val bills = BillDetector.detect(ledger, today, utc)
+        assertEquals(2, bills.size)
+        val lineA = bills.single { it.accountRef == "4567" }
+        assertEquals(BigDecimal("150.00"), lineA.typicalAmount)
+        assertEquals(1, lineA.paymentsPerMonth)
+        val lineB = bills.single { it.accountRef == null }
+        assertEquals(BigDecimal("320.00"), lineB.typicalAmount)
+        assertEquals(1, lineB.paymentsPerMonth)
+    }
+
+    @Test fun `duplicates need the same provider, amount and day`() {
+        val receipt = tx(1, "du", LocalDate.of(2026, 11, 5), "150.00", "Payment received for 0551234567")
+        assertTrue(BillDuplicateFinder.pairs(listOf(receipt, tx(2, "DU", LocalDate.of(2026, 11, 5), "151.00"))).isEmpty())
+        assertTrue(BillDuplicateFinder.pairs(listOf(receipt, tx(3, "DU", LocalDate.of(2026, 11, 7), "150.00"))).isEmpty())
+        assertTrue(BillDuplicateFinder.pairs(listOf(receipt, tx(4, "DEWA", LocalDate.of(2026, 11, 5), "150.00"))).isEmpty())
+    }
+
+    @Test fun `a stored bill line wins over the SMS text`() {
+        val merged = tx(1, "DU", LocalDate.of(2026, 11, 5), "150.00").copy(billRef = "4567")
+        assertEquals("4567", BillDetector.lineOf(merged))
+    }
+
+    @Test fun `a number-less payment pays the number-less bill, not the numbered line`() {
+        val lineA = bill(LocalDate.of(2026, 11, 9), ref = "4567", id = 1).copy(providerKey = "du")
+        val lineB = bill(LocalDate.of(2026, 11, 20), id = 2).copy(providerKey = "du")
+        val bankOnly = tx(20, "DU", LocalDate.of(2026, 11, 18), "320.00")
+        assertEquals(2L, BillAutoMatch.match(listOf(lineA, lineB), bankOnly, utc)!!.id)
+    }
+
+    @Test fun `the bank copy of a numbered payment is ignored`() {
+        val paidA = bill(LocalDate.of(2026, 12, 9), ref = "4567", lastPaid = LocalDate.of(2026, 11, 9), id = 1)
+            .copy(amount = BigDecimal("150.00"), providerKey = "du")
+        val lineB = bill(LocalDate.of(2026, 11, 20), id = 2).copy(providerKey = "du")
+        val bankCopy = tx(21, "DU", LocalDate.of(2026, 11, 9), "150.00")
+        assertNull(BillAutoMatch.match(listOf(paidA, lineB), bankCopy, utc))
+    }
+
+    @Test fun `a line learned after matching moves the payment to the numbered bill`() {
+        val lineA = bill(LocalDate.of(2026, 11, 9), ref = "4567", id = 1).copy(providerKey = "du")
+        // The bank SMS came first and paid line B by mistake.
+        val paidAt = LocalDate.of(2026, 11, 10)
+        val wronglyPaidB = bill(LocalDate.of(2026, 12, 20), lastPaid = paidAt, id = 2).copy(providerKey = "du")
+        val tx = tx(22, "DU", paidAt, "150.00").copy(billRef = "4567")
+        val changed = BillAutoMatch.reassign(listOf(lineA, wronglyPaidB), tx, utc).associateBy { it.id }
+        assertEquals(LocalDate.of(2026, 11, 20).atStartOfDay(utc).toInstant().toEpochMilli(), changed.getValue(2).nextDueDateMillis)
+        assertNull(changed.getValue(2).lastPaidMillis)
+        assertEquals(LocalDate.of(2026, 12, 9).atStartOfDay(utc).toInstant().toEpochMilli(), changed.getValue(1).nextDueDateMillis)
+    }
 }

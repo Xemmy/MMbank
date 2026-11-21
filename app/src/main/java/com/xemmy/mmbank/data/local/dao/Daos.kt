@@ -126,6 +126,10 @@ interface TransactionDao {
         windowMillis: Long,
     ): List<TransactionEntity>
 
+    /** Keeps the bill line a merged provider SMS named (never overwrites one already stored). */
+    @Query("UPDATE transactions SET billRef = :ref WHERE id = :id AND billRef IS NULL")
+    suspend fun setBillRef(id: Long, ref: String)
+
     /**
      * The row already captured from this exact message text, if any. Backs the
      * paste importer's "already imported" check: re-pasting the same backlog

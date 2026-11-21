@@ -489,6 +489,7 @@ class AppContainer(context: Context) {
                 matchProviderBill(transaction)
                 checkUnusualCharge(transaction)
             },
+            onBillRefLearned = { transaction -> reassignProviderBill(transaction) },
         )
     }
     val transactionRepository: TransactionRepository get() = transactionRepositoryImpl
@@ -926,6 +927,16 @@ class AppContainer(context: Context) {
                 val bills = billRepository.observeAll().first()
                 com.xemmy.mmbank.domain.intelligence.BillAutoMatch.match(bills, transaction)?.let { billRepository.save(it) }
             }.onFailure { recordError("AppContainer.matchProviderBill", it) }
+        }
+    }
+
+    /** The provider receipt arrived after the bank SMS: move the payment to the numbered line's bill. */
+    private fun reassignProviderBill(transaction: Transaction) {
+        applicationScope.launch {
+            runCatching {
+                val bills = billRepository.observeAll().first()
+                com.xemmy.mmbank.domain.intelligence.BillAutoMatch.reassign(bills, transaction).forEach { billRepository.save(it) }
+            }.onFailure { recordError("AppContainer.reassignProviderBill", it) }
         }
     }
 

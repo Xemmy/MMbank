@@ -35,4 +35,34 @@ class CaptureDedupPolicyTest {
         assertTrue(same(Side(SMS, "a", "1234"), Side(PUSH_NOTIFICATION, "b", null)))
         assertTrue(same(Side(SMS, "a", "**1234"), Side(PUSH_NOTIFICATION, "b", "1234")))
     }
+
+    private val bank = Side(SMS, "Your card XXXX1111 was debited AED 168.41 at DU", null, merchant = "DU")
+    private val receipt = Side(SMS, "Thank you for your payment of AED 168.41 for 0551234567", null, merchant = "du")
+
+    @Test fun billReceiptAndBankSmsForOnePaymentAreOne() {
+        assertTrue(same(bank, receipt))
+        assertTrue(same(receipt, bank))
+    }
+
+    @Test fun twoNumberlessBankSmsFromOneProviderAreTwoPayments() {
+        val other = Side(SMS, "Your card XXXX1111 was debited AED 168.41 at DU ref 2", null, merchant = "DU")
+        assertFalse(same(bank, other))
+    }
+
+    @Test fun receiptsNamingDifferentLinesAreNeverMerged() {
+        val lineB = Side(SMS, "Thank you for your payment of AED 168.41 for 0509998910", null, merchant = "du")
+        assertFalse(same(receipt, lineB))
+        assertFalse(CaptureDedupPolicy.isBillPair(receipt, lineB))
+    }
+
+    @Test fun differentProvidersAreNotABillPair() {
+        val dewa = Side(SMS, "DEWA payment AED 168.41 for 0551234567", null, merchant = "DEWA")
+        assertFalse(CaptureDedupPolicy.isBillPair(bank, dewa))
+    }
+
+    @Test fun aStoredLineOnTheExistingRowCounts() {
+        val merged = bank.copy(billRef = "4567")
+        val otherLine = Side(SMS, "Thank you for your payment of AED 168.41 for 0509998910", null, merchant = "du")
+        assertFalse(CaptureDedupPolicy.isBillPair(merged, otherLine))
+    }
 }

@@ -16,10 +16,10 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v47 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v48 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v47
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v48
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
  *     compiler exports during this same build (`app/schemas/.../46.json`), so
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/47.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/47.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/48.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/48.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 47.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 48.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -64,7 +64,7 @@ class MigrationSqlTest {
 
     /** Columns each table gained in 26-31; removed to rebuild the v25 shape. */
     private val addedColumns = mapOf(
-        "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind", "categorySource", "personSource", "refundOfId", "historyOnly", "note"),
+        "transactions" to listOf("kind", "kindUserSet", "reportedBalance", "reportedBalanceKind", "categorySource", "personSource", "refundOfId", "historyOnly", "note", "billRef"),
         "parsing_rules" to listOf("assignKind"),
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
@@ -109,6 +109,7 @@ class MigrationSqlTest {
         MigrationSql.MIGRATION_44_45_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_45_46_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_46_47_SQL.forEach { migrated.exec(it) }
+        MigrationSql.MIGRATION_47_48_SQL.forEach { migrated.exec(it) }
     }
 
     private fun migrateTo42() {
@@ -162,7 +163,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v47 install table for table`() {
+    fun `an upgraded database matches a fresh v48 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -548,6 +549,13 @@ class MigrationSqlTest {
                 assertEquals(null, rs.getObject(5))
             }
         }
+    }
+
+    @Test
+    fun `v48 adds an empty bill line to transactions and accepts one`() {
+        migrate()
+        assertTrue("billRef" in migrated.columns("transactions"))
+        migrated.exec("UPDATE transactions SET billRef = '4567' WHERE id = -1")
     }
 
     private fun Connection.count(table: String): Int =

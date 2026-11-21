@@ -120,6 +120,11 @@ object MigrationSql {
         "CREATE INDEX IF NOT EXISTS `index_pay_later_installments_planId` ON `pay_later_installments` (`planId`)",
     )
 
+    /** v48 (from v47): the bill line a provider SMS named, kept on the merged transaction. Additive, nullable. */
+    val MIGRATION_47_48_SQL: List<String> = listOf(
+        "ALTER TABLE `transactions` ADD COLUMN `billRef` TEXT",
+    )
+
     /** v47 (from v46): a bill can follow a telecom/utility provider's captured payments (BillAutoMatch). Additive, nullable. */
     val MIGRATION_46_47_SQL: List<String> = listOf(
         "ALTER TABLE `bills` ADD COLUMN `providerKey` TEXT",
