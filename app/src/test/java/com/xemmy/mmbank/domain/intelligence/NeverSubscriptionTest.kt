@@ -39,7 +39,7 @@ class NeverSubscriptionTest {
         assertNull(NeverSubscription.reasonFor("Careem Plus"))
         assertNull(NeverSubscription.reasonFor("Uber One"))
         assertNull(NeverSubscription.reasonFor("Netflix"))
-        assertNull(NeverSubscription.reasonFor("e& TELECOM CORP"))
+        assertNull(NeverSubscription.reasonFor("DU Google Payment"))
         assertNull(NeverSubscription.reasonFor("Anghami"))
         assertNull(NeverSubscription.reasonFor("Shahid VIP"))
         assertNull(NeverSubscription.reasonFor(null))
@@ -75,6 +75,13 @@ class NeverSubscriptionTest {
         val verdicts = SubscriptionRadarEngine.explain(ledger, utc)
         assertEquals("Netflix", verdicts.first().merchant)
         assertEquals("CAREEM RIDE", verdicts.last().merchant)
+    }
+
+    @Test fun `telecom and utility providers are bills, not subscriptions`() {
+        assertEquals("Utility or telecom bill, see Bills", NeverSubscription.reasonFor("e& TELECOM CORP"))
+        assertEquals("Utility or telecom bill, see Bills", NeverSubscription.reasonFor("ETISALAT"))
+        assertEquals("Utility or telecom bill, see Bills", NeverSubscription.reasonFor("DU"))
+        assertEquals("Utility or telecom bill, see Bills", NeverSubscription.reasonFor("DEWA"))
     }
 
     @Test fun `a built-in merchant is not detected even with a perfect rhythm`() {

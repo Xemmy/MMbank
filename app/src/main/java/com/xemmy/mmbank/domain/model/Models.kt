@@ -719,6 +719,12 @@ data class Bill(
     val createdAt: Long,
     /** Day of month the user picked, kept so month-end clamping in a short month is not permanent. */
     val dueDayAnchor: Int? = null,
+    /** Provider brand key (see BillDetector) whose captured payments mark this bill paid; null for a manual bill. */
+    val providerKey: String? = null,
+    /** Last 4 digits of the line/account this bill is for, when the provider's SMS names one. */
+    val accountRef: String? = null,
+    /** When a captured payment last paid this bill (auto-match), so a second payment in one cycle is ignored. */
+    val lastPaidMillis: Long? = null,
 )
 
 /** How often a [PayLaterPlan]'s installments fall due. */

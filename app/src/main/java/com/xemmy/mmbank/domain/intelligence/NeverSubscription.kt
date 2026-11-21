@@ -33,6 +33,7 @@ object NeverSubscription {
     fun reasonFor(merchant: String?): String? {
         val name = merchant?.trim().orEmpty()
         if (name.isEmpty()) return null
+        if (BillDetector.isBiller(name)) return "Utility or telecom bill, see Bills"
         return RULES.firstOrNull { it.pattern.containsMatchIn(name) }?.let { "${it.label}, not a subscription" }
     }
 }

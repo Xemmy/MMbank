@@ -336,6 +336,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, value).apply()
 
+    /** Detected provider bills (BillDetector.DetectedBill.id) the user said are not bills to track. */
+    var notBillIds: Set<String>
+        get() = prefs.getStringSet(KEY_NOT_BILL, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_NOT_BILL, value).apply()
+
     /** Brand keys the user marked "never a subscription" (see NeverSubscription); not in backups. */
     var neverSubscriptionKeys: Set<String>
         get() = prefs.getStringSet(KEY_NEVER_SUBSCRIPTION, emptySet()) ?: emptySet()
@@ -514,6 +519,7 @@ class AppPreferences(context: Context) {
         const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
         const val KEY_NEVER_SUBSCRIPTION = "never_subscription_keys"
+        const val KEY_NOT_BILL = "not_bill_ids"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
         const val KEY_LEDGER_KIND_BACKFILL_VERSION = "ledger_kind_backfill_version"
         const val KEY_CARD_REMINDERS_SENT = "card_reminders_sent"

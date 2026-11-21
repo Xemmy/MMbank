@@ -16,10 +16,10 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v46 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v47 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v46
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v47
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
  *     compiler exports during this same build (`app/schemas/.../46.json`), so
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/46.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/46.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/47.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/47.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 46.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 47.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -68,7 +68,7 @@ class MigrationSqlTest {
         "parsing_rules" to listOf("assignKind"),
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
-        "bills" to listOf("dueDayAnchor"),
+        "bills" to listOf("dueDayAnchor", "providerKey", "accountRef", "lastPaidMillis"),
         "subscriptions" to listOf("isManual", "merchantKey", "lines", "confidence"),
     )
     private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links", "merchant_aliases")
@@ -108,6 +108,7 @@ class MigrationSqlTest {
         MigrationSql.MIGRATION_43_44_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_44_45_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_45_46_SQL.forEach { migrated.exec(it) }
+        MigrationSql.MIGRATION_46_47_SQL.forEach { migrated.exec(it) }
     }
 
     private fun migrateTo42() {
@@ -161,7 +162,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v46 install table for table`() {
+    fun `an upgraded database matches a fresh v47 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -523,6 +524,30 @@ class MigrationSqlTest {
             }
         }
         assertEquals(1, migrated.count("merchant_aliases"))
+    }
+
+    @Test
+    fun `v47 keeps existing bills as manual bills`() {
+        migrateTo42()
+        listOf(
+            MigrationSql.MIGRATION_42_43_SQL, MigrationSql.MIGRATION_43_44_SQL,
+            MigrationSql.MIGRATION_44_45_SQL, MigrationSql.MIGRATION_45_46_SQL,
+        ).flatten().forEach { migrated.exec(it) }
+        migrated.exec(
+            "INSERT INTO bills (id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt, dueDayAnchor) " +
+                "VALUES (4, 'Rent', '4500', 'AED', 'MONTHLY', 1000, 5, 31)",
+        )
+        MigrationSql.MIGRATION_46_47_SQL.forEach { migrated.exec(it) }
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT name, dueDayAnchor, providerKey, accountRef, lastPaidMillis FROM bills WHERE id = 4").use { rs ->
+                rs.next()
+                assertEquals("Rent", rs.getString(1))
+                assertEquals(31, rs.getInt(2))
+                assertEquals(null, rs.getString(3))
+                assertEquals(null, rs.getString(4))
+                assertEquals(null, rs.getObject(5))
+            }
+        }
     }
 
     private fun Connection.count(table: String): Int =

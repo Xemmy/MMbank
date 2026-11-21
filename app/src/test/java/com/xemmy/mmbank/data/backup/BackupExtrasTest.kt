@@ -26,6 +26,8 @@ class BackupExtrasTest {
         assertEquals(e, e.toBackup().toEntity())
         val oneOff = e.copy(recurrence = null)
         assertEquals(oneOff, oneOff.toBackup().toEntity())
+        val provider = e.copy(providerKey = "etisalat", accountRef = "4567", lastPaidMillis = 1_700_000_100_000)
+        assertEquals(provider, provider.toBackup().toEntity())
     }
 
     @Test fun `pay later plan and installment round trip`() {

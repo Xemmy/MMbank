@@ -486,6 +486,7 @@ class AppContainer(context: Context) {
                 checkCategoryBudget(transaction)
                 refreshSubscriptionForMerchant(transaction)
                 matchPayLaterInstallment(transaction)
+                matchProviderBill(transaction)
                 checkUnusualCharge(transaction)
             },
         )
@@ -914,6 +915,17 @@ class AppContainer(context: Context) {
                     payLaterRepository.matchInstallment(it.installment.id, transaction.id, transaction.timestampMillis)
                 }
             }.onFailure { recordError("AppContainer.matchPayLaterInstallment", it) }
+        }
+    }
+
+    /** A captured du / e& / DEWA... payment marks its tracked bill paid (see BillAutoMatch). */
+    private fun matchProviderBill(transaction: Transaction) {
+        if (!com.xemmy.mmbank.domain.intelligence.BillDetector.isBiller(transaction.merchant)) return
+        applicationScope.launch {
+            runCatching {
+                val bills = billRepository.observeAll().first()
+                com.xemmy.mmbank.domain.intelligence.BillAutoMatch.match(bills, transaction)?.let { billRepository.save(it) }
+            }.onFailure { recordError("AppContainer.matchProviderBill", it) }
         }
     }
 

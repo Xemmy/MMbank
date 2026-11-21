@@ -543,6 +543,16 @@ class EntityMappersTest {
     }
 
     @Test
+    fun `bill round-trip preserves the provider link`() {
+        val original = Bill(
+            id = 12, name = "e& 4567", amount = BigDecimal("442.58"), currencyCode = "AED",
+            recurrence = BillRecurrence.MONTHLY, nextDueDateMillis = 1_700_000_000_000, createdAt = 1_690_000_000_000,
+            dueDayAnchor = 12, providerKey = "etisalat", accountRef = "4567", lastPaidMillis = 1_699_000_000_000,
+        )
+        assertEquals(original, original.toEntity().toDomain())
+    }
+
+    @Test
     fun `bill round-trip preserves a null recurrence for a one-off bill`() {
         val original = Bill(
             id = 11,

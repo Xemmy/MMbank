@@ -369,6 +369,9 @@ data class BackupBill(
     val id: Long, val name: String, val amount: String, val currencyCode: String,
     val recurrence: String?, val nextDueDateMillis: Long, val createdAt: Long,
     val dueDayAnchor: Int? = null,
+    val providerKey: String? = null,
+    val accountRef: String? = null,
+    val lastPaidMillis: Long? = null,
 )
 
 @Serializable
@@ -468,7 +471,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 22,
+            formatVersion = 23,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -1047,13 +1050,14 @@ internal fun BackupIgnoredKeyword.toEntity() = IgnoredKeywordEntity(
 internal fun BillEntity.toBackup() = BackupBill(
     id = id, name = name, amount = amount.toPlainString(), currencyCode = currencyCode,
     recurrence = recurrence?.name, nextDueDateMillis = nextDueDateMillis, createdAt = createdAt,
-    dueDayAnchor = dueDayAnchor,
+    dueDayAnchor = dueDayAnchor, providerKey = providerKey, accountRef = accountRef, lastPaidMillis = lastPaidMillis,
 )
 
 internal fun BackupBill.toEntity() = BillEntity(
     id = id, name = name, amount = BigDecimal(amount), currencyCode = currencyCode,
     recurrence = recurrence?.let { r -> BillRecurrence.values().firstOrNull { it.name == r } },
     nextDueDateMillis = nextDueDateMillis, createdAt = createdAt, dueDayAnchor = dueDayAnchor,
+    providerKey = providerKey, accountRef = accountRef, lastPaidMillis = lastPaidMillis,
 )
 
 internal fun SubscriptionEntity.toBackup() = BackupManualSubscription(

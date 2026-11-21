@@ -120,6 +120,13 @@ object MigrationSql {
         "CREATE INDEX IF NOT EXISTS `index_pay_later_installments_planId` ON `pay_later_installments` (`planId`)",
     )
 
+    /** v47 (from v46): a bill can follow a telecom/utility provider's captured payments (BillAutoMatch). Additive, nullable. */
+    val MIGRATION_46_47_SQL: List<String> = listOf(
+        "ALTER TABLE `bills` ADD COLUMN `providerKey` TEXT",
+        "ALTER TABLE `bills` ADD COLUMN `accountRef` TEXT",
+        "ALTER TABLE `bills` ADD COLUMN `lastPaidMillis` INTEGER",
+    )
+
     /** v46 (from v45): user merchant renames applied to future captures. Purely additive: one new table. */
     val MIGRATION_45_46_SQL: List<String> = listOf(
         "CREATE TABLE IF NOT EXISTS `merchant_aliases` (" +

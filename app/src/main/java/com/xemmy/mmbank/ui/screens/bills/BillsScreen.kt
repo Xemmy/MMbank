@@ -46,6 +46,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.intelligence.BillDetector
 import com.xemmy.mmbank.domain.intelligence.BillReminders
 import com.xemmy.mmbank.domain.model.Bill
 import com.xemmy.mmbank.domain.model.BillRecurrence
@@ -55,7 +56,9 @@ import com.xemmy.mmbank.ui.designsystem.MoneyText
 import com.xemmy.mmbank.ui.theme.MMTheme
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -64,13 +67,44 @@ import kotlinx.coroutines.launch
 data class BillsUiState(
     val bills: List<Bill> = emptyList(),
     val currency: String = "USD",
+    /** Telecom / utility providers paid most months that are not tracked yet. */
+    val suggestions: List<BillDetector.DetectedBill> = emptyList(),
 )
 
 class BillsViewModel(private val container: AppContainer) : ViewModel() {
 
-    val uiState: StateFlow<BillsUiState> = container.billRepository.observeAll()
-        .map { bills -> BillsUiState(bills = bills, currency = container.preferences.defaultCurrency) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BillsUiState())
+    private val detected = MutableStateFlow<List<BillDetector.DetectedBill>>(emptyList())
+    private val notBills = MutableStateFlow(container.preferences.notBillIds)
+
+    val uiState: StateFlow<BillsUiState> = combine(container.billRepository.observeAll(), detected, notBills) { bills, found, hidden ->
+        BillsUiState(
+            bills = bills,
+            currency = container.preferences.defaultCurrency,
+            suggestions = found.filter { d -> d.id !in hidden && bills.none { BillDetector.tracks(it, d) } },
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BillsUiState())
+
+    init {
+        viewModelScope.launch {
+            runCatching {
+                detected.value = BillDetector.detect(container.transactionRepository.getAllReal(), java.time.LocalDate.now())
+            }.onFailure { container.recordError("BillsViewModel.detect", it) }
+        }
+    }
+
+    /** Tracks a detected provider as a monthly bill that its captured payments mark paid. */
+    fun track(suggestion: BillDetector.DetectedBill) {
+        viewModelScope.launch {
+            runCatching { container.billRepository.save(BillDetector.toBill(suggestion, System.currentTimeMillis())) }
+                .onFailure { container.recordError("BillsViewModel.track", it) }
+        }
+    }
+
+    fun notABill(suggestion: BillDetector.DetectedBill) {
+        val next = container.preferences.notBillIds + suggestion.id
+        container.preferences.notBillIds = next
+        notBills.value = next
+    }
 
     fun addBill(name: String, amount: BigDecimal, dueInDays: Long, recurrence: BillRecurrence?) {
         val clean = name.trim()
@@ -145,7 +179,7 @@ fun BillsScreen(
             }
         },
     ) { padding ->
-        if (state.bills.isEmpty()) {
+        if (state.bills.isEmpty() && state.suggestions.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     "No bills tracked yet. Tap + to add rent, an EMI, a variable-amount " +
@@ -161,6 +195,37 @@ fun BillsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (state.suggestions.isNotEmpty()) {
+                    item(key = "suggested-header") {
+                        Text(
+                            "Suggested bills",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "Paid most months. Track one and its payment SMS will mark it paid automatically, whatever the amount or day.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    items(state.suggestions, key = { "s-${it.id}" }) { suggestion ->
+                        SuggestedBillRow(
+                            suggestion,
+                            onTrack = { viewModel.track(suggestion) },
+                            onNotABill = { viewModel.notABill(suggestion) },
+                        )
+                    }
+                    if (state.bills.isNotEmpty()) {
+                        item(key = "tracked-header") {
+                            Text(
+                                "Your bills",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                    }
+                }
                 items(state.bills, key = { it.id }) { bill ->
                     BillRow(
                         bill = bill,
@@ -215,6 +280,14 @@ private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onLogPayment: () -> Unit
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(bill.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                bill.lastPaidMillis?.let { paid ->
+                    Text(
+                        "Paid automatically on " + java.time.Instant.ofEpochMilli(paid).atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("d MMM")),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MMTheme.colors.textSecondary,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MoneyText(
                         amount = bill.amount.toDouble(),
@@ -224,7 +297,7 @@ private fun BillRow(bill: Bill, onMarkPaid: () -> Unit, onLogPayment: () -> Unit
                         color = MMTheme.colors.textSecondary,
                     )
                     Text(
-                        " · $whenText" +
+                        (if (bill.providerKey != null) " ≈" else "") + " · $whenText" +
                             (bill.recurrence?.let { " · ${it.name.lowercase().replaceFirstChar(Char::uppercase)}" } ?: " · One-off"),
                         style = MaterialTheme.typography.bodySmall,
                         color = MMTheme.colors.textSecondary,
@@ -321,4 +394,43 @@ private fun AddBillDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun SuggestedBillRow(suggestion: BillDetector.DetectedBill, onTrack: () -> Unit, onNotABill: () -> Unit) {
+    val money = { a: BigDecimal -> com.xemmy.mmbank.ui.designsystem.moneyLabel(a, suggestion.currencyCode) }
+    val range = if (suggestion.minAmount.compareTo(suggestion.maxAmount) == 0) {
+        money(suggestion.typicalAmount)
+    } else {
+        "${money(suggestion.minAmount)}–${money(suggestion.maxAmount)}"
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp).fillMaxWidth()) {
+            Text(
+                suggestion.displayName + (suggestion.accountRef?.let { " · line …$it" } ?: ""),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Usually $range · around the ${ordinal(suggestion.typicalDay)}" +
+                    (if (suggestion.paymentsPerMonth > 1) " · ${suggestion.paymentsPerMonth} payments a month" else ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MMTheme.colors.textSecondary,
+            )
+            Row {
+                TextButton(onClick = onTrack) { Text("Track") }
+                TextButton(onClick = onNotABill) { Text("Not a bill") }
+            }
+        }
+    }
+}
+
+internal fun ordinal(day: Int): String {
+    val suffix = if (day % 100 in 11..13) "th" else when (day % 10) {
+        1 -> "st"
+        2 -> "nd"
+        3 -> "rd"
+        else -> "th"
+    }
+    return "$day$suffix"
 }
