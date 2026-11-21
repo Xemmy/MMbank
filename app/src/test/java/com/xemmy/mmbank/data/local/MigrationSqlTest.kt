@@ -69,7 +69,7 @@ class MigrationSqlTest {
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor"),
-        "subscriptions" to listOf("isManual"),
+        "subscriptions" to listOf("isManual", "merchantKey", "lines"),
     )
     private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links")
 

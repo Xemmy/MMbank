@@ -72,7 +72,7 @@ class SubscriptionLinksTest {
 
     @Test fun `similar finds unlinked same-brand charges within five percent, oldest first`() {
         val s = sub("Apple").copy(averageAmount = BigDecimal("50.00"))
-        val a = tx(1, "APPLE.COM/BILL", LocalDate.of(2026, 3, 5), amount = "50.00")
+        val a = tx(1, "APPLE", LocalDate.of(2026, 3, 5), amount = "50.00")
         val b = tx(2, "Apple", LocalDate.of(2026, 2, 5), amount = "51.50")
         val farAmount = tx(3, "Apple", LocalDate.of(2026, 4, 5), amount = "80.00")
         val otherBrand = tx(4, "Spotify", LocalDate.of(2026, 4, 6), amount = "50.00")
