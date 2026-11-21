@@ -4747,3 +4747,8 @@ Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phase 8. The Activity transaction sheet and
 **Not done:** the full Pay Later editor still prefills the old way and has no `sourceIsInstallment` switch; no "Matched to …" text in the detail sheet; no Home entry point.
 
 Not covered by CI: the dialog and the new buttons as rendered, auto-match on a live SMS, upgrading a real v44 database, and how installment 1 looks on the Pay Later screen.
+
+## Charge search + subscription screen polish (0.132.0)
+Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phases 5 and 7. The pickers ("From an existing transaction" and the detail dialog's Add a charge) search merchant, SMS text, note and amount (`ChargeFilter`: "39.99" exact, "40" prefix) with date chips (All / This month / Last 3 months / This year / Custom) and show an SMS snippet; the search now runs before the limit, so a charge older than the newest 100 is found (`SubscriptionLinks.pickable`). The Subscriptions screen has a summary card (count plus per-month and per-year per currency via the shared `SubscriptionTotals`, which counts parallel lines and also feeds the Plan card), Overdue / Due this week / Later groups (`SubscriptionGroups`), `MMCard` rows with a Yours/Detected tag, hidden-balance masking, an accurate empty-state text and a "Found 2 new · 1 updated · 1 removed" snackbar after a scan.
+
+Not covered by CI: how the search bar, chips, summary card and groups look and scroll on a device.

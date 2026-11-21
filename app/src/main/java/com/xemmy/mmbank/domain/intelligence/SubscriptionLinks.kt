@@ -33,12 +33,17 @@ object SubscriptionLinks {
         links: List<SubscriptionLink>,
         subscription: Subscription,
         limit: Int = 40,
+        query: String = "",
+        from: java.time.LocalDate? = null,
+        to: java.time.LocalDate? = null,
+        zone: ZoneId = ZoneId.systemDefault(),
     ): List<Transaction> {
         val linked = links.map { it.transactionId }.toSet()
         return transactions
             .asSequence()
             .filter { it.isLinkable() && it.id !in linked }
             .filter { it.currencyCode.equals(subscription.currencyCode, ignoreCase = true) }
+            .filter { ChargeFilter.matches(it, query, from, to, zone) }
             .sortedByDescending { it.timestampMillis }
             .take(limit)
             .toList()
@@ -69,20 +74,24 @@ object SubscriptionLinks {
 
     /**
      * Purchases to start a subscription from: real spending not already linked
-     * to a subscription, newest first. [query] filters by merchant text.
+     * to a subscription, newest first. [query] searches merchant, SMS text, note
+     * and amount, [from]/[to] bound the date. The search runs **before** [limit],
+     * so an old match is found even when 100 newer charges exist.
      */
     fun pickable(
         transactions: List<Transaction>,
         links: List<SubscriptionLink>,
         query: String = "",
         limit: Int = 100,
+        from: java.time.LocalDate? = null,
+        to: java.time.LocalDate? = null,
+        zone: ZoneId = ZoneId.systemDefault(),
     ): List<Transaction> {
         val linked = links.map { it.transactionId }.toSet()
-        val needle = query.trim().lowercase()
         return transactions
             .asSequence()
             .filter { it.isLinkable() && it.id !in linked }
-            .filter { needle.isEmpty() || it.merchant?.lowercase()?.contains(needle) == true }
+            .filter { ChargeFilter.matches(it, query, from, to, zone) }
             .sortedByDescending { it.timestampMillis }
             .take(limit)
             .toList()

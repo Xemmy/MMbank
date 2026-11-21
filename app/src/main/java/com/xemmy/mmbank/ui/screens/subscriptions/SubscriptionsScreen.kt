@@ -43,13 +43,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.intelligence.SubscriptionGroups
 import com.xemmy.mmbank.domain.intelligence.SubscriptionLinks
+import com.xemmy.mmbank.domain.intelligence.SubscriptionTotals
 import com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot
 import com.xemmy.mmbank.domain.intelligence.SubscriptionRadarEngine
 import com.xemmy.mmbank.domain.model.Subscription
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMCard
 import com.xemmy.mmbank.ui.designsystem.MMScaffold
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.time.Instant
@@ -70,6 +73,7 @@ data class SubscriptionsUiState(
     val possible: List<Subscription> = emptyList(),
     /** Rows the user dismissed, listed at the bottom with Restore. */
     val dismissed: List<Subscription> = emptyList(),
+    val hideBalances: Boolean = false,
     val scanning: Boolean = false,
     /** True only after a scan has run at least once this session/launch with nothing detected. */
     val hasScannedOnce: Boolean = false,
@@ -78,7 +82,7 @@ data class SubscriptionsUiState(
 class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** A message with an Undo action, shown as a snackbar. */
-    class UndoEvent(val message: String, val undo: () -> Unit)
+    class UndoEvent(val message: String, val undo: (() -> Unit)?)
 
     private val _events = kotlinx.coroutines.flow.MutableSharedFlow<UndoEvent>(extraBufferCapacity = 4)
     val events: kotlinx.coroutines.flow.SharedFlow<UndoEvent> = _events
@@ -92,10 +96,9 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         container.subscriptionRepository.observeActive(),
         container.subscriptionRepository.observePossible(),
         container.subscriptionRepository.observeDismissed(),
-        scanning,
-        hasScannedOnce,
-    ) { subscriptions, possible, dismissed, isScanning, scannedOnce ->
-        SubscriptionsUiState(subscriptions, possible, dismissed, isScanning, scannedOnce)
+        combine(scanning, hasScannedOnce, container.hideBalances) { a, b, c -> Triple(a, b, c) },
+    ) { subscriptions, possible, dismissed, flags ->
+        SubscriptionsUiState(subscriptions, possible, dismissed, flags.third, flags.first, flags.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SubscriptionsUiState())
 
     init {
@@ -151,7 +154,9 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
             scanning.value = true
             runCatching {
                 val transactions = container.transactionRepository.observeTransactions().first()
-                lastResult.value = container.subscriptionRepository.rescan(transactions)
+                val counts = container.subscriptionRepository.rescan(transactions)
+                lastResult.value = counts
+                _events.tryEmit(UndoEvent(scanMessage(counts), null))
             }.onFailure { container.recordError("SubscriptionsViewModel.scan", it) }
             hasScannedOnce.value = true
             scanning.value = false
@@ -207,7 +212,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         return ChargesState(
             subscription = subscription,
             linked = repository.linkedTransactions(subscription.id).sortedByDescending { it.timestampMillis },
-            candidates = SubscriptionLinks.candidates(all, links, subscription),
+            candidates = SubscriptionLinks.candidates(all, links, subscription, limit = Int.MAX_VALUE),
             similar = SubscriptionLinks.similar(all, links, subscription),
         )
     }
@@ -220,7 +225,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         viewModelScope.launch {
             runCatching {
                 val all = container.transactionRepository.observeTransactions().first()
-                _pickable.value = SubscriptionLinks.pickable(all, container.subscriptionRepository.links())
+                _pickable.value = SubscriptionLinks.pickable(all, container.subscriptionRepository.links(), limit = Int.MAX_VALUE)
             }.onFailure { container.recordError("SubscriptionsViewModel.openPicker", it) }
         }
     }
@@ -329,8 +334,8 @@ fun SubscriptionsScreen(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             snackbarHostState.currentSnackbarData?.dismiss()
-            val result = snackbarHostState.showSnackbar(event.message, actionLabel = "Undo")
-            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) event.undo()
+            val result = snackbarHostState.showSnackbar(event.message, actionLabel = if (event.undo != null) "Undo" else null)
+            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) event.undo?.invoke()
         }
     }
     var chooserOpen by remember { mutableStateOf(false) }
@@ -414,8 +419,8 @@ fun SubscriptionsScreen(
                 Text(
                     if (state.hasScannedOnce) {
                         "No recurring charges found. A subscription needs 3 charges on a regular " +
-                            "rhythm (weekly to yearly) at a similar amount, or 2 monthly charges that are " +
-                            "listed as possible. Tap the ? to see why a merchant was not detected."
+                            "rhythm (weekly, every 2 weeks, monthly, quarterly, every 6 months or yearly) at a similar " +
+                            "amount; 2 monthly charges show as possible. Tap the ? to see why a merchant was not detected."
                     } else {
                         "Tap the scan icon to detect recurring charges (subscriptions, memberships, " +
                             "bills) from your transaction history, or tap + to add one yourself."
@@ -431,9 +436,18 @@ fun SubscriptionsScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = com.xemmy.mmbank.ui.theme.MMSpacing.fabClearance),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(state.subscriptions, key = { it.id }) { subscription ->
-                    SubscriptionRow(subscription, onClick = { viewModel.openCharges(subscription) })
-                }
+                item(key = "summary") { SummaryCard(state.subscriptions, state.hideBalances) }
+                val groups = SubscriptionGroups.group(state.subscriptions, LocalDate.now())
+                listOf("Overdue" to groups.overdue, "Due this week" to groups.thisWeek, "Later" to groups.later)
+                    .filter { it.second.isNotEmpty() }
+                    .forEach { (label, rows) ->
+                        item(key = "h-$label") {
+                            Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp))
+                        }
+                        items(rows, key = { it.id }) { subscription ->
+                            SubscriptionRow(subscription, state.hideBalances, onClick = { viewModel.openCharges(subscription) })
+                        }
+                    }
                 if (state.possible.isNotEmpty()) {
                     item(key = "possible-header") {
                         Text(
@@ -494,8 +508,8 @@ private fun DismissedRow(subscription: Subscription, onRestore: () -> Unit) {
 }
 
 @Composable
-private fun SubscriptionRow(subscription: Subscription, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+private fun SubscriptionRow(subscription: Subscription, hidden: Boolean, onClick: () -> Unit) {
+    MMCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -513,14 +527,15 @@ private fun SubscriptionRow(subscription: Subscription, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(subscription.merchant, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "${cadenceLabel(subscription.cadence)} · ${renewalLabel(subscription.nextDueDateMillis)}",
+                    "${cadenceLabel(subscription.cadence)}${if (subscription.lines > 1) " ×${subscription.lines}" else ""} · " +
+                        "${renewalLabel(subscription.nextDueDateMillis)} · ${if (subscription.isManual) "Yours" else "Detected"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    moneyLabel(subscription.averageAmount, subscription.currencyCode),
+                    maskedMoney(subscription.averageAmount, subscription.currencyCode, hidden),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -529,7 +544,7 @@ private fun SubscriptionRow(subscription: Subscription, onClick: () -> Unit) {
                 subscription.previousAmount?.let { previous ->
                     val rose = subscription.averageAmount > previous
                     Text(
-                        (if (rose) "↑ was " else "↓ was ") + moneyLabel(previous, subscription.currencyCode),
+                        (if (rose) "↑ was " else "↓ was ") + maskedMoney(previous, subscription.currencyCode, hidden),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (rose) {
                             MaterialTheme.colorScheme.error
@@ -543,14 +558,7 @@ private fun SubscriptionRow(subscription: Subscription, onClick: () -> Unit) {
     }
 }
 
-private fun cadenceLabel(cadence: SubscriptionCadence): String = when (cadence) {
-    SubscriptionCadence.WEEKLY -> "Weekly"
-    SubscriptionCadence.BIWEEKLY -> "Every 2 weeks"
-    SubscriptionCadence.MONTHLY -> "Monthly"
-    SubscriptionCadence.QUARTERLY -> "Quarterly"
-    SubscriptionCadence.SEMI_ANNUAL -> "Every 6 months"
-    SubscriptionCadence.YEARLY -> "Yearly"
-}
+private fun cadenceLabel(cadence: SubscriptionCadence): String = cadenceName(cadence)
 
 /** "Renews today" / "Renews in N days" / "Renewal overdue" for the next-due timestamp, relative to today. */
 private fun renewalLabel(nextDueDateMillis: Long, zone: ZoneId = ZoneId.systemDefault()): String {
@@ -643,5 +651,30 @@ internal fun verdictLabel(outcome: SubscriptionRadarEngine.Outcome): String = wh
         SubscriptionRadarEngine.Reason.IRREGULAR_GAPS -> "Not on a regular rhythm: ${outcome.detail}"
         SubscriptionRadarEngine.Reason.PRICE_VARIES -> "The price varies: ${outcome.detail}"
         SubscriptionRadarEngine.Reason.MIXED_WITH_OTHER_PURCHASES -> "Mixed with other purchases: ${outcome.detail}"
+    }
+}
+
+private fun maskedMoney(amount: java.math.BigDecimal, currency: String, hidden: Boolean): String =
+    if (hidden) "••••" else moneyLabel(amount, currency)
+
+/** "Found 2 new · 1 updated · 1 removed", or "Nothing changed". */
+internal fun scanMessage(counts: com.xemmy.mmbank.domain.repository.RescanCounts): String {
+    val parts = buildList {
+        if (counts.created > 0) add("Found ${counts.created} new")
+        if (counts.updated > 0) add("${counts.updated} updated")
+        if (counts.removed > 0) add("${counts.removed} removed")
+    }
+    return if (parts.isEmpty()) "Nothing changed" else parts.joinToString(" · ")
+}
+
+@Composable
+private fun SummaryCard(subscriptions: List<Subscription>, hidden: Boolean) {
+    val lines = SubscriptionTotals.summaryLines(subscriptions) { amount, currency -> maskedMoney(amount, currency, hidden) }
+    if (lines.isEmpty()) return
+    MMCard(Modifier.fillMaxWidth()) {
+        Text(lines.first(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        lines.drop(1).forEach {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

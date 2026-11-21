@@ -3,7 +3,10 @@ package com.xemmy.mmbank.ui.screens.subscriptions
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -34,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
+import com.xemmy.mmbank.domain.intelligence.ChargeFilter
 import com.xemmy.mmbank.domain.intelligence.SubscriptionForm
 import com.xemmy.mmbank.domain.intelligence.SubscriptionLinks
 import com.xemmy.mmbank.domain.model.Subscription
@@ -61,6 +65,57 @@ internal fun cadenceName(cadence: SubscriptionCadence): String = when (cadence) 
     SubscriptionCadence.QUARTERLY -> "Quarterly"
     SubscriptionCadence.SEMI_ANNUAL -> "Every 6 months"
     SubscriptionCadence.YEARLY -> "Yearly"
+}
+
+/** The charge search the two pickers share: text/amount query plus a date range. */
+internal class ChargeSearch {
+    var query by mutableStateOf("")
+    var preset by mutableStateOf(ChargeFilter.Preset.ALL)
+    var custom by mutableStateOf(false)
+    var from by mutableStateOf<LocalDate?>(null)
+    var to by mutableStateOf<LocalDate?>(null)
+
+    fun matches(tx: Transaction): Boolean = ChargeFilter.matches(tx, query, from, to)
+}
+
+@Composable
+internal fun ChargeSearchBar(search: ChargeSearch) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(
+            value = search.query, onValueChange = { search.query = it },
+            label = { Text("Search name, amount or SMS text") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChargeFilter.Preset.entries.forEach { preset ->
+                FilterChip(
+                    selected = !search.custom && search.preset == preset,
+                    onClick = {
+                        search.custom = false
+                        search.preset = preset
+                        val (f, t) = preset.range(LocalDate.now())
+                        search.from = f
+                        search.to = t
+                    },
+                    label = { Text(preset.label) },
+                )
+            }
+            FilterChip(
+                selected = search.custom,
+                onClick = {
+                    search.custom = true
+                    if (search.from == null) search.from = LocalDate.now().minusMonths(1)
+                    if (search.to == null) search.to = LocalDate.now()
+                },
+                label = { Text("Custom") },
+            )
+        }
+        if (search.custom) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DatePickField("From", search.from ?: LocalDate.now(), onPick = { search.from = it }, modifier = Modifier.weight(1f))
+                DatePickField("To", search.to ?: LocalDate.now(), onPick = { search.to = it }, modifier = Modifier.weight(1f))
+            }
+        }
+    }
 }
 
 private fun chargeLabel(tx: Transaction): String {
@@ -259,6 +314,8 @@ fun SubscriptionChargesDialog(
     onDeleteSubscription: (() -> Unit)?,
 ) {
     val sub = state.subscription
+    val search = remember { ChargeSearch() }
+    val shownCandidates = state.candidates.filter(search::matches).take(40)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(sub.merchant) },
@@ -300,16 +357,17 @@ fun SubscriptionChargesDialog(
                     ChargeRow(tx, action = "Unlink", onAction = { onRemove(tx) })
                 }
                 item { SectionLabel("Add a charge") }
-                if (state.candidates.isEmpty()) {
+                item { ChargeSearchBar(search) }
+                if (shownCandidates.isEmpty()) {
                     item {
                         Text(
-                            "No other recent ${sub.currencyCode} purchases to add.",
+                            "No matching ${sub.currencyCode} purchases to add.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                items(state.candidates, key = { "c${it.id}" }) { tx ->
+                items(shownCandidates, key = { "c${it.id}" }) { tx ->
                     ChargeRow(tx, action = "Add", onAction = { onAdd(tx) })
                 }
             }
@@ -344,6 +402,9 @@ private fun ChargeRow(tx: Transaction, action: String, onAction: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            ChargeFilter.snippet(tx)?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            }
         }
         TextButton(onClick = onAction) { Text(action) }
     }
@@ -366,23 +427,17 @@ fun AddSubscriptionChooser(onDismiss: () -> Unit, onFromTransaction: () -> Unit,
     )
 }
 
-/** A searchable list of purchases; tapping one starts a subscription from it. */
+/** A searchable list of purchases (name, amount, SMS text, date); tapping one starts a subscription from it. */
 @Composable
 fun TransactionPickDialog(transactions: List<Transaction>, onDismiss: () -> Unit, onPick: (Transaction) -> Unit) {
-    var query by remember { mutableStateOf("") }
-    val shown = remember(transactions, query) {
-        val needle = query.trim().lowercase()
-        if (needle.isEmpty()) transactions else transactions.filter { it.merchant?.lowercase()?.contains(needle) == true }
-    }
+    val search = remember { ChargeSearch() }
+    val shown = transactions.filter(search::matches).take(100)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Choose a transaction") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it },
-                    label = { Text("Search merchant") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                )
+                ChargeSearchBar(search)
                 if (shown.isEmpty()) {
                     Text(
                         "No matching purchases.",
@@ -390,7 +445,7 @@ fun TransactionPickDialog(transactions: List<Transaction>, onDismiss: () -> Unit
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                LazyColumn(Modifier.heightIn(max = 320.dp)) {
                     items(shown, key = { it.id }) { tx ->
                         Column(Modifier.fillMaxWidth().clickable { onPick(tx) }.padding(vertical = 8.dp)) {
                             Text(chargeLabel(tx), style = MaterialTheme.typography.bodyMedium)
@@ -399,6 +454,9 @@ fun TransactionPickDialog(transactions: List<Transaction>, onDismiss: () -> Unit
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            ChargeFilter.snippet(tx)?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                            }
                         }
                     }
                 }

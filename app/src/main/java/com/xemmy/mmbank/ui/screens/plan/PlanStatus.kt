@@ -53,11 +53,8 @@ object PlanStatus {
     fun subscriptions(subscriptions: List<Subscription>, money: (BigDecimal, String) -> String): String? {
         val active = subscriptions.filter { !it.dismissed }
         if (active.isEmpty()) return null
-        val perMonth = active.groupBy { it.currencyCode.uppercase() }.mapValues { (_, subs) ->
-            subs.fold(BigDecimal.ZERO) { acc, s ->
-                acc + s.averageAmount.multiply(BigDecimal(30)).divide(BigDecimal(s.cadence.nominalDays), 2, RoundingMode.HALF_UP)
-            }
-        }
+        val perMonth = com.xemmy.mmbank.domain.intelligence.SubscriptionTotals.byCurrency(active)
+            .associate { it.currency to it.perMonth }
         val count = "${active.size} active"
         return perMonth.entries.singleOrNull()?.let { (currency, total) -> "$count · ${money(total, currency)}/month" } ?: count
     }
