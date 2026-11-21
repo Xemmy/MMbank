@@ -119,7 +119,12 @@ object SubscriptionRadarEngine {
         active: MutableList<Found>,
         possible: MutableList<Found>,
     ) {
-        val sorted = group.sortedBy { it.timestampMillis }
+        val all = group.sortedBy { it.timestampMillis }
+        // Identical twins first: their interleaved charges would otherwise read as one
+        // subscription plus a stray second one.
+        val twins = amountClusters(all, AMOUNT_VARIANCE_THRESHOLD).mapNotNull { detectParallel(it, zone) }
+        active += twins
+        val sorted = all.filter { tx -> twins.none { t -> t.charges.any { it === tx } } }
         // Pass A: the best chain over everything the merchant charged (as in v2).
         val primary = detectFound(sorted, zone)
         var leftover = sorted
@@ -140,13 +145,13 @@ object SubscriptionRadarEngine {
         // Pass B: whatever the first chain did not explain, split by amount.
         for (cluster in amountClusters(leftover, AMOUNT_VARIANCE_THRESHOLD)) {
             if (cluster.size < 2) continue
-            val found = detectFound(cluster, zone) ?: detectParallel(cluster, zone)
+            val found = detectFound(cluster, zone)
             if (found != null) {
                 active += found
                 continue
             }
             if (loose.any { l -> cluster.any { tx -> l.charges.any { it === tx } } }) continue
-            possibleFor(cluster, zone, sorted.size)?.let { possible += it }
+            possibleFor(cluster, zone, all.size)?.let { possible += it }
         }
         // Loose matches that no confident row already covers.
         loose.filter { l -> active.none { a -> l.charges.any { tx -> a.charges.any { it === tx } } } }
