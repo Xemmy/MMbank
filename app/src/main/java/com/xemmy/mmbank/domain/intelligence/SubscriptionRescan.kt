@@ -54,6 +54,7 @@ object SubscriptionRescan {
         ledger: List<Transaction>,
         nowMillis: Long,
         zone: ZoneId = ZoneId.systemDefault(),
+        never: Set<String> = emptySet(),
     ): Result {
         val real = ledger.filter {
             it.kind == TransactionKind.SPEND && !it.excludeFromStats && it.direction == TransactionDirection.DEBIT
@@ -90,7 +91,7 @@ object SubscriptionRescan {
 
         // Detection on what no user-owned row claims, minus anything a user-owned row already covers.
         val pool = real.filter { it.id !in linkedTxIds }
-        val scan = SubscriptionRadarEngine.scan(pool, zone)
+        val scan = SubscriptionRadarEngine.scan(pool, zone, never)
         val detected = (scan.active + scan.possible).map { it.subscription }
             .filterNot { d -> userOwned.any { covers(it, d) } }
         val available = detectedStored.toMutableList()

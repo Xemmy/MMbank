@@ -264,7 +264,10 @@ class RatesRepositoryImpl(
     }
 }
 
-class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : SubscriptionRepository {
+class SubscriptionRepositoryImpl(
+    private val dao: SubscriptionDao,
+    private val neverKeys: () -> Set<String> = { emptySet() },
+) : SubscriptionRepository {
 
     override fun observeActive(): Flow<List<Subscription>> =
         dao.observeActive().map { list -> list.map { it.toDomain() } }
@@ -318,6 +321,7 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
             links = links(),
             ledger = transactions,
             nowMillis = System.currentTimeMillis(),
+            never = neverKeys(),
         )
         plan.newLinks.forEach { dao.upsertLink(it.toEntity()) }
         plan.upserts.forEach { dao.upsert(it.toEntity()) }

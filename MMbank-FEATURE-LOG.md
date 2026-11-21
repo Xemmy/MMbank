@@ -4759,3 +4759,8 @@ Plan: `MMbank-SUBSCRIPTIONS-PLAN.md` Phase 6. Every charge in the subscription d
 Detail dialog closes when you edit a charge (it is not live-backed by flows yet): reopen the row to see the change. The editor is not told which subscription you came from.
 
 Not covered by CI: the rename dialog and Settings list as rendered, an alias being applied to a live SMS, upgrading a real v45 database, and the editor round trip from the Subscriptions screen.
+
+## Stricter detection: never-subscription merchants (0.134.0)
+Found from the user's `?` dialog: Careem rides, Talabat and Sephora were detected or "possible". (1) `NeverSubscription` is a built-in list (ride-hailing, food delivery, groceries, fuel; Careem Plus and Uber One pass) the radar skips; the `?` dialog lists them as "Ride-hailing, not a subscription" (`Reason.NOT_A_SUBSCRIPTION`). (2) Weekly and bi-weekly chains now need 4 charges and gaps within a day of 7/14 days, so taxi-like 5–15 day gaps no longer qualify. (3) **Never** on a detected or Possible row (and in the detail dialog) stores the merchant's brand key in preferences (`neverSubscriptionKeys`), removes its detected rows on the rescan, and lists it under "Never a subscription" with "Allow again"; the snackbar has Undo. The list is kept in preferences, not the database, so it is **not in backups**.
+
+Not covered by CI: the Never buttons, list and snackbar as rendered, how the stricter weekly rule treats the user's real weekly subscriptions, and whether the built-in list misses merchants the user has (add names to `NeverSubscription`).

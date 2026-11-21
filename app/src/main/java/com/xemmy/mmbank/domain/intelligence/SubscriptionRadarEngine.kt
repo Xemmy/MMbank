@@ -76,6 +76,9 @@ object SubscriptionRadarEngine {
     /** Parallel (identical twin) charges in one cycle must land within this many days of each other. */
     private const val PARALLEL_SPAN_DAYS = 3L
 
+    /** Weekly / bi-weekly gaps must sit this close to 7 / 14 days. */
+    private const val SHORT_CADENCE_TOLERANCE_DAYS = 1L
+
     /** Active (confident) subscriptions plus lower-confidence "possible" ones, with the charges behind each. */
     data class Found(val subscription: Subscription, val charges: List<Transaction>)
 
@@ -94,16 +97,23 @@ object SubscriptionRadarEngine {
     fun detect(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault()): List<Subscription> =
         scan(transactions, zone).active.map { it.subscription }
 
-    fun scan(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault()): Scan {
+    /** [never]: brand keys the user marked "never a subscription"; they and the built-in [NeverSubscription] list are skipped. */
+    fun scan(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault(), never: Set<String> = emptySet()): Scan {
         val active = mutableListOf<Found>()
         val possible = mutableListOf<Found>()
-        for (group in groups(transactions).values) {
+        for (group in groups(transactions).filter { (key, rows) -> blockedReason(key.first, rows.first().merchant, never) == null }.values) {
             scanGroup(group, zone, active, possible)
         }
         return Scan(
             active.sortedBy { it.subscription.nextDueDateMillis },
             possible.sortedBy { it.subscription.nextDueDateMillis },
         )
+    }
+
+    /** Why a merchant can never be a subscription (user's choice or built-in list), else null. */
+    private fun blockedReason(key: String, merchant: String?, never: Set<String>): String? = when {
+        key in never -> "You marked this as not a subscription"
+        else -> NeverSubscription.reasonFor(merchant)
     }
 
     private fun groups(transactions: List<Transaction>): Map<Pair<String, String>, List<Transaction>> =
@@ -217,7 +227,7 @@ object SubscriptionRadarEngine {
 
     // ---- "Why isn't X detected?" -------------------------------------------------
 
-    enum class Reason { TOO_FEW, IRREGULAR_GAPS, PRICE_VARIES, MIXED_WITH_OTHER_PURCHASES }
+    enum class Reason { TOO_FEW, IRREGULAR_GAPS, PRICE_VARIES, MIXED_WITH_OTHER_PURCHASES, NOT_A_SUBSCRIPTION }
 
     sealed interface Outcome {
         data object Detected : Outcome
@@ -239,10 +249,23 @@ object SubscriptionRadarEngine {
      * detected it, would show it as possible, or why it did not -- the user-facing
      * answer to "it picked up only one".
      */
-    fun explain(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault()): List<Verdict> {
+    fun explain(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault(), never: Set<String> = emptySet()): List<Verdict> {
         val verdicts = mutableListOf<Verdict>()
-        for ((_, group) in groups(transactions)) {
+        for ((key, group) in groups(transactions)) {
             val sorted = group.sortedBy { it.timestampMillis }
+            val blocked = blockedReason(key.first, sorted.last().merchant, never)
+            if (blocked != null) {
+                if (sorted.size >= 2) {
+                    verdicts += Verdict(
+                        merchant = sorted.last().merchant!!.trim(),
+                        currencyCode = sorted.last().currencyCode.uppercase(),
+                        amount = (averageOf(sorted) ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP),
+                        charges = sorted.size,
+                        outcome = Outcome.Rejected(Reason.NOT_A_SUBSCRIPTION, blocked),
+                    )
+                }
+                continue
+            }
             val active = mutableListOf<Found>()
             val possible = mutableListOf<Found>()
             scanGroup(sorted, zone, active, possible)
@@ -387,6 +410,15 @@ object SubscriptionRadarEngine {
         // it began, or this is frequent shopping that merely contains a rhythm.
         val chargesSinceStart = sorted.size - start
         if (chain.size.toDouble() / chargesSinceStart < MIN_CHAIN_SHARE) return null
+        // Weekly and every-2-weeks rhythms are where taxis and takeaways hide: demand 4 charges and near-exact gaps.
+        if (cadence == SubscriptionCadence.WEEKLY || cadence == SubscriptionCadence.BIWEEKLY) {
+            if (chain.size < 4) return null
+            val exact = chain.zipWithNext { a, b ->
+                val g = (b.timestampMillis - a.timestampMillis) / DAY_MILLIS
+                minOf(abs(g - nominal), abs(g - 2 * nominal))
+            }.all { it <= SHORT_CADENCE_TOLERANCE_DAYS }
+            if (!exact) return null
+        }
         return Chain(cadence, chain, misses)
     }
 

@@ -336,6 +336,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_SUBSCRIPTION_REMINDERS_SENT, value).apply()
 
+    /** Brand keys the user marked "never a subscription" (see NeverSubscription); not in backups. */
+    var neverSubscriptionKeys: Set<String>
+        get() = prefs.getStringSet(KEY_NEVER_SUBSCRIPTION, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_NEVER_SUBSCRIPTION, value).apply()
+
     /**
      * Months of transaction history to keep before the opt-in retention job
      * (see [com.xemmy.mmbank.data.retention.TransactionRetentionWorker]) prunes
@@ -508,6 +513,7 @@ class AppPreferences(context: Context) {
         const val KEY_CATEGORY_BUDGET_ALERTS = "category_budget_alerts"
         const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
+        const val KEY_NEVER_SUBSCRIPTION = "never_subscription_keys"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
         const val KEY_LEDGER_KIND_BACKFILL_VERSION = "ledger_kind_backfill_version"
         const val KEY_CARD_REMINDERS_SENT = "card_reminders_sent"

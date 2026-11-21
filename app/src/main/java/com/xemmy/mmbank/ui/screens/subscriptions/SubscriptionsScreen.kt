@@ -124,7 +124,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
     /** Loads the radar's verdict on every merchant with repeat charges: detected, possible, or why not. */
     fun openExplain() {
         viewModelScope.launch {
-            runCatching { _verdicts.value = SubscriptionRadarEngine.explain(container.transactionRepository.getAllReal()) }
+            runCatching { _verdicts.value = SubscriptionRadarEngine.explain(container.transactionRepository.getAllReal(), never = container.preferences.neverSubscriptionKeys) }
                 .onFailure { container.recordError("SubscriptionsViewModel.openExplain", it) }
         }
     }
@@ -255,6 +255,38 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         }
     }
 
+    /** Merchants the user marked "never a subscription", as brand keys. */
+    val neverKeys = MutableStateFlow(container.preferences.neverSubscriptionKeys)
+
+    private fun setNever(key: String, never: Boolean) {
+        val next = container.preferences.neverSubscriptionKeys.let { if (never) it + key else it - key }
+        container.preferences.neverSubscriptionKeys = next
+        neverKeys.value = next
+    }
+
+    /** Hides a merchant from detection for good (removing its detected rows); Undo allows it again. */
+    fun markNever(subscription: Subscription) {
+        val key = com.xemmy.mmbank.domain.intelligence.SubscriptionRescan.keyOf(subscription.merchant)
+        viewModelScope.launch {
+            runCatching {
+                setNever(key, true)
+                container.subscriptionRepository.rescan(container.transactionRepository.observeTransactions().first())
+                _events.tryEmit(UndoEvent("${subscription.merchant} will never be detected") { allow(key) })
+            }.onFailure { container.recordError("SubscriptionsViewModel.markNever", it) }
+            _charges.value = null
+        }
+    }
+
+    /** Lets a merchant be detected again and re-scans. */
+    fun allow(key: String) {
+        viewModelScope.launch {
+            runCatching {
+                setNever(key, false)
+                container.subscriptionRepository.rescan(container.transactionRepository.observeTransactions().first())
+            }.onFailure { container.recordError("SubscriptionsViewModel.allow", it) }
+        }
+    }
+
     /** The merchant being renamed and how many transactions carry that name, or null. */
     val renaming = MutableStateFlow<Pair<String, Int>?>(null)
 
@@ -363,6 +395,7 @@ fun SubscriptionsScreen(
     val verdicts by viewModel.verdicts.collectAsStateWithLifecycle()
 
     val renaming by viewModel.renaming.collectAsStateWithLifecycle()
+    val neverKeys by viewModel.neverKeys.collectAsStateWithLifecycle()
     renaming?.let { (from, count) ->
         RenameMerchantDialog(
             from = from,
@@ -387,6 +420,7 @@ fun SubscriptionsScreen(
             onOpenMerchant = { viewModel.closeCharges(); onOpenMerchant(open.subscription.merchant) },
             // A detected row is dismissed (it would just return on the next scan); a user-owned one is removed.
             onDismissRow = if (open.subscription.isManual) null else { { viewModel.dismiss(open.subscription) } },
+            onNever = if (open.subscription.isManual) null else { { viewModel.markNever(open.subscription) } },
             onDeleteSubscription = if (open.subscription.isManual) {
                 { viewModel.deleteSubscription(open.subscription) }
             } else {
@@ -447,7 +481,7 @@ fun SubscriptionsScreen(
             }
         },
     ) { padding ->
-        if (state.subscriptions.isEmpty() && state.possible.isEmpty() && state.dismissed.isEmpty()) {
+        if (state.subscriptions.isEmpty() && state.possible.isEmpty() && state.dismissed.isEmpty() && neverKeys.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     if (state.hasScannedOnce) {
@@ -500,7 +534,21 @@ fun SubscriptionsScreen(
                             subscription,
                             onTrack = { viewModel.track(subscription.id) },
                             onReject = { viewModel.dismiss(subscription) },
+                            onNever = { viewModel.markNever(subscription) },
                         )
+                    }
+                }
+                if (neverKeys.isNotEmpty()) {
+                    item(key = "never-header") {
+                        Text("Never a subscription", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 12.dp))
+                    }
+                    items(neverKeys.sorted(), key = { "n$it" }) { key ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(key, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                androidx.compose.material3.TextButton(onClick = { viewModel.allow(key) }) { Text("Allow again") }
+                            }
+                        }
                     }
                 }
                 if (state.dismissed.isNotEmpty()) {
@@ -607,7 +655,7 @@ private fun renewalLabel(nextDueDateMillis: Long, zone: ZoneId = ZoneId.systemDe
 }
 
 @Composable
-private fun PossibleRow(subscription: Subscription, onTrack: () -> Unit, onReject: () -> Unit) {
+private fun PossibleRow(subscription: Subscription, onTrack: () -> Unit, onReject: () -> Unit, onNever: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -627,7 +675,8 @@ private fun PossibleRow(subscription: Subscription, onTrack: () -> Unit, onRejec
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 androidx.compose.material3.TextButton(onClick = onTrack) { Text("Track") }
-                androidx.compose.material3.TextButton(onClick = onReject) { Text("Not a subscription") }
+                androidx.compose.material3.TextButton(onClick = onReject) { Text("Not this one") }
+                androidx.compose.material3.TextButton(onClick = onNever) { Text("Never") }
             }
         }
     }
@@ -682,6 +731,7 @@ internal fun verdictLabel(outcome: SubscriptionRadarEngine.Outcome): String = wh
     is SubscriptionRadarEngine.Outcome.Rejected -> when (outcome.reason) {
         SubscriptionRadarEngine.Reason.TOO_FEW -> "Too few charges: ${outcome.detail}"
         SubscriptionRadarEngine.Reason.IRREGULAR_GAPS -> "Not on a regular rhythm: ${outcome.detail}"
+        SubscriptionRadarEngine.Reason.NOT_A_SUBSCRIPTION -> outcome.detail
         SubscriptionRadarEngine.Reason.PRICE_VARIES -> "The price varies: ${outcome.detail}"
         SubscriptionRadarEngine.Reason.MIXED_WITH_OTHER_PURCHASES -> "Mixed with other purchases: ${outcome.detail}"
     }

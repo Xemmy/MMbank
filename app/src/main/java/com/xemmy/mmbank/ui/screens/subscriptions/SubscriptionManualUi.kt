@@ -313,6 +313,7 @@ fun SubscriptionChargesDialog(
     onRename: () -> Unit,
     onEditTransaction: (Transaction) -> Unit,
     onDismissRow: (() -> Unit)?,
+    onNever: (() -> Unit)?,
     onDeleteSubscription: (() -> Unit)?,
 ) {
     val sub = state.subscription
@@ -379,6 +380,7 @@ fun SubscriptionChargesDialog(
         dismissButton = {
             Row {
                 onDismissRow?.let { TextButton(onClick = it) { Text("Dismiss") } }
+                onNever?.let { TextButton(onClick = it) { Text("Never") } }
                 onDeleteSubscription?.let { TextButton(onClick = it) { Text("Remove") } }
             }
         },

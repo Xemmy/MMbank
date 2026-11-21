@@ -540,7 +540,7 @@ class AppContainer(context: Context) {
         )
     }
     val subscriptionRepository: SubscriptionRepository by lazy {
-        SubscriptionRepositoryImpl(database.subscriptionDao())
+        SubscriptionRepositoryImpl(database.subscriptionDao()) { preferences.neverSubscriptionKeys }
     }
     val savingsGoalRepository: SavingsGoalRepository by lazy {
         SavingsGoalRepositoryImpl(database.savingsGoalDao())
