@@ -44,10 +44,11 @@ fun RowAvatar(
     name: String,
     tone: GlowTone,
     modifier: Modifier = Modifier,
+    size: Dp = ObsidianTokens.avatarSize,
 ) {
     Box(
         modifier
-            .size(ObsidianTokens.avatarSize)
+            .size(size)
             .clip(RoundedCornerShape(ObsidianTokens.avatarRadius))
             .background(ObsidianTokens.surfaceGlass),
         contentAlignment = Alignment.Center,

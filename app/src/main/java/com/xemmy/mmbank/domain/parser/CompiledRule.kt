@@ -3,6 +3,7 @@ package com.xemmy.mmbank.domain.parser
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 
 /** A parsing rule with its regexes compiled, ready for matching. */
 data class CompiledRule(
@@ -19,6 +20,8 @@ data class CompiledRule(
     val category: TransactionCategory = TransactionCategory.NORMAL,
     /** Account matched transactions are assigned to; null = detect from the message. */
     val assignAccountId: Long? = null,
+    /** Kind matched transactions get; null = automatic (see [ParsingRule.assignKind]). */
+    val assignKind: TransactionKind? = null,
     /**
      * Plain-text phrases checked with case-insensitive containment against the
      * normalized message. When one matches, the message binds to this rule's
@@ -44,9 +47,12 @@ object RuleCompiler {
     fun compile(rule: ParsingRule): CompiledRule? {
         if (!rule.pattern.contains("(?<$AMOUNT_GROUP>")) return null
         val regex = runCatching { Regex(rule.pattern, RegexOption.IGNORE_CASE) }.getOrNull() ?: return null
-        val sender = rule.senderPattern
-            ?.takeIf { it.isNotBlank() }
-            ?.let { runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull() }
+        // An invalid sender regex must disable the rule, not silently widen it
+        // to every sender.
+        val senderText = rule.senderPattern?.takeIf { it.isNotBlank() }
+        val sender = senderText?.let {
+            runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull() ?: return null
+        }
         return CompiledRule(
             ruleId = rule.id,
             name = rule.name,
@@ -56,6 +62,7 @@ object RuleCompiler {
             defaultCurrency = rule.defaultCurrency?.takeIf { it.isNotBlank() }?.uppercase(),
             priority = rule.priority,
             assignAccountId = rule.assignAccountId,
+            assignKind = rule.assignKind,
         )
     }
 
@@ -65,5 +72,12 @@ object RuleCompiler {
         if (!pattern.contains("(?<$AMOUNT_GROUP>")) return "Pattern must contain a named group (?<amount>...)"
         return runCatching { Regex(pattern, RegexOption.IGNORE_CASE); null }
             .getOrElse { "Invalid regex: ${it.message}" }
+    }
+
+    /** Validation for the optional sender filter; blank is valid (no filter). */
+    fun validateSender(senderPattern: String): String? {
+        if (senderPattern.isBlank()) return null
+        return runCatching { Regex(senderPattern, RegexOption.IGNORE_CASE); null }
+            .getOrElse { "Invalid sender regex: ${it.message}" }
     }
 }

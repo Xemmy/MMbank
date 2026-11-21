@@ -64,6 +64,12 @@ class PortfolioRepositoryImpl(
                     .orEmpty()
             }
 
+        // Both sources failed: this is a failed fetch, not an empty account.
+        // Clearing here would wipe the last good holdings and report success.
+        if (perAsset.isEmpty() && wallets == null) {
+            error("Binance returned no balance data; keeping the previous holdings")
+        }
+
         val now = System.currentTimeMillis()
 
         // Merge the same asset across wallets into one holding (e.g. USDT that

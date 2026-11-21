@@ -13,7 +13,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -37,12 +36,14 @@ import com.xemmy.mmbank.domain.model.CapturedMessage
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.RuleCompiler
 import com.xemmy.mmbank.domain.parser.TransactionParser
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.MMFilterChip
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.LedgerColors
-import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -63,10 +64,15 @@ class RuleEditorViewModel(
     var sampleText by mutableStateOf("")
     /** Account matched transactions are pinned to; null = detect from the message. */
     var assignAccountId by mutableStateOf<Long?>(null)
+    /** Kind matched transactions get; null = classify automatically. */
+    var assignKind by mutableStateOf<TransactionKind?>(null)
     var accounts by mutableStateOf<List<Account>>(emptyList())
         private set
     var loaded by mutableStateOf(false)
         private set
+
+    /** The stored rule being edited; Save copies onto it so fields the editor doesn't show (enabled, createdAt...) survive. */
+    private var original: ParsingRule? = null
 
     init {
         viewModelScope.launch {
@@ -75,6 +81,7 @@ class RuleEditorViewModel(
             runCatching { accounts = container.accountRepository.observeActiveReal().first() }
             if (isEditing) {
                 container.parsingRuleRepository.getById(ruleId)?.let { rule ->
+                    original = rule
                     name = rule.name
                     pattern = rule.pattern
                     senderPattern = rule.senderPattern.orEmpty()
@@ -83,6 +90,7 @@ class RuleEditorViewModel(
                     priorityText = rule.priority.toString()
                     sampleText = rule.sampleText.orEmpty()
                     assignAccountId = rule.assignAccountId
+                    assignKind = rule.assignKind
                 }
             }
             loaded = true
@@ -93,6 +101,7 @@ class RuleEditorViewModel(
         get() = accounts.firstOrNull { it.id == assignAccountId }?.name
 
     val patternError: String? get() = RuleCompiler.validate(pattern)
+    val senderError: String? get() = RuleCompiler.validateSender(senderPattern)
 
     /** Runs the current pattern against the sample text exactly as the live pipeline would. */
     fun testAgainstSample(): ParsedTransaction? {
@@ -110,8 +119,9 @@ class RuleEditorViewModel(
     }
 
     private fun buildRule(): ParsingRule? {
-        if (name.isBlank() || patternError != null) return null
-        return ParsingRule(
+        if (name.isBlank() || patternError != null || senderError != null) return null
+        return RuleEditorMerge.apply(
+            original = original,
             id = if (isEditing) ruleId else 0,
             name = name.trim(),
             pattern = pattern,
@@ -121,6 +131,7 @@ class RuleEditorViewModel(
             priority = priorityText.toIntOrNull() ?: 100,
             sampleText = sampleText.takeIf { it.isNotBlank() },
             assignAccountId = assignAccountId,
+            assignKind = assignKind,
         )
     }
 
@@ -201,15 +212,17 @@ fun RuleEditorScreen(
             label = { Text("Sender filter regex (optional — SMS sender / app package)") },
             textStyle = mono,
             singleLine = true,
+            isError = viewModel.senderError != null,
+            supportingText = viewModel.senderError?.let { e -> { Text(e, color = MaterialTheme.colorScheme.error) } },
             modifier = Modifier.fillMaxWidth(),
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TransactionDirection.entries.forEach { entry ->
-                FilterChip(
+                MMFilterChip(
+                    label = entry.name,
                     selected = viewModel.direction == entry,
                     onClick = { viewModel.direction = entry },
-                    label = { Text(entry.name) },
                 )
             }
         }
@@ -239,6 +252,36 @@ fun RuleEditorScreen(
                         },
                     )
                 }
+            }
+        }
+
+        // Default kind: e.g. a rule written for the bank's "card payment"
+        // message marks every match as a card payment, so it never counts as
+        // spending. Wins over the automatic classification.
+        var kindMenuOpen by remember { mutableStateOf(false) }
+        Box {
+            OutlinedButton(onClick = { kindMenuOpen = true }) {
+                Text("Matches are: " + (viewModel.assignKind?.label ?: "detect automatically"))
+            }
+            DropdownMenu(expanded = kindMenuOpen, onDismissRequest = { kindMenuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("Detect automatically (default)") },
+                    onClick = {
+                        kindMenuOpen = false
+                        viewModel.assignKind = null
+                    },
+                )
+                TransactionKind.entries
+                    .filter { it.fixedDirection == null || it.fixedDirection == viewModel.direction }
+                    .forEach { kind ->
+                        DropdownMenuItem(
+                            text = { Text(kind.label) },
+                            onClick = {
+                                kindMenuOpen = false
+                                viewModel.assignKind = kind
+                            },
+                        )
+                    }
             }
         }
 
@@ -283,7 +326,7 @@ fun RuleEditorScreen(
                         Text("No match", color = MaterialTheme.colorScheme.error)
                     } else {
                         Text("Match ✓", color = LedgerColors.credit, style = MaterialTheme.typography.titleSmall)
-                        Text("Amount: ${result.amount.asMoney(result.currencyCode)}")
+                        Text("Amount: ${moneyLabel(result.amount, result.currencyCode)}")
                         Text("Direction: ${result.direction.name}")
                         Text("Merchant: ${result.merchant ?: "—"}")
                         Text("Account: ${viewModel.assignedAccountName ?: "detected from message"}")
@@ -295,7 +338,7 @@ fun RuleEditorScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = { viewModel.save(onDone) },
-                enabled = viewModel.name.isNotBlank() && viewModel.patternError == null,
+                enabled = viewModel.name.isNotBlank() && viewModel.patternError == null && viewModel.senderError == null,
                 modifier = Modifier.weight(1f),
             ) { Text("Save rule") }
             if (viewModel.isEditing) {

@@ -35,6 +35,8 @@ object CurrencyNormalizer {
         // USDT (Tether) is a real currency for Binance transactions, not a
         // typo of USD — preserve it rather than truncating to the 3-letter case below.
         if (token.equals("USDT", ignoreCase = true)) return "USDT"
+        // "Dhs"/"Dh" are common Latin spellings of the dirham.
+        if (token.equals("DHS", ignoreCase = true) || token.equals("DH", ignoreCase = true)) return "AED"
         if (token.length == 3 && token.all { it.isLetter() }) return token.uppercase()
         return null
     }
