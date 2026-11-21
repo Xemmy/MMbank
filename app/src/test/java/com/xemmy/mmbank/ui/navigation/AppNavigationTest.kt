@@ -175,4 +175,15 @@ class AdaptiveLayoutTest {
         assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.PAY_LATER_EDITOR_PATTERN))
         assertEquals(AppTab.PLAN, TabRouting.tabFor(Routes.payLaterEditor(fromTransactionId = 12)))
     }
+
+    @Test
+    fun `every tab root maps to its own title`() {
+        AppTab.values().forEach { assertEquals(it, TabRouting.tabFor(it.route)) }
+        assertEquals("Insights", TabRouting.tabFor(Routes.INSIGHTS)?.label)
+    }
+
+    @Test
+    fun `fab clearance clears the fab with its margin and a gap`() {
+        assertTrue(com.xemmy.mmbank.ui.theme.MMSpacing.fabClearance.value >= 56f + 16f)
+    }
 }

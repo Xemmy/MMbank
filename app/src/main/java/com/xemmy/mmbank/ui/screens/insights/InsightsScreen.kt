@@ -75,7 +75,16 @@ import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.ui.designsystem.DonutChart
 import com.xemmy.mmbank.ui.designsystem.DonutSlice
 import com.xemmy.mmbank.ui.designsystem.LocalHideBalances
+import com.xemmy.mmbank.ui.designsystem.MMAssistChip
 import com.xemmy.mmbank.ui.designsystem.MMCard
+import com.xemmy.mmbank.ui.designsystem.ListRow
+import com.xemmy.mmbank.ui.designsystem.MoneySentenceText
+import com.xemmy.mmbank.ui.designsystem.MoneyTone
+import com.xemmy.mmbank.ui.theme.MMSpacing
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Switch
 import com.xemmy.mmbank.ui.designsystem.MMFilterChip
 import com.xemmy.mmbank.ui.designsystem.MoneyText
 import com.xemmy.mmbank.ui.designsystem.Sparkline
@@ -125,65 +134,52 @@ fun InsightsScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(MMTheme.colors.canvas),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(
+            start = MMSpacing.gutter,
+            top = MMSpacing.gutter,
+            end = MMSpacing.gutter,
+            bottom = MMSpacing.fabClearance,
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Low-profile switch between "clean" analytics (excluded rows filtered
-        // out, the default) and the raw ledger with every transaction counted.
-        // The (i) reveals what "Raw ledger" means, since it isn't self-evident.
-        item(key = "ledger_toggle") {
-            var showInfo by remember { mutableStateOf(false) }
-            Column(horizontalAlignment = Alignment.End) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = { showInfo = !showInfo }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Outlined.Info,
-                            contentDescription = "What is Raw ledger?",
-                            tint = MMTheme.colors.textSecondary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    MMFilterChip(
-                        label = "Raw ledger",
-                        selected = state.showAllLedgerTransactions,
-                        onClick = viewModel::toggleShowAllLedgerTransactions,
-                        leadingIcon = {
-                            Icon(
-                                Icons.Filled.VisibilityOff,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        },
-                    )
-                }
-                if (showInfo) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Includes all transactions, like balance adjustments and cashback, " +
-                            "which are normally hidden from spending totals.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MMTheme.colors.textSecondary,
-                    )
-                }
-            }
-        }
-
         item(key = "date_filter_row") {
             var customOpen by remember { mutableStateOf(false) }
             val period by viewModel.period.collectAsStateWithLifecycle()
             val today = remember { LocalDate.now() }
-            PeriodBar(
-                window = period,
-                today = today,
-                onUnit = viewModel::setPeriodUnit,
-                onWindow = viewModel::setPeriod,
-                onPickCustom = { customOpen = true },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PeriodBar(
+                    window = period,
+                    today = today,
+                    onUnit = viewModel::setPeriodUnit,
+                    onWindow = viewModel::setPeriod,
+                    onPickCustom = { customOpen = true },
+                    sheetOptions = {
+                        // "Clean" analytics (excluded rows filtered out) is the default;
+                        // raw ledger counts every transaction.
+                        ListRow(
+                            title = "Raw ledger",
+                            subtitle = "Includes all transactions, like balance adjustments and cashback, " +
+                                "which are normally hidden from spending totals.",
+                            trailing = {
+                                Switch(
+                                    checked = state.showAllLedgerTransactions,
+                                    onCheckedChange = { viewModel.toggleShowAllLedgerTransactions() },
+                                )
+                            },
+                            onClick = viewModel::toggleShowAllLedgerTransactions,
+                        )
+                    },
+                )
+                if (state.showAllLedgerTransactions) {
+                    MMAssistChip(
+                        label = "Raw ledger · on",
+                        onClick = viewModel::toggleShowAllLedgerTransactions,
+                        leadingIcon = {
+                            Icon(Icons.Filled.Close, contentDescription = "Turn raw ledger off", modifier = Modifier.size(16.dp))
+                        },
+                    )
+                }
+            }
             if (customOpen) {
                 DashboardCustomDateRangeDialog(
                     initial = period.range()?.let { DashboardDateRange.Custom(it.start, it.end) },
@@ -202,8 +198,11 @@ fun InsightsScreen(
                     item(key = "period_tiles") { PeriodTiles(state) }
                 }
                 InsightsSections.INSIGHTS_CARD -> {
-                    if (state.stats.insights.isNotEmpty()) {
-                        item(key = "insights_card") { SmartInsightsCard(state) }
+                    // The spend-change sentence moves to the line under the tiles when they show.
+                    val tilesShown = InsightsSections.PERIOD_TILES in layout.visibleOrder
+                    val insights = state.stats.insights.filter { !(tilesShown && it is SmartInsight.SpendTrend) }
+                    if (insights.isNotEmpty()) {
+                        item(key = "insights_card") { SmartInsightsCard(state, insights) }
                     }
                 }
                 InsightsSections.NET_WORTH_TREND -> {
@@ -434,14 +433,14 @@ internal fun DashboardCustomDateRangeDialog(
 
 /** Smart analysis of the selected period's money flow: trend, savings rate, top mover, standouts. */
 @Composable
-private fun SmartInsightsCard(state: DashboardUiState) {
+private fun SmartInsightsCard(state: DashboardUiState, insights: List<SmartInsight>) {
     val hidden = state.hideBalances
     val currency = state.baseCurrency
 
     MMCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Smart insights", style = MaterialTheme.typography.titleSmall)
-            state.stats.insights.forEach { insight ->
+            insights.forEach { insight ->
                 Row(verticalAlignment = Alignment.Top) {
                     val dotColor = when (insight.tone) {
                         InsightTone.POSITIVE -> MMTheme.colors.moneyIn
@@ -455,9 +454,10 @@ private fun SmartInsightsCard(state: DashboardUiState) {
                             .background(dotColor, CircleShape),
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text(
-                        insightText(insight, currency, hidden),
-                        style = MaterialTheme.typography.bodySmall,
+                    MoneySentenceText(
+                        insightSegments(insight, currency),
+                        style = MaterialTheme.typography.bodyMedium,
+                        hidden = hidden,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -466,35 +466,7 @@ private fun SmartInsightsCard(state: DashboardUiState) {
     }
 }
 
-/** Renders one [SmartInsight] into plain English, applying money formatting and the hide-balances mask. */
-private fun insightText(insight: SmartInsight, currency: String, hidden: Boolean): String = when (insight) {
-    is SmartInsight.SpendTrend -> {
-        val direction = if (insight.percentChange > 0) "up" else "down"
-        "Spending is ${abs(insight.percentChange).roundToInt()}% $direction vs. the previous period"
-    }
-    is SmartInsight.SavingsRate ->
-        if (insight.ratePercent >= 0) {
-            "You saved ${insight.ratePercent.roundToInt()}% of your income this period"
-        } else {
-            "You spent ${(-insight.ratePercent).roundToInt()}% more than you earned this period"
-        }
-    is SmartInsight.TopCategory ->
-        "${insight.category.name} is your biggest expense at ${insight.sharePercent.roundToInt()}% " +
-            "(${moneyLabel(insight.amount, currency, hidden)})"
-    is SmartInsight.CategorySpike ->
-        "${insight.category.name} spending jumped ${insight.percentChange.roundToInt()}% to " +
-            moneyLabel(insight.amount, currency, hidden)
-    is SmartInsight.NoIncomeSpend ->
-        "No income recorded this period — ${moneyLabel(insight.spend, currency, hidden)} went out"
-    is SmartInsight.BiggestExpense ->
-        "Your biggest expense was ${moneyLabel(insight.amount, currency, hidden)} at ${insight.merchant}"
-    is SmartInsight.UnusualCharge ->
-        "Unusual: ${moneyLabel(insight.amount, insight.currencyCode, hidden)} at ${insight.merchant} is " +
-            "${String.format(java.util.Locale.US, "%.1f", insight.ratio)}× your usual " +
-            "(about ${moneyLabel(insight.usual, insight.currencyCode, hidden)})"
-}
-
-/** Income / Spent / Net for the selected period as three stat tiles. */
+/** Income / Spent / Net for the selected period as three equal-height stat tiles plus the spend-change line. */
 @Composable
 private fun PeriodTiles(state: DashboardUiState) {
     val income = state.stats.periodIncome
@@ -502,32 +474,26 @@ private fun PeriodTiles(state: DashboardUiState) {
     val net = netFlow(income, spend)
     val hidden = state.hideBalances
 
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        PeriodStatTile(
-            label = "Income",
-            amount = income,
-            kind = TransactionKind.INCOME,
-            currency = state.baseCurrency,
-            hidden = hidden,
-            modifier = Modifier.weight(1f),
-        )
-        PeriodStatTile(
-            label = "Spent",
-            amount = spend,
-            kind = TransactionKind.SPEND,
-            currency = state.baseCurrency,
-            hidden = hidden,
-            modifier = Modifier.weight(1f),
-            caption = spendChangeCaption(state.stats.spendChangePercent, state.stats.previousLabel),
-        )
-        PeriodStatTile(
-            label = "Net",
-            amount = abs(net),
-            kind = netTileKind(net),
-            currency = state.baseCurrency,
-            hidden = hidden,
-            modifier = Modifier.weight(1f),
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        ) {
+            PeriodStatTile("Income", income, TransactionKind.INCOME, state.baseCurrency, hidden, Modifier.weight(1f).fillMaxHeight())
+            PeriodStatTile("Spent", spend, TransactionKind.SPEND, state.baseCurrency, hidden, Modifier.weight(1f).fillMaxHeight())
+            PeriodStatTile("Net", abs(net), netTileKind(net), state.baseCurrency, hidden, Modifier.weight(1f).fillMaxHeight())
+        }
+        spendChangeLine(state.stats.spendChangePercent, state.stats.previousLabel)?.let { (line, tone) ->
+            Text(
+                line,
+                style = MaterialTheme.typography.bodySmall,
+                color = when (tone) {
+                    MoneyTone.IN -> MMTheme.colors.moneyIn
+                    MoneyTone.OUT -> MMTheme.colors.moneyOut
+                    MoneyTone.NEUTRAL -> MMTheme.colors.textSecondary
+                },
+            )
+        }
     }
 }
 
@@ -543,9 +509,8 @@ private fun PeriodStatTile(
     currency: String,
     hidden: Boolean,
     modifier: Modifier = Modifier,
-    caption: String? = null,
 ) {
-    MMCard(modifier) {
+    MMCard(modifier, contentPadding = PaddingValues(MMSpacing.md)) {
         Column(Modifier.fillMaxWidth()) {
             Text(
                 label,
@@ -557,26 +522,14 @@ private fun PeriodStatTile(
                 amount = amount,
                 currencyCode = currency,
                 kind = kind,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 hidden = hidden,
+                compact = true,
+                fitWidth = true,
+                modifier = Modifier.fillMaxWidth(),
             )
-            caption?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MMTheme.colors.textSecondary,
-                )
-            }
         }
     }
-}
-
-/** "↑18% vs this point last month"; null when there's nothing to compare with. */
-internal fun spendChangeCaption(percent: Double?, previousLabel: String?): String? {
-    if (percent == null || previousLabel == null) return null
-    val rounded = kotlin.math.abs(percent).roundToInt()
-    if (rounded == 0) return "≈ same $previousLabel"
-    return "${if (percent > 0) "↑" else "↓"}$rounded% $previousLabel"
 }
 
 /** Card row that opens the full cashback Rewards screen. */
@@ -775,14 +728,12 @@ private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Bo
     val sinceStart = trend.values.getOrNull(firstKnownIndex)?.let { current - it }
     val up = (sixMonths ?: sinceStart ?: 0.0) >= 0.0
 
-    fun delta(value: Double): String {
-        val sign = if (value >= 0) "▲" else "▼"
-        return "$sign ${moneyLabel(kotlin.math.abs(value), currency, hidden)}"
-    }
-
     MMCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth()) {
-            Text("Net worth — 12 months", style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Net worth", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text("12 months", style = MaterialTheme.typography.labelMedium, color = MMTheme.colors.textSecondary)
+            }
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MoneyText(
@@ -797,17 +748,24 @@ private fun NetWorthTrendCard(trend: NetWorthTrend, currency: String, hidden: Bo
                 }
             }
             val lines = buildList {
-                sixMonths?.let { add("${delta(it)} vs 6 months ago") }
-                twelveMonths?.let { add("${delta(it)} vs a year ago") }
+                sixMonths?.let { add(deltaSegments(it, currency, "vs 6 months ago")) }
+                twelveMonths?.let { add(deltaSegments(it, currency, "vs a year ago")) }
                 if (sixMonths == null && twelveMonths == null && sinceStart != null) {
-                    add("${delta(sinceStart)} since ${trend.months[firstKnownIndex].month.getDisplayName(TextStyle.SHORT, Locale.US)}")
+                    add(
+                        deltaSegments(
+                            sinceStart,
+                            currency,
+                            "since ${trend.months[firstKnownIndex].month.getDisplayName(TextStyle.SHORT, Locale.US)}",
+                        ),
+                    )
                 }
             }
             if (lines.isNotEmpty()) {
-                Text(
-                    lines.joinToString("  ·  "),
+                MoneySentenceText(
+                    joinSegments(lines),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (up) MMTheme.colors.moneyIn else MMTheme.colors.moneyOut,
+                    hidden = hidden,
                 )
             }
             Spacer(Modifier.height(10.dp))

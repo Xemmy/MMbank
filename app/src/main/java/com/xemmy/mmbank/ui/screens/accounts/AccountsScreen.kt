@@ -183,7 +183,7 @@ fun AccountsScreen(
                 .padding(padding),
             // Bottom clearance so the "+" FAB never floats over the last card's
             // adjust/delete actions (56dp FAB + 16dp margin + 16dp + extra buffer).
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = com.xemmy.mmbank.ui.theme.MMSpacing.fabClearance),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             lastError?.let { error ->

@@ -167,4 +167,18 @@ class ColorContrastTest {
 
     @Test
     fun `light chart tokens clear 3 to 1`() = chartTokens(lightMMColors())
+
+    @Test
+    fun `secondary text clears AA on surface and raised surface in every palette`() {
+        val palettes = mapOf(
+            "obsidian dark" to darkMMColors(),
+            "obsidian light" to lightMMColors(),
+            "graphite dark" to graphiteDarkMMColors(),
+            "graphite light" to graphiteLightMMColors(),
+        )
+        palettes.forEach { (name, c) ->
+            assertTrue("$name on surface", contrastRatio(c.textSecondary, c.surface) >= AA)
+            assertTrue("$name on surfaceRaised", contrastRatio(c.textSecondary, c.surfaceRaised) >= AA)
+        }
+    }
 }

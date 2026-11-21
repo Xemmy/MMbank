@@ -36,6 +36,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import com.xemmy.mmbank.ui.theme.MMSpacing
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -391,7 +392,15 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
             }
             // Settings lives behind the gear on every tab root, not in the bar.
             if (NavTransitions.isTabRoot(currentRoute)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = MMSpacing.gutter),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        TabRouting.tabFor(currentRoute)?.label.orEmpty(),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f),
+                    )
                     IconButton(onClick = { navController.navigate(Routes.SEARCH) { launchSingleTop = true } }) {
                         Icon(Icons.Filled.Search, contentDescription = "Search")
                     }

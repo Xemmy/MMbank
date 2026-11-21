@@ -61,4 +61,23 @@ class MoneyFormatTest {
     fun `hidden spoken form leaks nothing`() {
         assertEquals("amount hidden", moneyContentDescription(46.12, "AED", TransactionKind.SPEND, true))
     }
+
+    @Test
+    fun `compact number keeps whole units below a million then abbreviates`() {
+        assertEquals("0", compactMoneyNumber(0.0))
+        assertEquals("4,464", compactMoneyNumber(4464.37))
+        assertEquals("999,999", compactMoneyNumber(999_999.2))
+        assertEquals("1.06M", compactMoneyNumber(1_064_795.18))
+        assertEquals("10.6M", compactMoneyNumber(10_640_000.0))
+        assertEquals("1.2B", compactMoneyNumber(1.2e9))
+        assertEquals("1M", compactMoneyNumber(999_999.9))
+        assertEquals("4,464", compactMoneyNumber(-4464.37))
+    }
+
+    @Test
+    fun `compact display string carries sign and code, mask when hidden`() {
+        assertEquals("−4,464 AED", moneyDisplayStringCompact(4464.37, "AED", TransactionKind.SPEND, false))
+        assertEquals("+1.06M AED", moneyDisplayStringCompact(1_064_795.0, "AED", TransactionKind.INCOME, false))
+        assertEquals(AMOUNT_MASK, moneyDisplayStringCompact(5.0, "AED", TransactionKind.SPEND, true))
+    }
 }

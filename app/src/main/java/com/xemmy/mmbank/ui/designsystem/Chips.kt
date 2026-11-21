@@ -1,6 +1,9 @@
 package com.xemmy.mmbank.ui.designsystem
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.FilterChip
@@ -44,6 +47,43 @@ fun MMFilterChip(
         modifier = modifier
             .minimumInteractiveComponentSize()
             .semantics { role = Role.Checkbox },
+    )
+}
+
+/** Icon-only [MMFilterChip]; [contentDescription] is what TalkBack reads. */
+@Composable
+fun MMIconFilterChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MMTheme.colors
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            androidx.compose.material3.Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.padding(vertical = 0.dp).size(20.dp),
+            )
+        },
+        shape = MaterialTheme.shapes.small,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color.Transparent,
+            labelColor = colors.textSecondary,
+            selectedContainerColor = colors.surfaceRaised,
+            selectedLabelColor = colors.textPrimary,
+        ),
+        border = FilterChipDefaults.filterChipBorder(enabled = true, selected = selected),
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .semantics {
+                role = Role.Button
+                this.contentDescription = contentDescription
+            },
     )
 }
 

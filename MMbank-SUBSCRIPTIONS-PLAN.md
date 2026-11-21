@@ -29,8 +29,8 @@ Answers the user gave:
 | # | Phase | Version | Why this order |
 |---|---|---|---|
 | 1 | Direct APK download + CI clean-up | 0.126.2 (CI only; bump anyway so the APK name changes) | Independent and small. Every later phase then ships as a direct APK. |
-| 2 | Subscriptions keyed by id (migration v43) | 0.127.0 | Needed before detection can return more than one subscription per merchant. |
-| 3 | Detection v3 + "Why not detected?" diagnostics | 0.128.0 | Fixes report #1 and needs phase 2. |
+| 2 | Subscriptions keyed by id (migration v43) | next free version | Needed before detection can return more than one subscription per merchant. |
+| 3 | Detection v3 + "Why not detected?" diagnostics | next free version | Fixes report #1 and needs phase 2. |
 | 4 | Edit, dismiss/restore, undo | 0.129.0 | 4a |
 | 5 | Search (amount, SMS text, date) | 0.130.0 | 4c |
 | 6 | Edit transaction + rename merchant everywhere (migration v44) | 0.131.0 | 4d |

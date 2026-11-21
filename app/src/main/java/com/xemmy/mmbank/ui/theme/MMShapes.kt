@@ -19,6 +19,8 @@ object MMSpacing {
     val cardPadding: Dp = lg
     val cardGap: Dp = md
     val sectionGap: Dp = xl
+    /** Bottom list padding that clears the 56dp FAB plus its 16dp margin and a 16dp gap. */
+    val fabClearance: Dp = 88.dp
 }
 
 private fun corner(size: Dp) = RoundedCornerShape(CornerSize(size))

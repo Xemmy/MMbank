@@ -26,6 +26,8 @@ import com.xemmy.mmbank.ui.designsystem.LocalHideBalances
 import com.xemmy.mmbank.ui.designsystem.MMCard
 import com.xemmy.mmbank.ui.designsystem.MMScaffold
 import com.xemmy.mmbank.ui.designsystem.Sparkline
+import com.xemmy.mmbank.ui.designsystem.MoneySentenceText
+import com.xemmy.mmbank.ui.designsystem.money
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.MMTheme
 import java.util.Locale
@@ -59,8 +61,9 @@ fun CashFlowDetailScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Net in ${period.label(viewModel.today).lowercase(Locale.US)}", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
-                    Text(
-                        (if (b.net < 0) "−" else "") + moneyLabel(kotlin.math.abs(b.net), currency, hidden),
+                    MoneySentenceText(
+                        listOf(money(b.net, currency)),
+                        hidden = hidden,
                         style = MaterialTheme.typography.headlineMedium,
                         color = MMTheme.colors.textPrimary,
                     )
@@ -101,8 +104,8 @@ fun CashFlowDetailScreen(
             }
             item {
                 MMCard(Modifier.fillMaxWidth()) {
-                    ListRow(title = "Money in", trailing = { Text(moneyLabel(b.incomeTotal, currency, hidden), color = MMTheme.colors.moneyIn) })
-                    ListRow(title = "Money out", trailing = { Text(moneyLabel(b.spendTotal, currency, hidden), color = MMTheme.colors.moneyOut) })
+                    ListRow(title = "Money in", trailing = { MoneySentenceText(listOf(money(b.incomeTotal, currency)), hidden = hidden, color = MMTheme.colors.moneyIn) })
+                    ListRow(title = "Money out", trailing = { MoneySentenceText(listOf(money(b.spendTotal, currency)), hidden = hidden, color = MMTheme.colors.moneyOut) })
                 }
             }
             if (b.income.isNotEmpty()) {

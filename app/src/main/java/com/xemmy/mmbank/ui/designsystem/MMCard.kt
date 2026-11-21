@@ -3,6 +3,7 @@ package com.xemmy.mmbank.ui.designsystem
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,6 +26,7 @@ fun MMCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     tone: MMTone? = null,
+    contentPadding: PaddingValues = PaddingValues(MMSpacing.cardPadding),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = MMTheme.colors
@@ -49,7 +51,7 @@ fun MMCard(
                     },
                 )
                 .padding(start = barWidth)
-                .padding(MMSpacing.cardPadding),
+                .padding(contentPadding),
             content = content,
         )
     }

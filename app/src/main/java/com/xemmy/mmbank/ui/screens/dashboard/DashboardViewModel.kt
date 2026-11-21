@@ -1257,12 +1257,30 @@ internal fun computeDashboardStats(
         periodSpend = periodSpend,
         insights = insights,
         spendChangePercent = previousPeriodSpend?.takeIf { it > 0.0 }?.let { (periodSpend - it) / it * 100.0 },
-        previousLabel = when {
-            previousWindow == null -> null
-            monthToDate -> "vs this point last month"
-            else -> "vs previous period"
-        },
+        previousLabel = previousPeriodLabel(window, previousWindow != null, monthToDate),
     )
+}
+
+/**
+ * Noun phrase for what the spend change is measured against, e.g. "last week"
+ * or "this point last month"; null when there is no previous window to compare.
+ */
+internal fun previousPeriodLabel(window: DateWindow?, hasPrevious: Boolean, monthToDate: Boolean): String? {
+    if (!hasPrevious) return null
+    if (monthToDate) return "this point last month"
+    if (window == null) return "the previous period"
+    val days = ChronoUnit.DAYS.between(window.start, window.end) + 1
+    val wholeMonth = window.start.dayOfMonth == 1 &&
+        window.end == YearMonth.from(window.start).atEndOfMonth() &&
+        YearMonth.from(window.start) == YearMonth.from(window.end)
+    val wholeYear = window.start.dayOfYear == 1 && window.start.year == window.end.year &&
+        window.end.dayOfYear == window.end.lengthOfYear()
+    return when {
+        days == 7L -> "last week"
+        wholeMonth -> "last month"
+        wholeYear -> "last year"
+        else -> "the previous period"
+    }
 }
 
 /** Month-end fiat net worth, oldest first; see [computeNetWorthTrend]. */

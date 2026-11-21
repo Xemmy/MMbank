@@ -53,6 +53,28 @@ fun moneyDisplayString(amount: Double, currencyCode: String, kind: TransactionKi
     return moneySignFor(kind, amount) + formatMoneyNumber(amount, currencyCode) + " " + currencyCode
 }
 
+/**
+ * Tile-sized magnitude: whole units below a million ("4,464"), then three
+ * significant digits with a suffix ("1.06M", "10.6M", "1.2B").
+ */
+fun compactMoneyNumber(amount: Double): String {
+    val a = abs(amount)
+    val whole = BigDecimal.valueOf(a).setScale(0, RoundingMode.HALF_UP)
+    if (whole < BigDecimal(1_000_000)) {
+        return NumberFormat.getIntegerInstance(Locale.US).apply { roundingMode = RoundingMode.HALF_UP }.format(a)
+    }
+    val (scaled, suffix) = if (a >= 1e9) BigDecimal.valueOf(a / 1e9) to "B" else BigDecimal.valueOf(a / 1e6) to "M"
+    val rounded = scaled.round(java.math.MathContext(3, RoundingMode.HALF_UP)).stripTrailingZeros()
+    return rounded.toPlainString() + suffix
+}
+
+/** [moneyDisplayString] with [compactMoneyNumber] for 0-2 decimal currencies; crypto keeps its precision. */
+fun moneyDisplayStringCompact(amount: Double, currencyCode: String, kind: TransactionKind, hidden: Boolean): String {
+    if (hidden) return AMOUNT_MASK
+    val number = if (fractionDigitsFor(currencyCode) > 2) formatMoneyNumber(amount, currencyCode) else compactMoneyNumber(amount)
+    return moneySignFor(kind, amount) + number + " " + currencyCode
+}
+
 private data class UnitNames(val majorOne: String, val majorMany: String, val minorOne: String, val minorMany: String)
 
 private val UNIT_NAMES = mapOf(

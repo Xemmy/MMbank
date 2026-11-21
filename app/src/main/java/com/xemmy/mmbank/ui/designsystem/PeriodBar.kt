@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.designsystem
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +42,8 @@ fun PeriodBar(
     onWindow: (PeriodWindow) -> Unit,
     onPickCustom: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Extra rows for the ⋯ sheet (e.g. a screen-specific switch), after an "Options" label. */
+    sheetOptions: (@Composable ColumnScope.(close: () -> Unit) -> Unit)? = null,
 ) {
     var moreOpen by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -48,11 +52,11 @@ fun PeriodBar(
                 .forEach { (label, unit) ->
                     MMFilterChip(label = label, selected = window.unit == unit, onClick = { onUnit(unit) })
                 }
-            MMFilterChip(
-                label = "More",
+            MMIconFilterChip(
+                icon = Icons.Filled.MoreHoriz,
+                contentDescription = "More periods and options",
                 selected = window.unit == PeriodUnit.CUSTOM,
                 onClick = { moreOpen = true },
-                leadingIcon = { Icon(Icons.Filled.MoreHoriz, contentDescription = null) },
             )
         }
         if (window.unit != PeriodUnit.ALL) {
@@ -94,6 +98,16 @@ fun PeriodBar(
                     onPickCustom()
                 },
             )
+            if (sheetOptions != null) {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text(
+                    "Options",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MMTheme.colors.textSecondary,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                sheetOptions { moreOpen = false }
+            }
         }
     }
 }

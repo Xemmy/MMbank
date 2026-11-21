@@ -296,7 +296,7 @@ fun SubscriptionsScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = com.xemmy.mmbank.ui.theme.MMSpacing.fabClearance),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(state.subscriptions, key = { it.id }) { subscription ->

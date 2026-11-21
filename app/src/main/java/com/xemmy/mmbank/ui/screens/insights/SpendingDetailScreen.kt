@@ -33,6 +33,8 @@ import com.xemmy.mmbank.ui.designsystem.LocalHideBalances
 import com.xemmy.mmbank.ui.designsystem.MMCard
 import com.xemmy.mmbank.ui.designsystem.MMScaffold
 import com.xemmy.mmbank.ui.designsystem.Sparkline
+import com.xemmy.mmbank.ui.designsystem.MoneySentenceText
+import com.xemmy.mmbank.ui.designsystem.money
 import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.MMTheme
 import java.util.Locale
@@ -69,7 +71,7 @@ fun SpendingDetailScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Spent in ${period.label(viewModel.today).lowercase(Locale.US)}", style = MaterialTheme.typography.labelLarge, color = MMTheme.colors.textSecondary)
-                    Text(moneyLabel(b.spendTotal, currency, hidden), style = MaterialTheme.typography.headlineMedium, color = MMTheme.colors.textPrimary)
+                    MoneySentenceText(listOf(money(b.spendTotal, currency)), hidden = hidden, style = MaterialTheme.typography.headlineMedium, color = MMTheme.colors.textPrimary)
                 }
             }
             if (b.spending.isEmpty()) {
@@ -121,7 +123,7 @@ fun SpendingDetailScreen(
                         ListRow(
                             title = "#" + share.label.name,
                             subtitle = "${share.count} transaction${if (share.count == 1) "" else "s"}",
-                            trailing = { Text(moneyLabel(share.amount, currency, hidden), style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textPrimary) },
+                            trailing = { MoneySentenceText(listOf(money(share.amount, currency)), hidden = hidden, style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textPrimary) },
                         )
                     }
                 }
@@ -147,7 +149,7 @@ internal fun CategoryRow(share: CategoryShare, currency: String, hidden: Boolean
             title = share.category.name,
             subtitle = "${share.count} transaction${if (share.count == 1) "" else "s"} · ${String.format(Locale.US, "%.0f", share.share)}%",
             leading = { Text(share.category.icon) },
-            trailing = { Text(moneyLabel(share.amount, currency, hidden), style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textPrimary) },
+            trailing = { MoneySentenceText(listOf(money(share.amount, currency)), hidden = hidden, style = MaterialTheme.typography.bodyMedium, color = MMTheme.colors.textPrimary) },
         )
     }
 }

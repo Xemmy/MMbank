@@ -448,7 +448,7 @@ fun TransactionsScreen(
                     modifier = Modifier.fillMaxSize(),
                     // Bottom clearance so the "+" FAB never floats over the last
                     // row's edit/delete actions (56dp FAB + 16dp margin + 16dp).
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = com.xemmy.mmbank.ui.theme.MMSpacing.fabClearance),
                 ) {
                     grouped.forEach { (day, dayTransactions) ->
                         stickyHeader(key = "day-$day") {

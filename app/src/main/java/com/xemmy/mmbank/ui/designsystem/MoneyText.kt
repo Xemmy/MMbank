@@ -37,12 +37,17 @@ fun MoneyText(
     hidden: Boolean = LocalHideBalances.current,
     /** Overrides the tone colour, e.g. for "owes" / "is owed" sentences. */
     color: Color? = null,
+    /** Shrink to fit instead of truncating (stat tiles). */
+    fitWidth: Boolean = false,
+    /** Whole-unit / K-M-B display for tight tiles; TalkBack still reads the exact amount. */
+    compact: Boolean = false,
 ) {
     val description = moneyContentDescription(amount, currencyCode, kind, hidden)
     AmountText(
-        display = moneyDisplayString(amount, currencyCode, kind, hidden),
+        display = if (compact) moneyDisplayStringCompact(amount, currencyCode, kind, hidden) else moneyDisplayString(amount, currencyCode, kind, hidden),
         color = color ?: moneyColor(moneyToneFor(kind)),
         modifier = modifier.semantics { contentDescription = description },
         style = style,
+        fitWidth = fitWidth,
     )
 }

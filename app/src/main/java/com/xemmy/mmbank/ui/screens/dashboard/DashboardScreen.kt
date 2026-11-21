@@ -139,7 +139,6 @@ fun DashboardScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        DashboardHeader()
         // This single LazyColumn hosts several separate items() blocks (accounts,
         // crypto, recent transactions). Compose requires keys to be unique
         // across the WHOLE list, not just within one items() call — Account
@@ -149,7 +148,12 @@ fun DashboardScreen(
         // must stay prefixed per section.
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(MMSpacing.gutter),
+            contentPadding = PaddingValues(
+                start = MMSpacing.gutter,
+                top = MMSpacing.gutter,
+                end = MMSpacing.gutter,
+                bottom = MMSpacing.fabClearance,
+            ),
             verticalArrangement = Arrangement.spacedBy(MMSpacing.cardGap),
         ) {
             captureHealth?.takeIf { it.showBanner }?.let { health ->
@@ -377,19 +381,6 @@ private fun CardsDueCard(cards: List<CardPaymentReminders.CardReminder>, hidden:
                 )
             }
         }
-    }
-}
-
-/** Dashboard header: screen title. Ambient background style now lives in Settings > Appearance. */
-@Composable
-private fun DashboardHeader() {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = MMSpacing.gutter, vertical = MMSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Home", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
     }
 }
 
