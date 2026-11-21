@@ -79,6 +79,9 @@ object SubscriptionRadarEngine {
     /** Weekly / bi-weekly gaps must sit this close to 7 / 14 days. */
     private const val SHORT_CADENCE_TOLERANCE_DAYS = 1L
 
+    /** An unhinted 2-charge "possible" must repeat within this many days of the same day of the month. */
+    private const val POSSIBLE_DAY_OF_MONTH_TOLERANCE = 2
+
     /** Active (confident) subscriptions plus lower-confidence "possible" ones, with the charges behind each. */
     data class Found(val subscription: Subscription, val charges: List<Transaction>)
 
@@ -220,6 +223,13 @@ object SubscriptionRadarEngine {
             .filter { it.months != null }
             .firstOrNull { abs(gapDays - it.nominalDays) <= toleranceDays(it) } ?: return null
         val hinted = cluster.any { it.rawMessage?.let(SUBSCRIPTION_HINT::containsMatchIn) == true }
+        // Without subscription wording, two charges must also land on nearly the same day of the month.
+        if (!hinted) {
+            val d0 = Instant.ofEpochMilli(cluster[0].timestampMillis).atZone(zone).dayOfMonth
+            val d1 = Instant.ofEpochMilli(cluster[1].timestampMillis).atZone(zone).dayOfMonth
+            val diff = abs(d0 - d1)
+            if (minOf(diff, 31 - diff) > POSSIBLE_DAY_OF_MONTH_TOLERANCE) return null
+        }
         val price = averageOf(cluster) ?: return null
         val built = build(cluster, cadence, price, null, zone).copy(confidence = if (hinted) 0.7 else 0.55)
         return Found(built, cluster)
@@ -309,7 +319,14 @@ object SubscriptionRadarEngine {
                 )
             }
         }
-        return verdicts.sortedWith(compareBy({ it.outcome is Outcome.Rejected }, { it.merchant.lowercase() }))
+        return verdicts.sortedWith(compareBy({ it.rank() }, { it.merchant.lowercase() }))
+    }
+
+    /** Detected first, then possible, then real rejections, then merchants blocked as "not a subscription". */
+    private fun Verdict.rank(): Int = when (val o = outcome) {
+        Outcome.Detected -> 0
+        is Outcome.Possible -> 1
+        is Outcome.Rejected -> if (o.reason == Reason.NOT_A_SUBSCRIPTION) 3 else 2
     }
 
     private fun neededFor(cluster: List<Transaction>): Int =

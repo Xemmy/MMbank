@@ -686,7 +686,16 @@ private fun PossibleRow(subscription: Subscription, onTrack: () -> Unit, onRejec
 @Composable
 private fun WhyNotDetectedDialog(verdicts: List<SubscriptionRadarEngine.Verdict>, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
-    val shown = verdicts.filter { query.isBlank() || it.merchant.contains(query.trim(), ignoreCase = true) }
+    var showBlocked by remember { mutableStateOf(false) }
+    val isBlocked = { v: SubscriptionRadarEngine.Verdict ->
+        (v.outcome as? SubscriptionRadarEngine.Outcome.Rejected)?.reason == SubscriptionRadarEngine.Reason.NOT_A_SUBSCRIPTION
+    }
+    val blockedCount = verdicts.count(isBlocked)
+    // Searching shows everything; otherwise blocked merchants stay folded away.
+    val shown = verdicts.filter {
+        (query.isNotBlank() || showBlocked || !isBlocked(it)) &&
+            (query.isBlank() || it.merchant.contains(query.trim(), ignoreCase = true))
+    }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Why isn't it detected?") },
@@ -696,6 +705,16 @@ private fun WhyNotDetectedDialog(verdicts: List<SubscriptionRadarEngine.Verdict>
                     value = query, onValueChange = { query = it },
                     label = { Text("Search merchant") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
+                if (blockedCount > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Show $blockedCount blocked merchants (taxis, groceries, fuel, restaurants...)",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        androidx.compose.material3.Switch(checked = showBlocked, onCheckedChange = { showBlocked = it })
+                    }
+                }
                 if (shown.isEmpty()) {
                     Text(
                         "No merchant has two or more similar charges yet.",

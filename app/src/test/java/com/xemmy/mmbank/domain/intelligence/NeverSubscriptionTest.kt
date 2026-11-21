@@ -40,9 +40,41 @@ class NeverSubscriptionTest {
         assertNull(NeverSubscription.reasonFor("Uber One"))
         assertNull(NeverSubscription.reasonFor("Netflix"))
         assertNull(NeverSubscription.reasonFor("e& TELECOM CORP"))
-        assertNull(NeverSubscription.reasonFor("SEPHORA EMIRATES LLC"))
+        assertNull(NeverSubscription.reasonFor("Anghami"))
+        assertNull(NeverSubscription.reasonFor("Shahid VIP"))
         assertNull(NeverSubscription.reasonFor(null))
         assertNull(NeverSubscription.reasonFor("  "))
+    }
+
+    @Test fun `outings, restaurants, beauty and clinics are blocked, and UBR is a ride`() {
+        assertEquals("Outing or entertainment venue, not a subscription", NeverSubscription.reasonFor("YAS THEME PARKS"))
+        assertEquals("Outing or entertainment venue, not a subscription", NeverSubscription.reasonFor("BOO BOO ENTERTAINMENT"))
+        assertEquals("Outing or entertainment venue, not a subscription", NeverSubscription.reasonFor("VOX CINEMAS"))
+        assertEquals("Restaurant or cafe, not a subscription", NeverSubscription.reasonFor("WAVE 60 RESTURANT SOL"))
+        assertEquals("Restaurant or cafe, not a subscription", NeverSubscription.reasonFor("BEANZ FZC, Dubai-AE"))
+        assertEquals("Beauty or retail, not a subscription", NeverSubscription.reasonFor("SEPHORA EMIRATES LLC"))
+        assertEquals("Healthcare visit, not a subscription", NeverSubscription.reasonFor("AL HIKMA MEDICAL CENTR"))
+        assertEquals("Ride-hailing, not a subscription", NeverSubscription.reasonFor("UBR"))
+    }
+
+    private fun unhinted(day1: LocalDate, day2: LocalDate) =
+        listOf(tx(1, "Hulu", day1, "29.00"), tx(2, "Hulu", day2, "29.00"))
+
+    @Test fun `two unhinted charges are possible only near the same day of the month`() {
+        val sameDay = unhinted(LocalDate.of(2026, 2, 10), LocalDate.of(2026, 3, 10))
+        assertEquals(1, SubscriptionRadarEngine.scan(sameDay, utc).possible.size)
+        val nearDay = unhinted(LocalDate.of(2026, 2, 10), LocalDate.of(2026, 3, 12))
+        assertEquals(1, SubscriptionRadarEngine.scan(nearDay, utc).possible.size)
+        // 31 days apart but landing on the 20th and the 23rd: shopping, not a bill.
+        val drifting = unhinted(LocalDate.of(2026, 1, 20), LocalDate.of(2026, 2, 23))
+        assertTrue(SubscriptionRadarEngine.scan(drifting, utc).possible.isEmpty())
+    }
+
+    @Test fun `explain lists detected first and blocked merchants last`() {
+        val ledger = monthly("Netflix") + monthly("CAREEM RIDE").map { it.copy(id = it.id + 100) }
+        val verdicts = SubscriptionRadarEngine.explain(ledger, utc)
+        assertEquals("Netflix", verdicts.first().merchant)
+        assertEquals("CAREEM RIDE", verdicts.last().merchant)
     }
 
     @Test fun `a built-in merchant is not detected even with a perfect rhythm`() {
