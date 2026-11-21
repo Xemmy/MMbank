@@ -16,6 +16,9 @@
    - (c) Search only matches the merchant.
    - (d) Can't change a transaction's merchant.
    - (e) Can't track several subscriptions at the **same merchant with the same amount on the same card**.
+5. **Quick "Add to subscription" / "Split with Tabby (Pay Later)" on any transaction.** You pick the
+   number of payments X. The captured charge is often just **one installment** (Tabby takes 1/X at
+   checkout), so the plan total must be able to be **amount × X**, not the captured amount.
 
 Answers the user gave:
 - The same-merchant subscriptions are identical (same amount, same card), so only manual assignment can tell them apart.
@@ -32,6 +35,7 @@ Answers the user gave:
 | 5 | Search (amount, SMS text, date) | 0.130.0 | 4c |
 | 6 | Edit transaction + rename merchant everywhere (migration v44) | 0.131.0 | 4d |
 | 7 | Polish | 0.132.0 | 4b |
+| 8 | Quick actions: Add to subscription / Split with Tabby ×X (next free migration) | 0.133.0 | #5. Needs only phase 2, so it can move up to straight after phase 3 if the user asks. |
 
 ---
 
@@ -204,6 +208,56 @@ Files: `ui/screens/subscriptions/SubscriptionsScreen.kt`, `SubscriptionManualUi.
 - **Scan result snackbar:** "Found 2 new · 1 updated · 1 removed", using the counts from `SubscriptionRescan`.
 - **Tests:** `SubscriptionTotalsTest`, `SubscriptionGroupsTest`, the existing PlanStatus tests, and the rescan counts.
 
+## Phase 8: Quick actions: Add to subscription / Split with Tabby ×X (#5)
+**What exists today (0.125.0/0.126.x):**
+- `TransactionEditorScreen.kt` (~350-376) has **"Split with Pay Later"** and **"Add to subscription"** buttons, but only at the bottom of the full editor, for saved SPEND debits.
+- "Split" navigates to `Routes.payLaterEditor(fromTransactionId)` (wired in `MainActivity.kt` ~510). `PayLaterEditorScreen` (~78-104) prefills **total = the transaction's amount**, `firstPaid = true` and `sourceTransactionId`. The user can only type a total.
+- Payments follow `domain/paylater/PayLaterPayment.kt`. With a source transaction, later payments are a transfer pair or an **excluded** debit, because the full spend is assumed already counted.
+
+**Gap:** when the SMS is one installment (for example AED 100 of a AED 400 Tabby ×4), the plan gets the wrong total. Worse, the later payments are hidden from analytics, so only 1/4 of the purchase ever counts as spending.
+
+**Changes:**
+1. **Easy entry points:**
+   - Add the two actions to the Activity **`TransactionDetailSheet`** (opened by tapping a row; `TransactionsScreen.kt` ~549), shown for SPEND debits.
+   - Move the editor's two buttons to a visible "Actions" row near the top.
+   - Optional: show the same actions on Home's recent-transaction tap.
+2. **Quick split sheet.** A bottom sheet instead of the full editor, with the full editor kept behind "More options":
+   - Provider (default Tabby)
+   - **X** as chips: 2 · 3 · 4 · 6 · 12 · Other (`PayLaterSchedule.MIN_COUNT..MAX_COUNT`)
+   - **"This charge is…"** as a segmented control:
+     - **One payment of X**: total = amount × X. This becomes the default when the SMS matches the Tabby purchase rule (`builtin.en.debit.tabby.purchase` in `BuiltInRules.kt`) or the provider is Tabby.
+     - **The full price**: total = amount (today's behaviour).
+   - Cadence (default monthly; Tabby "pay in 4" is often bi-weekly).
+   - A live preview: "Total AED 400.00 · 4 × AED 100.00 · next due 21 Dec". **Create** saves the plan.
+3. **Model:**
+   - New `PayLaterPlan.sourceIsInstallment: Boolean` (default false), added to entity, domain model and mappers, plus the backup, using the next free migration (`ALTER TABLE pay_later_plans ADD COLUMN sourceIsInstallment INTEGER NOT NULL DEFAULT 0`).
+   - New pure helper **`PayLaterSplit.fromCharge(charge, count, chargeIsInstallment, cadence, zone)`** returns (plan, installments):
+     - **Installment mode:** total = amount × X. Installment #1 = the charge, marked paid at the charge time with `paymentTransactionId = charge.id`. The rest are due by cadence from the charge date, and amounts come from `PayLaterSchedule.splitAmounts`.
+     - **Full-price mode:** the current `PayLaterSchedule.generate(..., firstPaid = true)` path, unchanged.
+4. **Spending counted correctly.** In `PayLaterPayment.shapeOf`, a plan with `sourceIsInstallment = true` records later payments as ordinary **SPEND**, because only 1/X was counted at capture. Full-price plans keep today's transfer or excluded shapes. Show the result in the sheet: "Each payment counts as spending" vs "Already counted in the original purchase".
+5. **Auto-match the next Tabby SMS.**
+   - When a new debit is captured, look for an open plan with the same provider or merchant (`MerchantNormalizer.key`), an amount within 1% of the next unpaid installment, and a date within ±7 days of its due date.
+   - If found, mark that installment paid with `paymentTransactionId = the new tx`. Do **not** record another payment.
+   - Logic goes in pure `PayLaterAutoMatch.match(plans, installments, tx)`, called from the post-insert hook in `AppContainer` next to `refreshSubscriptionForMerchant` (~487). Show "Matched to Sephora · payment 2 of 4 · Undo" in the detail sheet.
+   - This stops double counting when every installment arrives as its own SMS.
+6. **Quick "Add to subscription" sheet.** A one-tap list of subscriptions, built on phase 2's id-based `SubscriptionPickerDialog`, showing the merchant, amount and Yours/Detected. Options:
+   - "New subscription from this charge"
+   - **"Repeats X times"**: an optional end count for fixed-term plans. If included, store it as `Subscription.remainingCount` in the same migration; otherwise leave it out.
+
+   It should also show which subscription the charge is currently linked to, with Unlink.
+7. **Linked state visible.** Once linked, the transaction detail sheet and editor show a chip: "Tabby 1/4 · Sephora" or "Subscription · Netflix". Tapping it opens the plan or subscription.
+
+**Tests (pure JVM):**
+- `PayLaterSplitTest`:
+  - ×4 installment mode: total = 4 × amount, #1 paid and linked to the charge, the rest dated by cadence, cents add up.
+  - Full-price mode unchanged.
+  - Each X from 2 to 36 within bounds.
+- `PayLaterPaymentTest`: `sourceIsInstallment` makes later payments SPEND.
+- `PayLaterAutoMatchTest`: within tolerance, wrong amount, outside the window, already-paid installment skipped, two open plans with the same merchant (picks the soonest due).
+- Migration test for the new column, plus mapper and backup round-trips.
+
+**Not covered by CI:** the sheet's layout and default selection, chips and the preview, and the auto-match on a live Tabby SMS.
+
 ---
 
 ## Verification (each phase)
@@ -216,3 +270,6 @@ Files: `ui/screens/subscriptions/SubscriptionsScreen.kt`, `SubscriptionManualUi.
   - Edit a row, dismiss it and undo, restore from the Dismissed list.
   - Search by amount and by SMS text, with a date range.
   - Rename a merchant everywhere, then receive a new SMS from it.
+  - Tap a Tabby charge in Activity → Split → ×4, "One payment of 4", and check total = 4×.
+  - When the next Tabby SMS arrives, check it auto-matches payment 2/4 and isn't counted twice.
+  - Tap any charge → Add to subscription.
