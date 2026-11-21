@@ -7,22 +7,26 @@ Android personal-finance app. Kotlin, Jetpack Compose, Room, MVVM.
 - Workflow: write code + pure-JVM unit tests -> push -> read CI results.
 
 ## What CI actually runs (.github/workflows/test-build.yml)
-Triggered on push to `main` and `claude/**`, on pull requests to `main`, and
-by manual dispatch. Three jobs:
+Triggered on push to `main` and `claude/**` (not for docs-only pushes: `paths-ignore: **/*.md`),
+on pull requests to `main`, and by manual dispatch. Four jobs:
 
-1. **lint-and-unit-tests** — runs `./gradlew :app:testDebugUnitTest --no-daemon -x lint`.
+1. **lint-and-unit-tests** ("Unit Tests") — runs `./gradlew :app:testDebugUnitTest --no-daemon -x lint`.
    A failing (or non-compiling) test fails this job. On failure, the
    "Summarize failing tests" step lists each failing `Class.method: message`
-   in the log and the run summary. Despite the job name, lint never runs
-   (`-x lint` skips it). HTML reports and XML results are uploaded as the
-   `unit-test-results` artifact.
-2. **build-apk** — runs even when tests failed (`if: !cancelled()`), so a red
+   in the log and the run summary. Lint never runs (`-x lint` skips it).
+   HTML reports and XML results are uploaded as the `unit-test-results` artifact.
+2. **build-apk** — runs in parallel with the tests (no `needs`), so a red
    commit's APK can still be inspected. Runs `./gradlew :app:assembleDebug`
-   (up to 4 retry attempts with clean/daemon-stop/full-reset), verifies
-   `app-debug.apk` exists, uploads it. On a push to `main` it publishes a
-   GitHub Release — only if the unit tests passed. Also attempts
-   `:app:assembleRelease` (continue-on-error, non-gating).
-3. **final-status** — fails the workflow unless BOTH the unit tests and the
+   (2 attempts: plain, then after `clean`), verifies `app-debug.apk` exists and
+   uploads it as `MMbank-<versionName>-<versionCode>.apk` in the `mmbank-debug-apk`
+   artifact (GitHub serves artifacts as a zip). There is no release build any more.
+3. **publish** — only on a push when both jobs above succeeded. On `claude/**` it
+   recreates the prerelease `dev-<branch with / as ->` with a direct `.apk`:
+   `https://github.com/<owner>/<repo>/releases/download/dev-<slug>/MMbank-dev.apk`
+   (the link is also at the top of the run summary). On `main` it publishes
+   `v<versionName>` with `MMbank-v<versionName>.apk`, and skips with a warning if
+   that tag already exists (version not bumped).
+4. **final-status** — fails the workflow unless BOTH the unit tests and the
    APK build succeeded. Skipped when the run is cancelled: a newer push to
    the same ref cancels the running one (`cancel-in-progress`), so wait for a
    push's run to finish before pushing again, or its result is lost.

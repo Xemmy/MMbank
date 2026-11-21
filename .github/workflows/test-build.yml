@@ -3,6 +3,8 @@ name: Test & Build Workflow
 on:
   push:
     branches: [ main, claude/** ]
+    # Docs-only pushes change no APK behaviour, so don't spend a run on them.
+    paths-ignore: [ '**/*.md' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -12,11 +14,11 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   lint-and-unit-tests:
-    name: Lint & Unit Tests
+    name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -29,7 +31,9 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: gradle
+
+      - name: Set up Gradle (build + configuration cache)
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Make gradlew executable
         run: chmod +x gradlew
@@ -84,13 +88,11 @@ jobs:
           retention-days: 7
 
   build-apk:
-    name: Build APK (with retries)
+    name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: lint-and-unit-tests
-    # Build even when unit tests fail, so the APK of a red commit can still be
-    # inspected. The release steps below are gated on the tests separately.
-    if: ${{ !cancelled() }}
+    # No `needs`: tests and the build run side by side. A red commit's APK
+    # can still be inspected; the publish job gates releases on the tests.
     continue-on-error: false
 
     steps:
@@ -102,7 +104,9 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: gradle
+
+      - name: Set up Gradle (build + configuration cache)
+        uses: gradle/actions/setup-gradle@v4
 
       # packages: '' is load-bearing. Without it the action runs
       # `sdkmanager tools` by default, and Google has removed the obsolete
@@ -149,56 +153,14 @@ jobs:
         if: steps.build_attempt_2.outcome == 'failure'
         run: tail -n 150 build_attempt_2.log
 
-      - name: Stop daemon and retry - Attempt 3
-        id: build_attempt_3
-        if: steps.build_attempt_2.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          echo "Stopping daemon and rebuilding (Attempt 3)..."
-          ./gradlew --stop
-          sleep 5
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_attempt_3.log
-
-      - name: Show Attempt 3 failure output
-        if: steps.build_attempt_3.outcome == 'failure'
-        run: tail -n 150 build_attempt_3.log
-
-      - name: Full reset and retry - Attempt 4
-        id: build_attempt_4
-        if: steps.build_attempt_3.outcome == 'failure'
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          echo "Full reset and rebuild (Attempt 4)..."
-          rm -rf ~/.gradle
-          ./gradlew clean --no-daemon
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build_attempt_4.log
-
-      - name: Show Attempt 4 failure output
-        if: steps.build_attempt_4.outcome == 'failure'
-        run: tail -n 150 build_attempt_4.log
-
       - name: Verify build success
         run: |
           if [ "${{ steps.build_attempt_1.outcome }}" = "success" ]; then
             echo "Build succeeded on Attempt 1"
-            exit 0
           elif [ "${{ steps.build_attempt_2.outcome }}" = "success" ]; then
-            echo "Build succeeded on Attempt 2"
-            exit 0
-          elif [ "${{ steps.build_attempt_3.outcome }}" = "success" ]; then
-            echo "Build succeeded on Attempt 3"
-            exit 0
-          elif [ "${{ steps.build_attempt_4.outcome }}" = "success" ]; then
-            echo "Build succeeded on Attempt 4"
-            exit 0
+            echo "Build succeeded on Attempt 2 (after clean)"
           else
-            echo "Build failed on all 4 attempts"
-            echo "Attempt 1: ${{ steps.build_attempt_1.outcome }}"
-            echo "Attempt 2: ${{ steps.build_attempt_2.outcome }}"
-            echo "Attempt 3: ${{ steps.build_attempt_3.outcome }}"
-            echo "Attempt 4: ${{ steps.build_attempt_4.outcome }}"
+            echo "Build failed on both attempts"
             exit 1
           fi
 
@@ -212,35 +174,22 @@ jobs:
           echo "APK found at: $APK_PATH"
           ls -lh "$APK_PATH"
 
+      - name: Name the APK
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/MMbank-${VERSION_NAME}-${VERSION_CODE}.apk"
+
+      # The publish job turns this into a direct .apk download; the artifact
+      # itself is always served by GitHub as a zip and expires after 7 days.
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: mmbank-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: dist/*.apk
           if-no-files-found: error
           retention-days: 7
-
-      # Merges to main get a durable, non-expiring download link -- the
-      # 7-day artifact above is for quick access to in-progress claude/**
-      # builds, not for something you'd want to sideload weeks later.
-      - name: Extract version for release
-        id: version
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint-and-unit-tests.result == 'success'
-        run: |
-          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts)
-          echo "tag=v$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-
-      - name: Publish GitHub Release
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.lint-and-unit-tests.result == 'success'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: MMbank ${{ steps.version.outputs.tag }} (build ${{ steps.version.outputs.code }})
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload build logs
         if: always()
@@ -248,23 +197,6 @@ jobs:
         with:
           name: gradle-build-logs
           path: build_attempt_*.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Build Release APK
-        id: build_release
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          echo "Building Release APK..."
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build_release.log
-
-      - name: Upload Release APK
-        if: steps.build_release.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mmbank-release-apk
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: ignore
           retention-days: 7
 
@@ -279,8 +211,6 @@ jobs:
             echo "|---------|--------|"
             echo "| 1 | ${{ steps.build_attempt_1.outcome }} |"
             echo "| 2 (clean) | ${{ steps.build_attempt_2.outcome }} |"
-            echo "| 3 (daemon stop) | ${{ steps.build_attempt_3.outcome }} |"
-            echo "| 4 (full reset) | ${{ steps.build_attempt_4.outcome }} |"
             echo ""
             if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
               SIZE=$(stat -c%s app/build/outputs/apk/debug/app-debug.apk)
@@ -291,6 +221,66 @@ jobs:
               echo "APK not found after all attempts"
             fi
           } >> $GITHUB_STEP_SUMMARY
+
+  publish:
+    name: Publish APK
+    runs-on: ubuntu-latest
+    needs: [ lint-and-unit-tests, build-apk ]
+    # Only a green, pushed commit gets a download link.
+    if: ${{ github.event_name == 'push' && needs.lint-and-unit-tests.result == 'success' && needs.build-apk.result == 'success' }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mmbank-debug-apk
+          path: dist
+
+      - name: Publish release
+        run: |
+          set -euo pipefail
+          APK=$(ls dist/MMbank-*.apk | head -1)
+          BASE=$(basename "$APK" .apk)
+          VERSION_NAME=$(echo "$BASE" | sed -E 's/^MMbank-(.*)-[0-9]+$/\1/')
+          SHORT=${GITHUB_SHA::7}
+          REPO="${GITHUB_REPOSITORY}"
+
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            TAG="v${VERSION_NAME}"
+            if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+              echo "::warning::Release $TAG already exists -- version not bumped, skipping publish."
+              echo "### Not published" >> "$GITHUB_STEP_SUMMARY"
+              echo "Release \`$TAG\` already exists: bump versionName/versionCode in app/build.gradle.kts." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            cp "$APK" "dist/MMbank-${TAG}.apk"
+            gh release create "$TAG" "dist/MMbank-${TAG}.apk" --repo "$REPO" \
+              --target "$GITHUB_SHA" --title "MMbank ${TAG} (${SHORT})" --generate-notes
+            {
+              echo "### Release"
+              echo "https://github.com/${REPO}/releases/download/${TAG}/MMbank-${TAG}.apk"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            SLUG=${GITHUB_REF_NAME//\//-}
+            TAG="dev-${SLUG}"
+            cp "$APK" dist/MMbank-dev.apk
+            gh release delete "$TAG" --repo "$REPO" --cleanup-tag -y || true
+            gh release create "$TAG" "$APK" dist/MMbank-dev.apk --repo "$REPO" \
+              --prerelease --target "$GITHUB_SHA" \
+              --title "MMbank dev ${VERSION_NAME} (${SHORT})" \
+              --notes "Branch ${GITHUB_REF_NAME} at ${SHORT}. Unit tests passed. Debug build signed with the shared debug key, so it installs over the previous one."
+            {
+              echo "### Direct APK download"
+              echo ""
+              echo "https://github.com/${REPO}/releases/download/${TAG}/MMbank-dev.apk"
+              echo ""
+              echo "Versioned file and notes: https://github.com/${REPO}/releases/tag/${TAG}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   final-status:
     name: Final Status

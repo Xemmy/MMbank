@@ -56,9 +56,11 @@ Last updated: 2026-07-10.*
 1. **Lint & Unit Tests** — `./gradlew :app:testDebugUnitTest --no-daemon -x lint`,
    but the step has `continue-on-error: true`: **the workflow stays green even
    if unit tests fail**, and lint never actually runs (`-x lint`).
-2. **Build APK** — `:app:assembleDebug` (gating, with retries) + a non-gating
-   `:app:assembleRelease`.
-3. **Final Status** — fails only if the APK build failed.
+2. **Build APK** — `:app:assembleDebug` (gating, 2 attempts), runs in parallel with the tests.
+3. **Publish APK** — after green tests + build: direct download at
+   `https://github.com/<owner>/<repo>/releases/download/dev-<branch-slug>/MMbank-dev.apk`
+   (branch `/` → `-`; main publishes `v<versionName>`).
+4. **Final Status** — fails unless tests and the APK build both passed.
 
 **A green check mark proves compilation only.** To verify tests, open the
 "Run unit tests" step output or the `unit-test-results` artifact. Verification
