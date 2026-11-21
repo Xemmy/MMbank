@@ -554,8 +554,18 @@ class MigrationSqlTest {
     @Test
     fun `v48 adds an empty bill line to transactions and accepts one`() {
         migrate()
-        assertTrue("billRef" in migrated.columns("transactions"))
-        migrated.exec("UPDATE transactions SET billRef = '4567' WHERE id = -1")
+        assertTrue(migrated.columns("transactions").any { it.startsWith("billRef:TEXT") })
+        migrated.exec(
+            "INSERT INTO transactions (id, amount, currencyCode, direction, source, timestamp, createdAt, category, " +
+                "spendingCategory, excludeFromStats, isDemo, needsCategoryApproval, billRef) " +
+                "VALUES (1, '150.00', 'AED', 'DEBIT', 'SMS', 0, 0, 'NORMAL', 'UNCATEGORIZED', 0, 0, 0, '4567')",
+        )
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT billRef FROM transactions WHERE id = 1").use { rs ->
+                rs.next()
+                assertEquals("4567", rs.getString(1))
+            }
+        }
     }
 
     private fun Connection.count(table: String): Int =
