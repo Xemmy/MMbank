@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.ai
 
 import com.xemmy.mmbank.domain.model.ParsingRule
+import com.xemmy.mmbank.domain.parser.AmountPatterns
 import com.xemmy.mmbank.domain.parser.GenericExtractors
 import java.math.BigDecimal
 
@@ -31,7 +32,7 @@ object AiSelfHealingRuleGenerator {
      */
     const val PENDING_RULE_PREFIX = "ai.pending"
 
-    private const val AMOUNT_GROUP_PATTERN = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)"
+    private const val AMOUNT_GROUP_PATTERN = "(?<amount>${AmountPatterns.INTEGER}(?:\\.\\d+)?)"
     private const val MERCHANT_GROUP_PATTERN = "(?<merchant>[^.,;\\n*]{1,60}?)"
 
     fun generate(rawMessage: String, result: AiParseResult, ruleNamePrefix: String = PENDING_RULE_PREFIX): ParsingRule? {

@@ -8,7 +8,8 @@ import com.xemmy.mmbank.util.LogRedactor
  *
  * Masked: card, account and IBAN numbers (last 4 digits kept, as the parser
  * only ever uses the ending -- see [LogRedactor]), one-time passwords and
- * other security codes, e-mail addresses and international phone numbers.
+ * other security codes, e-mail addresses, international phone numbers and
+ * local UAE phone numbers ("050 123 4567"; unspaced ones are masked by [LogRedactor]).
  *
  * Deliberately left alone: amounts, currencies, merchants, dates and
  * balances. The model needs those to answer, and a redactor that damaged
@@ -52,6 +53,9 @@ object AiPayloadRedactor {
     /** Only explicit international numbers; a bare digit run could just as well be an amount. */
     private val phone = Regex("""\+\d{1,3}[ -]?\d[\d -]{6,12}\d""")
 
+    /** A spaced or dashed local mobile/landline: "050 123 4567", "04-123-4567". */
+    private val localPhone = Regex("""(?<![\d.,])0(?:5\d|[234679])[ -]\d{3}[ -]?\d{4}(?![\d]|[.,]\d)""")
+
     fun redact(text: String): String {
         var out = LogRedactor.redactSensitiveData(text)
         out = codeAfterKeyword.replace(out) { it.groupValues[1] + CODE_MASK }
@@ -59,6 +63,7 @@ object AiPayloadRedactor {
         out = codeBeforeKeyword.replace(out, CODE_MASK)
         out = email.replace(out, "[email]")
         out = phone.replace(out, "[phone]")
+        out = localPhone.replace(out, "[phone]")
         return out
     }
 }

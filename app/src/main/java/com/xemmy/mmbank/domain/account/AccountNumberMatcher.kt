@@ -1,5 +1,7 @@
 package com.xemmy.mmbank.domain.account
 
+import com.xemmy.mmbank.util.Digits
+
 /**
  * Matches the account/card number a bank message reveals ("*617",
  * "XXX810001", "card ending 4321") against the numbers the user put on their
@@ -29,12 +31,12 @@ object AccountNumberMatcher {
     /** Every digit string an account answers to, each at least [MIN_DIGITS] long. */
     fun numbersOf(candidate: Candidate): List<String> =
         (listOfNotNull(candidate.accountNumber) + candidate.cardEndings.orEmpty().split(',', ';', '/', '\n'))
-            .map { it.filter(Char::isDigit) }
+            .map { Digits.only(it) }
             .filter { it.length >= MIN_DIGITS }
             .distinct()
 
     fun match(detected: String, currencyCode: String, candidates: List<Candidate>): Long? {
-        val digits = detected.filter(Char::isDigit)
+        val digits = Digits.only(detected)
         if (digits.length < MIN_DIGITS) return null
 
         // Best overlap per account: how many trailing digits the two share.

@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.ledger
 
 import com.xemmy.mmbank.domain.intelligence.BillDetector
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.util.Digits
 
 /**
  * Decides whether two captures inside the dedup window are the SAME purchase
@@ -52,8 +53,8 @@ object CaptureDedupPolicy {
 
     /** True when both endings are known (digits) and neither is a suffix of the other. */
     internal fun endingsConflict(a: String?, b: String?): Boolean {
-        val x = a?.filter(Char::isDigit).orEmpty()
-        val y = b?.filter(Char::isDigit).orEmpty()
+        val x = Digits.only(a)
+        val y = Digits.only(b)
         if (x.isEmpty() || y.isEmpty()) return false
         return !(x.endsWith(y) || y.endsWith(x))
     }

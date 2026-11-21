@@ -77,6 +77,8 @@ Where the work lives: `MMbank-SUBSCRIPTIONS-PLAN.md` (phases 1-8, all delivered)
 **Bills (telecom/utilities)**
 - du, e&/Etisalat, DEWA etc. are bills, not subscriptions: `BillDetector` buckets payments by calendar month (amount and day are free), `BillAutoMatch` marks a tracked bill paid from the captured SMS. Providers listed in `BillDetector.PROVIDERS`; "DU Google Payment" is intentionally NOT a biller.
 - One payment can arrive as the bank deduction SMS **and** the provider receipt (which names the phone line). `CaptureDedupPolicy.isBillPair` merges them (24 h window), the line is kept in `transactions.billRef`; two number-less bank SMS stay two payments (the user's second line). `BillDuplicateFinder` + the Bills "Merge" card clean up old doubles.
+- Line numbers (0.139.0): `BillDetector.accountRef` folds Arabic digits, prefers a UAE mobile, then a keyword-led number (contract/customer/billing/service account, "for/to account", "du/e& account", line/mobile/phone/msisdn, Arabic "رقم العقد/الهاتف..."), then a landline; bare "account" (the bank's own) is never read. Keep the bank's deduction SMS ref-less or bank + receipt stop pairing.
+- Numbers in general (0.139.0): one amount integer pattern (`domain/parser/AmountPatterns.INTEGER`, Western + Indian grouping, max 9 plain digits) and one digit helper (`util/Digits`); use them in any new regex/comparison instead of `\d+` or `Char::isDigit`.
 - Open question to verify with the user's real SMS: that du's receipt SMS parses to a merchant `BillDetector` recognises.
 
 **Other delivered pieces worth knowing**

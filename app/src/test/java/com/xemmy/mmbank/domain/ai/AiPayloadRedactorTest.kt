@@ -91,4 +91,13 @@ class AiPayloadRedactorTest {
         assertFalse(out, out.contains("123456"))
         assertTrue(out, out.contains("AED 250"))
     }
+
+    @Test
+    fun `local phone numbers are masked in every spelling`() {
+        listOf("call 050 123 4567 now", "call 04-123-4567 now", "call 0501234567 now").forEach {
+            val out = AiPayloadRedactor.redact(it)
+            assertFalse(out, out.contains("123"))
+            assertTrue(out, out.startsWith("call ") && out.endsWith(" now"))
+        }
+    }
 }

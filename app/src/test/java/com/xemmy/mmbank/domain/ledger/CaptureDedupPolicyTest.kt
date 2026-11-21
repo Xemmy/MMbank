@@ -65,4 +65,14 @@ class CaptureDedupPolicyTest {
         val otherLine = Side(SMS, "Thank you for your payment of AED 168.41 for 0509998910", null, merchant = "du")
         assertFalse(CaptureDedupPolicy.isBillPair(merged, otherLine))
     }
+
+    @Test fun arabicDigitEndingsAreTheSameCard() {
+        assertFalse(CaptureDedupPolicy.endingsConflict("١١١١", "1111"))
+        assertTrue(CaptureDedupPolicy.endingsConflict("١١١١", "2222"))
+    }
+
+    @Test fun aBankSmsNamingTheBankAccountStillPairsWithTheReceipt() {
+        val bankWithAccount = Side(SMS, "AED 168.41 debited from your account 1234567890 for DU", null, merchant = "DU")
+        assertTrue(CaptureDedupPolicy.isBillPair(bankWithAccount, receipt))
+    }
 }

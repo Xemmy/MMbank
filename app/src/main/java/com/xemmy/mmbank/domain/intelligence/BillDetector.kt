@@ -5,6 +5,8 @@ import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.parser.TextNormalizer
+import com.xemmy.mmbank.util.Digits
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -50,21 +52,51 @@ object BillDetector {
 
     fun isBiller(merchant: String?): Boolean = providerKey(merchant) != null
 
-    private val MOBILE = Regex("(?:\\+?971[\\s-]?|\\b0)(5\\d)[\\s-]?(\\d{3})[\\s-]?(\\d{4})\\b")
+    // Phone lines: UAE mobile "0551234567", "+971 55 123 4567", "00971551234567".
+    private val MOBILE = Regex("(?<!\\d)(?:(?:\\+|00)?971[\\s-]?|0)(5\\d)[\\s-]?(\\d{3})[\\s-]?(\\d{4})(?!\\d)")
+
+    // Fixed lines (home internet / TV): "04 123 4567", "+971 4 123 4567".
+    private val LANDLINE = Regex("(?<!\\d)(?:(?:\\+|00)?971[\\s-]?|0)([234679])[\\s-]?(\\d{3})[\\s-]?(\\d{4})(?!\\d)")
+
+    /**
+     * A number introduced as the line, contract or customer number: "Contract no: 1234568899",
+     * "Contract Account 2001234567", "for account 1.23456789", "mobile 551234567",
+     * "رقم العقد 2001234567". Dots and dashes inside it are ignored. "account" alone is not
+     * enough (it is the bank's own account in a deduction SMS), only "for/to [your] account",
+     * "contract/customer/billing/service account" and the provider's own "du/e&/etisalat account".
+     */
     private val SERVICE_NUMBER = Regex(
-        "(?:contract|customer|service|line|subscriber|premise|premises)\\s*(?:no\\.?|number|id|#)?\\s*[:#]?\\s*(\\d{5,})",
+        "(?:\\b(?:contract|customer|billing|service)\\s+account|" +
+            "\\b(?:for|to)\\s+(?:your\\s+)?(?:du\\s+|etisalat\\s+|e&\\s+)?account|" +
+            "(?:\\bdu|etisalat|e&)\\s+account|" +
+            "\\b(?:contract|customer|service|line|subscriber|premises?|mobile|landline|telephone|phone|msisdn)|" +
+            "رقم\\s+(?:العقد|المشترك|الاشتراك|الخدمة|الخط|الهاتف|الجوال|المتحرك)(?:\\s+\\S+)?)" +
+            "\\s*(?:no\\.?|number|id|#)?\\s*[:#.]?\\s*" +
+            "(?<![\\dXx*•])(\\d(?:[.\\-]?\\d){4,19})(?![\\dXx*•])",
         RegexOption.IGNORE_CASE,
     )
 
     /**
      * Last 4 digits of the phone line or service/contract number the SMS names, or null.
      * Masked card and bank account numbers ("card XXXX1234", "a/c ...") are never read.
+     * Every way of writing one number gives the same 4 digits: "0551234567",
+     * "+971 55 123 4567", "mobile 551234567" and Arabic-Indic digits all read "4567".
      */
     fun accountRef(rawMessage: String?): String? {
-        val text = rawMessage ?: return null
+        val text = rawMessage?.let(TextNormalizer::normalize) ?: return null
         MOBILE.find(text)?.let { return it.groupValues[3] }
-        return SERVICE_NUMBER.find(text)?.groupValues?.get(1)?.takeLast(4)
+        SERVICE_NUMBER.findAll(text)
+            .map { it.groupValues[1] }
+            .firstOrNull { !AMOUNT_SHAPE.matches(it) && !SERVICE_HOTLINE.matches(Digits.only(it)) }
+            ?.let { return Digits.only(it).takeLast(4) }
+        return LANDLINE.find(text)?.groupValues?.get(3)
     }
+
+    /** "line 150.00" is an amount, not a line number. */
+    private val AMOUNT_SHAPE = Regex("\\d{1,9}\\.\\d{1,2}")
+
+    /** UAE toll-free / service hotlines in footers ("customer service 600522222"), never a line. */
+    private val SERVICE_HOTLINE = Regex("(?:600|800)\\d{2,6}")
 
     /** The line a payment was for: stored on the row (merged receipt) or read from its own SMS. */
     fun lineOf(tx: Transaction): String? = tx.billRef ?: accountRef(tx.rawMessage)

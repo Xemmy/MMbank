@@ -4,6 +4,7 @@ import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.util.Digits
 import java.math.BigDecimal
 
 /**
@@ -50,7 +51,7 @@ object UnknownAccountSuggestions {
             // "History only" rows were set aside on purpose: no account is wanted for them.
             .filter { it.needsAccount }
             .mapNotNull { tx ->
-                val digits = tx.accountNumberSuffix?.filter(Char::isDigit).orEmpty()
+                val digits = Digits.only(tx.accountNumberSuffix)
                 if (digits.length < AccountNumberMatcher.MIN_DIGITS) return@mapNotNull null
                 // An ending that overlaps any account is not unknown: the matcher either already
                 // files it there or refused on a tie, which is a different problem to solve.

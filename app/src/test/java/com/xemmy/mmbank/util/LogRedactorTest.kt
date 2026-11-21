@@ -71,5 +71,23 @@ class LogRedactorTest {
         assertFalse(out.contains("AE0703312"))
         assertTrue(out.endsWith("3456 today"))
     }
-}
 
+    @Test
+    fun `phone, account and contract numbers of 9 to 12 digits are masked keeping the last four`() {
+        assertEquals("Paid for ******4567 today", LogRedactor.redactSensitiveData("Paid for 0551234567 today"))
+        assertEquals("+********4567", LogRedactor.redactSensitiveData("+971551234567"))
+        assertEquals("a/c ********9012", LogRedactor.redactSensitiveData("a/c 123456789012"))
+        assertEquals("a/c ******4567", LogRedactor.redactSensitiveData("a/c ٠٥٥١٢٣٤٥٦٧"))
+    }
+
+    @Test
+    fun `amounts are never masked as numbers`() {
+        listOf(
+            "Spent AED 123456789 at SHOP",
+            "Spent 123456789 AED at SHOP",
+            "Debited 1234567890.50 today",
+            "Balance 1,234,567,890",
+            "Order 12345678 shipped",
+        ).forEach { assertEquals(it, LogRedactor.redactSensitiveData(it)) }
+    }
+}

@@ -27,7 +27,7 @@ object GenericExtractors {
     // "Plausible" number: optional thousands separators, at most 2 decimals.
     // The (?!\.?\d) guard after each use rejects longer decimal tails
     // (46.123) instead of silently truncating them to 46.12.
-    internal const val NUM = "\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?"
+    internal const val NUM = "${AmountPatterns.INTEGER}(?:\\.\\d{1,2})?"
 
     // One flexible pattern for every currency-adjacent layout seen in the
     // reference notifications: "AED 46.12", "AED229.59" (non-spaced),
@@ -124,7 +124,7 @@ object GenericExtractors {
     // Card/account suffix markers: "*617", "••2957", "•• 2957", "XXX810001"
     // after a marker. Kept separate from the regex rules' ACCTAIL because
     // signature-routed messages never run a regex at all.
-    private val ACCOUNT_SUFFIX = Regex("[*•]+\\s?(?<suffix>[Xx]*\\d{3,9})")
+    private val ACCOUNT_SUFFIX = Regex("[*•]+\\s?(?<suffix>[Xx]*\\d{3,20})")
 
     /** Account/card number suffix ("2957" from "••2957"), or null. */
     fun extractAccountSuffix(text: String): String? =

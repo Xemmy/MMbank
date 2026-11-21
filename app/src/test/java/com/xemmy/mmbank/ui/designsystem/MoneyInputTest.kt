@@ -41,4 +41,13 @@ class MoneyInputTest {
         assertNull(moneyFieldError("125.50"))
         assertNull(moneyFieldError("1.234", maxFractionDigits = 3))
     }
+
+    @Test
+    fun `indian grouping and arabic digits read as the full amount`() {
+        assertEquals(BigDecimal("100000"), parseMoneyInput("1,00,000"))
+        assertEquals(BigDecimal("1234567.50"), parseMoneyInput("12,34,567.50"))
+        assertEquals(BigDecimal("1250.5"), parseMoneyInput("١٬٢٥٠٫٥"))
+        assertEquals("1250.5", sanitizeMoneyInput("١٢٥٠٫٥"))
+        assertNull(moneyFieldError("١٢٥٫٥٠"))
+    }
 }

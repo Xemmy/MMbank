@@ -47,6 +47,39 @@ class BillDetectorTest {
         assertNull(BillDetector.accountRef(null))
     }
 
+    @Test fun `every way of writing one line gives the same last four digits`() {
+        listOf(
+            "Paid for 0551234567",
+            "Paid for 055 123 4567",
+            "Paid for 055-123-4567",
+            "Paid for +971551234567",
+            "Paid for 00971 55 1234567",
+            "Payment for mobile 551234567 received",
+            "تم دفع فاتورة الرقم ٠٥٥١٢٣٤٥٦٧",
+            "Payment for msisdn: 971551234567",
+        ).forEach { assertEquals(it, "4567", BillDetector.accountRef(it)) }
+    }
+
+    @Test fun `contract and account numbers of 6 or more digits, with dots or dashes`() {
+        assertEquals("4567", BillDetector.accountRef("DEWA: Payment received for Contract Account 2001234567. Thank you"))
+        assertEquals("6789", BillDetector.accountRef("Thank you for your payment of AED 150.00 for account 1.23456789"))
+        assertEquals("6789", BillDetector.accountRef("du account 1-2345-6789 has been paid"))
+        assertEquals("3456", BillDetector.accountRef("Customer ID: 123456 bill paid"))
+        assertEquals("9012", BillDetector.accountRef("تم استلام دفعة رقم العقد: 2000789012 شكرا"))
+        assertEquals("4567", BillDetector.accountRef("Landline 04 123 4567 bill paid"))
+        assertEquals("4567", BillDetector.accountRef("Paid for 041234567"))
+    }
+
+    @Test fun `the bank's own account, masks, amounts and hotlines are never a line`() {
+        assertNull(BillDetector.accountRef("AED 300.00 debited from your account 1234567890 for DU"))
+        assertNull(BillDetector.accountRef("Your Account No. 012345678901 was debited AED 300 for ETISALAT"))
+        assertNull(BillDetector.accountRef("Paid from a/c XXXXXX4567 to DEWA"))
+        assertNull(BillDetector.accountRef("Paid for account XXXX12345"))
+        assertNull(BillDetector.accountRef("Mobile recharge of AED 150.00 done"))
+        assertNull(BillDetector.accountRef("Paid AED 300 to DU. Customer service 600540000"))
+        assertNull(BillDetector.accountRef("Ref 0412345678 AED 300 to DU"))
+    }
+
     @Test fun `varying amounts on varying days are one monthly bill`() {
         val ledger = listOf(
             tx(1, "E& TELECOM CORP", LocalDate.of(2026, 8, 3), "168.41"),

@@ -41,11 +41,11 @@ object BuiltInRules {
     // of being rejected outright. No real personal-finance amount is ever a
     // 10+ digit integer with no thousands separator, so this only ever
     // rejects non-money digit runs, never a real amount.
-    private const val AMT = "(?<amount>\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|(?<!\\d)\\d{1,9}(?:\\.\\d+)?)(?!\\d)"
+    private const val AMT = "(?<amount>${AmountPatterns.INTEGER}(?:\\.\\d+)?)(?!\\d)"
 
     // Same shape as AMT but non-capturing, for amounts that must NOT become
     // the transaction amount (e.g. the cashback figure after a purchase).
-    private const val AMT_NC = "(?:\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|(?<!\\d)\\d{1,9}(?:\\.\\d+)?)(?!\\d)"
+    private const val AMT_NC = "(?:${AmountPatterns.INTEGER}(?:\\.\\d+)?)(?!\\d)"
 
     // Merchant capture stops at punctuation and at "*" so a trailing "*617"
     // account marker is left for ACCTAIL rather than swallowed into the name.
@@ -78,7 +78,7 @@ object BuiltInRules {
      * and amount still parse fine off the "Dr."/"Cr." keyword.
      */
     private const val ACCTAIL =
-        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم[.:]?\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,9}))?"
+        "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم[.:]?\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,20}))?"
 
     private const val KW_DEBIT_EN =
         "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase)|dr)\\b"
@@ -97,7 +97,7 @@ object BuiltInRules {
     // "على حسابك رقم." happens to use على for an unrelated reason, stealing
     // the match from the keyword rules below (which read Dr./Cr. correctly)
     // at a higher priority.
-    private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})"
+    private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,20})"
 
     private fun rule(
         name: String,
@@ -252,7 +252,7 @@ object BuiltInRules {
         // can never be read as a payment.
         rule(
             "builtin.ar.debit.card-use",
-            "تم\\s+استخدام\\s+.{0,80}?(?:بالرقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,9})\\s+)?" +
+            "تم\\s+استخدام\\s+.{0,80}?(?:بالرقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,20})\\s+)?" +
                 "لإجراء\\s+معاملة\\s+بقيمة\\s+$CUR\\s?$AMT" +
                 "(?:.{0,80}?\\sلدى\\s+(?<merchant>[^.,;\\n*]{2,40}?)(?=\\s+في\\s|[.,;\\n*]|\\s*$))?",
             TransactionDirection.DEBIT,

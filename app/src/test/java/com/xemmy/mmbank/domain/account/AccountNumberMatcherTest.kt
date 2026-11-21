@@ -55,4 +55,17 @@ class AccountNumberMatcherTest {
             AccountNumberMatcher.numbersOf(Candidate(1, "876", "5555; 6666, 12", "AED")),
         )
     }
+
+    @Test
+    fun `arabic-indic digits typed on an account match the ascii ending in the message`() {
+        val arabic = Candidate(9, "٠١٢٣٤٥٦٨١٠٠٠١", cardEndings = "٤٣٢١", currencyCode = "AED")
+        assertEquals(9L, AccountNumberMatcher.match("XXX810001", "AED", listOf(arabic)))
+        assertEquals(9L, AccountNumberMatcher.match("*4321", "AED", listOf(arabic)))
+    }
+
+    @Test
+    fun `a full 13 digit account number in the message matches by its ending`() {
+        assertEquals(1L, AccountNumberMatcher.match("0123456810001", "AED", listOf(current, card, usd)))
+        assertEquals(1L, AccountNumberMatcher.match("9990123456810001", "AED", listOf(current, card, usd)))
+    }
 }

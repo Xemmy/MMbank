@@ -28,7 +28,7 @@ object UnmatchedExplainer {
 
     /** `THB 1,500.00` / `THB1500` -- an upper-case 3-letter token glued to a number. */
     private val CODE_THEN_NUMBER = Regex(
-        "(?<![A-Za-z])([A-Z]{3})\\s?(\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)(?![\\d.]*[A-Za-z])",
+        "(?<![A-Za-z])([A-Z]{3})\\s?(${AmountPatterns.INTEGER}(?:\\.\\d{1,2})?)(?![\\d.]*[A-Za-z])",
     )
 
     /** Null when there is nothing to explain (blank text). */

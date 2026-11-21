@@ -1,19 +1,25 @@
 package com.xemmy.mmbank.ui.designsystem
 
+import com.xemmy.mmbank.util.Digits
 import java.math.BigDecimal
 
 /** Shown under a money field that holds something that isn't an amount. */
 const val MONEY_FIELD_HINT = "Enter an amount like 125.50"
 
 private val PLAIN_AMOUNT = Regex("""^\d*\.?\d+$|^\d+\.$""")
-private val GROUPED_AMOUNT = Regex("""^\d{1,3}(,\d{3})+(\.\d+)?$""")
+/** "1,250,000" and the Indian "12,50,000" (lakh) grouping. */
+private val GROUPED_AMOUNT = Regex("""^(?:\d{1,2}(,\d{2})+,\d{3}|\d{1,3}(,\d{3})+)(\.\d+)?$""")
+
+/** ASCII digits, and the Arabic decimal/thousands marks as "." and ",", from an Arabic keypad. */
+private fun asciiAmount(text: String): String = Digits.fold(text).replace('\u066B', '.').replace('\u066C', ',')
 
 /**
- * Parses what a person typed into an amount. Accepts "125.50", ".5", "1,250.50";
+ * Parses what a person typed into an amount. Accepts "125.50", ".5", "1,250.50",
+ * "1,00,000" and Arabic-Indic digits;
  * returns null for blank, negative, signed, or otherwise unparseable text.
  */
 fun parseMoneyInput(text: String): BigDecimal? {
-    val t = text.trim()
+    val t = asciiAmount(text.trim())
     if (t.isEmpty()) return null
     val cleaned = when {
         GROUPED_AMOUNT.matches(t) -> t.replace(",", "")
@@ -30,8 +36,8 @@ fun parseMoneyInput(text: String): BigDecimal? {
 fun sanitizeMoneyInput(text: String): String {
     val sb = StringBuilder()
     var seenDot = false
-    for (c in text) {
-        if (c.isDigit() || c == ',') {
+    for (c in asciiAmount(text)) {
+        if (c in '0'..'9' || c == ',') {
             sb.append(c)
         } else if (c == '.' && !seenDot) {
             sb.append(c)
@@ -49,7 +55,7 @@ fun moneyFieldError(text: String, maxFractionDigits: Int = 2, required: Boolean 
     if (text.isBlank()) return if (required) MONEY_FIELD_HINT else null
     val value = parseMoneyInput(text) ?: return MONEY_FIELD_HINT
     if (value.signum() <= 0) return "Amount must be greater than 0"
-    val decimals = text.trim().substringAfter('.', "").length
+    val decimals = asciiAmount(text.trim()).substringAfter('.', "").length
     if (decimals > maxFractionDigits) {
         return if (maxFractionDigits == 0) "Use a whole number" else "Use at most $maxFractionDigits decimal places"
     }

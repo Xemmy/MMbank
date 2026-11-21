@@ -7,6 +7,7 @@ import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionKind
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
+import com.xemmy.mmbank.util.Digits
 import java.math.BigDecimal
 
 /**
@@ -69,7 +70,7 @@ object QuickAdd {
 
     /** "12.5", "1,250.00" and "12,5" (a decimal comma) all read as numbers; anything else is null. */
     internal fun parseAmount(text: String): BigDecimal? {
-        var s = text.trim().replace(" ", "")
+        var s = Digits.fold(text.trim()).replace(" ", "").replace('\u066B', '.').replace('\u066C', ',')
         if (s.isEmpty()) return null
         // A lone comma followed by 1-2 digits is a decimal comma; otherwise commas are thousands separators.
         s = if (Regex("^\\d+,\\d{1,2}$").matches(s)) s.replace(',', '.') else s.replace(",", "")
