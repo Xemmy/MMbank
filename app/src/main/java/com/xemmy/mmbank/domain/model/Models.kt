@@ -665,15 +665,19 @@ data class Subscription(
      * the radar to see a pattern.
      */
     val isManual: Boolean = false,
+    /** Brand key of [merchant] (see SubscriptionRescan.keyOf); lets a renamed SMS still match its row. */
+    val merchantKey: String = "",
+    /** Parallel identical charges per cycle (identical twins); 1 for an ordinary subscription. */
+    val lines: Int = 1,
 )
 
 /**
- * The user's decision that one transaction is a charge of the subscription
- * named [merchant], whatever merchant text the bank printed on it. Keyed by
- * the subscription's merchant (not its row id) so the link survives a rescan
- * and a dismissed-then-re-added row.
+ * The user's decision that one transaction is a charge of the subscription row
+ * [subscriptionId], whatever merchant text the bank printed on it. Keyed by the
+ * row id (not the merchant) so several subscriptions at one merchant, even with
+ * the same amount on the same card, can each own their own charges.
  */
-data class SubscriptionLink(val transactionId: Long, val merchant: String)
+data class SubscriptionLink(val transactionId: Long, val subscriptionId: Long)
 
 /**
  * Recurrence rhythm for a manually tracked [Bill]; kept nullable on the bill

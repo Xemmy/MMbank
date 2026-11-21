@@ -48,8 +48,32 @@ class BackupExtrasTest {
             id = 4, merchant = "Gym", averageAmount = BigDecimal("150.00"), currencyCode = "AED",
             cadence = SubscriptionCadence.YEARLY, nextDueDateMillis = 1_700_000_000_000, lastSeenMillis = 5,
             occurrenceCount = 2, dismissed = true, previousAmount = null, isManual = true,
+            merchantKey = com.xemmy.mmbank.domain.intelligence.SubscriptionRescan.keyOf("Gym"), lines = 2,
         )
         assertEquals(e, e.toBackup().toEntity())
+    }
+
+    @Test fun `links carry their subscription id and an old merchant-only link is resolved by merchant`() {
+        fun manual(id: Long, merchant: String) = BackupManualSubscription(id, merchant, "10.00", "AED", "MONTHLY", 0, 0, 0)
+        val rows = listOf(manual(3, "Netflix"), manual(8, "Netflix"), manual(9, "Gym"))
+        val links = listOf(
+            BackupSubscriptionLink(transactionId = 1, subscriptionId = 8),
+            BackupSubscriptionLink(transactionId = 2, merchant = "Gym"),
+            BackupSubscriptionLink(transactionId = 3, merchant = "Gone"),
+            BackupSubscriptionLink(transactionId = 4, subscriptionId = 77),
+        )
+        val out = com.xemmy.mmbank.data.backup.resolveBackupLinks(links, rows)
+        assertEquals(
+            listOf(1L to 8L, 2L to 9L),
+            out.map { it.transactionId to it.subscriptionId },
+        )
+    }
+
+    @Test fun `an old link json without a subscription id still decodes`() {
+        val decoded = Json { ignoreUnknownKeys = true }.decodeFromString<BackupSubscriptionLink>(
+            """{"transactionId":5,"merchant":"Apple"}""",
+        )
+        assertEquals(BackupSubscriptionLink(5, "Apple", 0), decoded)
     }
 
     @Test fun `an unknown cadence in a backup reads back as monthly`() {

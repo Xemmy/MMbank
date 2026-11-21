@@ -122,7 +122,13 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         _charges.value = null
     }
 
-    fun addCharge(charge: Transaction) = changeLink { sub, repository -> repository.link(charge.id, sub.merchant) }
+    fun addCharge(charge: Transaction) = changeLink { sub, repository -> repository.link(charge.id, sub.id) }
+
+    /** Links every unlinked charge with the same brand key and an amount within 5% to the open subscription. */
+    fun linkSimilar() = changeLink { sub, repository ->
+        val all = container.transactionRepository.observeTransactions().first()
+        SubscriptionLinks.similar(all, repository.links(), sub).forEach { repository.link(it.id, sub.id) }
+    }
 
     fun removeCharge(charge: Transaction) = changeLink { _, repository -> repository.unlink(charge.id) }
 
@@ -135,7 +141,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
                 change(open, repository)
                 repository.rescan(container.transactionRepository.observeTransactions().first())
                 // The rescan may have refreshed the row; show its current figures.
-                val fresh = repository.observeActive().first().firstOrNull { it.merchant == open.merchant } ?: open
+                val fresh = repository.observeActive().first().firstOrNull { it.id == open.id } ?: open
                 _charges.value = loadCharges(fresh)
             }.onFailure { container.recordError("SubscriptionsViewModel.changeLink", it) }
         }
@@ -147,8 +153,9 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         val all = container.transactionRepository.observeTransactions().first()
         return ChargesState(
             subscription = subscription,
-            linked = repository.linkedTransactions(subscription.merchant).sortedByDescending { it.timestampMillis },
+            linked = repository.linkedTransactions(subscription.id).sortedByDescending { it.timestampMillis },
             candidates = SubscriptionLinks.candidates(all, links, subscription),
+            similar = SubscriptionLinks.similar(all, links, subscription),
         )
     }
 
@@ -176,8 +183,8 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
             runCatching {
                 val repository = container.subscriptionRepository
                 val manual = SubscriptionLinks.manualFrom(charge)
-                repository.saveManual(manual)
-                repository.link(charge.id, manual.merchant)
+                val id = repository.saveManual(manual)
+                repository.link(charge.id, id)
                 repository.rescan(container.transactionRepository.observeTransactions().first())
             }.onFailure { container.recordError("SubscriptionsViewModel.createFrom", it) }
         }
@@ -230,6 +237,7 @@ fun SubscriptionsScreen(
             onDismiss = viewModel::closeCharges,
             onAdd = viewModel::addCharge,
             onRemove = viewModel::removeCharge,
+            onLinkSimilar = viewModel::linkSimilar,
             // Only a hand-added row is really removed; a detected one would just return on the next scan.
             onDeleteSubscription = if (open.subscription.isManual) {
                 { viewModel.deleteSubscription(open.subscription.id) }

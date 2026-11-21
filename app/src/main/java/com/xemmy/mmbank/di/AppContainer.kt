@@ -887,32 +887,19 @@ class AppContainer(context: Context) {
     }
 
     /**
-     * Keeps the subscription radar current without being asked. After a real
-     * debit lands, re-runs [SubscriptionRadarEngine] over just that merchant's
-     * history and upserts the result, so a newly-started subscription, a moved
-     * renewal date or a price change shows up on its own instead of waiting for
-     * the user to remember to tap "Scan" on the Subscriptions screen.
-     *
-     * Scoped to one merchant via an indexed query rather than loading the
-     * ledger, since this runs on the capture path. `replaceAll` upserts by
-     * merchant and preserves a dismissed flag, so re-detecting something the
-     * user already dismissed can't silently un-dismiss it.
+     * Keeps the subscription table current without being asked. After a real
+     * debit lands, runs a full [com.xemmy.mmbank.domain.intelligence.SubscriptionRescan]
+     * over the real ledger, so a newly-started subscription, a moved renewal
+     * date or a price change shows up on its own instead of waiting for the
+     * user to tap "Scan", and an unambiguous new charge joins the user-owned
+     * row it belongs to. One code path for capture and the Scan button.
      */
     private fun refreshSubscriptionForMerchant(transaction: Transaction) {
         if (transaction.kind != TransactionKind.SPEND || transaction.excludeFromStats) return
-        val merchant = transaction.merchant?.trim()?.takeIf { it.isNotBlank() } ?: return
 
         applicationScope.launch {
             runCatching {
-                val history = database.transactionDao()
-                    .findRealDebitsByMerchant(merchant)
-                    .map { it.toDomain() }
-                // Charges the user linked to this subscription count too, or this
-                // scoped rescan would shrink the series a full scan had built.
-                val linked = subscriptionRepository.linkedTransactions(merchant)
-                    .map { it.copy(merchant = merchant) }
-                val detected = SubscriptionRadarEngine.detect((history + linked).distinctBy { it.id })
-                if (detected.isNotEmpty()) subscriptionRepository.replaceAll(detected)
+                subscriptionRepository.rescan(transactionRepository.getAllReal())
             }.onFailure { recordError("AppContainer.refreshSubscriptionForMerchant", it) }
         }
     }

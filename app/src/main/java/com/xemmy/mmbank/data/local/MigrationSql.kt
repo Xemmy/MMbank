@@ -121,6 +121,31 @@ object MigrationSql {
     )
 
     /**
+     * v43 (from v42): subscriptions keyed by id. The unique merchant index goes (several
+     * subscriptions at one merchant, even identical ones, are allowed); `merchantKey` is backfilled
+     * as the lower-cased trimmed merchant and refined by the next rescan; `lines` counts parallel
+     * identical charges and starts at 1. `subscription_links` is rebuilt to point at the
+     * subscription's id: links are carried over through a join on the old merchant column and a
+     * link whose subscription no longer exists is dropped.
+     */
+    val MIGRATION_42_43_SQL: List<String> = listOf(
+        "DROP INDEX IF EXISTS `index_subscriptions_merchant`",
+        "CREATE INDEX IF NOT EXISTS `index_subscriptions_merchant` ON `subscriptions` (`merchant`)",
+        "ALTER TABLE `subscriptions` ADD COLUMN `merchantKey` TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE `subscriptions` ADD COLUMN `lines` INTEGER NOT NULL DEFAULT 1",
+        "UPDATE `subscriptions` SET `merchantKey` = LOWER(TRIM(`merchant`))",
+        "CREATE TABLE IF NOT EXISTS `subscription_links_new` (" +
+            "`transactionId` INTEGER PRIMARY KEY NOT NULL, " +
+            "`subscriptionId` INTEGER NOT NULL)",
+        "INSERT OR REPLACE INTO `subscription_links_new` (`transactionId`, `subscriptionId`) " +
+            "SELECT l.`transactionId`, s.`id` FROM `subscription_links` l " +
+            "INNER JOIN `subscriptions` s ON s.`merchant` = l.`merchant`",
+        "DROP TABLE `subscription_links`",
+        "ALTER TABLE `subscription_links_new` RENAME TO `subscription_links`",
+        "CREATE INDEX IF NOT EXISTS `index_subscription_links_subscriptionId` ON `subscription_links` (`subscriptionId`)",
+    )
+
+    /**
      * v42 (from v41): hand-added subscriptions and manual transaction links. `isManual` defaults
      * to 0 so every detected row stays detected; the link table starts empty.
      */

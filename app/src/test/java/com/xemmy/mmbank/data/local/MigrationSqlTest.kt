@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v42 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v43 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v42
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v43
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../42.json`), so
+ *     compiler exports during this same build (`app/schemas/.../43.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/42.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/42.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/43.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/43.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 42.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 43.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -103,6 +103,11 @@ class MigrationSqlTest {
     private fun Connection.exec(sql: String) = createStatement().use { it.execute(sql) }
 
     private fun migrate() {
+        migrateTo42()
+        MigrationSql.MIGRATION_42_43_SQL.forEach { migrated.exec(it) }
+    }
+
+    private fun migrateTo42() {
         (
             MigrationSql.MIGRATION_25_26_SQL + MigrationSql.MIGRATION_26_27_SQL +
                 MigrationSql.MIGRATION_27_28_SQL + MigrationSql.MIGRATION_28_29_SQL +
@@ -153,7 +158,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v42 install table for table`() {
+    fun `an upgraded database matches a fresh v43 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -430,9 +435,44 @@ class MigrationSqlTest {
             }
         }
         assertEquals(0, migrated.count("subscription_links"))
-        migrated.exec("INSERT INTO subscription_links (transactionId, merchant) VALUES (5, 'Netflix')")
-        migrated.exec("INSERT OR REPLACE INTO subscription_links (transactionId, merchant) VALUES (5, 'Spotify')")
+        migrated.exec("INSERT INTO subscription_links (transactionId, subscriptionId) VALUES (5, 1)")
+        migrated.exec("INSERT OR REPLACE INTO subscription_links (transactionId, subscriptionId) VALUES (5, 2)")
         assertEquals("one link per transaction", 1, migrated.count("subscription_links"))
+    }
+
+    @Test
+    fun `v43 turns merchant links into id links, drops orphans and allows twin subscriptions`() {
+        migrateTo42()
+        migrated.exec(
+            "INSERT INTO subscriptions (id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed, isManual) " +
+                "VALUES (1, 'Netflix', '39.99', 'AED', 'MONTHLY', 0, 0, 4, 0, 1), " +
+                "(2, ' Spotify ', '19.99', 'AED', 'MONTHLY', 0, 0, 3, 0, 0)",
+        )
+        migrated.exec(
+            "INSERT INTO subscription_links (transactionId, merchant) VALUES (5, 'Netflix'), (6, ' Spotify '), (7, 'Gone')",
+        )
+        MigrationSql.MIGRATION_42_43_SQL.forEach { migrated.exec(it) }
+
+        val links = migrated.createStatement().use { st ->
+            st.executeQuery("SELECT transactionId, subscriptionId FROM subscription_links ORDER BY transactionId").use { rs ->
+                buildList { while (rs.next()) add(rs.getLong(1) to rs.getLong(2)) }
+            }
+        }
+        assertEquals("the link to a vanished subscription is dropped", listOf(5L to 1L, 6L to 2L), links)
+
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT merchantKey, lines FROM subscriptions WHERE id = 2").use { rs ->
+                rs.next()
+                assertEquals("spotify", rs.getString(1))
+                assertEquals(1, rs.getInt(2))
+            }
+        }
+        // The unique merchant index is gone: the same merchant, amount and card can be tracked twice.
+        migrated.exec(
+            "INSERT INTO subscriptions (merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed, isManual) " +
+                "VALUES ('Netflix', '39.99', 'AED', 'MONTHLY', 0, 0, 0, 0, 1)",
+        )
+        assertEquals(3, migrated.count("subscriptions"))
     }
 
     private fun Connection.count(table: String): Int =

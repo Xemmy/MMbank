@@ -394,7 +394,7 @@ data class ExchangeRateHistoryEntity(
 
 @Entity(
     tableName = "subscriptions",
-    indices = [Index(value = ["merchant"], unique = true)],
+    indices = [Index(value = ["merchant"])],
 )
 data class SubscriptionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -409,16 +409,18 @@ data class SubscriptionEntity(
     /** Prior price when the charge amount changed partway through; null when steady. */
     val previousAmount: BigDecimal? = null,
     val isManual: Boolean = false,
+    val merchantKey: String = "",
+    val lines: Int = 1,
 )
 
 /** See [com.xemmy.mmbank.domain.model.SubscriptionLink]. No FK: a link to a deleted transaction is simply ignored. */
 @Entity(
     tableName = "subscription_links",
-    indices = [Index(value = ["merchant"])],
+    indices = [Index(value = ["subscriptionId"])],
 )
 data class SubscriptionLinkEntity(
     @PrimaryKey val transactionId: Long,
-    val merchant: String,
+    val subscriptionId: Long,
 )
 
 @Entity(tableName = "bills")
@@ -760,17 +762,17 @@ fun ExchangeRateOnDay.toEntity() = ExchangeRateHistoryEntity(baseCode, quoteCode
 
 fun SubscriptionEntity.toDomain() = Subscription(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
-    previousAmount, isManual,
+    previousAmount, isManual, merchantKey, lines,
 )
 
 fun Subscription.toEntity() = SubscriptionEntity(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
-    previousAmount, isManual,
+    previousAmount, isManual, merchantKey, lines,
 )
 
-fun SubscriptionLinkEntity.toDomain() = SubscriptionLink(transactionId, merchant)
+fun SubscriptionLinkEntity.toDomain() = SubscriptionLink(transactionId, subscriptionId)
 
-fun SubscriptionLink.toEntity() = SubscriptionLinkEntity(transactionId, merchant)
+fun SubscriptionLink.toEntity() = SubscriptionLinkEntity(transactionId, subscriptionId)
 
 fun BillEntity.toDomain() = Bill(id, name, amount, currencyCode, recurrence, nextDueDateMillis, createdAt, dueDayAnchor)
 

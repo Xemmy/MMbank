@@ -74,14 +74,14 @@ class SubscriptionLinkViewModel(private val container: AppContainer) : ViewModel
     val subscriptions: StateFlow<List<Subscription>> = repository.observeActive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** The merchant a transaction is currently linked to, or null. */
-    suspend fun linkedMerchant(transactionId: Long): String? =
-        repository.links().firstOrNull { it.transactionId == transactionId }?.merchant
+    /** The subscription row a transaction is currently linked to, or null. */
+    suspend fun linkedSubscriptionId(transactionId: Long): Long? =
+        repository.links().firstOrNull { it.transactionId == transactionId }?.subscriptionId
 
-    fun attach(charge: Transaction, merchant: String, onDone: () -> Unit) {
+    fun attach(charge: Transaction, subscriptionId: Long, onDone: () -> Unit) {
         viewModelScope.launch {
             runCatching {
-                repository.link(charge.id, merchant)
+                repository.link(charge.id, subscriptionId)
                 repository.rescan(container.transactionRepository.observeTransactions().first())
             }.onFailure { container.recordError("SubscriptionLinkViewModel.attach", it) }
             onDone()
@@ -92,8 +92,8 @@ class SubscriptionLinkViewModel(private val container: AppContainer) : ViewModel
         viewModelScope.launch {
             runCatching {
                 val manual = SubscriptionLinks.manualFrom(charge)
-                repository.saveManual(manual)
-                repository.link(charge.id, manual.merchant)
+                val id = repository.saveManual(manual)
+                repository.link(charge.id, id)
                 repository.rescan(container.transactionRepository.observeTransactions().first())
             }.onFailure { container.recordError("SubscriptionLinkViewModel.attachAsNew", it) }
             onDone()
@@ -102,8 +102,10 @@ class SubscriptionLinkViewModel(private val container: AppContainer) : ViewModel
 
     fun detach(charge: Transaction, onDone: () -> Unit) {
         viewModelScope.launch {
-            runCatching { repository.unlink(charge.id) }
-                .onFailure { container.recordError("SubscriptionLinkViewModel.detach", it) }
+            runCatching {
+                repository.unlink(charge.id)
+                repository.rescan(container.transactionRepository.observeTransactions().first())
+            }.onFailure { container.recordError("SubscriptionLinkViewModel.detach", it) }
             onDone()
         }
     }
@@ -117,8 +119,9 @@ fun SubscriptionPickerDialog(
     viewModel: SubscriptionLinkViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
-    var current by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(charge.id) { current = viewModel.linkedMerchant(charge.id) }
+    var currentId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(charge.id) { currentId = viewModel.linkedSubscriptionId(charge.id) }
+    val current = subscriptions.firstOrNull { it.id == currentId }?.let { "${it.merchant} · ${moneyLabel(it.averageAmount, it.currencyCode)}" }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -136,7 +139,7 @@ fun SubscriptionPickerDialog(
                         Column(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.attach(charge, sub.merchant, onDismiss) }
+                                .clickable { viewModel.attach(charge, sub.id, onDismiss) }
                                 .padding(vertical = 10.dp),
                         ) {
                             Text(sub.merchant, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -149,7 +152,7 @@ fun SubscriptionPickerDialog(
                     }
                 }
                 TextButton(onClick = { viewModel.attachAsNew(charge, onDismiss) }) { Text("New subscription from this charge") }
-                if (current != null) {
+                if (currentId != null) {
                     TextButton(onClick = { viewModel.detach(charge, onDismiss) }) { Text("Remove link") }
                 }
             }
@@ -234,6 +237,8 @@ data class ChargesState(
     val subscription: Subscription,
     val linked: List<Transaction> = emptyList(),
     val candidates: List<Transaction> = emptyList(),
+    /** Unlinked charges with this subscription's brand key, currency and ~amount ("Link similar"). */
+    val similar: List<Transaction> = emptyList(),
 )
 
 /** The charges the user attached to a subscription, with unlink, and recent debits that could be added. */
@@ -243,6 +248,7 @@ fun SubscriptionChargesDialog(
     onDismiss: () -> Unit,
     onAdd: (Transaction) -> Unit,
     onRemove: (Transaction) -> Unit,
+    onLinkSimilar: () -> Unit,
     onDeleteSubscription: (() -> Unit)?,
 ) {
     AlertDialog(
@@ -251,6 +257,11 @@ fun SubscriptionChargesDialog(
         text = {
             LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 item { SectionLabel("Linked charges") }
+                if (state.similar.isNotEmpty()) {
+                    item {
+                        TextButton(onClick = onLinkSimilar) { Text("Link ${state.similar.size} similar charges") }
+                    }
+                }
                 if (state.linked.isEmpty()) {
                     item {
                         Text(

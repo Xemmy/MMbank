@@ -457,13 +457,13 @@ class EntityMappersTest {
         val manual = Subscription(
             id = 9, merchant = "Gym", averageAmount = BigDecimal("150.00"), currencyCode = "AED",
             cadence = SubscriptionCadence.YEARLY, nextDueDateMillis = 1_700_000_000_000, lastSeenMillis = 0,
-            occurrenceCount = 0, isManual = true,
+            occurrenceCount = 0, isManual = true, merchantKey = "gym", lines = 2,
         )
         assertEquals(manual, manual.toEntity().toDomain())
         assertTrue(manual.toEntity().isManual)
         assertFalse("a detected row is not manual by default", manual.copy(isManual = false).toEntity().isManual)
 
-        val link = com.xemmy.mmbank.domain.model.SubscriptionLink(42, "Apple")
+        val link = com.xemmy.mmbank.domain.model.SubscriptionLink(42, 9)
         assertEquals(link, link.toEntity().toDomain())
     }
 

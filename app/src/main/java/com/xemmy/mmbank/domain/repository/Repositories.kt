@@ -283,29 +283,34 @@ interface CategoryRepository {
  * re-scanning the whole ledger on every launch.
  */
 interface SubscriptionRepository {
-    /** Active (non-dismissed) detections, soonest renewal first. */
+    /** Active (non-dismissed) rows, soonest renewal first. */
     fun observeActive(): Flow<List<Subscription>>
-    /** Replaces the stored detection set with a fresh scan's results (one row per merchant). */
-    suspend fun replaceAll(detected: List<Subscription>)
+    /** Rows the user dismissed, so they can be restored. */
+    fun observeDismissed(): Flow<List<Subscription>>
     suspend fun dismiss(id: Long)
-    /** Inserts or updates a hand-added subscription (see [Subscription.isManual]); returns its id. */
+    /** Brings a dismissed row back. */
+    suspend fun restore(id: Long)
+    /** Inserts a new user-owned row (id 0) or updates the one with that id; returns its id. Never merges by merchant. */
     suspend fun saveManual(subscription: Subscription): Long
-    /** Removes a subscription row and any links pointing at it. Detected rows come back on the next scan. */
+    /** Removes a subscription row and any links pointing at it. Detected rows may come back on a rescan. */
     suspend fun delete(id: Long)
     /** Every manual transaction link. */
     fun observeLinks(): Flow<List<SubscriptionLink>>
     suspend fun links(): List<SubscriptionLink>
-    /** Treats [transactionId] as a charge of [merchant]'s subscription (replacing any earlier link). */
-    suspend fun link(transactionId: Long, merchant: String)
+    /** Treats [transactionId] as a charge of subscription [subscriptionId] (replacing any earlier link) and makes that row user-owned. */
+    suspend fun link(transactionId: Long, subscriptionId: Long)
     suspend fun unlink(transactionId: Long)
     /**
-     * Re-detects over the whole ledger with manual links applied and stores the
-     * result. [transactions] is the real ledger as the caller loaded it.
+     * Re-evaluates every row against [transactions] (the real ledger as the
+     * caller loaded it) -- see [com.xemmy.mmbank.domain.intelligence.SubscriptionRescan].
      */
-    suspend fun rescan(transactions: List<Transaction>)
-    /** The transactions linked to [merchant]'s subscription, oldest first, with their original merchant text. */
-    suspend fun linkedTransactions(merchant: String): List<Transaction>
+    suspend fun rescan(transactions: List<Transaction>): RescanCounts
+    /** The transactions linked to subscription [subscriptionId], oldest first, with their original merchant text. */
+    suspend fun linkedTransactions(subscriptionId: Long): List<Transaction>
 }
+
+/** What a rescan changed, for the "Found 2 new · 1 updated · 1 removed" message. */
+data class RescanCounts(val created: Int, val updated: Int, val removed: Int)
 
 /**
  * Manually tracked bills -- see [Bill]. Unlike [SubscriptionRepository],

@@ -38,38 +38,11 @@ class SubscriptionLinksTest {
         cadence = SubscriptionCadence.MONTHLY, nextDueDateMillis = 0, lastSeenMillis = 0, occurrenceCount = 2,
     )
 
-    @Test fun `apply renames only the linked transactions`() {
-        val a = tx(1, "APPLE.COM/BILL", LocalDate.of(2026, 1, 5))
-        val b = tx(2, "Carrefour", LocalDate.of(2026, 1, 6))
-        val out = SubscriptionLinks.apply(listOf(a, b), listOf(SubscriptionLink(1, "Apple")))
-        assertEquals("Apple", out[0].merchant)
-        assertEquals("Carrefour", out[1].merchant)
-        assertEquals(a.amount, out[0].amount)
-    }
-
-    @Test fun `apply without links returns the same list`() {
-        val list = listOf(tx(1, "X", LocalDate.of(2026, 1, 5)))
-        assertTrue(SubscriptionLinks.apply(list, emptyList()) === list)
-    }
-
-    @Test fun `a differently named charge joins the series once linked`() {
-        val charges = listOf(
-            tx(1, "Apple", LocalDate.of(2026, 1, 5)),
-            tx(2, "Apple", LocalDate.of(2026, 2, 5)),
-            tx(3, "APPLE.COM/BILL", LocalDate.of(2026, 3, 5)),
-        )
-        assertTrue("two Apple charges alone are not a pattern", SubscriptionRadarEngine.detect(charges, utc).isEmpty())
-
-        val linked = SubscriptionLinks.apply(charges, listOf(SubscriptionLink(3, "Apple")))
-        val detected = SubscriptionRadarEngine.detect(linked, utc).single()
-        assertEquals("Apple", detected.merchant)
-        assertEquals(3, detected.occurrenceCount)
-        assertEquals(charges[2].timestampMillis, detected.lastSeenMillis)
-    }
-
     @Test fun `candidates are unlinked same-currency spending newest first`() {
         val ok1 = tx(1, "APPLE.COM/BILL", LocalDate.of(2026, 3, 5))
         val ok2 = tx(2, null, LocalDate.of(2026, 4, 5))
+        // Same merchant as the subscription: stays a candidate, because only the user can say which of
+        // several subscriptions at one merchant a charge belongs to.
         val own = tx(3, "apple", LocalDate.of(2026, 4, 6))
         val linked = tx(4, "Other", LocalDate.of(2026, 4, 7))
         val usd = tx(5, "Other", LocalDate.of(2026, 4, 8), currency = "USD")
@@ -79,10 +52,10 @@ class SubscriptionLinksTest {
 
         val out = SubscriptionLinks.candidates(
             listOf(ok1, ok2, own, linked, usd, income, excluded, unsaved),
-            listOf(SubscriptionLink(4, "Spotify")),
+            listOf(SubscriptionLink(4, 77)),
             sub(),
         )
-        assertEquals(listOf(2L, 1L), out.map { it.id })
+        assertEquals(listOf(3L, 2L, 1L), out.map { it.id })
     }
 
     @Test fun `candidates are capped`() {
@@ -91,10 +64,22 @@ class SubscriptionLinksTest {
         assertEquals(5, SubscriptionLinks.candidates(many, emptyList(), sub(), limit = 5).size)
     }
 
-    @Test fun `linkedTo lists the ids for one merchant`() {
-        val links = listOf(SubscriptionLink(1, "Apple"), SubscriptionLink(2, "Spotify"), SubscriptionLink(3, "Apple"))
-        assertEquals(setOf(1L, 3L), SubscriptionLinks.linkedTo("Apple", links))
-        assertTrue(SubscriptionLinks.linkedTo("Nope", links).isEmpty())
+    @Test fun `linkedTo lists the ids for one subscription row`() {
+        val links = listOf(SubscriptionLink(1, 10), SubscriptionLink(2, 20), SubscriptionLink(3, 10))
+        assertEquals(setOf(1L, 3L), SubscriptionLinks.linkedTo(10, links))
+        assertTrue(SubscriptionLinks.linkedTo(99, links).isEmpty())
+    }
+
+    @Test fun `similar finds unlinked same-brand charges within five percent, oldest first`() {
+        val s = sub("Apple").copy(averageAmount = BigDecimal("50.00"))
+        val a = tx(1, "APPLE.COM/BILL", LocalDate.of(2026, 3, 5), amount = "50.00")
+        val b = tx(2, "Apple", LocalDate.of(2026, 2, 5), amount = "51.50")
+        val farAmount = tx(3, "Apple", LocalDate.of(2026, 4, 5), amount = "80.00")
+        val otherBrand = tx(4, "Spotify", LocalDate.of(2026, 4, 6), amount = "50.00")
+        val usd = tx(5, "Apple", LocalDate.of(2026, 4, 7), amount = "50.00", currency = "USD")
+        val taken = tx(6, "Apple", LocalDate.of(2026, 4, 8), amount = "50.00")
+        val out = SubscriptionLinks.similar(listOf(a, b, farAmount, otherBrand, usd, taken), listOf(SubscriptionLink(6, 2)), s)
+        assertEquals(listOf(2L, 1L), out.map { it.id })
     }
 
     @Test fun `a subscription seeded from a charge is monthly and manual`() {
@@ -106,6 +91,7 @@ class SubscriptionLinksTest {
         assertEquals(SubscriptionCadence.MONTHLY, seeded.cadence)
         assertTrue(seeded.isManual)
         assertEquals(1, seeded.occurrenceCount)
+        assertEquals(SubscriptionRescan.keyOf("Netflix"), seeded.merchantKey)
         assertEquals(charge.timestampMillis, seeded.lastSeenMillis)
         // 31 Jan + 1 month clamps to the end of February.
         assertEquals(LocalDate.of(2026, 2, 28).atStartOfDay(utc).toInstant().toEpochMilli(), seeded.nextDueDateMillis)
@@ -122,7 +108,7 @@ class SubscriptionLinksTest {
         val linked = tx(3, "Apple", LocalDate.of(2026, 5, 1))
         val income = tx(4, "Salary", LocalDate.of(2026, 6, 1), direction = TransactionDirection.CREDIT, kind = TransactionKind.INCOME)
         val all = listOf(a, b, linked, income)
-        val links = listOf(SubscriptionLink(3, "Apple"))
+        val links = listOf(SubscriptionLink(3, 1))
         assertEquals(listOf(2L, 1L), SubscriptionLinks.pickable(all, links).map { it.id })
         assertEquals(listOf(1L), SubscriptionLinks.pickable(all, links, query = " net ").map { it.id })
         assertEquals(1, SubscriptionLinks.pickable(all, links, limit = 1).size)

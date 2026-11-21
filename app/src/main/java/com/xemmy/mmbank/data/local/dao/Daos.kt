@@ -722,15 +722,24 @@ interface ExchangeRateHistoryDao {
 @Dao
 interface SubscriptionDao {
 
-    /** Replaces the detection for a merchant on every re-scan (one row per merchant, see the unique index). */
+    /** Inserts a new row (id 0) or replaces the row with the same id. Several rows may share a merchant. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: SubscriptionEntity): Long
 
     @Query("SELECT * FROM subscriptions WHERE dismissed = 0 ORDER BY nextDueDateMillis ASC")
     fun observeActive(): Flow<List<SubscriptionEntity>>
 
+    @Query("SELECT * FROM subscriptions WHERE dismissed = 1 ORDER BY merchant COLLATE NOCASE ASC")
+    fun observeDismissed(): Flow<List<SubscriptionEntity>>
+
     @Query("UPDATE subscriptions SET dismissed = 1 WHERE id = :id")
     suspend fun dismiss(id: Long)
+
+    @Query("UPDATE subscriptions SET dismissed = 0 WHERE id = :id")
+    suspend fun restore(id: Long)
+
+    @Query("DELETE FROM subscriptions WHERE id IN (:ids)")
+    suspend fun deleteAll(ids: List<Long>)
 
     @Query("SELECT * FROM subscriptions")
     suspend fun getAll(): List<SubscriptionEntity>
@@ -761,22 +770,22 @@ interface SubscriptionDao {
     @Query("DELETE FROM subscription_links WHERE transactionId = :transactionId")
     suspend fun deleteLink(transactionId: Long)
 
-    @Query("DELETE FROM subscription_links WHERE merchant = :merchant")
-    suspend fun deleteLinksFor(merchant: String)
+    @Query("DELETE FROM subscription_links WHERE subscriptionId = :subscriptionId")
+    suspend fun deleteLinksFor(subscriptionId: Long)
 
     @Query("DELETE FROM subscription_links")
     suspend fun clearLinks()
 
-    /** The transactions the user linked to [merchant]'s subscription, oldest first. */
+    /** The transactions linked to the subscription row [subscriptionId], oldest first. */
     @Query(
         """
         SELECT t.* FROM transactions t
         INNER JOIN subscription_links l ON l.transactionId = t.id
-        WHERE l.merchant = :merchant
+        WHERE l.subscriptionId = :subscriptionId
         ORDER BY t.timestamp ASC
         """
     )
-    suspend fun linkedTransactions(merchant: String): List<TransactionEntity>
+    suspend fun linkedTransactions(subscriptionId: Long): List<TransactionEntity>
 }
 
 @Dao

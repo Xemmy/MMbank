@@ -36,6 +36,7 @@ import com.xemmy.mmbank.domain.model.AccountType
 import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.BillRecurrence
 import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.intelligence.SubscriptionRescan
 import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.SplitType
 import com.xemmy.mmbank.domain.model.ReportedBalanceKind
@@ -323,10 +324,28 @@ data class BackupManualSubscription(
     val id: Long, val merchant: String, val averageAmount: String, val currencyCode: String,
     val cadence: String, val nextDueDateMillis: Long, val lastSeenMillis: Long, val occurrenceCount: Int,
     val dismissed: Boolean = false,
+    val lines: Int = 1,
 )
 
+/**
+ * Links name the subscription row by id ([subscriptionId], format 20). A backup from before that
+ * carries only [merchant] and is resolved by merchant on restore (see [resolveBackupLinks]).
+ */
 @Serializable
-data class BackupSubscriptionLink(val transactionId: Long, val merchant: String)
+data class BackupSubscriptionLink(val transactionId: Long, val merchant: String = "", val subscriptionId: Long = 0)
+
+/** The id-based links to restore: old merchant-only links are matched to the restored manual rows by merchant. */
+internal fun resolveBackupLinks(
+    links: List<BackupSubscriptionLink>,
+    manual: List<BackupManualSubscription>,
+): List<SubscriptionLinkEntity> {
+    val ids = manual.map { it.id }.toSet()
+    val byMerchant = manual.groupBy { it.merchant }.mapValues { it.value.first().id }
+    return links.mapNotNull { link ->
+        val id = if (link.subscriptionId != 0L) link.subscriptionId else byMerchant[link.merchant]
+        id?.takeIf { it in ids }?.let { SubscriptionLinkEntity(link.transactionId, it) }
+    }
+}
 
 @Serializable
 data class BackupPayLaterPlan(
@@ -443,7 +462,7 @@ class BackupManager(
 
     suspend fun export(password: CharArray): ByteArray {
         val payload = BackupPayload(
-            formatVersion = 19,
+            formatVersion = 20,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
@@ -467,7 +486,7 @@ class BackupManager(
                 payLaterPlans = database.payLaterDao().getAllPlans().map { it.toBackup() },
                 payLaterInstallments = database.payLaterDao().getAllInstallments().map { it.toBackup() },
                 manualSubscriptions = database.subscriptionDao().getManual().map { it.toBackup() },
-                subscriptionLinks = database.subscriptionDao().getAllLinks().map { BackupSubscriptionLink(it.transactionId, it.merchant) },
+                subscriptionLinks = database.subscriptionDao().getAllLinks().map { BackupSubscriptionLink(it.transactionId, subscriptionId = it.subscriptionId) },
                 goals = database.savingsGoalDao().getAll().map { it.toBackup() },
                 friends = database.friendDao().getAll().map { it.toBackup() },
                 groups = database.splitGroupDao().getAll().map { it.toBackup() },
@@ -640,7 +659,7 @@ class BackupManager(
                 database.subscriptionDao().clearLinks()
                 extras.manualSubscriptions.forEach { database.subscriptionDao().upsert(it.toEntity()) }
                 database.subscriptionDao().insertLinks(
-                    extras.subscriptionLinks.map { SubscriptionLinkEntity(it.transactionId, it.merchant) },
+                    resolveBackupLinks(extras.subscriptionLinks, extras.manualSubscriptions),
                 )
                 database.savingsGoalDao().insertAll(extras.goals.map { it.toEntity() })
                 database.friendDao().insertAll(extras.friends.map { it.toEntity() })
@@ -1026,7 +1045,7 @@ internal fun BackupBill.toEntity() = BillEntity(
 internal fun SubscriptionEntity.toBackup() = BackupManualSubscription(
     id = id, merchant = merchant, averageAmount = averageAmount.toPlainString(), currencyCode = currencyCode,
     cadence = cadence.name, nextDueDateMillis = nextDueDateMillis, lastSeenMillis = lastSeenMillis,
-    occurrenceCount = occurrenceCount, dismissed = dismissed,
+    occurrenceCount = occurrenceCount, dismissed = dismissed, lines = lines,
 )
 
 internal fun BackupManualSubscription.toEntity() = SubscriptionEntity(
@@ -1034,6 +1053,7 @@ internal fun BackupManualSubscription.toEntity() = SubscriptionEntity(
     cadence = SubscriptionCadence.entries.firstOrNull { it.name == cadence } ?: SubscriptionCadence.MONTHLY,
     nextDueDateMillis = nextDueDateMillis, lastSeenMillis = lastSeenMillis, occurrenceCount = occurrenceCount,
     dismissed = dismissed, previousAmount = null, isManual = true,
+    merchantKey = SubscriptionRescan.keyOf(merchant), lines = lines,
 )
 
 internal fun PayLaterPlanEntity.toBackup() = BackupPayLaterPlan(
