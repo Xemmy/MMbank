@@ -726,8 +726,12 @@ interface SubscriptionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: SubscriptionEntity): Long
 
-    @Query("SELECT * FROM subscriptions WHERE dismissed = 0 ORDER BY nextDueDateMillis ASC")
+    /** Confident rows only (the radar's "possible" matches stay out of totals and reminders). */
+    @Query("SELECT * FROM subscriptions WHERE dismissed = 0 AND confidence >= 0.8 ORDER BY nextDueDateMillis ASC")
     fun observeActive(): Flow<List<SubscriptionEntity>>
+
+    @Query("SELECT * FROM subscriptions WHERE dismissed = 0 AND confidence < 0.8 ORDER BY confidence DESC, merchant COLLATE NOCASE ASC")
+    fun observePossible(): Flow<List<SubscriptionEntity>>
 
     @Query("SELECT * FROM subscriptions WHERE dismissed = 1 ORDER BY merchant COLLATE NOCASE ASC")
     fun observeDismissed(): Flow<List<SubscriptionEntity>>

@@ -121,6 +121,14 @@ object MigrationSql {
     )
 
     /**
+     * v44 (from v43): `confidence` for detected subscriptions. 1.0 for every existing row, so
+     * nothing already shown moves into the "Possible" list; only new low-confidence detections do.
+     */
+    val MIGRATION_43_44_SQL: List<String> = listOf(
+        "ALTER TABLE `subscriptions` ADD COLUMN `confidence` REAL NOT NULL DEFAULT 1.0",
+    )
+
+    /**
      * v43 (from v42): subscriptions keyed by id. The unique merchant index goes (several
      * subscriptions at one merchant, even identical ones, are allowed); `merchantKey` is backfilled
      * as the lower-cased trimmed merchant and refined by the next rescan; `lines` counts parallel

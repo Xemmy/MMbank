@@ -285,6 +285,10 @@ interface CategoryRepository {
 interface SubscriptionRepository {
     /** Active (non-dismissed) rows, soonest renewal first. */
     fun observeActive(): Flow<List<Subscription>>
+    /** Low-confidence detections, listed as "Possible subscriptions". */
+    fun observePossible(): Flow<List<Subscription>>
+    /** Accepts a possible row: it becomes the user's own, fully confident subscription. */
+    suspend fun track(id: Long)
     /** Rows the user dismissed, so they can be restored. */
     fun observeDismissed(): Flow<List<Subscription>>
     suspend fun dismiss(id: Long)

@@ -90,7 +90,8 @@ object SubscriptionRescan {
 
         // Detection on what no user-owned row claims, minus anything a user-owned row already covers.
         val pool = real.filter { it.id !in linkedTxIds }
-        val detected = SubscriptionRadarEngine.detect(pool, zone)
+        val scan = SubscriptionRadarEngine.scan(pool, zone)
+        val detected = (scan.active + scan.possible).map { it.subscription }
             .filterNot { d -> userOwned.any { covers(it, d) } }
         val available = detectedStored.toMutableList()
         val keep = mutableSetOf<Long>()
@@ -106,7 +107,7 @@ object SubscriptionRescan {
             } else {
                 available.remove(match)
                 keep += match.id
-                val next = d.copy(id = match.id, dismissed = match.dismissed, merchantKey = key, lines = match.lines)
+                val next = d.copy(id = match.id, dismissed = match.dismissed, merchantKey = key)
                 if (next != match) {
                     upserts += next
                     updated++

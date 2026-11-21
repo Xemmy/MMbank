@@ -436,4 +436,106 @@ class SubscriptionRadarTest {
         assertEquals(6, SubscriptionCadence.SEMI_ANNUAL.months)
         assertEquals(12, SubscriptionCadence.YEARLY.months)
     }
+
+    // ---- v3: several subscriptions per merchant, twins, possible matches, explain ----
+
+    private fun monthly(merchant: String, amount: String, offsetDays: Long, count: Int = 4) =
+        (0 until count).map { tx(merchant, amount, daysAgo = offsetDays + 30L * (count - 1 - it)) }
+
+    @Test
+    fun `one merchant with three different amounts yields three subscriptions`() {
+        val apple = monthly("Apple", "3.99", 0) + monthly("Apple", "10.99", 10) + monthly("Apple", "49.00", 20)
+        val result = SubscriptionRadarEngine.detect(apple)
+        assertEquals(3, result.size)
+        assertEquals(
+            listOf("3.99", "10.99", "49.00"),
+            result.map { it.averageAmount.toPlainString() }.sortedBy { BigDecimal(it) },
+        )
+        assertTrue(result.all { it.cadence == SubscriptionCadence.MONTHLY && it.occurrenceCount == 4 })
+    }
+
+    @Test
+    fun `two identical charges every cycle are one row with two lines`() {
+        val twins = monthly("Gym", "50.00", 0) + monthly("Gym", "50.00", 1)
+        val result = SubscriptionRadarEngine.detect(twins)
+        val sub = result.single()
+        assertEquals(2, sub.lines)
+        assertEquals(8, sub.occurrenceCount)
+        assertEquals(0, sub.averageAmount.compareTo(BigDecimal("50.00")))
+        assertEquals(SubscriptionCadence.MONTHLY, sub.cadence)
+    }
+
+    @Test
+    fun `a subscription mixed with random shopping at the same merchant is found on its own`() {
+        val shopping = listOf("12.50" to 10L, "87.30" to 22L, "143.00" to 41L, "31.00" to 55L, "9.90" to 70L, "220.00" to 77L)
+            .map { (amount, d) -> tx("Amazon", amount, daysAgo = d) }
+        val result = SubscriptionRadarEngine.detect(monthly("Amazon", "59.00", 0) + shopping)
+        assertTrue(result.isNotEmpty())
+        assertTrue(result.all { it.averageAmount.compareTo(BigDecimal("59.00")) == 0 })
+    }
+
+    @Test
+    fun `a rhythm with drifting amounts is only possible, with moderate confidence`() {
+        val usd = listOf("19.99" to 90L, "21.00" to 60L, "18.90" to 30L, "20.40" to 0L)
+            .map { (amount, d) -> tx("Spotify", amount, daysAgo = d) }
+        val scan = SubscriptionRadarEngine.scan(usd)
+        assertTrue(scan.active.isEmpty())
+        val possible = scan.possible.single().subscription
+        assertEquals(SubscriptionCadence.MONTHLY, possible.cadence)
+        assertEquals(0.65, possible.confidence, 0.0001)
+    }
+
+    @Test
+    fun `two monthly charges are possible, and become a subscription with subscription wording`() {
+        val plain = listOf(tx("Hulu", "29.00", daysAgo = 30), tx("Hulu", "29.00", daysAgo = 0))
+        assertTrue(SubscriptionRadarEngine.detect(plain).isEmpty())
+        assertEquals(0.55, SubscriptionRadarEngine.scan(plain).possible.single().subscription.confidence, 0.0001)
+
+        val hinted = listOf(
+            tx("Hulu", "29.00", daysAgo = 30, rawMessage = "Your subscription was charged"),
+            tx("Hulu", "29.00", daysAgo = 0),
+        )
+        assertEquals(1, SubscriptionRadarEngine.detect(hinted).size)
+    }
+
+    @Test
+    fun `daily coffee is neither a subscription nor a possible one`() {
+        val coffee = (0L..14L).map { tx("Corner Cafe", "12.00", daysAgo = it) }
+        val scan = SubscriptionRadarEngine.scan(coffee)
+        assertTrue(scan.active.isEmpty())
+        assertTrue(scan.possible.isEmpty())
+    }
+
+    @Test
+    fun `explain says detected for a clean monthly series`() {
+        val verdicts = SubscriptionRadarEngine.explain(monthly("Netflix", "39.99", 0))
+        assertEquals(SubscriptionRadarEngine.Outcome.Detected, verdicts.single().outcome)
+    }
+
+    @Test
+    fun `explain reports too few charges`() {
+        val verdicts = SubscriptionRadarEngine.explain(listOf(tx("Club", "100.00", daysAgo = 10), tx("Club", "100.00", daysAgo = 0)))
+        val rejected = verdicts.single().outcome as SubscriptionRadarEngine.Outcome.Rejected
+        assertEquals(SubscriptionRadarEngine.Reason.TOO_FEW, rejected.reason)
+        assertTrue(rejected.detail.contains("2 of 3"))
+    }
+
+    @Test
+    fun `explain reports irregular gaps with the gaps in days`() {
+        val verdicts = SubscriptionRadarEngine.explain(
+            listOf(tx("Shop", "100.00", daysAgo = 70), tx("Shop", "100.00", daysAgo = 12), tx("Shop", "100.00", daysAgo = 0)),
+        )
+        val rejected = verdicts.single().outcome as SubscriptionRadarEngine.Outcome.Rejected
+        assertEquals(SubscriptionRadarEngine.Reason.IRREGULAR_GAPS, rejected.reason)
+        assertTrue(rejected.detail.contains("58") && rejected.detail.contains("12"))
+    }
+
+    @Test
+    fun `explain reports a price that varies on a regular rhythm`() {
+        val telco = listOf("50.00" to 90L, "80.00" to 60L, "55.00" to 30L, "100.00" to 0L)
+            .map { (amount, d) -> tx("Telco", amount, daysAgo = d) }
+        val verdicts = SubscriptionRadarEngine.explain(telco)
+        val rejected = verdicts.single().outcome as SubscriptionRadarEngine.Outcome.Rejected
+        assertEquals(SubscriptionRadarEngine.Reason.PRICE_VARIES, rejected.reason)
+    }
 }

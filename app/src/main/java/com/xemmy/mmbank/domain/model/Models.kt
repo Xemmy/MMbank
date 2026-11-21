@@ -669,6 +669,8 @@ data class Subscription(
     val merchantKey: String = "",
     /** Parallel identical charges per cycle (identical twins); 1 for an ordinary subscription. */
     val lines: Int = 1,
+    /** 1.0 for a confident detection or a user-owned row; below 0.8 it is listed as "Possible". */
+    val confidence: Double = 1.0,
 )
 
 /**

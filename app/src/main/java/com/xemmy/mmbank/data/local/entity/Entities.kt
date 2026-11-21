@@ -411,6 +411,7 @@ data class SubscriptionEntity(
     val isManual: Boolean = false,
     val merchantKey: String = "",
     val lines: Int = 1,
+    val confidence: Double = 1.0,
 )
 
 /** See [com.xemmy.mmbank.domain.model.SubscriptionLink]. No FK: a link to a deleted transaction is simply ignored. */
@@ -762,12 +763,12 @@ fun ExchangeRateOnDay.toEntity() = ExchangeRateHistoryEntity(baseCode, quoteCode
 
 fun SubscriptionEntity.toDomain() = Subscription(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
-    previousAmount, isManual, merchantKey, lines,
+    previousAmount, isManual, merchantKey, lines, confidence,
 )
 
 fun Subscription.toEntity() = SubscriptionEntity(
     id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed,
-    previousAmount, isManual, merchantKey, lines,
+    previousAmount, isManual, merchantKey, lines, confidence,
 )
 
 fun SubscriptionLinkEntity.toDomain() = SubscriptionLink(transactionId, subscriptionId)

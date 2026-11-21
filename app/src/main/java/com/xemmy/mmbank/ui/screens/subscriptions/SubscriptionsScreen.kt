@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material3.Card
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,6 +66,8 @@ import kotlinx.coroutines.launch
 
 data class SubscriptionsUiState(
     val subscriptions: List<Subscription> = emptyList(),
+    /** Low-confidence detections the user can Track or dismiss as "Not a subscription". */
+    val possible: List<Subscription> = emptyList(),
     val scanning: Boolean = false,
     /** True only after a scan has run at least once this session/launch with nothing detected. */
     val hasScannedOnce: Boolean = false,
@@ -72,15 +76,50 @@ data class SubscriptionsUiState(
 class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val scanning = MutableStateFlow(false)
+    /** The last rescan's counts; the screen turns them into the "Found 2 new..." message. */
+    val lastResult = MutableStateFlow<com.xemmy.mmbank.domain.repository.RescanCounts?>(null)
     private val hasScannedOnce = MutableStateFlow(false)
 
     val uiState: StateFlow<SubscriptionsUiState> = combine(
         container.subscriptionRepository.observeActive(),
+        container.subscriptionRepository.observePossible(),
         scanning,
         hasScannedOnce,
-    ) { subscriptions, isScanning, scannedOnce ->
-        SubscriptionsUiState(subscriptions, isScanning, scannedOnce)
+    ) { subscriptions, possible, isScanning, scannedOnce ->
+        SubscriptionsUiState(subscriptions, possible, isScanning, scannedOnce)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SubscriptionsUiState())
+
+    init {
+        // Opening the screen re-checks the ledger, at most once every 10 minutes per app run.
+        val now = System.currentTimeMillis()
+        if (now - lastAutoScanMillis > AUTO_SCAN_INTERVAL_MILLIS) {
+            lastAutoScanMillis = now
+            scan()
+        }
+    }
+
+    /** Accepts a possible subscription as the user's own. */
+    fun track(id: Long) {
+        viewModelScope.launch {
+            runCatching { container.subscriptionRepository.track(id) }
+                .onFailure { container.recordError("SubscriptionsViewModel.track", it) }
+        }
+    }
+
+    private val _verdicts = MutableStateFlow<List<SubscriptionRadarEngine.Verdict>?>(null)
+    val verdicts: StateFlow<List<SubscriptionRadarEngine.Verdict>?> = _verdicts
+
+    /** Loads the radar's verdict on every merchant with repeat charges: detected, possible, or why not. */
+    fun openExplain() {
+        viewModelScope.launch {
+            runCatching { _verdicts.value = SubscriptionRadarEngine.explain(container.transactionRepository.getAllReal()) }
+                .onFailure { container.recordError("SubscriptionsViewModel.openExplain", it) }
+        }
+    }
+
+    fun closeExplain() {
+        _verdicts.value = null
+    }
 
     /**
      * Re-runs [SubscriptionRadarEngine] over the whole real ledger and persists
@@ -92,13 +131,18 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
      * stays useful for picking up history that predates that hook, and for
      * re-checking every merchant at once on demand.
      */
+    private companion object {
+        const val AUTO_SCAN_INTERVAL_MILLIS = 10 * 60 * 1000L
+        @Volatile var lastAutoScanMillis = 0L
+    }
+
     fun scan() {
         if (scanning.value) return
         viewModelScope.launch {
             scanning.value = true
             runCatching {
                 val transactions = container.transactionRepository.observeTransactions().first()
-                container.subscriptionRepository.rescan(transactions)
+                lastResult.value = container.subscriptionRepository.rescan(transactions)
             }.onFailure { container.recordError("SubscriptionsViewModel.scan", it) }
             hasScannedOnce.value = true
             scanning.value = false
@@ -230,7 +274,9 @@ fun SubscriptionsScreen(
     var addOpen by remember { mutableStateOf(false) }
     var chooserOpen by remember { mutableStateOf(false) }
     val pickable by viewModel.pickable.collectAsStateWithLifecycle()
+    val verdicts by viewModel.verdicts.collectAsStateWithLifecycle()
 
+    verdicts?.let { list -> WhyNotDetectedDialog(list, onDismiss = viewModel::closeExplain) }
     charges?.let { open ->
         SubscriptionChargesDialog(
             state = open,
@@ -272,6 +318,9 @@ fun SubscriptionsScreen(
         title = "Subscriptions",
         onBack = onBack,
         actions = {
+            IconButton(onClick = viewModel::openExplain) {
+                Icon(Icons.Outlined.HelpOutline, contentDescription = "Why isn't something detected?")
+            }
             if (state.scanning) {
                 CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp).width(24.dp))
             } else {
@@ -286,12 +335,13 @@ fun SubscriptionsScreen(
             }
         },
     ) { padding ->
-        if (state.subscriptions.isEmpty()) {
+        if (state.subscriptions.isEmpty() && state.possible.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
                     if (state.hasScannedOnce) {
-                        "No recurring charges found. Subscriptions need at least 3 matching " +
-                            "charges on a weekly or monthly rhythm to be detected."
+                        "No recurring charges found. A subscription needs 3 charges on a regular " +
+                            "rhythm (weekly to yearly) at a similar amount, or 2 monthly charges that are " +
+                            "listed as possible. Tap the ? to see why a merchant was not detected."
                     } else {
                         "Tap the scan icon to detect recurring charges (subscriptions, memberships, " +
                             "bills) from your transaction history, or tap + to add one yourself."
@@ -314,6 +364,28 @@ fun SubscriptionsScreen(
                         onCharges = { viewModel.openCharges(subscription) },
                         onClick = { onOpenMerchant(subscription.merchant) },
                     )
+                }
+                if (state.possible.isNotEmpty()) {
+                    item(key = "possible-header") {
+                        Text(
+                            "Possible subscriptions",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                        Text(
+                            "Two charges about a cycle apart, or a price that drifts. Track the ones that are real.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    items(state.possible, key = { "p${it.id}" }) { subscription ->
+                        PossibleRow(
+                            subscription,
+                            onTrack = { viewModel.track(subscription.id) },
+                            onReject = { viewModel.dismiss(subscription.id) },
+                        )
+                    }
                 }
             }
         }
@@ -395,5 +467,86 @@ private fun renewalLabel(nextDueDateMillis: Long, zone: ZoneId = ZoneId.systemDe
         daysUntil == 0L -> "Renews today"
         daysUntil == 1L -> "Renews tomorrow"
         else -> "Renews in $daysUntil days"
+    }
+}
+
+@Composable
+private fun PossibleRow(subscription: Subscription, onTrack: () -> Unit, onReject: () -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(subscription.merchant, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${cadenceLabel(subscription.cadence)} · ${subscription.occurrenceCount} charges · ${renewalLabel(subscription.nextDueDateMillis)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    moneyLabel(subscription.averageAmount, subscription.currencyCode),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.TextButton(onClick = onTrack) { Text("Track") }
+                androidx.compose.material3.TextButton(onClick = onReject) { Text("Not a subscription") }
+            }
+        }
+    }
+}
+
+/** The radar's verdict per merchant: detected, possible, or the reason it was not. */
+@Composable
+private fun WhyNotDetectedDialog(verdicts: List<SubscriptionRadarEngine.Verdict>, onDismiss: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val shown = verdicts.filter { query.isBlank() || it.merchant.contains(query.trim(), ignoreCase = true) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Why isn't it detected?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    label = { Text("Search merchant") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                if (shown.isEmpty()) {
+                    Text(
+                        "No merchant has two or more similar charges yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                LazyColumn(Modifier.heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(shown, key = { "${it.merchant}|${it.currencyCode}|${it.amount}" }) { v ->
+                        Column {
+                            Text(
+                                "${v.merchant} · ${moneyLabel(v.amount, v.currencyCode)} × ${v.charges}",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                verdictLabel(v.outcome),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+/** Plain-language outcome for the "Why isn't it detected?" list. */
+internal fun verdictLabel(outcome: SubscriptionRadarEngine.Outcome): String = when (outcome) {
+    SubscriptionRadarEngine.Outcome.Detected -> "Detected as a subscription"
+    is SubscriptionRadarEngine.Outcome.Possible -> "Possible subscription (${(outcome.score * 100).toInt()}% sure)"
+    is SubscriptionRadarEngine.Outcome.Rejected -> when (outcome.reason) {
+        SubscriptionRadarEngine.Reason.TOO_FEW -> "Too few charges: ${outcome.detail}"
+        SubscriptionRadarEngine.Reason.IRREGULAR_GAPS -> "Not on a regular rhythm: ${outcome.detail}"
+        SubscriptionRadarEngine.Reason.PRICE_VARIES -> "The price varies: ${outcome.detail}"
+        SubscriptionRadarEngine.Reason.MIXED_WITH_OTHER_PURCHASES -> "Mixed with other purchases: ${outcome.detail}"
     }
 }

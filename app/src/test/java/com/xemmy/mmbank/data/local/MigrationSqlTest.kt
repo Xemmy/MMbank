@@ -16,13 +16,13 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v43 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v44 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v43
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v44
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
- *     compiler exports during this same build (`app/schemas/.../43.json`), so
+ *     compiler exports during this same build (`app/schemas/.../44.json`), so
  *     the comparison is against what Room itself will validate: every
  *     column's name, type, NOT NULL and primary key, and every index.
  *  2. **Data**: the kind backfill lands each kind of legacy row where
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/43.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/43.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/44.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/44.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 43.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 44.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -69,7 +69,7 @@ class MigrationSqlTest {
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor"),
-        "subscriptions" to listOf("isManual", "merchantKey", "lines"),
+        "subscriptions" to listOf("isManual", "merchantKey", "lines", "confidence"),
     )
     private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links")
 
@@ -105,6 +105,7 @@ class MigrationSqlTest {
     private fun migrate() {
         migrateTo42()
         MigrationSql.MIGRATION_42_43_SQL.forEach { migrated.exec(it) }
+        MigrationSql.MIGRATION_43_44_SQL.forEach { migrated.exec(it) }
     }
 
     private fun migrateTo42() {
@@ -158,7 +159,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v43 install table for table`() {
+    fun `an upgraded database matches a fresh v44 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -473,6 +474,23 @@ class MigrationSqlTest {
                 "VALUES ('Netflix', '39.99', 'AED', 'MONTHLY', 0, 0, 0, 0, 1)",
         )
         assertEquals(3, migrated.count("subscriptions"))
+    }
+
+    @Test
+    fun `v44 gives every existing subscription full confidence`() {
+        migrateTo42()
+        migrated.exec(
+            "INSERT INTO subscriptions (id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed, isManual) " +
+                "VALUES (1, 'Netflix', '39.99', 'AED', 'MONTHLY', 0, 0, 4, 0, 0)",
+        )
+        MigrationSql.MIGRATION_42_43_SQL.forEach { migrated.exec(it) }
+        MigrationSql.MIGRATION_43_44_SQL.forEach { migrated.exec(it) }
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT confidence FROM subscriptions WHERE id = 1").use { rs ->
+                rs.next()
+                assertEquals(1.0, rs.getDouble(1), 0.0)
+            }
+        }
     }
 
     private fun Connection.count(table: String): Int =

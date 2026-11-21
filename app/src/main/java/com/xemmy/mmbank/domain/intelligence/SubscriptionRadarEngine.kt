@@ -67,21 +67,243 @@ object SubscriptionRadarEngine {
         RegexOption.IGNORE_CASE,
     )
 
+    /** Looser price tolerance for FX-billed charges, used only for "possible" matches. */
+    private const val LOOSE_VARIANCE_THRESHOLD = 0.12
+
+    /** A group with more charges than this is shopping, not a candidate for 2-charge "possible" matches. */
+    private const val POSSIBLE_MAX_GROUP = 12
+
+    /** Parallel (identical twin) charges in one cycle must land within this many days of each other. */
+    private const val PARALLEL_SPAN_DAYS = 3L
+
+    /** Active (confident) subscriptions plus lower-confidence "possible" ones, with the charges behind each. */
+    data class Found(val subscription: Subscription, val charges: List<Transaction>)
+
+    data class Scan(val active: List<Found>, val possible: List<Found>)
+
     /**
      * Scans real, analytics-eligible debit transactions for merchants whose
      * charges repeat on a regular rhythm (see the class comment) with amounts
-     * within [AMOUNT_VARIANCE_THRESHOLD] of each other. Returns one
-     * [Subscription] per qualifying merchant, soonest renewal first.
+     * within [AMOUNT_VARIANCE_THRESHOLD] of each other. Returns the confident
+     * [Subscription]s, soonest renewal first; [scan] also returns the "possible" ones.
+     *
+     * v3: a merchant can yield several subscriptions (Apple iCloud + Music, Amazon
+     * Prime + shopping), one per amount cluster, and identical parallel charges
+     * (two 50 AED gym lines a month) come back as one row with `lines = 2`.
      */
     fun detect(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault()): List<Subscription> =
+        scan(transactions, zone).active.map { it.subscription }
+
+    fun scan(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault()): Scan {
+        val active = mutableListOf<Found>()
+        val possible = mutableListOf<Found>()
+        for (group in groups(transactions).values) {
+            scanGroup(group, zone, active, possible)
+        }
+        return Scan(
+            active.sortedBy { it.subscription.nextDueDateMillis },
+            possible.sortedBy { it.subscription.nextDueDateMillis },
+        )
+    }
+
+    private fun groups(transactions: List<Transaction>): Map<Pair<String, String>, List<Transaction>> =
         transactions
             .asSequence()
             .filter { it.kind == TransactionKind.SPEND && !it.excludeFromStats }
             .filter { !it.merchant.isNullOrBlank() }
             .groupBy { merchantKey(it.merchant!!) to it.currencyCode.uppercase() }
-            .values
-            .mapNotNull { detectForMerchant(it, zone) }
-            .sortedBy { it.nextDueDateMillis }
+
+    private fun scanGroup(
+        group: List<Transaction>,
+        zone: ZoneId,
+        active: MutableList<Found>,
+        possible: MutableList<Found>,
+    ) {
+        val sorted = group.sortedBy { it.timestampMillis }
+        // Pass A: the best chain over everything the merchant charged (as in v2).
+        val primary = detectFound(sorted, zone)
+        var leftover = sorted
+        if (primary != null) {
+            active += primary
+            leftover = sorted.filter { tx -> primary.charges.none { it === tx } }
+        }
+        // A regular rhythm whose amounts wander up to 12% (FX-billed): possible, never confident.
+        val loose = mutableListOf<Found>()
+        if (primary == null) {
+            for (cluster in amountClusters(sorted, LOOSE_VARIANCE_THRESHOLD)) {
+                if (cluster.size < MIN_OCCURRENCES) continue
+                detectFound(cluster, zone, LOOSE_VARIANCE_THRESHOLD)?.let {
+                    loose += it.copy(subscription = it.subscription.copy(confidence = 0.65))
+                }
+            }
+        }
+        // Pass B: whatever the first chain did not explain, split by amount.
+        for (cluster in amountClusters(leftover, AMOUNT_VARIANCE_THRESHOLD)) {
+            if (cluster.size < 2) continue
+            val found = detectFound(cluster, zone) ?: detectParallel(cluster, zone)
+            if (found != null) {
+                active += found
+                continue
+            }
+            if (loose.any { l -> cluster.any { tx -> l.charges.any { it === tx } } }) continue
+            possibleFor(cluster, zone, sorted.size)?.let { possible += it }
+        }
+        // Loose matches that no confident row already covers.
+        loose.filter { l -> active.none { a -> l.charges.any { tx -> a.charges.any { it === tx } } } }
+            .forEach { possible += it }
+    }
+
+    /** Charges split into runs whose amounts stay within [threshold] of the run's first amount. */
+    private fun amountClusters(charges: List<Transaction>, threshold: Double): List<List<Transaction>> {
+        val bySize = charges.sortedBy { it.amount }
+        val clusters = mutableListOf<MutableList<Transaction>>()
+        for (tx in bySize) {
+            val current = clusters.lastOrNull()
+            if (current != null && withinVariance(tx.amount, current.first().amount, threshold)) {
+                current += tx
+            } else {
+                clusters += mutableListOf(tx)
+            }
+        }
+        return clusters.map { c -> c.sortedBy { it.timestampMillis } }
+    }
+
+    /**
+     * Identical twins: k (2..4) equal charges within a few days of each other every
+     * month or longer. One row, `lines = k`, the per-line amount, every charge counted.
+     */
+    private fun detectParallel(cluster: List<Transaction>, zone: ZoneId): Found? {
+        if (cluster.size < 4) return null
+        for (k in 2..4) {
+            if (cluster.size % k != 0) continue
+            val chunks = cluster.chunked(k)
+            val tight = chunks.all {
+                (it.last().timestampMillis - it.first().timestampMillis) <= PARALLEL_SPAN_DAYS * DAY_MILLIS
+            }
+            if (!tight) continue
+            val found = detectFound(chunks.map { it.first() }, zone) ?: continue
+            if (found.subscription.cadence.months == null) continue
+            val last = cluster.last()
+            return Found(
+                found.subscription.copy(
+                    lines = k,
+                    occurrenceCount = cluster.size,
+                    lastSeenMillis = last.timestampMillis,
+                    averageAmount = (averageOf(cluster) ?: found.subscription.averageAmount).setScale(2, RoundingMode.HALF_UP),
+                ),
+                cluster,
+            )
+        }
+        return null
+    }
+
+    /** A weaker match worth showing as "Possible": two charges one cycle (monthly or longer) apart. */
+    private fun possibleFor(cluster: List<Transaction>, zone: ZoneId, groupSize: Int): Found? {
+        if (cluster.size != 2 || groupSize > POSSIBLE_MAX_GROUP) return null
+        val gapDays = (cluster[1].timestampMillis - cluster[0].timestampMillis) / DAY_MILLIS
+        val cadence = SubscriptionCadence.entries
+            .filter { it.months != null }
+            .firstOrNull { abs(gapDays - it.nominalDays) <= toleranceDays(it) } ?: return null
+        val hinted = cluster.any { it.rawMessage?.let(SUBSCRIPTION_HINT::containsMatchIn) == true }
+        val price = averageOf(cluster) ?: return null
+        val built = build(cluster, cadence, price, null, zone).copy(confidence = if (hinted) 0.7 else 0.55)
+        return Found(built, cluster)
+    }
+
+    // ---- "Why isn't X detected?" -------------------------------------------------
+
+    enum class Reason { TOO_FEW, IRREGULAR_GAPS, PRICE_VARIES, MIXED_WITH_OTHER_PURCHASES }
+
+    sealed interface Outcome {
+        data object Detected : Outcome
+        data class Possible(val score: Double) : Outcome
+        data class Rejected(val reason: Reason, val detail: String) : Outcome
+    }
+
+    /** One merchant + amount cluster with at least two charges, and what the radar made of it. */
+    data class Verdict(
+        val merchant: String,
+        val currencyCode: String,
+        val amount: BigDecimal,
+        val charges: Int,
+        val outcome: Outcome,
+    )
+
+    /**
+     * Per merchant brand + amount cluster (2+ charges), says whether the radar
+     * detected it, would show it as possible, or why it did not -- the user-facing
+     * answer to "it picked up only one".
+     */
+    fun explain(transactions: List<Transaction>, zone: ZoneId = ZoneId.systemDefault()): List<Verdict> {
+        val verdicts = mutableListOf<Verdict>()
+        for ((_, group) in groups(transactions)) {
+            val sorted = group.sortedBy { it.timestampMillis }
+            val active = mutableListOf<Found>()
+            val possible = mutableListOf<Found>()
+            scanGroup(sorted, zone, active, possible)
+            val clusters = amountClusters(sorted, AMOUNT_VARIANCE_THRESHOLD)
+            val groupRegular = sorted.size >= MIN_OCCURRENCES && gapsFitACadence(sorted)
+            val maxDeviation = maxDeviationPercent(sorted)
+            if (clusters.none { it.size >= 2 } && groupRegular && maxDeviation > AMOUNT_VARIANCE_THRESHOLD * 100 &&
+                active.isEmpty() && possible.isEmpty()
+            ) {
+                verdicts += Verdict(
+                    merchant = sorted.last().merchant!!.trim(),
+                    currencyCode = sorted.last().currencyCode.uppercase(),
+                    amount = (averageOf(sorted) ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP),
+                    charges = sorted.size,
+                    outcome = Outcome.Rejected(Reason.PRICE_VARIES, "amounts differ by up to ${maxDeviation.toInt()}%"),
+                )
+            }
+            for (cluster in clusters) {
+                if (cluster.size < 2) continue
+                val avg = averageOf(cluster) ?: continue
+                val outcome = when {
+                    active.any { f -> cluster.any { tx -> f.charges.any { it === tx } } } -> Outcome.Detected
+                    possible.firstOrNull { f -> cluster.any { tx -> f.charges.any { it === tx } } } != null ->
+                        Outcome.Possible(possible.first { f -> cluster.any { tx -> f.charges.any { it === tx } } }.subscription.confidence)
+                    groupRegular && clusters.size > 1 && maxDeviation > AMOUNT_VARIANCE_THRESHOLD * 100 ->
+                        Outcome.Rejected(Reason.PRICE_VARIES, "amounts differ by up to ${maxDeviation.toInt()}%")
+                    cluster.size < neededFor(cluster) ->
+                        Outcome.Rejected(Reason.TOO_FEW, "${cluster.size} of ${neededFor(cluster)} charges needed")
+                    !gapsFitACadence(cluster) ->
+                        Outcome.Rejected(Reason.IRREGULAR_GAPS, "gaps of ${gapDays(cluster).joinToString(", ")} days")
+                    sorted.size > cluster.size ->
+                        Outcome.Rejected(Reason.MIXED_WITH_OTHER_PURCHASES, "${sorted.size - cluster.size} other purchases at this merchant")
+                    else -> Outcome.Rejected(Reason.IRREGULAR_GAPS, "gaps of ${gapDays(cluster).joinToString(", ")} days")
+                }
+                verdicts += Verdict(
+                    merchant = cluster.last().merchant!!.trim(),
+                    currencyCode = cluster.last().currencyCode.uppercase(),
+                    amount = avg.setScale(2, RoundingMode.HALF_UP),
+                    charges = cluster.size,
+                    outcome = outcome,
+                )
+            }
+        }
+        return verdicts.sortedWith(compareBy({ it.outcome is Outcome.Rejected }, { it.merchant.lowercase() }))
+    }
+
+    private fun neededFor(cluster: List<Transaction>): Int =
+        if (cluster.any { it.rawMessage?.let(SUBSCRIPTION_HINT::containsMatchIn) == true }) MIN_OCCURRENCES_WITH_HINT else MIN_OCCURRENCES
+
+    private fun gapDays(sorted: List<Transaction>): List<Long> =
+        sorted.zipWithNext { a, b -> (b.timestampMillis - a.timestampMillis) / DAY_MILLIS }
+
+    /** True when every gap sits near some cadence (or twice it, a missed cycle). */
+    private fun gapsFitACadence(sorted: List<Transaction>): Boolean {
+        val gaps = gapDays(sorted)
+        if (gaps.isEmpty()) return false
+        return SubscriptionCadence.entries.any { c ->
+            val tol = toleranceDays(c)
+            gaps.all { g -> abs(g - c.nominalDays) <= tol || abs(g - 2 * c.nominalDays) <= tol }
+        }
+    }
+
+    private fun maxDeviationPercent(charges: List<Transaction>): Double {
+        val avg = averageOf(charges)?.toDouble() ?: return 0.0
+        return charges.maxOf { abs(it.amount.toDouble() - avg) / avg } * 100
+    }
 
     /** Brand key when the normalizer has one, else the plain lower-cased name (as before). */
     private fun merchantKey(merchant: String): String =
@@ -90,8 +312,11 @@ object SubscriptionRadarEngine {
     /** A run of charges that fit one cadence: [misses] counts skipped cycles inside it. */
     private data class Chain(val cadence: SubscriptionCadence, val charges: List<Transaction>, val misses: Int)
 
-    private fun detectForMerchant(occurrences: List<Transaction>, zone: ZoneId): Subscription? {
-        val sorted = occurrences.sortedBy { it.timestampMillis }
+    private fun detectFound(
+        sorted: List<Transaction>,
+        zone: ZoneId,
+        threshold: Double = AMOUNT_VARIANCE_THRESHOLD,
+    ): Found? {
         val chain = bestChain(sorted) ?: return null
 
         // A steady price on an irregular schedule is not a subscription, and
@@ -99,11 +324,14 @@ object SubscriptionRadarEngine {
         // the variance check below is the price check.
         val charges = chain.charges
         val average = averageOf(charges) ?: return null
-        return if (charges.all { withinVariance(it.amount, average) }) {
-            build(charges, chain.cadence, price = average, previousPrice = null, zone = zone)
-        } else {
-            detectWithPriceChange(charges, chain.cadence, zone)
-        }
+        val built = (
+            if (charges.all { withinVariance(it.amount, average, threshold) }) {
+                build(charges, chain.cadence, price = average, previousPrice = null, zone = zone)
+            } else {
+                detectWithPriceChange(charges, chain.cadence, zone, threshold)
+            }
+            ) ?: return null
+        return Found(built, charges)
     }
 
     /**
@@ -168,12 +396,12 @@ object SubscriptionRadarEngine {
      * qualify. One charge at the new price is enough, since a rise is usually
      * noticed at the first renewal that carries it.
      */
-    private fun detectWithPriceChange(sorted: List<Transaction>, cadence: SubscriptionCadence, zone: ZoneId): Subscription? {
+    private fun detectWithPriceChange(sorted: List<Transaction>, cadence: SubscriptionCadence, zone: ZoneId, threshold: Double = AMOUNT_VARIANCE_THRESHOLD): Subscription? {
         val newest = sorted.last().amount
 
         var splitIndex = sorted.size
         for (i in sorted.indices.reversed()) {
-            if (!withinVariance(sorted[i].amount, newest)) break
+            if (!withinVariance(sorted[i].amount, newest, threshold)) break
             splitIndex = i
         }
 
@@ -184,12 +412,12 @@ object SubscriptionRadarEngine {
         // The older run has to be a steady price too. Three different amounts
         // in a row is erratic spending at one merchant, not a price rise.
         val previousPrice = averageOf(older) ?: return null
-        if (older.any { !withinVariance(it.amount, previousPrice) }) return null
+        if (older.any { !withinVariance(it.amount, previousPrice, threshold) }) return null
 
         val currentPrice = averageOf(recent) ?: return null
         // Guard the boundary: if the two runs are within variance of each other
         // the flat path should have matched, so this is not a real change.
-        if (withinVariance(currentPrice, previousPrice)) return null
+        if (withinVariance(currentPrice, previousPrice, threshold)) return null
 
         return build(sorted, cadence, price = currentPrice, previousPrice = previousPrice, zone = zone)
     }
@@ -222,10 +450,10 @@ object SubscriptionRadarEngine {
             .takeIf { it.signum() > 0 }
     }
 
-    private fun withinVariance(amount: BigDecimal, reference: BigDecimal): Boolean {
+    private fun withinVariance(amount: BigDecimal, reference: BigDecimal, threshold: Double = AMOUNT_VARIANCE_THRESHOLD): Boolean {
         val ref = reference.toDouble()
         if (ref <= 0.0) return false
-        return abs(amount.toDouble() - ref) / ref <= AMOUNT_VARIANCE_THRESHOLD
+        return abs(amount.toDouble() - ref) / ref <= threshold
     }
 
     /**

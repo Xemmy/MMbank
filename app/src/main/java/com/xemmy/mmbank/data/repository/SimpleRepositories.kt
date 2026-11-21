@@ -269,6 +269,14 @@ class SubscriptionRepositoryImpl(private val dao: SubscriptionDao) : Subscriptio
     override fun observeActive(): Flow<List<Subscription>> =
         dao.observeActive().map { list -> list.map { it.toDomain() } }
 
+    override fun observePossible(): Flow<List<Subscription>> =
+        dao.observePossible().map { list -> list.map { it.toDomain() } }
+
+    override suspend fun track(id: Long) {
+        val row = dao.getAll().firstOrNull { it.id == id } ?: return
+        dao.upsert(row.copy(isManual = true, confidence = 1.0, dismissed = false))
+    }
+
     override fun observeDismissed(): Flow<List<Subscription>> =
         dao.observeDismissed().map { list -> list.map { it.toDomain() } }
 
