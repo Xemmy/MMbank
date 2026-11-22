@@ -13,7 +13,6 @@ import androidx.work.WorkManager
 import com.xemmy.mmbank.domain.repository.LedgerRepository
 import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
 import com.xemmy.mmbank.domain.model.TransactionKind
-import com.xemmy.mmbank.domain.ledger.LedgerMath
 import com.xemmy.mmbank.data.ai.AiParsingWorker
 import com.xemmy.mmbank.data.ai.LocalAiConfig
 import com.xemmy.mmbank.data.ai.LocalAiManager
@@ -783,7 +782,12 @@ class AppContainer(context: Context) {
      * ingest pipeline's own result.
      */
     private fun checkDailyBudgetPacing(transaction: Transaction) {
-        if (!LedgerMath.isSpend(transaction)) return
+        if (!com.xemmy.mmbank.domain.ledger.CaptureAlertGate.pacesDailyBudget(
+                transaction, System.currentTimeMillis(), preferences.defaultCurrency,
+            )
+        ) {
+            return
+        }
         val monthlyBudget = preferences.monthlySpendBudget
         if (monthlyBudget <= 0.0) return
 
@@ -833,7 +837,7 @@ class AppContainer(context: Context) {
             .associate { it.quoteCode.uppercase() to it.rate }
 
     private fun checkCategoryBudget(transaction: Transaction) {
-        if (!LedgerMath.isSpend(transaction)) return
+        if (!com.xemmy.mmbank.domain.ledger.CaptureAlertGate.checksCategoryCap(transaction, System.currentTimeMillis())) return
         val categoryId = transaction.categoryId ?: return
 
         applicationScope.launch {
@@ -952,13 +956,24 @@ class AppContainer(context: Context) {
 
     private fun refreshSubscriptionForMerchant(transaction: Transaction) {
         if (transaction.kind != TransactionKind.SPEND || transaction.excludeFromStats) return
-
-        applicationScope.launch {
-            runCatching {
-                subscriptionRepository.rescan(transactionRepository.getAllReal())
-            }.onFailure { recordError("AppContainer.refreshSubscriptionForMerchant", it) }
-        }
+        subscriptionRescanRequests.trySend(Unit)
     }
+
+    /**
+     * Capture-time rescans, one at a time. CONFLATED: a burst of captures (a pasted backlog of
+     * fifty messages) leaves at most one rescan waiting behind the running one, and that one
+     * reads the ledger when it starts, so it sees every row the burst added.
+     */
+    private val subscriptionRescanRequests = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+        .also { requests ->
+            applicationScope.launch {
+                for (request in requests) {
+                    runCatching {
+                        subscriptionRepository.rescan(transactionRepository.getAllReal())
+                    }.onFailure { recordError("AppContainer.refreshSubscriptionForMerchant", it) }
+                }
+            }
+        }
 
     /**
      * Turns the opt-in renewal reminder on or off, scheduling or cancelling one

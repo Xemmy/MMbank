@@ -61,6 +61,7 @@ import com.xemmy.mmbank.domain.repository.SubscriptionRepository
 import java.math.BigDecimal
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -269,34 +270,43 @@ class SubscriptionRepositoryImpl(
     private val neverKeys: () -> Set<String> = { emptySet() },
 ) : SubscriptionRepository {
 
+    /**
+     * Every write to the subscription tables goes through this lock. A rescan reads the table,
+     * plans, then writes; two rescans at once (one per captured SMS of a pasted batch, or the
+     * screen's scan during a capture) each inserted the same new detection, and a rescan that
+     * read the table before the user tapped Track wrote the row back as detected.
+     */
+    private val writeLock = kotlinx.coroutines.sync.Mutex()
+
     override fun observeActive(): Flow<List<Subscription>> =
         dao.observeActive().map { list -> list.map { it.toDomain() } }
 
     override fun observePossible(): Flow<List<Subscription>> =
         dao.observePossible().map { list -> list.map { it.toDomain() } }
 
-    override suspend fun track(id: Long) {
-        val row = dao.getAll().firstOrNull { it.id == id } ?: return
+    override suspend fun track(id: Long): Unit = writeLock.withLock {
+        val row = dao.getAll().firstOrNull { it.id == id } ?: return@withLock
         dao.upsert(row.copy(isManual = true, confidence = 1.0, dismissed = false))
+        Unit
     }
 
     override fun observeDismissed(): Flow<List<Subscription>> =
         dao.observeDismissed().map { list -> list.map { it.toDomain() } }
 
-    override suspend fun dismiss(id: Long) = dao.dismiss(id)
+    override suspend fun dismiss(id: Long): Unit = writeLock.withLock { dao.dismiss(id) }
 
-    override suspend fun restore(id: Long) = dao.restore(id)
+    override suspend fun restore(id: Long): Unit = writeLock.withLock { dao.restore(id) }
 
-    override suspend fun saveManual(subscription: Subscription): Long {
+    override suspend fun saveManual(subscription: Subscription): Long = writeLock.withLock {
         val row = subscription.copy(
             isManual = true,
             dismissed = false,
             merchantKey = SubscriptionRescan.keyOf(subscription.merchant),
         )
-        return dao.upsert(row.toEntity())
+        dao.upsert(row.toEntity())
     }
 
-    override suspend fun delete(id: Long) {
+    override suspend fun delete(id: Long): Unit = writeLock.withLock {
         dao.delete(id)
         dao.deleteLinksFor(id)
     }
@@ -306,16 +316,17 @@ class SubscriptionRepositoryImpl(
 
     override suspend fun links(): List<SubscriptionLink> = dao.getAllLinks().map { it.toDomain() }
 
-    override suspend fun link(transactionId: Long, subscriptionId: Long) {
+    override suspend fun link(transactionId: Long, subscriptionId: Long): Unit = writeLock.withLock {
         dao.upsertLink(SubscriptionLink(transactionId, subscriptionId).toEntity())
         // Linking a charge to a detected row makes it the user's: a rescan must not delete or re-detect it.
         val row = dao.getAll().firstOrNull { it.id == subscriptionId }
         if (row != null && !row.isManual) dao.upsert(row.copy(isManual = true))
+        Unit
     }
 
-    override suspend fun unlink(transactionId: Long) = dao.deleteLink(transactionId)
+    override suspend fun unlink(transactionId: Long): Unit = writeLock.withLock { dao.deleteLink(transactionId) }
 
-    override suspend fun rescan(transactions: List<Transaction>): RescanCounts {
+    override suspend fun rescan(transactions: List<Transaction>): RescanCounts = writeLock.withLock {
         val plan = SubscriptionRescan.plan(
             stored = dao.getAll().map { it.toDomain() },
             links = links(),
@@ -329,13 +340,13 @@ class SubscriptionRepositoryImpl(
             dao.deleteAll(plan.deleteIds)
             plan.deleteIds.forEach { dao.deleteLinksFor(it) }
         }
-        return RescanCounts(plan.created, plan.updated, plan.removed)
+        RescanCounts(plan.created, plan.updated, plan.removed)
     }
 
     override suspend fun linkedTransactions(subscriptionId: Long): List<Transaction> =
         dao.linkedTransactions(subscriptionId).map { it.toDomain() }
 
-    override suspend fun restoreRow(snapshot: com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot) {
+    override suspend fun restoreRow(snapshot: com.xemmy.mmbank.domain.intelligence.SubscriptionSnapshot): Unit = writeLock.withLock {
         dao.upsert(snapshot.row.toEntity())
         snapshot.links.forEach { dao.upsertLink(it.toEntity()) }
     }

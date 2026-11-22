@@ -135,6 +135,23 @@ class TransactionRepositoryImpl(
         parsed: ParsedTransaction,
         message: CapturedMessage,
         dedupWindow: Boolean,
+    ): IngestResult {
+        // The post-capture hooks read the database on other connections, which only see
+        // committed rows: they run once the transaction below has committed, never inside it.
+        var recorded: Transaction? = null
+        var refLearned: Transaction? = null
+        val result = recordParsedInTransaction(parsed, message, dedupWindow, { recorded = it }, { refLearned = it })
+        refLearned?.let(onBillRefLearned)
+        recorded?.let(onTransactionRecorded)
+        return result
+    }
+
+    private suspend fun recordParsedInTransaction(
+        parsed: ParsedTransaction,
+        message: CapturedMessage,
+        dedupWindow: Boolean,
+        onRecorded: (Transaction) -> Unit,
+        onRefLearned: (Transaction) -> Unit,
     ): IngestResult = database.withTransaction {
         // The user's "also rename future messages" rules apply first, so category,
         // account and person learning all see the name the user chose.
@@ -146,18 +163,26 @@ class TransactionRepositoryImpl(
         val isBillPayment = BillDetector.isBiller(parsed.merchant)
         val incomingBillRef = if (isBillPayment) BillDetector.accountRef(message.body) else null
         val existing = if (dedupWindow) {
-            val incoming = CaptureDedupPolicy.Side(message.source, message.body, parsed.accountNumberSuffix, parsed.merchant)
+            val incoming = CaptureDedupPolicy.Side(
+                message.source, message.body, parsed.accountNumberSuffix, parsed.merchant, sender = message.sender,
+            )
             dao.findDuplicateCandidatesInWindow(
                 amount = parsed.amount,
                 currencyCode = parsed.currencyCode,
                 direction = parsed.direction,
                 timestamp = message.timestampMillis,
-                windowMillis = if (isBillPayment) BILL_DEDUP_WINDOW_MILLIS else DEDUP_WINDOW_MILLIS,
+                // Beyond the normal 2 minutes only a provider receipt (bills) or the SMS app's
+                // copy of the same SMS may merge; the policy decides which applies.
+                windowMillis = if (isBillPayment) {
+                    maxOf(BILL_DEDUP_WINDOW_MILLIS, CaptureDedupPolicy.MIRROR_WINDOW_MILLIS)
+                } else {
+                    CaptureDedupPolicy.MIRROR_WINDOW_MILLIS
+                },
             ).firstOrNull { row ->
-                val near = kotlin.math.abs(row.timestamp - message.timestampMillis) <= DEDUP_WINDOW_MILLIS
-                val side = CaptureDedupPolicy.Side(row.source, row.rawMessage, row.accountNumberSuffix, row.merchant, row.billRef)
-                // Beyond the normal 2 minutes only the provider-receipt pairing may merge.
-                if (near) CaptureDedupPolicy.isSameTransaction(side, incoming) else CaptureDedupPolicy.isBillPair(side, incoming)
+                val side = CaptureDedupPolicy.Side(
+                    row.source, row.rawMessage, row.accountNumberSuffix, row.merchant, row.billRef, row.sender,
+                )
+                CaptureDedupPolicy.isDuplicate(side, row.timestamp, incoming, message.timestampMillis)
             }
         } else {
             null
@@ -166,7 +191,7 @@ class TransactionRepositoryImpl(
             // Keep the line number the provider's receipt named, whichever message arrived first.
             if (incomingBillRef != null && existing.billRef == null) {
                 dao.setBillRef(existing.id, incomingBillRef)
-                onBillRefLearned(existing.copy(billRef = incomingBillRef).toDomain())
+                onRefLearned(existing.copy(billRef = incomingBillRef).toDomain())
             }
             IngestResult.Duplicate(existing.id)
         } else {
@@ -319,7 +344,7 @@ class TransactionRepositoryImpl(
             // The row as it stands AFTER linking: a debit that just turned out
             // to be one leg of a card payment must not trip a budget alert or
             // feed subscription detection as if it were a purchase.
-            onTransactionRecorded((dao.getById(id) ?: entity.copy(id = id)).toDomain())
+            onRecorded((dao.getById(id) ?: entity.copy(id = id)).toDomain())
             IngestResult.Inserted(id)
         }
     }
@@ -589,10 +614,10 @@ class TransactionRepositoryImpl(
 
     companion object {
         /** ±2 minutes, per the dedup strategy. */
-        const val DEDUP_WINDOW_MILLIS: Long = 2 * 60 * 1000
+        const val DEDUP_WINDOW_MILLIS: Long = CaptureDedupPolicy.NEAR_WINDOW_MILLIS
 
         /** How far apart a bank deduction SMS and the provider's receipt for one bill payment may arrive. */
-        const val BILL_DEDUP_WINDOW_MILLIS: Long = 24 * 60 * 60 * 1000
+        const val BILL_DEDUP_WINDOW_MILLIS: Long = CaptureDedupPolicy.BILL_WINDOW_MILLIS
 
         /** matchedRuleName on both legs of a transfer the user entered by hand. */
         const val MANUAL_TRANSFER_LABEL = "Manual transfer"

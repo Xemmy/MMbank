@@ -15,8 +15,27 @@ import com.xemmy.mmbank.util.Digits
  *    which is a redelivery of one message.
  *  - Two captures whose card endings are both known and differ belong to
  *    different cards, so they are never the same purchase.
+ *
+ * [isDuplicate] is the single entry point the repository uses: within
+ * [NEAR_WINDOW_MILLIS] the rules above apply; further apart only a bill
+ * payment's bank SMS + provider receipt ([isBillPair], up to
+ * [BILL_WINDOW_MILLIS]) or an SMS and the messaging app's notification copy of
+ * that same SMS ([isSmsMirror], up to [MIRROR_WINDOW_MILLIS]) can merge.
  */
 object CaptureDedupPolicy {
+
+    /** ±2 minutes: two channels reporting one purchase. */
+    const val NEAR_WINDOW_MILLIS: Long = 2 * 60 * 1000
+
+    /** How far apart a bank deduction SMS and the provider's receipt for one bill payment may arrive. */
+    const val BILL_WINDOW_MILLIS: Long = 24 * 60 * 60 * 1000
+
+    /**
+     * How late the SMS app's notification may trail its SMS. The SMS keeps the carrier's
+     * send time; the notification carries the delivery time, so an SMS held up by no signal
+     * or flight mode arrives with the two clocks hours apart.
+     */
+    const val MIRROR_WINDOW_MILLIS: Long = 12 * 60 * 60 * 1000
 
     data class Side(
         val source: TransactionSource,
@@ -25,7 +44,20 @@ object CaptureDedupPolicy {
         val merchant: String? = null,
         /** Bill line already stored on the row (transactions.billRef), if any. */
         val billRef: String? = null,
+        /** SMS sender or notifying app package, when known. */
+        val sender: String? = null,
     )
+
+    /**
+     * Whether [existing] (captured at [existingAt]) and [incoming] (at [incomingAt]),
+     * already equal in amount, currency and direction, are one payment.
+     */
+    fun isDuplicate(existing: Side, existingAt: Long, incoming: Side, incomingAt: Long): Boolean {
+        val gap = kotlin.math.abs(existingAt - incomingAt)
+        if (gap <= NEAR_WINDOW_MILLIS) return isSameTransaction(existing, incoming)
+        if (gap <= BILL_WINDOW_MILLIS && isBillPair(existing, incoming)) return true
+        return isSmsMirror(existing, existingAt, incoming, incomingAt)
+    }
 
     fun isSameTransaction(existing: Side, incoming: Side): Boolean {
         if (endingsConflict(existing.cardEnding, incoming.cardEnding)) return false
@@ -40,15 +72,64 @@ object CaptureDedupPolicy {
         return true
     }
 
-    /** Both messages are the same provider's payment, exactly one names a line, and they don't name two different lines. */
+    /**
+     * Both messages are the same provider's payment, exactly one names a line (or both name
+     * the same line), and nothing says they are two payments:
+     *  - different known card endings are two cards;
+     *  - a number-less bank SMS that already took a receipt's line (billRef stored, its own
+     *    text names none) is already paired, so another number-less SMS is another line's payment;
+     *  - two messages that both name the line and come from the same sender are two payments
+     *    (one receipt per payment).
+     */
     fun isBillPair(existing: Side, incoming: Side): Boolean {
         val a = BillDetector.providerKey(existing.merchant) ?: return false
         if (a != BillDetector.providerKey(incoming.merchant)) return false
-        val existingRef = existing.billRef ?: BillDetector.accountRef(existing.rawMessage)
+        if (endingsConflict(existing.cardEnding, incoming.cardEnding)) return false
+        val existingTextRef = BillDetector.accountRef(existing.rawMessage)
+        val existingRef = existing.billRef ?: existingTextRef
         val incomingRef = BillDetector.accountRef(incoming.rawMessage)
-        if (existingRef != null && incomingRef != null) return existingRef == incomingRef && existing.rawMessage?.trim() != incoming.rawMessage?.trim()
+        if (existingRef != null && existingTextRef == null && incomingRef == null) return false
+        if (existingRef != null && incomingRef != null) {
+            return existingRef == incomingRef &&
+                existing.rawMessage?.trim() != incoming.rawMessage?.trim() &&
+                !(existingTextRef != null && sameSender(existing, incoming))
+        }
         // Two number-less bank SMS are two payments (two lines); one numbered + one plain is the pair.
         return existingRef != null || incomingRef != null
+    }
+
+    /**
+     * An SMS and the notification the SMS app posted for it: one is [TransactionSource.SMS], the
+     * other [TransactionSource.PUSH_NOTIFICATION], the text is identical (whitespace aside), and the
+     * notification is not earlier than the SMS was sent (it can only be later) nor more than
+     * [MIRROR_WINDOW_MILLIS] after it.
+     */
+    fun isSmsMirror(existing: Side, existingAt: Long, incoming: Side, incomingAt: Long): Boolean {
+        val (sms, smsAt, push, pushAt) = when {
+            existing.source == TransactionSource.SMS && incoming.source == TransactionSource.PUSH_NOTIFICATION ->
+                Quad(existing, existingAt, incoming, incomingAt)
+            incoming.source == TransactionSource.SMS && existing.source == TransactionSource.PUSH_NOTIFICATION ->
+                Quad(incoming, incomingAt, existing, existingAt)
+            else -> return false
+        }
+        val lag = pushAt - smsAt
+        if (lag < -NEAR_WINDOW_MILLIS || lag > MIRROR_WINDOW_MILLIS) return false
+        if (endingsConflict(sms.cardEnding, push.cardEnding)) return false
+        val a = normalized(sms.rawMessage)
+        return a.isNotEmpty() && a == normalized(push.rawMessage)
+    }
+
+    private data class Quad(val sms: Side, val smsAt: Long, val push: Side, val pushAt: Long)
+
+    private val WHITESPACE = Regex("\\s+")
+
+    private fun normalized(text: String?): String =
+        text.orEmpty().replace(' ', ' ').replace(WHITESPACE, " ").trim()
+
+    private fun sameSender(a: Side, b: Side): Boolean {
+        val x = a.sender?.trim().orEmpty()
+        val y = b.sender?.trim().orEmpty()
+        return x.isNotEmpty() && x.equals(y, ignoreCase = true)
     }
 
     /** True when both endings are known (digits) and neither is a suffix of the other. */

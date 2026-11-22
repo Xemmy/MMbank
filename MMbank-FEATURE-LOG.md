@@ -4816,3 +4816,15 @@ From a full code review. Fixed:
 Tests: seven new cases in `ParserReviewFindingsTest` (each failed on 0.140.0).
 
 Not covered by CI: other bank wordings the user receives; a message whose only direction word is "credit card"/"debit card" behaves as before.
+
+## Capture: late SMS copies, bill pairs, alerts after commit (0.140.2)
+From the code review. Fixed:
+1. **A delayed SMS was recorded twice.** Every bank SMS also arrives as the SMS app's notification (Google Messages, Samsung Messages). The SMS keeps the carrier's send time and the notification its delivery time, so an SMS held up by no signal or flight mode landed outside the 2-minute window and was counted again. `CaptureDedupPolicy.isSmsMirror` now merges an SMS and a notification with the same text (whitespace aside) when the notification is 0-12 h after the SMS (never before it). Two identical SMS stay two purchases. One entry point, `CaptureDedupPolicy.isDuplicate`, now decides near (2 min), bill pair (24 h) and SMS copy (12 h).
+2. **Bill pairing swallowed real payments.** A number-less bank SMS that already took the receipt's line (`billRef` stored) no longer pairs with another number-less SMS (the second line's payment, same amount, same day). Two messages that both name the line and come from the same sender (two du receipts, two top-ups) are two payments. Different card endings now veto the 24-hour bill pairing too. Still open: if du's receipt arrives *before* the bank SMS, a second line's same-amount bank SMS within 24 h can still pair with it.
+3. **Hooks ran before the new row was committed.** Budget pacing, the category cap check and the subscription rescan read on other connections and could miss the transaction that triggered them. `recordParsed` now calls `onTransactionRecorded` / `onBillRefLearned` after the Room transaction commits.
+4. **Alerts on pasted or foreign rows.** Daily pacing and category cap alerts now need a live SMS/notification from the last day (`CaptureAlertGate`): a pasted backlog no longer announces last month's overspend or resets this month's alert keys. Pacing skips rows not in the default currency (a JPY spend was compared with an AED budget).
+5. **Subscription rescans raced.** All writes in `SubscriptionRepositoryImpl` take one lock (two rescans inserted the same new detection; a rescan that read the table before Track wrote the row back as detected). Capture-time rescans run one at a time through a conflated channel, so a pasted batch triggers about one rescan instead of one per message.
+
+Tests: `CaptureDedupPolicyTest` (+9: SMS copy hours later, notification before the SMS, different text / >12 h, identical SMS twice, already-paired bank SMS, two receipts, bank + provider naming the line, two cards, bank then receipt after hours), `CaptureAlertGateTest` (5).
+
+Not covered by CI: the SMS app's real notification text matching the SMS body (if the messaging app adds or trims text, the copy is not merged and stays a duplicate as before), and the repository/AppContainer wiring (Room, coroutines) on a device.
