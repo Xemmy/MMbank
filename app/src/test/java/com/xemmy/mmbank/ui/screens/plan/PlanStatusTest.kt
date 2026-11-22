@@ -66,9 +66,9 @@ class PlanStatusTest {
     @Test
     fun `subscriptions show the monthly total only when they share a currency`() {
         assertNull(PlanStatus.subscriptions(emptyList(), money))
-        // 30.00 monthly + 7.00 weekly (= 30.00 per 30 days) = 60.00
+        // 30.00 monthly + 7.00 weekly (365/7 charges a year / 12 = 30.42) = 60.42
         assertEquals(
-            "2 active · AED 60.00/month",
+            "2 active · AED 60.42/month",
             PlanStatus.subscriptions(listOf(sub("30", SubscriptionCadence.MONTHLY), sub("7", SubscriptionCadence.WEEKLY)), money),
         )
         assertEquals(
@@ -79,8 +79,8 @@ class PlanStatusTest {
 
     @Test
     fun `a yearly subscription is divided down to a monthly figure`() {
-        // 365.00 a year = 30.00 per 30 days
-        assertEquals("1 active · AED 30.00/month", PlanStatus.subscriptions(listOf(sub("365", SubscriptionCadence.YEARLY)), money))
+        // 365.00 a year / 12 months = 30.42
+        assertEquals("1 active · AED 30.42/month", PlanStatus.subscriptions(listOf(sub("365", SubscriptionCadence.YEARLY)), money))
     }
 
     @Test
