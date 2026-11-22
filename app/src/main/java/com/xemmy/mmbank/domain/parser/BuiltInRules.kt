@@ -80,10 +80,16 @@ object BuiltInRules {
     private const val ACCTAIL =
         "(?:.{0,80}?(?:\\*\\s?|حساب\\S*\\s*رقم[.:]?\\s*)(?<accountNumberSuffix>[Xx]*\\d{3,20}))?"
 
+    // Each keyword set sits in the named group [TransactionParser.KEYWORD_GROUP]
+    // ("kw"), so the parser can see which word decided the direction. "Credit"
+    // in "Credit Card" / "Cr Limit" and "Debit" in "Debit Card" name a product,
+    // not money in or out; the parser sets such a match aside and only uses it
+    // when no other rule reads the message (see TransactionParser.parseCore).
+    // A rule may use only ONE of these (a regex can't repeat a group name).
     private const val KW_DEBIT_EN =
-        "\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase)|dr)\\b"
+        "(?<kw>\\b(?:spent|debited|debit|purchased?|purchase\\s+of|paid|payment\\s+of|withdrawn|withdrawal(?:\\s+of)?|charged|pos\\s+(?:txn|purchase)|dr)\\b)"
     private const val KW_CREDIT_EN =
-        "\\b(?:received|credited|credit|deposit(?:ed)?(?:\\s+of)?|refund(?:ed)?|salary|transfer\\s+(?:in|received)|incoming\\s+transfer|cr)\\b"
+        "(?<kw>\\b(?:received|credited|credit|deposit(?:ed)?(?:\\s+of)?|refund(?:ed)?|salary|transfer\\s+(?:in|received)|incoming\\s+transfer|cr)\\b)"
 
     private const val KW_DEBIT_AR =
         "(?:تم\\s+)?(?:خصم|دفع|سحب|شراء)|عملية\\s+شراء|مدين"

@@ -4807,3 +4807,12 @@ User screenshot: four "N transactions in another currency" cards (ADIB CB, Binan
 - Muted hints are per account (`IntegrityChecker.mutedCurrencyKey/mutedDueDayKey`, `AppPreferences.integrityMutedKeys`, not in backups), shared live through `AppContainer.integrityMuted` so the Accounts badge count drops too. **Show N hidden hints** at the bottom brings them all back.
 
 Not covered by CI: the buttons and editor dialog as rendered on the Integrity screen, and the Accounts badge updating after muting.
+
+## Parser: card names are not directions (0.140.1)
+From a full code review. Fixed:
+1. **"Credit Card", "Cr Limit", "Debit Card" no longer decide the direction.** The keyword-first credit rule (priority 10) read "Credit" in "Credit Card" as money in, then took the next currency amount, which was the balance or remaining limit. So "AED 75.00 spent on your Credit Card. Avl Cr Limit: AED 9,925.00" was a **credit of 9,925**, "AED 3,600.00 debited … towards Credit Card payment. Avl Bal AED 5,000.00" a credit of 5,000, and "AED 120.00 credited to your Debit Card … Avl Bal AED 3,450.00" a debit of 3,450. The English keyword sets are now a named group (`kw`); a built-in match whose keyword is followed by card/limit/lmt is set aside, and used only if no other rule reads the message ("Debit card transaction of AED 50 at X" still parses).
+2. **Non-bank notifications.** The no-currency fallback rules no longer read an order/reference number ("We received your order #78402" was a credit of 78,402; also "order 78402", "invoice no. 5521", "Ref", "booking", "ticket", "tracking") or a clock time ("Dr. Ali at 4:30 PM" was a debit of 4; also "9 am") as the amount (`ParseGuards.isIdentifierAmount` / `isTimeOfDay`).
+
+Tests: seven new cases in `ParserReviewFindingsTest` (each failed on 0.140.0).
+
+Not covered by CI: other bank wordings the user receives; a message whose only direction word is "credit card"/"debit card" behaves as before.

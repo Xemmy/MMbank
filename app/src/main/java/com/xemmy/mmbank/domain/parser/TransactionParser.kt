@@ -64,6 +64,13 @@ class TransactionParser(
 
         routeBySignature(message, text)?.let { return it }
 
+        // A built-in match whose direction word only names a card product
+        // ("Credit Card", "Cr Limit", "Debit Card") is kept aside: the real
+        // verb is usually read by a lower rule ("AED 75.00 spent on your
+        // Credit Card. Avl Cr Limit: AED 9,925.00" must be a 75 debit, not a
+        // 9,925 credit). It is used only when nothing else matches.
+        var deferred: ParsedTransaction? = null
+
         for (rule in orderedRules) {
             val pattern = rule.pattern ?: continue // signature-only rule
             if (rule.senderPattern != null) {
@@ -89,7 +96,8 @@ class TransactionParser(
                 val range = match.groups[RuleCompiler.AMOUNT_GROUP]?.range
                 if (range != null &&
                     (ParseGuards.isIdentifierAmount(text, range) ||
-                        ParseGuards.hasUnrecognisedCurrencyBefore(text, range))
+                        ParseGuards.hasUnrecognisedCurrencyBefore(text, range) ||
+                        ParseGuards.isTimeOfDay(text, range))
                 ) {
                     continue
                 }
@@ -127,7 +135,7 @@ class TransactionParser(
                     rule.direction
                 }
 
-            return ParsedTransaction(
+            val result = ParsedTransaction(
                 amount = amount,
                 currencyCode = currency,
                 direction = direction,
@@ -138,9 +146,24 @@ class TransactionParser(
                 assignAccountId = rule.assignAccountId,
                 kindOverride = rule.assignKind,
             )
+            if (builtIn && keywordNamesCardProduct(match, text)) {
+                if (deferred == null) deferred = result
+                continue
+            }
+            return result
         }
 
-        return routeByCardEnding(text)
+        return deferred ?: routeByCardEnding(text)
+    }
+
+    /** True when the match's direction word ([KEYWORD_GROUP]) is followed by "card", "limit" or "lmt". */
+    private fun keywordNamesCardProduct(match: MatchResult, text: String): Boolean {
+        val range = try {
+            (match.groups as? MatchNamedGroupCollection)?.get(KEYWORD_GROUP)?.range
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return false
+        return CARD_PRODUCT_AFTER.containsMatchIn(text.substring(range.last + 1))
     }
 
     /**
@@ -237,6 +260,12 @@ class TransactionParser(
 
     companion object {
         const val DEFAULT_CURRENCY = "USD"
+
+        /** Named group the English built-in rules put their direction word in. */
+        const val KEYWORD_GROUP = "kw"
+
+        /** "Credit Card", "Cr. Limit", "credit lmt", "Debit Card": the word names a product, not a direction. */
+        private val CARD_PRODUCT_AFTER = Regex("^\\.?\\s*(?:cards?|limit|lmt)\\b", RegexOption.IGNORE_CASE)
     }
 }
 

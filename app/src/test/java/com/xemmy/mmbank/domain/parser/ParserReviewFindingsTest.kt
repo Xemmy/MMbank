@@ -91,6 +91,58 @@ class ParserReviewFindingsTest {
         assertNull(parse("You spent XYZ 1,500.00 at SHOP"))
     }
 
+    // --- "Credit Card" / "Cr Limit" / "Debit Card" name a product, not a direction (0.140.1) ---
+
+    @Test fun `spend on a credit card is the spend, not the remaining limit`() {
+        val r = parse("AED 75.00 spent on your Credit Card. Avl Cr Limit: AED 9,925.00")
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertEquals(BigDecimal("75.00"), r.amount)
+        assertEquals("AED", r.currencyCode)
+    }
+
+    @Test fun `card payment debit is the payment, not the balance`() {
+        val r = parse("AED 3,600.00 debited from your account *963 towards Credit Card payment. Avl Bal AED 5,000.00")
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertEquals(BigDecimal("3600.00"), r.amount)
+        assertEquals("963", r.accountNumberSuffix)
+    }
+
+    @Test fun `credit to a debit card is the credit, not the balance`() {
+        val r = parse("AED 120.00 credited to your Debit Card *1234. Avl Bal AED 3,450.00")
+        assertNotNull(r)
+        assertEquals(TransactionDirection.CREDIT, r!!.direction)
+        assertEquals(BigDecimal("120.00"), r.amount)
+    }
+
+    @Test fun `a debit card message with no other verb still parses as before`() {
+        val r = parse("Debit card transaction of AED 50.00 at CARREFOUR")
+        assertNotNull(r)
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertEquals(BigDecimal("50.00"), r.amount)
+    }
+
+    // --- Non-bank notifications read by the no-currency fallback rules (0.140.1) ---
+
+    @Test fun `an order number is not a credit`() {
+        assertNull(parse("We received your order #78402!"))
+        assertNull(parse("We received your order 78402, thank you"))
+        assertNull(parse("Payment received for invoice no. 5521"))
+    }
+
+    @Test fun `a clock time is not an amount`() {
+        assertNull(parse("Reminder: appointment with Dr. Ali at 4:30 PM"))
+        assertNull(parse("Dr Sara confirmed your visit at 9 am"))
+    }
+
+    @Test fun `a plain no-currency spend still parses`() {
+        val r = parse("You spent 45.50 at SHOP")
+        assertNotNull(r)
+        assertEquals(BigDecimal("45.50"), r!!.amount)
+        assertEquals("AED", r.currencyCode)
+    }
+
     // --- ParseGuards ---
 
     @Test fun `guards detect identifiers and unknown codes`() {
