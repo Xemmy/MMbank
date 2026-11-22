@@ -332,6 +332,7 @@ data class BackupManualSubscription(
     val cadence: String, val nextDueDateMillis: Long, val lastSeenMillis: Long, val occurrenceCount: Int,
     val dismissed: Boolean = false,
     val lines: Int = 1,
+    val anchorDay: Int = 0,
 )
 
 /**
@@ -1087,7 +1088,7 @@ internal fun BackupBill.toEntity() = BillEntity(
 internal fun SubscriptionEntity.toBackup() = BackupManualSubscription(
     id = id, merchant = merchant, averageAmount = averageAmount.toPlainString(), currencyCode = currencyCode,
     cadence = cadence.name, nextDueDateMillis = nextDueDateMillis, lastSeenMillis = lastSeenMillis,
-    occurrenceCount = occurrenceCount, dismissed = dismissed, lines = lines,
+    occurrenceCount = occurrenceCount, dismissed = dismissed, lines = lines, anchorDay = anchorDay,
 )
 
 internal fun BackupManualSubscription.toEntity() = SubscriptionEntity(
@@ -1095,7 +1096,7 @@ internal fun BackupManualSubscription.toEntity() = SubscriptionEntity(
     cadence = SubscriptionCadence.entries.firstOrNull { it.name == cadence } ?: SubscriptionCadence.MONTHLY,
     nextDueDateMillis = nextDueDateMillis, lastSeenMillis = lastSeenMillis, occurrenceCount = occurrenceCount,
     dismissed = dismissed, previousAmount = null, isManual = true,
-    merchantKey = SubscriptionRescan.keyOf(merchant), lines = lines,
+    merchantKey = SubscriptionRescan.keyOf(merchant), lines = lines, anchorDay = anchorDay,
 )
 
 internal fun PayLaterPlanEntity.toBackup() = BackupPayLaterPlan(

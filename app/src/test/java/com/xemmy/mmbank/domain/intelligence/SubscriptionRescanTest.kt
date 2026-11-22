@@ -192,4 +192,15 @@ class SubscriptionRescanTest {
         assertEquals(millis(LocalDate.of(2026, 4, 15)), weekly)
         assertEquals(0L, SubscriptionRescan.rollForward(0L, SubscriptionCadence.MONTHLY, now, utc))
     }
+
+    @Test fun `an anchored month-end day survives short months`() {
+        fun roll(due: LocalDate, at: LocalDate, anchor: Int) =
+            SubscriptionRescan.rollForward(millis(due), SubscriptionCadence.MONTHLY, millis(at), utc, anchor)
+        // Jan 31 -> Feb 28 (persisted) -> Mar 31, not Mar 28.
+        assertEquals(millis(LocalDate.of(2026, 2, 28)), roll(LocalDate.of(2026, 1, 31), LocalDate.of(2026, 2, 1), 31))
+        assertEquals(millis(LocalDate.of(2026, 3, 31)), roll(LocalDate.of(2026, 2, 28), LocalDate.of(2026, 3, 1), 31))
+        assertEquals(millis(LocalDate.of(2026, 4, 30)), roll(LocalDate.of(2026, 3, 31), LocalDate.of(2026, 4, 1), 31))
+        // Without an anchor the old behaviour (drift) is unchanged.
+        assertEquals(millis(LocalDate.of(2026, 3, 28)), roll(LocalDate.of(2026, 2, 28), LocalDate.of(2026, 3, 1), 0))
+    }
 }

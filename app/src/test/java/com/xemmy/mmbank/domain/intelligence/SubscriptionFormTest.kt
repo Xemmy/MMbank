@@ -72,4 +72,15 @@ class SubscriptionFormTest {
         assertEquals(listOf(SubscriptionLink(1, 7), SubscriptionLink(3, 7)), snap.links)
         assertEquals(existing, snap.row)
     }
+
+    @Test fun `a month-end due date is anchored, an ordinary day is not`() {
+        val utc = java.time.ZoneOffset.UTC
+        fun ms(y: Int, m: Int, d: Int) = java.time.LocalDate.of(y, m, d).atStartOfDay(utc).toInstant().toEpochMilli()
+        assertEquals(31, SubscriptionForm.anchorDayOf(ms(2026, 1, 31), SubscriptionCadence.MONTHLY, utc))
+        assertEquals(29, SubscriptionForm.anchorDayOf(ms(2026, 3, 29), SubscriptionCadence.MONTHLY, utc))
+        assertEquals(0, SubscriptionForm.anchorDayOf(ms(2026, 1, 15), SubscriptionCadence.MONTHLY, utc))
+        assertEquals(0, SubscriptionForm.anchorDayOf(ms(2026, 1, 31), SubscriptionCadence.WEEKLY, utc))
+        val parsed = SubscriptionForm.validate("Rent", "10", "AED")!!
+        assertEquals(31, SubscriptionForm.build(null, parsed, SubscriptionCadence.MONTHLY, ms(2026, 1, 31), utc).anchorDay)
+    }
 }

@@ -164,7 +164,7 @@ object SubscriptionRescan {
     /** Count, last seen and next due from the row's own charges; with none, the typed date rolls forward once past. */
     private fun recompute(row: Subscription, charges: List<Transaction>, nowMillis: Long, zone: ZoneId): Subscription {
         if (charges.isEmpty()) {
-            return row.copy(nextDueDateMillis = rollForward(row.nextDueDateMillis, row.cadence, nowMillis, zone))
+            return row.copy(nextDueDateMillis = rollForward(row.nextDueDateMillis, row.cadence, nowMillis, zone, row.anchorDay))
         }
         return row.copy(
             occurrenceCount = charges.size,
@@ -173,14 +173,20 @@ object SubscriptionRescan {
         )
     }
 
-    internal fun rollForward(dueMillis: Long, cadence: SubscriptionCadence, nowMillis: Long, zone: ZoneId): Long {
+    internal fun rollForward(dueMillis: Long, cadence: SubscriptionCadence, nowMillis: Long, zone: ZoneId, anchorDay: Int = 0): Long {
         if (dueMillis >= nowMillis || dueMillis <= 0L) return dueMillis
         var due = Instant.ofEpochMilli(dueMillis).atZone(zone)
         var steps = 0
         while (due.toInstant().toEpochMilli() < nowMillis && steps < 1000) {
-            due = cadence.months?.let { due.plusMonths(it.toLong()) } ?: due.plusDays(cadence.nominalDays)
+            due = cadence.months?.let { stepMonths(due, it, anchorDay) } ?: due.plusDays(cadence.nominalDays)
             steps++
         }
         return due.toInstant().toEpochMilli()
+    }
+
+    private fun stepMonths(due: java.time.ZonedDateTime, months: Int, anchorDay: Int): java.time.ZonedDateTime {
+        val next = due.plusMonths(months.toLong())
+        if (anchorDay <= 0) return next
+        return next.withDayOfMonth(minOf(anchorDay, next.toLocalDate().lengthOfMonth()))
     }
 }

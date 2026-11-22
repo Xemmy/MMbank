@@ -469,7 +469,7 @@ class EntityMappersTest {
         val manual = Subscription(
             id = 9, merchant = "Gym", averageAmount = BigDecimal("150.00"), currencyCode = "AED",
             cadence = SubscriptionCadence.YEARLY, nextDueDateMillis = 1_700_000_000_000, lastSeenMillis = 0,
-            occurrenceCount = 0, isManual = true, merchantKey = "gym", lines = 2,
+            occurrenceCount = 0, isManual = true, merchantKey = "gym", lines = 2, anchorDay = 31,
         )
         assertEquals(manual, manual.toEntity().toDomain())
         assertTrue(manual.toEntity().isManual)

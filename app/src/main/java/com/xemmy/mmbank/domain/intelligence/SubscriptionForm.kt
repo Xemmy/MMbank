@@ -5,6 +5,8 @@ import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.SubscriptionLink
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
+import java.time.ZoneId
 
 /** Pure rules behind the add/edit subscription dialog. */
 object SubscriptionForm {
@@ -25,7 +27,13 @@ object SubscriptionForm {
      * The row to save: [initial] with the typed fields replaced (so its id, counts and
      * last seen survive an edit), or a fresh one when [initial] is null. Either way it is user-owned.
      */
-    fun build(initial: Subscription?, parsed: Parsed, cadence: SubscriptionCadence, nextDueMillis: Long): Subscription {
+    fun build(
+        initial: Subscription?,
+        parsed: Parsed,
+        cadence: SubscriptionCadence,
+        nextDueMillis: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): Subscription {
         val base = initial ?: Subscription(
             merchant = parsed.name,
             averageAmount = parsed.amount,
@@ -46,7 +54,15 @@ object SubscriptionForm {
             isManual = true,
             confidence = 1.0,
             merchantKey = SubscriptionRescan.keyOf(parsed.name),
+            anchorDay = anchorDayOf(nextDueMillis, cadence, zone),
         )
+    }
+
+    /** The 29-31 day-of-month a month-based due date sits on, else 0 (a short month must not drag it to the 28th). */
+    fun anchorDayOf(dueMillis: Long, cadence: SubscriptionCadence, zone: ZoneId): Int {
+        if (cadence.months == null || dueMillis <= 0L) return 0
+        val day = Instant.ofEpochMilli(dueMillis).atZone(zone).dayOfMonth
+        return if (day >= 29) day else 0
     }
 }
 

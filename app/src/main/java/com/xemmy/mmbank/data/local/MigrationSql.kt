@@ -120,6 +120,11 @@ object MigrationSql {
         "CREATE INDEX IF NOT EXISTS `index_pay_later_installments_planId` ON `pay_later_installments` (`planId`)",
     )
 
+    /** v49 (from v48): the day (29-31) a hand-added subscription stays anchored on. Additive, defaults to 0 = none. */
+    val MIGRATION_48_49_SQL: List<String> = listOf(
+        "ALTER TABLE `subscriptions` ADD COLUMN `anchorDay` INTEGER NOT NULL DEFAULT 0",
+    )
+
     /** v48 (from v47): the bill line a provider SMS named, kept on the merged transaction. Additive, nullable. */
     val MIGRATION_47_48_SQL: List<String> = listOf(
         "ALTER TABLE `transactions` ADD COLUMN `billRef` TEXT",

@@ -679,6 +679,8 @@ data class Subscription(
     val lines: Int = 1,
     /** 1.0 for a confident detection or a user-owned row; below 0.8 it is listed as "Possible". */
     val confidence: Double = 1.0,
+    /** Day of month (29-31) a hand-added, charge-less row is anchored on, so a short month doesn't drag it to the 28th; 0 = none. */
+    val anchorDay: Int = 0,
 )
 
 /**

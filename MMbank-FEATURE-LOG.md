@@ -4869,3 +4869,10 @@ From the code review. Fixed:
 Tests: `WriteOnceTest` (3). The rest is UI wiring with no pure logic left.
 
 Not covered by CI: the snackbar's duration and ✕, Save disabled while saving, double-tap behaviour on a device, the hero caption with a label filter, and the date rolling over at midnight with the screen open or after resume.
+
+## Month-end subscriptions stop drifting to the 28th (0.140.6)
+A hand-added subscription with no linked charges and a due date on the 29th–31st slid to the 28th: the roll-forward stepped from the already-clamped saved date (Jan 31 → Feb 28 → Mar 28 → …). A new `subscriptions.anchorDay` column (Room v49, additive, default 0) remembers the typed day when a month-based row is saved on the 29th–31st; `SubscriptionRescan.rollForward` re-applies it each step (Feb 28 → Mar 31 → Apr 30). Rows without an anchor behave as before. The field is in backups (old backups import with 0).
+
+Tests: `SubscriptionRescanTest` (+1), `SubscriptionFormTest` (+1), `MigrationSqlTest` (+1, schema 49), `EntityMappersTest` round-trip.
+
+Not covered by CI: the v48 → v49 upgrade on a real device and the add/edit dialog flow.

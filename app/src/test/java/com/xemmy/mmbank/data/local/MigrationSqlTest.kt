@@ -16,10 +16,10 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Executes the v25 -> v48 migrations against real SQLite (sqlite-jdbc) and
+ * Executes the v25 -> v49 migrations against real SQLite (sqlite-jdbc) and
  * checks two things Room only finds out on a device:
  *
- *  1. **Schema**: an upgraded database must look exactly like a fresh v48
+ *  1. **Schema**: an upgraded database must look exactly like a fresh v49
  *     install, or Room refuses to open it ("Migration didn't properly
  *     handle..."). The fresh install is built from the schema JSON Room's
  *     compiler exports during this same build (`app/schemas/.../46.json`), so
@@ -40,10 +40,10 @@ class MigrationSqlTest {
 
     private val schema: JsonObject by lazy {
         val file = listOf(
-            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/48.json"),
-            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/48.json"),
+            File("schemas/com.xemmy.mmbank.data.local.AppDatabase/49.json"),
+            File("app/schemas/com.xemmy.mmbank.data.local.AppDatabase/49.json"),
         ).firstOrNull { it.exists() }
-            ?: error("Room schema 48.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
+            ?: error("Room schema 49.json not found -- it is exported by kspDebugKotlin (room.schemaLocation)")
         Json.parseToJsonElement(file.readText()).jsonObject["database"]!!.jsonObject
     }
 
@@ -69,7 +69,7 @@ class MigrationSqlTest {
         "accounts" to listOf("creditLimit", "cardEndings", "accentColor", "sortOrder", "excludeFromTotals"),
         "categories" to listOf("sortOrder", "flow"),
         "bills" to listOf("dueDayAnchor", "providerKey", "accountRef", "lastPaidMillis"),
-        "subscriptions" to listOf("isManual", "merchantKey", "lines", "confidence"),
+        "subscriptions" to listOf("isManual", "merchantKey", "lines", "confidence", "anchorDay"),
     )
     private val addedTables = setOf("merchant_kind_mappings", "ignored_keywords", "exchange_rates_history", "account_changes", "labels", "transaction_labels", "pay_later_plans", "pay_later_installments", "subscription_links", "merchant_aliases")
 
@@ -110,6 +110,7 @@ class MigrationSqlTest {
         MigrationSql.MIGRATION_45_46_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_46_47_SQL.forEach { migrated.exec(it) }
         MigrationSql.MIGRATION_47_48_SQL.forEach { migrated.exec(it) }
+        MigrationSql.MIGRATION_48_49_SQL.forEach { migrated.exec(it) }
     }
 
     private fun migrateTo42() {
@@ -163,7 +164,7 @@ class MigrationSqlTest {
         }
 
     @Test
-    fun `an upgraded database matches a fresh v48 install table for table`() {
+    fun `an upgraded database matches a fresh v49 install table for table`() {
         migrate()
         val touched = addedColumns.keys + addedTables
         touched.forEach { table ->
@@ -564,6 +565,22 @@ class MigrationSqlTest {
             st.executeQuery("SELECT billRef FROM transactions WHERE id = 1").use { rs ->
                 rs.next()
                 assertEquals("4567", rs.getString(1))
+            }
+        }
+    }
+
+    @Test
+    fun `v49 adds an anchor day to subscriptions, defaulting to none`() {
+        migrate()
+        assertTrue(migrated.columns("subscriptions").any { it.startsWith("anchorDay:INTEGER") })
+        migrated.exec(
+            "INSERT INTO subscriptions (id, merchant, averageAmount, currencyCode, cadence, nextDueDateMillis, lastSeenMillis, occurrenceCount, dismissed, isManual) " +
+                "VALUES (1, 'Rent', '10', 'AED', 'MONTHLY', 0, 0, 0, 0, 1)",
+        )
+        migrated.createStatement().use { st ->
+            st.executeQuery("SELECT anchorDay FROM subscriptions WHERE id = 1").use { rs ->
+                rs.next()
+                assertEquals(0, rs.getInt(1))
             }
         }
     }
