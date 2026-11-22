@@ -1203,13 +1203,12 @@ internal fun computeDashboardStats(
     // The current month is only partly over, so it compares with the same
     // days of last month -- not the whole of it, which always read as "down".
     val monthToDate = dateRange == DashboardDateRange.ThisMonth && thisMonth == YearMonth.from(today)
+    // A week or year still in progress compares the same elapsed days, and a past calendar
+    // month or year the previous one (see PeriodComparison.previousWindow).
     val previousWindow = if (monthToDate) {
         PeriodComparison.previousMonthToDate(today)
     } else {
-        window?.let { w ->
-            val days = ChronoUnit.DAYS.between(w.start, w.end) + 1
-            DateWindow(w.start.minusDays(days), w.start.minusDays(1))
-        }
+        window?.let { PeriodComparison.previousWindow(it, today) }
     }
     val previousPeriodTx = previousWindow?.let { pw -> counted.filter { inWindow(it, pw) } }.orEmpty()
     val previousPeriodSpend = previousWindow?.let {
@@ -1257,7 +1256,7 @@ internal fun computeDashboardStats(
         periodSpend = periodSpend,
         insights = insights,
         spendChangePercent = previousPeriodSpend?.takeIf { it > 0.0 }?.let { (periodSpend - it) / it * 100.0 },
-        previousLabel = previousPeriodLabel(window, previousWindow != null, monthToDate),
+        previousLabel = previousPeriodLabel(window, previousWindow != null, monthToDate, today),
     )
 }
 
@@ -1265,7 +1264,12 @@ internal fun computeDashboardStats(
  * Noun phrase for what the spend change is measured against, e.g. "last week"
  * or "this point last month"; null when there is no previous window to compare.
  */
-internal fun previousPeriodLabel(window: DateWindow?, hasPrevious: Boolean, monthToDate: Boolean): String? {
+internal fun previousPeriodLabel(
+    window: DateWindow?,
+    hasPrevious: Boolean,
+    monthToDate: Boolean,
+    today: LocalDate? = null,
+): String? {
     if (!hasPrevious) return null
     if (monthToDate) return "this point last month"
     if (window == null) return "the previous period"
@@ -1275,10 +1279,13 @@ internal fun previousPeriodLabel(window: DateWindow?, hasPrevious: Boolean, mont
         YearMonth.from(window.start) == YearMonth.from(window.end)
     val wholeYear = window.start.dayOfYear == 1 && window.start.year == window.end.year &&
         window.end.dayOfYear == window.end.lengthOfYear()
+    // Still in progress: compared with the same elapsed days (PeriodComparison.previousWindow).
+    val running = today != null && PeriodComparison.inProgress(window, today)
     return when {
-        days == 7L -> "last week"
-        wholeMonth -> "last month"
-        wholeYear -> "last year"
+        days == 7L -> if (running) "this point last week" else "last week"
+        wholeMonth -> if (running) "this point last month" else "last month"
+        wholeYear -> if (running) "this point last year" else "last year"
+        running -> "the same days before"
         else -> "the previous period"
     }
 }
@@ -1518,7 +1525,10 @@ internal fun computeFinancialHealth(
             .filter { !it.dismissed }
             .filter { isDueBeforePayday(it.nextDueDateMillis) }
             .sumOf { sub ->
-                CurrencyMath.toBase(sub.averageAmount.toDouble(), sub.currencyCode, baseCurrency, ratesFromBase) ?: 0.0
+                CurrencyMath.toBase(
+                    com.xemmy.mmbank.domain.intelligence.SubscriptionTotals.perCharge(sub).toDouble(),
+                    sub.currencyCode, baseCurrency, ratesFromBase,
+                ) ?: 0.0
             }
         val billsDueManual = bills
             .filter { isDueBeforePayday(it.nextDueDateMillis) }

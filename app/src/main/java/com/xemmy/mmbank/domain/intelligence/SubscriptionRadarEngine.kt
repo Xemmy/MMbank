@@ -514,15 +514,19 @@ object SubscriptionRadarEngine {
      * When the next charge is due. Day-based cadences step by their nominal
      * length from the last charge. Month-based ones keep the billing day of
      * the month -- the 15th stays the 15th -- clamped to short months; a
-     * biller on the 29th-31st (any such charge in the chain) stays at
-     * "month end" instead of sliding down to the 28th after February.
+     * biller on the 29th-31st stays at "month end" instead of sliding down to
+     * the 28th after February, as long as its latest charge is still at month
+     * end (28th or later).
      */
     internal fun nextDue(chain: List<Transaction>, cadence: SubscriptionCadence, zone: ZoneId): Long {
         val last = chain.last()
         val months = cadence.months ?: return last.timestampMillis + cadence.nominalDays * DAY_MILLIS
         val lastAt = Instant.ofEpochMilli(last.timestampMillis).atZone(zone)
         val days = chain.map { Instant.ofEpochMilli(it.timestampMillis).atZone(zone).dayOfMonth }
-        val anchorDay = if (days.any { it >= 29 }) days.max() else lastAt.dayOfMonth
+        // Month-end only while the series is still at month-end: one stray charge on the 31st
+        // among charges on the 1st must not push every renewal ~30 days late.
+        val atMonthEnd = lastAt.dayOfMonth >= 28 || lastAt.dayOfMonth == lastAt.toLocalDate().lengthOfMonth()
+        val anchorDay = if (atMonthEnd && days.any { it >= 29 }) days.max() else lastAt.dayOfMonth
         val target = YearMonth.from(lastAt).plusMonths(months.toLong())
         val day = minOf(anchorDay, target.lengthOfMonth())
         return target.atDay(day).atTime(lastAt.toLocalTime()).atZone(zone).toInstant().toEpochMilli()

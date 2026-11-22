@@ -65,7 +65,8 @@ object UpcomingPayments {
             val due = dateOf(s.nextDueDateMillis)
             val d = days(due)
             if (d < -STALE_SUBSCRIPTION_DAYS) null
-            else Item(Kind.SUBSCRIPTION, s.merchant, s.averageAmount, s.currencyCode.uppercase(), due, d)
+            // perCharge: a row with two parallel lines takes twice its price at each renewal.
+            else Item(Kind.SUBSCRIPTION, s.merchant, SubscriptionTotals.perCharge(s), s.currencyCode.uppercase(), due, d)
         }
         val cardItems = cards.mapNotNull { c ->
             val due = c.status.dueDate ?: return@mapNotNull null

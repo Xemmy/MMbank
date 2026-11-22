@@ -53,11 +53,16 @@ object SubscriptionReminders {
     }
 
     /**
-     * Whole-days from [nowMillis] until the renewal; negative once overdue.
-     * Rounded down, so "2.9 days away" reads as 2 rather than 3.
+     * Calendar days from today until the renewal, in [zone]: 0 = today, 1 = tomorrow, negative once
+     * overdue. Calendar days, not elapsed 24-hour blocks: a due date stored at midnight read
+     * "due today" the day before and "overdue by 1d" on the day itself. Matches
+     * [UpcomingPayments], so every screen names the same day.
      */
-    fun daysUntil(subscription: Subscription, nowMillis: Long): Long =
-        Math.floorDiv(subscription.nextDueDateMillis - nowMillis, DAY_MILLIS)
+    fun daysUntil(subscription: Subscription, nowMillis: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Long =
+        java.time.temporal.ChronoUnit.DAYS.between(
+            java.time.Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate(),
+            java.time.Instant.ofEpochMilli(subscription.nextDueDateMillis).atZone(zone).toLocalDate(),
+        )
 
     /**
      * Prunes announced keys down to the renewals still in play, so the stored

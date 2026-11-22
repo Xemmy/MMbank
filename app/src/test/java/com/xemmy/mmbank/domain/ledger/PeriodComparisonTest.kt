@@ -82,4 +82,54 @@ class PeriodComparisonTest {
         assertEquals(100.0, c.previous, 1e-9)
         assertEquals(-50.0, c.percentChange!!, 1e-9)
     }
+
+    // --- 0.140.4: like-with-like windows for "vs last period" ---
+
+    private fun d(text: String) = LocalDate.parse(text)
+
+    @Test
+    fun `a week in progress compares the same weekdays of last week`() {
+        // Wednesday 2026-11-18 inside Mon 16 - Sun 22.
+        val prev = PeriodComparison.previousWindow(DateWindow(d("2026-11-16"), d("2026-11-22")), d("2026-11-18"))
+        assertEquals(DateWindow(d("2026-11-09"), d("2026-11-11")), prev)
+    }
+
+    @Test
+    fun `a finished week compares the whole week before`() {
+        val prev = PeriodComparison.previousWindow(DateWindow(d("2026-11-09"), d("2026-11-15")), d("2026-11-18"))
+        assertEquals(DateWindow(d("2026-11-02"), d("2026-11-08")), prev)
+    }
+
+    @Test
+    fun `a year in progress compares the same days of last year`() {
+        val prev = PeriodComparison.previousWindow(DateWindow(d("2026-01-01"), d("2026-12-31")), d("2026-11-22"))
+        assertEquals(DateWindow(d("2025-01-01"), d("2025-11-22")), prev)
+    }
+
+    @Test
+    fun `a past calendar month compares the previous calendar month`() {
+        val prev = PeriodComparison.previousWindow(DateWindow(d("2026-03-01"), d("2026-03-31")), d("2026-11-22"))
+        assertEquals(DateWindow(d("2026-02-01"), d("2026-02-28")), prev)
+    }
+
+    @Test
+    fun `the current month compares month to date`() {
+        val prev = PeriodComparison.previousWindow(DateWindow(d("2026-03-01"), d("2026-03-31")), d("2026-03-31").minusDays(1))
+        assertEquals(DateWindow(d("2026-02-01"), d("2026-02-28")), prev)
+        val early = PeriodComparison.previousWindow(DateWindow(d("2026-03-01"), d("2026-03-31")), d("2026-03-10"))
+        assertEquals(DateWindow(d("2026-02-01"), d("2026-02-10")), early)
+    }
+
+    @Test
+    fun `a past year and a custom span keep their own rules`() {
+        assertEquals(
+            DateWindow(d("2024-01-01"), d("2024-12-31")),
+            PeriodComparison.previousWindow(DateWindow(d("2025-01-01"), d("2025-12-31")), d("2026-11-22")),
+        )
+        // 1 Oct - 30 Nov is 61 days, so the span before it is 1 Aug - 30 Sep.
+        assertEquals(
+            DateWindow(d("2026-08-01"), d("2026-09-30")),
+            PeriodComparison.previousWindow(DateWindow(d("2026-10-01"), d("2026-11-30")), d("2026-12-05")),
+        )
+    }
 }

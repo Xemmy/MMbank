@@ -34,6 +34,19 @@ object PayLaterPayment {
         else -> Shape.SPEND
     }
 
+    /**
+     * The shape an auto-matched captured debit (an installment SMS, see [PayLaterAutoMatch]) takes on,
+     * by the same rule as [build]: SPEND leaves it a counted spend; EXCLUDED_DEBIT hides it from
+     * spending, because the purchase was already counted in full when it was captured; TRANSFER_PAIR
+     * turns it into a transfer to the provider's account. A transfer needs the paying account, so an
+     * SMS filed to no account (or to the provider's own account) is hidden from spending instead.
+     */
+    fun matchedShape(plan: PayLaterPlan, matchedAccountId: Long?): Shape {
+        val providerAccount = plan.payToAccountId?.takeIf { it != matchedAccountId }
+        val shape = shapeOf(plan, hasProviderAccount = providerAccount != null)
+        return if (shape == Shape.TRANSFER_PAIR && matchedAccountId == null) Shape.EXCLUDED_DEBIT else shape
+    }
+
     fun describe(plan: PayLaterPlan, installment: PayLaterInstallment): String =
         "${plan.merchant} · Payment ${installment.number} of ${plan.installmentCount}"
 

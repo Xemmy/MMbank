@@ -183,8 +183,8 @@ class MonthlyReportBuilderTest {
             month = emptyList(),
             subscriptions = listOf(subscription("Gym", "20.00", SubscriptionCadence.WEEKLY)),
         )
-        // 20 * 30/7 = 85.71
-        assertEquals(0, report.subscriptionMonthlyTotal.compareTo(BigDecimal("85.71")))
+        // 20 * 365/7 charges a year / 12 months = 86.90 (the Subscriptions screen's figure)
+        assertEquals(0, report.subscriptionMonthlyTotal.compareTo(BigDecimal("86.90")))
     }
 
     @Test

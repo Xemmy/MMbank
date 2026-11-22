@@ -97,4 +97,27 @@ class PayLaterPaymentTest {
         assertEquals(false, legs.paying.excludeFromStats)
         assertNull(legs.counterpart)
     }
+
+    // --- 0.140.4: what an auto-matched installment SMS becomes ---
+
+    @Test
+    fun `an installment SMS of a full-price plan is not counted as spending again`() {
+        // Captured purchase, no provider account: the SMS is hidden from spending.
+        assertEquals(Shape.EXCLUDED_DEBIT, PayLaterPayment.matchedShape(plan(source = 7), matchedAccountId = 1))
+        // Captured purchase and a tracked provider account: the SMS becomes a transfer to it.
+        assertEquals(Shape.TRANSFER_PAIR, PayLaterPayment.matchedShape(plan(source = 7).copy(payToAccountId = 3), matchedAccountId = 1))
+    }
+
+    @Test
+    fun `an installment SMS stays spending when only one installment was counted`() {
+        assertEquals(Shape.SPEND, PayLaterPayment.matchedShape(plan(source = 7).copy(sourceIsInstallment = true), matchedAccountId = 1))
+        assertEquals(Shape.SPEND, PayLaterPayment.matchedShape(plan(source = null), matchedAccountId = 1))
+    }
+
+    @Test
+    fun `an unassigned SMS or one on the provider account is hidden rather than made a transfer`() {
+        val withProvider = plan(source = 7).copy(payToAccountId = 3)
+        assertEquals(Shape.EXCLUDED_DEBIT, PayLaterPayment.matchedShape(withProvider, matchedAccountId = null))
+        assertEquals(Shape.EXCLUDED_DEBIT, PayLaterPayment.matchedShape(withProvider, matchedAccountId = 3))
+    }
 }

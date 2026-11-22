@@ -147,7 +147,7 @@ object WhatChangedDigest {
         }
 
         BillReminders.pending(bills, nowMillis, emptySet(), windowDays = 7).forEach { bill ->
-            items += PaymentDue(bill.name, bill.amount, bill.currencyCode.uppercase(), BillReminders.daysUntil(bill, nowMillis), isCard = false)
+            items += PaymentDue(bill.name, bill.amount, bill.currencyCode.uppercase(), BillReminders.daysUntil(bill, nowMillis, zone), isCard = false)
         }
         CardPaymentReminders.dueSoon(cards)
             .filter { (it.status.daysUntilDue ?: Long.MAX_VALUE) <= 7 && it.status.amountDue.signum() > 0 }

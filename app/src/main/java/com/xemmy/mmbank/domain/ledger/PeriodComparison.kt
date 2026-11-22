@@ -33,6 +33,40 @@ object PeriodComparison {
         return DateWindow(previous.atDay(1), previous.atDay(minOf(today.dayOfMonth, previous.lengthOfMonth())))
     }
 
+    /** True when [window] has started but [today] is before its last day: only part of it has happened. */
+    fun inProgress(window: DateWindow, today: LocalDate): Boolean =
+        !today.isBefore(window.start) && today.isBefore(window.end)
+
+    /**
+     * The window to compare [window] with, like with like:
+     *  - a calendar month: the previous calendar month (March vs February, not the 31 days
+     *    before), or month-to-date while it is in progress;
+     *  - a calendar year: the previous year, or the same days of it while in progress
+     *    (1 Jan - 22 Nov vs 1 Jan - 22 Nov last year, not the whole of last year);
+     *  - anything else (a week, a custom span): the span of equal length just before it,
+     *    cut to the same number of elapsed days while it is in progress (Monday-Wednesday
+     *    vs last Monday-Wednesday, not all of last week).
+     */
+    fun previousWindow(window: DateWindow, today: LocalDate): DateWindow {
+        val running = inProgress(window, today)
+        val month = YearMonth.from(window.start)
+        val wholeMonth = window.start == month.atDay(1) && window.end == month.atEndOfMonth()
+        val wholeYear = window.start.dayOfYear == 1 && window.start.year == window.end.year &&
+            window.end.dayOfYear == window.end.lengthOfYear()
+        return when {
+            wholeMonth && running -> previousMonthToDate(today)
+            wholeMonth -> month.minusMonths(1).let { DateWindow(it.atDay(1), it.atEndOfMonth()) }
+            wholeYear && running -> DateWindow(window.start.minusYears(1), today.minusYears(1))
+            wholeYear -> DateWindow(window.start.minusYears(1), window.end.minusYears(1))
+            else -> {
+                val length = java.time.temporal.ChronoUnit.DAYS.between(window.start, window.end) + 1
+                val start = window.start.minusDays(length)
+                val elapsed = if (running) java.time.temporal.ChronoUnit.DAYS.between(window.start, today) + 1 else length
+                DateWindow(start, start.plusDays(elapsed - 1))
+            }
+        }
+    }
+
     /** Net spending ([LedgerMath.netSpend]) this month so far vs the same days last month. */
     fun monthToDate(
         transactions: List<Transaction>,

@@ -360,6 +360,19 @@ class SubscriptionRadarTest {
     }
 
     @Test
+    fun `one stray month-end charge does not push a 1st-of-month renewal to month end`() {
+        // 0.140.4: the bank posted January's charge on the 31st; the series is on the 1st.
+        val chain = listOf(
+            on("Gym", "200.00", 2026, 1, 31), on("Gym", "200.00", 2026, 3, 1),
+            on("Gym", "200.00", 2026, 4, 1), on("Gym", "200.00", 2026, 5, 1),
+        )
+        assertEquals(
+            java.time.LocalDate.of(2026, 6, 1),
+            renewalDate(SubscriptionRadarEngine.nextDue(chain, SubscriptionCadence.MONTHLY, utc)),
+        )
+    }
+
+    @Test
     fun `quarterly and yearly renewals land on the same calendar day`() {
         val quarterly = SubscriptionRadarEngine.detect(
             listOf(on("Insurer", "300.00", 2023, 3, 10), on("Insurer", "300.00", 2023, 6, 10), on("Insurer", "300.00", 2023, 9, 10)),

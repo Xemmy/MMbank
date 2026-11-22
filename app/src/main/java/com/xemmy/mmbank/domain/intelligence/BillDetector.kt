@@ -349,7 +349,10 @@ object BillDuplicateFinder {
             it.kind == TransactionKind.SPEND && !it.excludeFromStats && it.direction == TransactionDirection.DEBIT &&
                 BillDetector.providerKey(it.merchant) != null
         }
-        val numbered = bills.filter { BillDetector.lineOf(it) != null }
+        // A receipt names the line in its OWN text. A bank row that got a line stored later (merged at
+        // capture, or added from the payment history) is not a receipt: pairing it would delete a
+        // genuine second payment of another line made the same day for the same amount.
+        val numbered = bills.filter { BillDetector.accountRef(it.rawMessage) != null }
         val plain = bills.filter { BillDetector.lineOf(it) == null }.toMutableList()
         val result = mutableListOf<Duplicate>()
         for (receipt in numbered.sortedBy { it.timestampMillis }) {
@@ -359,7 +362,8 @@ object BillDuplicateFinder {
                     BillDetector.providerKey(it.merchant) == key &&
                         it.currencyCode.equals(receipt.currencyCode, ignoreCase = true) &&
                         it.amount.compareTo(receipt.amount) == 0 &&
-                        kotlin.math.abs(it.timestampMillis - receipt.timestampMillis) <= WINDOW_MILLIS
+                        kotlin.math.abs(it.timestampMillis - receipt.timestampMillis) <= WINDOW_MILLIS &&
+                        !sameSender(it, receipt)
                 }
                 .minByOrNull { kotlin.math.abs(it.timestampMillis - receipt.timestampMillis) } ?: continue
             plain.remove(bank)
@@ -370,5 +374,12 @@ object BillDuplicateFinder {
             result += Duplicate(keep, remove, BillDetector.lineOf(receipt)!!)
         }
         return result
+    }
+
+    /** Both senders known and equal: two messages from one sender are two payments, not bank + receipt. */
+    private fun sameSender(a: Transaction, b: Transaction): Boolean {
+        val x = a.sender?.trim().orEmpty()
+        val y = b.sender?.trim().orEmpty()
+        return x.isNotEmpty() && x.equals(y, ignoreCase = true)
     }
 }

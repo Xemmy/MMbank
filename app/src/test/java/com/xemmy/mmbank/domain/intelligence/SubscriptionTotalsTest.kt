@@ -25,8 +25,26 @@ class SubscriptionTotalsTest {
     }
 
     @Test fun `a yearly charge is a twelfth per month`() {
-        val m = SubscriptionTotals.monthly(sub("365.00", cadence = SubscriptionCadence.YEARLY))
-        assertEquals(0, m.compareTo(BigDecimal("30.00")))
+        val m = SubscriptionTotals.monthly(sub("120.00", cadence = SubscriptionCadence.YEARLY))
+        assertEquals(0, m.compareTo(BigDecimal("10.00")))
+    }
+
+    @Test fun `a yearly charge costs exactly its price per year`() {
+        // 0.140.4: the year was twelve 30-day months, so a yearly 140 read 138.08.
+        assertEquals(BigDecimal("140.00"), SubscriptionTotals.yearly(sub("140.00", cadence = SubscriptionCadence.YEARLY)))
+        assertEquals(BigDecimal("140.00"), SubscriptionTotals.byCurrency(listOf(sub("140.00", cadence = SubscriptionCadence.YEARLY))).single().perYear)
+        assertEquals(BigDecimal("120.00"), SubscriptionTotals.yearly(sub("30.00", cadence = SubscriptionCadence.QUARTERLY)))
+        assertEquals(BigDecimal("10.00"), SubscriptionTotals.monthly(sub("30.00", cadence = SubscriptionCadence.QUARTERLY)))
+    }
+
+    @Test fun `weekly charges count 365 days a year, with their lines`() {
+        assertEquals(BigDecimal("521.43"), SubscriptionTotals.yearly(sub("10.00", cadence = SubscriptionCadence.WEEKLY)))
+        assertEquals(BigDecimal("43.45"), SubscriptionTotals.monthly(sub("10.00", cadence = SubscriptionCadence.WEEKLY)))
+        assertEquals(BigDecimal("1042.86"), SubscriptionTotals.yearly(sub("10.00", cadence = SubscriptionCadence.WEEKLY, lines = 2)))
+    }
+
+    @Test fun `one renewal takes the price times its lines`() {
+        assertEquals(0, SubscriptionTotals.perCharge(sub("50.00", lines = 2)).compareTo(BigDecimal("100.00")))
     }
 
     @Test fun `totals are per currency and skip dismissed rows`() {

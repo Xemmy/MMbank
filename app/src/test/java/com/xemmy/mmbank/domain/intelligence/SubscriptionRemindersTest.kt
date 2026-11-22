@@ -89,19 +89,25 @@ class SubscriptionRemindersTest {
         assertEquals(listOf("Sooner", "Later"), result.map { it.merchant })
     }
 
+    private val utc = java.time.ZoneOffset.UTC
+
     @Test
-    fun `daysUntil floors, and goes negative once overdue`() {
-        assertEquals(2, SubscriptionReminders.daysUntil(subscription(1, dueInDays = 2), now))
-        assertEquals(0, SubscriptionReminders.daysUntil(subscription(1, dueInDays = 0), now))
-        assertEquals(-1, SubscriptionReminders.daysUntil(subscription(1, dueInDays = -1), now))
+    fun `daysUntil counts calendar days, and goes negative once overdue`() {
+        assertEquals(2, SubscriptionReminders.daysUntil(subscription(1, dueInDays = 2), now, utc))
+        assertEquals(0, SubscriptionReminders.daysUntil(subscription(1, dueInDays = 0), now, utc))
+        assertEquals(-1, SubscriptionReminders.daysUntil(subscription(1, dueInDays = -1), now, utc))
     }
 
     @Test
-    fun `daysUntil rounds a partial day down rather than up`() {
+    fun `daysUntil names the calendar day, not whole 24-hour blocks`() {
+        // now is 22:13 UTC; 2.9 days later is 3 calendar days ahead (it used to floor to 2).
         val almostThree = subscription(1, dueInDays = 2).let {
             it.copy(nextDueDateMillis = it.nextDueDateMillis + dayMillis * 9 / 10)
         }
-        assertEquals(2, SubscriptionReminders.daysUntil(almostThree, now))
+        assertEquals(3, SubscriptionReminders.daysUntil(almostThree, now, utc))
+        // Later the same calendar day is still today.
+        val laterToday = subscription(1, dueInDays = 0).let { it.copy(nextDueDateMillis = it.nextDueDateMillis + 60 * 60 * 1000) }
+        assertEquals(0, SubscriptionReminders.daysUntil(laterToday, now, utc))
     }
 
     @Test

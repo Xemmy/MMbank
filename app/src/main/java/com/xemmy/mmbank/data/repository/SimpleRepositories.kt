@@ -564,22 +564,78 @@ class PayLaterRepositoryImpl(
         return PayResult.PAID
     }
 
+    private suspend fun endpointOf(accountId: Long?): com.xemmy.mmbank.domain.ledger.TransferLegs.Endpoint? =
+        accountId?.let { accountDao.getById(it) }?.let {
+            com.xemmy.mmbank.domain.ledger.TransferLegs.Endpoint(it.id, it.name, it.type, it.currencyCode)
+        }
+
+    /**
+     * The captured SMS takes the plan's payment shape ([PayLaterPayment.matchedShape]): for a plan
+     * whose full price was counted at purchase, the installment SMS is hidden from spending, or
+     * becomes a transfer to the provider's account when one is tracked. It used to stay an ordinary
+     * spend, so a full-price purchase of 400 in four installments counted 700.
+     */
     override suspend fun matchInstallment(installmentId: Long, transactionId: Long, paidAtMillis: Long) {
         val installment = dao.getInstallment(installmentId)?.toDomain() ?: return
         if (installment.isPaid) return
-        dao.updateInstallment(
-            com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, transactionId, paidAtMillis).toEntity(),
-        )
+        val plan = dao.getPlan(installment.planId)?.toDomain()
+        val matched = transactionDao.getById(transactionId)
+        val shape = if (plan != null && matched != null) {
+            com.xemmy.mmbank.domain.paylater.PayLaterPayment.matchedShape(plan, matched.accountId)
+        } else {
+            com.xemmy.mmbank.domain.paylater.PayLaterPayment.Shape.SPEND
+        }
+        val from = if (shape == com.xemmy.mmbank.domain.paylater.PayLaterPayment.Shape.TRANSFER_PAIR) endpointOf(matched?.accountId) else null
+        val to = if (from != null) endpointOf(plan?.payToAccountId)?.takeIf { it.accountId != from.accountId } else null
+        database.withTransaction {
+            when (shape) {
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.Shape.SPEND -> Unit
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.Shape.EXCLUDED_DEBIT ->
+                    transactionDao.bulkSetExcludeFromStats(listOf(transactionId), true)
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.Shape.TRANSFER_PAIR -> {
+                    val counterpart = if (plan != null && from != null && to != null) {
+                        com.xemmy.mmbank.domain.paylater.PayLaterPayment.build(plan, installment, from, to, paidAtMillis)
+                    } else {
+                        null
+                    }
+                    val leg = counterpart?.counterpart
+                    if (counterpart != null && leg != null) {
+                        val otherId = transactionDao.insert(leg.copy(isDemo = plan?.isDemo ?: false).toEntity())
+                        val kind = counterpart.paying.kind
+                        val category = com.xemmy.mmbank.domain.model.SpendingCategory.TRANSFERS
+                        transactionDao.linkAsTransfer(transactionId, otherId, kind, category)
+                        transactionDao.linkAsTransfer(otherId, transactionId, kind, category)
+                    } else {
+                        transactionDao.bulkSetExcludeFromStats(listOf(transactionId), true)
+                    }
+                }
+            }
+            dao.updateInstallment(
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, transactionId, paidAtMillis).toEntity(),
+            )
+        }
     }
 
     override suspend fun undoPayment(installmentId: Long) {
         val installment = dao.getInstallment(installmentId)?.toDomain() ?: return
         if (!installment.isPaid) return
         val payingId = installment.paymentTransactionId
+        val paying = payingId?.let { transactionDao.getById(it) }
+        val label = com.xemmy.mmbank.domain.paylater.PayLaterPayment.LABEL
         // Only transactions this feature recorded are removed; a matched SMS or the split's own charge stays.
-        if (payingId != null && transactionDao.getById(payingId)?.matchedRuleName == com.xemmy.mmbank.domain.paylater.PayLaterPayment.LABEL) {
-            val partnerId = transactionDao.getById(payingId)?.linkedTransactionId
-            transactions.deleteMany(listOfNotNull(payingId, partnerId))
+        if (paying != null && paying.matchedRuleName == label) {
+            transactions.deleteMany(listOfNotNull(paying.id, paying.linkedTransactionId))
+        } else if (paying != null) {
+            // An auto-matched SMS: undo what matching did to it, and keep the SMS itself.
+            val partner = paying.linkedTransactionId?.let { transactionDao.getById(it) }
+            if (partner != null && partner.matchedRuleName == label) transactions.deleteMany(listOf(partner.id))
+            val plan = dao.getPlan(installment.planId)?.toDomain()
+            if (plan != null && paying.excludeFromStats &&
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.matchedShape(plan, paying.accountId) !=
+                com.xemmy.mmbank.domain.paylater.PayLaterPayment.Shape.SPEND
+            ) {
+                transactionDao.bulkSetExcludeFromStats(listOf(paying.id), false)
+            }
         }
         dao.updateInstallment(com.xemmy.mmbank.domain.paylater.PayLaterPayment.markUnpaid(installment).toEntity())
     }

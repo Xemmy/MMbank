@@ -4844,3 +4844,17 @@ From the code review. Fixed:
 Tests: `BackupScopeTest` (4), `BillAdvancerTest` (+3, including the SMS after a manual Mark paid), `TransactionRetentionPlannerTest` (+2).
 
 Not covered by CI: Demo mode flows on a device (assign/category/delete/Subscriptions while demo is on), exporting in Demo mode and restoring that file, the CSV opened in a spreadsheet, and the UI staying responsive during export.
+
+## Bills, subscriptions and Insights maths (0.140.4)
+From the code review. Fixed:
+1. **Due-day off by one.** `BillReminders.daysUntil` / `SubscriptionReminders.daysUntil` floored elapsed milliseconds, so a bill stored at 00:00 tomorrow read "due today" and on the day itself "overdue by 1d" (Bills rows, Plan card, reminders, weekly digest), while Upcoming payments said otherwise. Both now count calendar days in the device's zone, like `UpcomingPayments`.
+2. **Yearly subscription totals.** The summary took a year as twelve 30-day months: a yearly AED 140 read 138.08/year. `SubscriptionTotals.yearly` is exact for month-based cadences (12 / months) and 365/7 charges for weekly; per month is exact for month-based cadences.
+3. **Parallel lines counted everywhere.** Upcoming payments, safe-to-spend and the monthly report used one line's price for a row with `lines = 2`. They now use `SubscriptionTotals.perCharge` / `monthly` (the report's weekly figure moves from 30/7 to 365/7÷12 a month).
+4. **"vs last period" compares like with like** (`PeriodComparison.previousWindow`): a week or year still in progress is compared with the same elapsed days last week/year ("this point last week"), a past calendar month with the previous calendar month (March vs February, not the 31 days before), a past year with the previous year. It compared Monday-Wednesday with all of last week, and year-to-date with the whole of last year.
+5. **Pay Later auto-match double count.** An installment SMS matched to a plan whose full price was counted at purchase stayed counted spending (400 in four parts showed 700). The matched SMS now takes the plan's payment shape (`PayLaterPayment.matchedShape`): hidden from spending, or a transfer to the provider's account when one is tracked; Undo reverses it and keeps the SMS.
+6. **Bills "Merge" could delete a real payment.** A bank row that only had a line stored later (attached from the history, or merged at capture) counted as a provider receipt, so two same-day, same-amount payments of two lines were offered as one. A receipt must now name the line in its own text, and two rows from the same sender are never a pair.
+7. **Renewal anchored to month-end by one stray charge.** A single charge on the 31st among charges on the 1st pushed every renewal ~30 days late. Month-end is kept only while the latest charge is on the 28th or later.
+
+Tests: `BillRemindersTest` / `SubscriptionRemindersTest` (calendar days, midnight due date), `SubscriptionTotalsTest` (+3), `MonthlyReportBuilderTest` (weekly 86.90), `PeriodComparisonTest` (+6), `SpendChangeLineTest` (+1), `PayLaterPaymentTest` (+3), `BillDuplicateFinderTest` (3), `SubscriptionRadarTest` (+1), `BillAdvancerTest` unchanged.
+
+Not covered by CI: the Insights caption and Bills/Plan due labels as rendered, a real Tabby installment SMS being matched and shown as a transfer or hidden on Activity, and Undo of a matched installment on a device.

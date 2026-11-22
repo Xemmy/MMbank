@@ -13,20 +13,51 @@ object SubscriptionTotals {
 
     data class Total(val currency: String, val perMonth: BigDecimal, val perYear: BigDecimal)
 
-    /** Monthly cost of one row: amount × lines, scaled from its cadence to 30 days. */
-    fun monthly(subscription: Subscription): BigDecimal =
-        subscription.averageAmount
-            .multiply(BigDecimal(subscription.lines.coerceAtLeast(1)))
-            .multiply(BigDecimal(30))
-            .divide(BigDecimal(subscription.cadence.nominalDays), 2, RoundingMode.HALF_UP)
+    /** What one renewal takes: the price × its parallel [Subscription.lines]. */
+    fun perCharge(subscription: Subscription): BigDecimal =
+        subscription.averageAmount.multiply(BigDecimal(subscription.lines.coerceAtLeast(1)))
+
+    /**
+     * Monthly cost of one row. Month-based cadences are exact (a quarterly 30 is 10 a month);
+     * weekly ones spread 365 days of charges over 12 months.
+     */
+    fun monthly(subscription: Subscription): BigDecimal {
+        val charge = perCharge(subscription)
+        val months = subscription.cadence.months
+        return if (months != null) {
+            charge.divide(BigDecimal(months), 2, RoundingMode.HALF_UP)
+        } else {
+            charge.multiply(BigDecimal(DAYS_PER_YEAR))
+                .divide(BigDecimal(subscription.cadence.nominalDays * 12), 2, RoundingMode.HALF_UP)
+        }
+    }
+
+    /**
+     * Yearly cost of one row: a yearly 140 is 140 (it read 138.08 when the year was taken as
+     * twelve 30-day months), a monthly 10 is 120, a weekly 10 is 365/7 charges.
+     */
+    fun yearly(subscription: Subscription): BigDecimal {
+        val charge = perCharge(subscription)
+        val months = subscription.cadence.months
+        return if (months != null) {
+            charge.multiply(BigDecimal(12)).divide(BigDecimal(months), 2, RoundingMode.HALF_UP)
+        } else {
+            charge.multiply(BigDecimal(DAYS_PER_YEAR)).divide(BigDecimal(subscription.cadence.nominalDays), 2, RoundingMode.HALF_UP)
+        }
+    }
+
+    private const val DAYS_PER_YEAR = 365
 
     /** One entry per currency, biggest first. Dismissed rows are ignored. */
     fun byCurrency(subscriptions: List<Subscription>): List<Total> =
         subscriptions.filter { !it.dismissed }
             .groupBy { it.currencyCode.uppercase() }
             .map { (currency, rows) ->
-                val month = rows.fold(BigDecimal.ZERO) { acc, s -> acc + monthly(s) }
-                Total(currency, month, month.multiply(BigDecimal(12)).setScale(2, RoundingMode.HALF_UP))
+                Total(
+                    currency,
+                    rows.fold(BigDecimal.ZERO) { acc, s -> acc + monthly(s) },
+                    rows.fold(BigDecimal.ZERO) { acc, s -> acc + yearly(s) },
+                )
             }
             .sortedByDescending { it.perMonth }
 

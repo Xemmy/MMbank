@@ -77,11 +77,24 @@ class BillRemindersTest {
         assertEquals(listOf("Sooner", "Later"), result.map { it.name })
     }
 
+    private val utc = java.time.ZoneOffset.UTC
+
     @Test
-    fun `daysUntil floors, and goes negative once overdue`() {
-        assertEquals(2, BillReminders.daysUntil(bill(1, dueInDays = 2), now))
-        assertEquals(0, BillReminders.daysUntil(bill(1, dueInDays = 0), now))
-        assertEquals(-1, BillReminders.daysUntil(bill(1, dueInDays = -1), now))
+    fun `daysUntil counts calendar days, and goes negative once overdue`() {
+        assertEquals(2, BillReminders.daysUntil(bill(1, dueInDays = 2), now, utc))
+        assertEquals(0, BillReminders.daysUntil(bill(1, dueInDays = 0), now, utc))
+        assertEquals(-1, BillReminders.daysUntil(bill(1, dueInDays = -1), now, utc))
+    }
+
+    @Test
+    fun `a bill due at midnight tomorrow is due tomorrow, and due today on the day`() {
+        val zone = java.time.ZoneId.of("Asia/Dubai")
+        val due = java.time.LocalDate.of(2026, 11, 23).atStartOfDay(zone).toInstant().toEpochMilli()
+        val midnightBill = bill(1, dueInDays = 0).copy(nextDueDateMillis = due)
+        val dayBefore = java.time.LocalDateTime.of(2026, 11, 22, 10, 0).atZone(zone).toInstant().toEpochMilli()
+        val onTheDay = java.time.LocalDateTime.of(2026, 11, 23, 15, 0).atZone(zone).toInstant().toEpochMilli()
+        assertEquals(1, BillReminders.daysUntil(midnightBill, dayBefore, zone))
+        assertEquals(0, BillReminders.daysUntil(midnightBill, onTheDay, zone))
     }
 
     @Test

@@ -5,11 +5,9 @@ import com.xemmy.mmbank.domain.intelligence.NetWorthAggregator
 import com.xemmy.mmbank.domain.model.FinancialHealthMetrics
 import com.xemmy.mmbank.domain.model.SavingsGoal
 import com.xemmy.mmbank.domain.model.Subscription
-import com.xemmy.mmbank.domain.model.SubscriptionCadence
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import java.math.BigDecimal
-import java.math.RoundingMode
 
 /** One category's share of a month's spend. */
 data class ReportCategoryLine(
@@ -170,19 +168,17 @@ object MonthlyReportBuilder {
     }
 
     /**
-     * Normalizes each cadence to a monthly figure using the same nominal day
-     * counts the detector itself uses ([SubscriptionCadence.nominalDays]), so a
-     * weekly charge is counted at 30/7 per month rather than a hand-picked 4.
+     * Normalizes each cadence to a monthly figure with
+     * [com.xemmy.mmbank.domain.intelligence.SubscriptionTotals.monthly]: month-based
+     * cadences exactly (quarterly / 3), weekly ones as 365/7 charges over 12 months,
+     * times the row's parallel lines.
      *
      * Takes the already-scoped list from [build] rather than re-filtering, so
      * there is one definition of "in this report" instead of two.
      */
     private fun subscriptionMonthlyTotal(subscriptions: List<Subscription>): BigDecimal =
-        subscriptions
-            .fold(BigDecimal.ZERO) { acc, subscription ->
-                val perMonth = subscription.averageAmount
-                    .multiply(BigDecimal(SubscriptionCadence.MONTHLY.nominalDays))
-                    .divide(BigDecimal(subscription.cadence.nominalDays), 2, RoundingMode.HALF_UP)
-                acc + perMonth
-            }
+        // The same per-month figure as the Subscriptions screen, parallel lines included.
+        subscriptions.fold(BigDecimal.ZERO) { acc, subscription ->
+            acc + com.xemmy.mmbank.domain.intelligence.SubscriptionTotals.monthly(subscription)
+        }
 }
