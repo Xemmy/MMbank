@@ -4876,3 +4876,10 @@ A hand-added subscription with no linked charges and a due date on the 29th–31
 Tests: `SubscriptionRescanTest` (+1), `SubscriptionFormTest` (+1), `MigrationSqlTest` (+1, schema 49), `EntityMappersTest` round-trip.
 
 Not covered by CI: the v48 → v49 upgrade on a real device and the add/edit dialog flow.
+
+## Card-ending routing no longer hard-codes one card (0.140.7)
+A keyword-less merchant notification ("AED27.60 with Tabby Cash Card ••4543") used to be captured only for the single ending 4543, written into the parser. `CardEndingRegistry` now holds no digits: a card-ending message is captured when its ending is one of the user's own credit-card accounts (account number or card endings, matched by suffix, read per message so a newly added card works at once) or when the text itself names a cash / pay-later card (Tabby, Tamara, Postpay, Spotii, "cash card"). Currency is the text's own, else the default currency (the fixed AED is gone). A stray ending with neither still captures nothing; `UnknownAccountSuggestions` still offers to add the card. Provenance labels are `cardending.account` / `cardending.marker`.
+
+Tests: `CardEndingRoutingTest` (+2, one changed).
+
+Not covered by CI: a real Tabby notification on a device and a newly added card ending being picked up live.

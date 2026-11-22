@@ -43,6 +43,8 @@ class IngestCapturedMessageUseCase(
     private val onGate1Miss: (CapturedMessage) -> Unit = {},
     private val fallbackCurrencyProvider: () -> String,
     private val ignoredMessages: IgnoredMessageCache? = null,
+    /** Digits of the user's own card endings, read per message so a newly added card works at once. */
+    private val trustedEndingsProvider: suspend () -> Set<String> = { emptySet() },
 ) {
 
     /**
@@ -92,7 +94,7 @@ class IngestCapturedMessageUseCase(
         }
         if (rules.isEmpty()) return IngestResult.NoMatch
 
-        val parser = TransactionParser(rules, fallbackCurrencyProvider())
+        val parser = TransactionParser(rules, fallbackCurrencyProvider(), trustedEndingsProvider())
         val parsed = parser.parse(message) ?: run {
             if (forwardOnMiss && AiForwardGate.isPlausibleTransaction(message.title, message.body)) {
                 onGate1Miss(message)

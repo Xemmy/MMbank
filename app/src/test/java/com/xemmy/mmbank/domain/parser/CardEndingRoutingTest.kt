@@ -39,7 +39,7 @@ class CardEndingRoutingTest {
         assertEquals(0, BigDecimal("27.60").compareTo(parsed.amount))
         assertEquals("AED", parsed.currencyCode)
         assertEquals("4543", parsed.accountNumberSuffix)
-        assertEquals("cardending.tabby.cash", parsed.matchedRuleName)
+        assertEquals("cardending.marker", parsed.matchedRuleName)
     }
 
     /** 2. The extractor recognizes every card-marker form and nothing else. */
@@ -56,7 +56,29 @@ class CardEndingRoutingTest {
     /** 3. An untrusted ending is never consumed — no fabricated transaction. */
     @Test
     fun unknownCardEnding_fallsThrough() {
-        assertNull(parser.parse(msg("AED27.60 with Tabby Cash Card ••9999")))
+        assertNull(parser.parse(msg("AED27.60 with card ••9999")))
+    }
+
+    /** 3b. An ending the user owns routes without any card wording. */
+    @Test
+    fun ownCardEnding_routesWithoutMarker() {
+        val own = TransactionParser(BuiltInRules.all, trustedCardEndings = setOf("7788"))
+        val parsed = own.parse(msg("AED 12.50 with card ••7788"))
+        assertNotNull(parsed)
+        assertEquals("cardending.account", parsed!!.matchedRuleName)
+        assertEquals("7788", parsed.accountNumberSuffix)
+        assertEquals(TransactionDirection.DEBIT, parsed.direction)
+        assertNull("another card still falls through", own.parse(msg("AED 12.50 with card ••9999")))
+    }
+
+    /** 3c. Endings compare by suffix, so a longer stored number still matches the printed last digits. */
+    @Test
+    fun registry_matchesBySuffix() {
+        val trusted = setOf("004543")
+        assertNotNull(CardEndingRegistry.lookup("4543", "x", trusted))
+        assertNull(CardEndingRegistry.lookup("4544", "x", trusted))
+        assertNull(CardEndingRegistry.lookup(null, "Tabby Cash Card", trusted))
+        assertNotNull(CardEndingRegistry.lookup("1111", "Spotii card ••1111", emptySet()))
     }
 
     /** 4. Regression: the non-spaced, no-thousands amount parses reliably. */

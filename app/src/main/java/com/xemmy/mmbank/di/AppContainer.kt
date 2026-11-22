@@ -658,8 +658,19 @@ class AppContainer(context: Context) {
             onGate1Miss = ::enqueueAiParsingWorker,
             fallbackCurrencyProvider = { preferences.defaultCurrency },
             ignoredMessages = ignoredMessageCache,
+            trustedEndingsProvider = ::trustedCardEndings,
         )
     }
+
+    /** Digits of every active credit-card account's number and card endings: the endings the parser may route on. */
+    private suspend fun trustedCardEndings(): Set<String> =
+        database.accountDao().getActive()
+            .filter { it.type == com.xemmy.mmbank.domain.model.AccountType.CREDIT_CARD }
+            .flatMap { listOfNotNull(it.accountNumber) + it.cardEndings.orEmpty().split(',', ';', ' ') }
+            .map { com.xemmy.mmbank.util.Digits.only(it) }
+            .filter { it.length >= 4 }
+            .map { it.takeLast(4) }
+            .toSet()
 
     val bulkUpdateTransactions: BulkUpdateTransactionsUseCase by lazy {
         BulkUpdateTransactionsUseCase(transactionRepository)

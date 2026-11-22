@@ -33,6 +33,8 @@ import com.xemmy.mmbank.util.LogRedactor
 class TransactionParser(
     rules: List<CompiledRule>,
     private val fallbackCurrency: String = DEFAULT_CURRENCY,
+    /** Digits of the user's own card endings; a keyword-less message with one of them is captured (see [CardEndingRegistry]). */
+    private val trustedCardEndings: Set<String> = emptySet(),
     /** Sink for non-fatal diagnostics (signature-collision ties). Redacted: rule names can echo message fragments. */
     private val onWarning: (String) -> Unit = { println("TransactionParser: ${LogRedactor.redactSensitiveData(it)}") },
 ) {
@@ -174,15 +176,13 @@ class TransactionParser(
      */
     private fun routeByCardEnding(text: String): ParsedTransaction? {
         val ending = CardEndingExtractor.extract(text) ?: return null
-        val route = CardEndingRegistry.lookup(ending) ?: return null
+        val route = CardEndingRegistry.lookup(ending, text, trustedCardEndings) ?: return null
 
         val extracted = GenericExtractors.extractAmount(text) ?: return null
 
         return ParsedTransaction(
             amount = extracted.amount,
-            currencyCode = extracted.currencyCode
-                ?: route.defaultCurrency
-                ?: fallbackCurrency,
+            currencyCode = extracted.currencyCode ?: fallbackCurrency,
             direction = route.direction,
             merchant = GenericExtractors.extractMerchant(text),
             matchedRuleName = route.label,
