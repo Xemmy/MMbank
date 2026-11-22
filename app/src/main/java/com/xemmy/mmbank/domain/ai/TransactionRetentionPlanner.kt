@@ -50,6 +50,7 @@ object TransactionRetentionPlanner {
         retentionMonths: Int,
         nowMillis: Long,
         anomalyMultiplier: BigDecimal = BigDecimal("3"),
+        protectedIds: Set<Long> = emptySet(),
     ): Plan {
         if (retentionMonths <= 0) return Plan(emptyList(), nowMillis)
         val cutoff = cutoffMillis(nowMillis, retentionMonths)
@@ -57,6 +58,8 @@ object TransactionRetentionPlanner {
 
         val toDelete = transactions.filter { tx ->
             tx.timestampMillis < cutoff &&
+                tx.id !in protectedIds &&
+                !isAnnotated(tx) &&
                 !AiRetentionScorer.isSignificant(
                     tx,
                     averageByCurrency[tx.currencyCode.uppercase()] ?: BigDecimal.ZERO,
@@ -65,6 +68,24 @@ object TransactionRetentionPlanner {
         }.map(Transaction::id)
 
         return Plan(toDelete, cutoff)
+    }
+
+    /** The user wrote something on it (a note) or it is a bill line's payment: kept whatever its age. */
+    private fun isAnnotated(tx: Transaction): Boolean = !tx.note.isNullOrBlank() || tx.billRef != null
+
+    /**
+     * Ids the prune must keep because something else points at them: a subscription's linked
+     * charges, a Pay Later plan's purchase and its paid installments, and labelled rows. Deleting
+     * them would shrink a subscription's history, un-pay an installment's record or drop a label.
+     */
+    fun protectedIds(
+        subscriptionCharges: Collection<Long>,
+        payLaterRows: Collection<Long>,
+        labelledRows: Collection<Long>,
+    ): Set<Long> = buildSet {
+        addAll(subscriptionCharges)
+        addAll(payLaterRows)
+        addAll(labelledRows)
     }
 
     /** Real, analytics-eligible debit spend averaged per calendar month present in the data, keyed by currency. */

@@ -823,6 +823,10 @@ interface BillDao {
     @Query("UPDATE bills SET nextDueDateMillis = :nextDueDateMillis WHERE id = :id")
     suspend fun updateNextDueDate(id: Long, nextDueDateMillis: Long)
 
+    /** "Mark paid": the next due date and when it was paid, together. */
+    @Query("UPDATE bills SET nextDueDateMillis = :nextDueDateMillis, lastPaidMillis = :paidAtMillis WHERE id = :id")
+    suspend fun markPaid(id: Long, nextDueDateMillis: Long, paidAtMillis: Long)
+
     @Query("DELETE FROM bills WHERE id = :id")
     suspend fun delete(id: Long)
 

@@ -138,7 +138,7 @@ class SubscriptionLinkViewModel(private val container: AppContainer) : ViewModel
         viewModelScope.launch {
             runCatching {
                 repository.link(charge.id, subscriptionId)
-                repository.rescan(container.transactionRepository.observeTransactions().first())
+                repository.rescan(container.transactionRepository.getAllReal())
             }.onFailure { container.recordError("SubscriptionLinkViewModel.attach", it) }
             onDone()
         }
@@ -150,7 +150,7 @@ class SubscriptionLinkViewModel(private val container: AppContainer) : ViewModel
                 val manual = SubscriptionLinks.manualFrom(charge)
                 val id = repository.saveManual(manual)
                 repository.link(charge.id, id)
-                repository.rescan(container.transactionRepository.observeTransactions().first())
+                repository.rescan(container.transactionRepository.getAllReal())
             }.onFailure { container.recordError("SubscriptionLinkViewModel.attachAsNew", it) }
             onDone()
         }
@@ -160,7 +160,7 @@ class SubscriptionLinkViewModel(private val container: AppContainer) : ViewModel
         viewModelScope.launch {
             runCatching {
                 repository.unlink(charge.id)
-                repository.rescan(container.transactionRepository.observeTransactions().first())
+                repository.rescan(container.transactionRepository.getAllReal())
             }.onFailure { container.recordError("SubscriptionLinkViewModel.detach", it) }
             onDone()
         }

@@ -403,9 +403,9 @@ class BillRepositoryImpl(private val dao: BillDao) : BillRepository {
      */
     override suspend fun markPaid(billId: Long) {
         val current = dao.getById(billId)?.toDomain() ?: return
-        val advanced = BillAdvancer.advance(current)
-        if (advanced != null) {
-            dao.updateNextDueDate(billId, advanced.nextDueDateMillis)
+        val paid = BillAdvancer.markPaid(current, System.currentTimeMillis())
+        if (paid != null) {
+            dao.markPaid(billId, paid.nextDueDateMillis, paid.lastPaidMillis ?: System.currentTimeMillis())
         } else {
             dao.delete(billId)
         }

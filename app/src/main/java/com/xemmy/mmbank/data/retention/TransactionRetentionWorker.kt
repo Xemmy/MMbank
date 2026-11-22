@@ -46,6 +46,7 @@ class TransactionRetentionWorker(
                 transactions = transactions,
                 retentionMonths = retentionMonths,
                 nowMillis = System.currentTimeMillis(),
+                protectedIds = container.retentionProtectedIds(),
             )
             // Deleting is permanent, so it needs a recent encrypted backup to fall back on;
             // without one this run does nothing and the Settings preview says why.

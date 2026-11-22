@@ -29,6 +29,9 @@ import com.xemmy.mmbank.data.local.entity.TransactionLabelEntity
 import com.xemmy.mmbank.data.local.entity.SenderLabelEntity
 import com.xemmy.mmbank.data.local.entity.TransactionEntity
 import com.xemmy.mmbank.data.prefs.AppPreferences
+import com.xemmy.mmbank.domain.backup.BackupScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.xemmy.mmbank.domain.account.AccountChangeDiff
 import com.xemmy.mmbank.domain.model.AccountChangeSource
 import com.xemmy.mmbank.domain.model.AccountChangeType
@@ -471,34 +474,48 @@ class BackupManager(
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    suspend fun export(password: CharArray): ByteArray {
+    /**
+     * Off the main thread: key derivation, AES and the JSON of the whole ledger are CPU work
+     * that froze the UI on a large ledger. Only real rows are exported, and every reference to
+     * a row outside the export is dropped (see [BackupScope]) so the file always restores.
+     */
+    suspend fun export(password: CharArray): ByteArray = withContext(Dispatchers.Default) {
+        val accountRows = database.accountDao().getAll()
+        val accountIds = accountRows.mapTo(HashSet()) { it.id }
+        val transactionRows = database.transactionDao().getAll()
+        val transactionIds = transactionRows.mapTo(HashSet()) { it.id }
         val payload = BackupPayload(
             formatVersion = 24,
             exportedAtMillis = System.currentTimeMillis(),
             defaultCurrency = preferences.defaultCurrency,
             cashbackSpendRaw = preferences.cashbackSpendRaw,
-            personsRaw = preferences.personsRaw,
+            personsRaw = BackupScope.personsRaw(preferences.demoModeEnabled, preferences.personsRaw, preferences.demoPersonsBackup),
             inactivePersonsRaw = preferences.inactivePersonsRaw,
-            accounts = database.accountDao().getAll().map { it.toBackup() },
-            transactions = database.transactionDao().getAll().map { it.toBackup() },
+            accounts = accountRows.map { it.toBackup() },
+            transactions = transactionRows.map { row ->
+                row.toBackup().let { it.copy(accountId = BackupScope.exportedAccountOrNull(it.accountId, accountIds)) }
+            },
             rules = database.parsingRuleDao().getAll().map { it.toBackup() },
             senderLabels = database.senderLabelDao().getAll().map { BackupSenderLabel(it.sender, it.label) },
             categories = database.categoryDao().getAll().map { it.toBackup() },
             merchantCategoryMappings = database.merchantCategoryDao().getAll().map { it.toBackup() },
             ignoredMessagePatterns = database.ignoredMessagePatternDao().getAll().map { it.toBackup() },
-            merchantAccountMappings = database.merchantAccountDao().getAll().map { it.toBackup() },
+            merchantAccountMappings = BackupScope.referencingExported(database.merchantAccountDao().getAll(), accountIds) { it.accountId }
+                .map { it.toBackup() },
             merchantKindMappings = database.merchantKindDao().getAll().map { it.toBackup() },
             ignoredKeywords = database.ignoredKeywordDao().getAll().map { it.toBackup() },
             merchantAliases = database.merchantAliasDao().getAll().map { BackupMerchantAlias(it.fromKey, it.toName) },
             accountChanges = database.accountChangeDao().getAll().map { it.toBackup() },
             labels = database.labelDao().getAll().map { BackupLabel(it.id, it.name, it.colorHex) },
-            transactionLabels = database.labelDao().getAllLinks().map { BackupTransactionLabel(it.transactionId, it.labelId) },
+            transactionLabels = BackupScope.referencingExported(database.labelDao().getAllLinks(), transactionIds) { it.transactionId }
+                .map { BackupTransactionLabel(it.transactionId, it.labelId) },
             extras = BackupExtras(
                 bills = database.billDao().getAll().map { it.toBackup() },
                 payLaterPlans = database.payLaterDao().getAllPlans().map { it.toBackup() },
                 payLaterInstallments = database.payLaterDao().getAllInstallments().map { it.toBackup() },
                 manualSubscriptions = database.subscriptionDao().getManual().map { it.toBackup() },
-                subscriptionLinks = database.subscriptionDao().getAllLinks().map { BackupSubscriptionLink(it.transactionId, subscriptionId = it.subscriptionId) },
+                subscriptionLinks = BackupScope.referencingExported(database.subscriptionDao().getAllLinks(), transactionIds) { it.transactionId }
+                    .map { BackupSubscriptionLink(it.transactionId, subscriptionId = it.subscriptionId) },
                 goals = database.savingsGoalDao().getAll().map { it.toBackup() },
                 friends = database.friendDao().getAll().map { it.toBackup() },
                 groups = database.splitGroupDao().getAll().map { it.toBackup() },
@@ -511,7 +528,7 @@ class BackupManager(
                 fixedMonthlyExpenses = preferences.fixedMonthlyExpenses,
             ),
         )
-        return BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
+        BackupCrypto.encrypt(json.encodeToString(payload).toByteArray(Charsets.UTF_8), password)
     }
 
     /**
@@ -519,8 +536,9 @@ class BackupManager(
      * [export] this is NOT encrypted — it carries no rule patterns or settings,
      * just the ledger rows, with account ids resolved to names. RFC-4180 quoting.
      */
-    suspend fun exportCsv(): String {
+    suspend fun exportCsv(): String = withContext(Dispatchers.Default) {
         val accountNames = database.accountDao().getAll().associate { it.id to it.name }
+        val categoryNames = database.categoryDao().getAll().associate { it.id to it.name }
         val txs = database.transactionDao().getAll().sortedByDescending { it.timestamp }
         val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
         val header = listOf(
@@ -536,7 +554,8 @@ class BackupManager(
                 t.amount.toPlainString(),
                 t.currencyCode,
                 t.merchant.orEmpty(),
-                t.spendingCategory.label,
+                // The category the user filed it under (categoryId), not the capture-time guess.
+                BackupScope.csvCategory(t.categoryId, categoryNames),
                 t.accountId?.let { accountNames[it] }.orEmpty(),
                 t.person.orEmpty(),
                 t.source.name,
@@ -545,7 +564,7 @@ class BackupManager(
             )
             sb.append(row.joinToString(",", transform = ::csvEscape)).append("\r\n")
         }
-        return sb.toString()
+        sb.toString()
     }
 
     private fun csvEscape(value: String): String {
@@ -556,9 +575,10 @@ class BackupManager(
 
     /** @return counts (accounts, transactions) for the status message. */
     suspend fun import(blob: ByteArray, password: CharArray): Pair<Int, Int> {
-        val payload = json.decodeFromString<BackupPayload>(
-            BackupCrypto.decrypt(blob, password).toString(Charsets.UTF_8)
-        )
+        // Key derivation, AES and JSON parsing off the main thread.
+        val payload = withContext(Dispatchers.Default) {
+            json.decodeFromString<BackupPayload>(BackupCrypto.decrypt(blob, password).toString(Charsets.UTF_8))
+        }
         // A v1 backup (formatVersion < 2) never captured categories or
         // merchant mappings in the first place -- restoring one must leave
         // whatever the user has built up since upgrading untouched, not wipe

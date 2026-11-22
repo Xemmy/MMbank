@@ -4828,3 +4828,19 @@ From the code review. Fixed:
 Tests: `CaptureDedupPolicyTest` (+9: SMS copy hours later, notification before the SMS, different text / >12 h, identical SMS twice, already-paired bank SMS, two receipts, bank + provider naming the line, two cards, bank then receipt after hours), `CaptureAlertGateTest` (5).
 
 Not covered by CI: the SMS app's real notification text matching the SMS body (if the messaging app adds or trims text, the copy is not merged and stays a duplicate as before), and the repository/AppContainer wiring (Room, coroutines) on a device.
+
+## Demo mode stays out of real data; backup, bill and prune fixes (0.140.3)
+From the code review. Fixed:
+1. **Demo mode wrote into real data.**
+   - Assigning a demo transaction to a demo account stored a merchant → *demo* account rule (replacing the real rule for that merchant) and moved **real** unassigned rows from that merchant onto the demo account, which is deleted when Demo mode ends. Picking a category on a demo row did the same to real rows' categories. No merchant rule (account or category) is learned while Demo mode is on (`MerchantAccountRepositoryImpl` / `CategoryRepositoryImpl` take `isDemoMode`); the row itself still changes.
+   - The Subscriptions screen (scan, Track, Never, edit, link, the charge pickers) rescanned the shared subscription table with the demo ledger, deleting real detections and linking demo charges to real rows. It now always uses the real ledger, as capture already did.
+   - Deleting a category while Demo mode was on moved only the demo rows, leaving real rows on a deleted category (out of every budget, not in Uncategorized). `CategoryRepository.deleteReassigning` moves real and demo rows, the merchant rules and the delete in one transaction.
+   - A backup exported in Demo mode carried the demo people and could fail to restore (a label on a demo row, a rule for a demo account, a real row filed on a demo account all break foreign keys on import). Export now takes the real people list and drops any reference to a row not in the file (`BackupScope`).
+2. **"Mark paid" didn't record when.** `BillAdvancer.markPaid` stamps `lastPaidMillis`, so the bank SMS that follows a manual Mark paid no longer advances the bill a second month. The card now reads "Last paid … Tap for history." (it no longer claims "(from SMS)" for a hand-marked payment).
+3. **CSV "Category"** is the category the user filed the row under (`categoryId`), not the keyword guess made at capture; empty when uncategorised.
+4. **Backup encryption off the main thread.** PBKDF2, AES and the whole-ledger JSON (export, import, CSV) run on `Dispatchers.Default`; on a big ledger they froze the UI.
+5. **History prune (opt-in) keeps linked rows:** subscription charges, a Pay Later plan's purchase and paid installments, labelled rows, rows with a note and bill-line payments (`TransactionRetentionPlanner.protectedIds`; the Settings preview counts the same). Reads and deletes run in chunks of 500 (the unencrypted fallback's 999-variable limit).
+
+Tests: `BackupScopeTest` (4), `BillAdvancerTest` (+3, including the SMS after a manual Mark paid), `TransactionRetentionPlannerTest` (+2).
+
+Not covered by CI: Demo mode flows on a device (assign/category/delete/Subscriptions while demo is on), exporting in Demo mode and restoring that file, the CSV opened in a spreadsheet, and the UI staying responsive during export.

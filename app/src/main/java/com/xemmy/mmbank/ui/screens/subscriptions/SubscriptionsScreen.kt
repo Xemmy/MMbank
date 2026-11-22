@@ -153,7 +153,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         viewModelScope.launch {
             scanning.value = true
             runCatching {
-                val transactions = container.transactionRepository.observeTransactions().first()
+                val transactions = container.transactionRepository.getAllReal()
                 val counts = container.subscriptionRepository.rescan(transactions)
                 lastResult.value = counts
                 _events.tryEmit(UndoEvent(scanMessage(counts), null))
@@ -184,7 +184,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
 
     /** Links every unlinked charge with the same brand key and an amount within 5% to the open subscription. */
     fun linkSimilar() = changeLink { sub, repository ->
-        val all = container.transactionRepository.observeTransactions().first()
+        val all = container.transactionRepository.getAllReal()
         SubscriptionLinks.similar(all, repository.links(), sub).forEach { repository.link(it.id, sub.id) }
     }
 
@@ -197,7 +197,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
             runCatching {
                 val repository = container.subscriptionRepository
                 change(open, repository)
-                repository.rescan(container.transactionRepository.observeTransactions().first())
+                repository.rescan(container.transactionRepository.getAllReal())
                 // The rescan may have refreshed the row; show its current figures.
                 val fresh = repository.observeActive().first().firstOrNull { it.id == open.id } ?: open
                 _charges.value = loadCharges(fresh)
@@ -208,7 +208,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
     private suspend fun loadCharges(subscription: Subscription): ChargesState {
         val repository = container.subscriptionRepository
         val links = repository.links()
-        val all = container.transactionRepository.observeTransactions().first()
+        val all = container.transactionRepository.getAllReal()
         return ChargesState(
             subscription = subscription,
             linked = repository.linkedTransactions(subscription.id).sortedByDescending { it.timestampMillis },
@@ -224,7 +224,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
     fun openPicker() {
         viewModelScope.launch {
             runCatching {
-                val all = container.transactionRepository.observeTransactions().first()
+                val all = container.transactionRepository.getAllReal()
                 _pickable.value = SubscriptionLinks.pickable(all, container.subscriptionRepository.links(), limit = Int.MAX_VALUE)
             }.onFailure { container.recordError("SubscriptionsViewModel.openPicker", it) }
         }
@@ -243,7 +243,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
                 val manual = SubscriptionLinks.manualFrom(charge)
                 val id = repository.saveManual(manual)
                 repository.link(charge.id, id)
-                repository.rescan(container.transactionRepository.observeTransactions().first())
+                repository.rescan(container.transactionRepository.getAllReal())
             }.onFailure { container.recordError("SubscriptionsViewModel.createFrom", it) }
         }
     }
@@ -270,7 +270,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         viewModelScope.launch {
             runCatching {
                 setNever(key, true)
-                container.subscriptionRepository.rescan(container.transactionRepository.observeTransactions().first())
+                container.subscriptionRepository.rescan(container.transactionRepository.getAllReal())
                 _events.tryEmit(UndoEvent("${subscription.merchant} will never be detected") { allow(key) })
             }.onFailure { container.recordError("SubscriptionsViewModel.markNever", it) }
             _charges.value = null
@@ -282,7 +282,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
         viewModelScope.launch {
             runCatching {
                 setNever(key, false)
-                container.subscriptionRepository.rescan(container.transactionRepository.observeTransactions().first())
+                container.subscriptionRepository.rescan(container.transactionRepository.getAllReal())
             }.onFailure { container.recordError("SubscriptionsViewModel.allow", it) }
         }
     }
@@ -356,7 +356,7 @@ class SubscriptionsViewModel(private val container: AppContainer) : ViewModel() 
             runCatching {
                 val repository = container.subscriptionRepository
                 repository.saveManual(subscription)
-                repository.rescan(container.transactionRepository.observeTransactions().first())
+                repository.rescan(container.transactionRepository.getAllReal())
                 val fresh = repository.observeActive().first().firstOrNull { it.id == subscription.id } ?: subscription
                 if (_charges.value != null) _charges.value = loadCharges(fresh)
             }.onFailure { container.recordError("SubscriptionsViewModel.saveEdit", it) }

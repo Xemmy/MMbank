@@ -390,7 +390,7 @@ private fun BillRow(bill: Bill, onOpen: () -> Unit, onMarkPaid: () -> Unit, onLo
                 Text(
                     "Last paid " + java.time.Instant.ofEpochMilli(paid).atZone(java.time.ZoneId.systemDefault())
                         .toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy")) +
-                        if (bill.providerKey != null) " (from SMS). Tap for history." else "",
+                        if (bill.providerKey != null) ". Tap for history." else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MMTheme.colors.textSecondary,
                 )

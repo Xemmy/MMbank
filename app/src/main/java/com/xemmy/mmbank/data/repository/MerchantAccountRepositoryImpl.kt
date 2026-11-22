@@ -16,6 +16,12 @@ class MerchantAccountRepositoryImpl(
     private val database: AppDatabase,
     /** Told when backfilled history left a corrected balance where it was; see [AccountChangeRecorder]. */
     onBalanceKept: (String) -> Unit = {},
+    /**
+     * Demo mode on. Assigning a demo row to a demo account must not store a merchant rule: it
+     * would replace the user's real rule for that merchant and move REAL unassigned rows onto a
+     * demo account that is deleted when Demo mode ends. Nothing is learned while it is on.
+     */
+    private val isDemoMode: () -> Boolean = { false },
 ) : MerchantAccountRepository {
 
     private val dao get() = database.merchantAccountDao()
@@ -40,7 +46,7 @@ class MerchantAccountRepositoryImpl(
      */
     override suspend fun learnMapping(merchant: String, accountId: Long): Int {
         val trimmed = merchant.trim()
-        if (trimmed.isEmpty()) return 0
+        if (trimmed.isEmpty() || isDemoMode()) return 0
 
         return database.withTransaction {
             dao.upsert(

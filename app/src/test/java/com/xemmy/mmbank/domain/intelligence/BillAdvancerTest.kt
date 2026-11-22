@@ -156,4 +156,41 @@ class BillAdvancerTest {
         assertEquals(at(2026, 2, 28), d(feb))
         assertEquals(at(2026, 3, 30), d(mar))
     }
+
+    // --- 0.140.3: "Mark paid" remembers when, so the bank SMS that follows doesn't pay it again ---
+
+    @Test
+    fun `mark paid advances one cycle and stamps the paid time`() {
+        val now = at(2026, 11, 20, 14, 0).atZone(zone).toInstant().toEpochMilli()
+        val paid = BillAdvancer.markPaid(bill(BillRecurrence.MONTHLY, at(2026, 11, 5)), now, zone)!!
+        assertEquals(now, paid.lastPaidMillis)
+        assertEquals(at(2026, 12, 5), java.time.Instant.ofEpochMilli(paid.nextDueDateMillis).atZone(zone).toLocalDateTime())
+    }
+
+    @Test
+    fun `a one-off bill marked paid is gone`() {
+        assertNull(BillAdvancer.markPaid(bill(null, at(2026, 11, 5)), 0L, zone))
+    }
+
+    @Test
+    fun `the bank SMS after a manual mark paid does not advance the bill again`() {
+        val now = at(2026, 11, 20, 14, 0).atZone(zone).toInstant().toEpochMilli()
+        val provider = bill(BillRecurrence.MONTHLY, at(2026, 11, 5)).copy(name = "du", providerKey = "du")
+        val paid = BillAdvancer.markPaid(provider, now, zone)!!
+        val sms = com.xemmy.mmbank.domain.model.Transaction(
+            amount = BigDecimal("299.00"),
+            currencyCode = "AED",
+            direction = com.xemmy.mmbank.domain.model.TransactionDirection.DEBIT,
+            merchant = "du",
+            source = com.xemmy.mmbank.domain.model.TransactionSource.SMS,
+            timestampMillis = now + 10 * 60 * 1000,
+        )
+        assertNull(BillAutoMatch.match(listOf(paid), sms, zone))
+        // Without the stamp (0.140.2 and earlier) the same SMS paid the December cycle too.
+        assertEquals(
+            at(2027, 1, 5),
+            java.time.Instant.ofEpochMilli(BillAutoMatch.match(listOf(paid.copy(lastPaidMillis = null)), sms, zone)!!.nextDueDateMillis)
+                .atZone(zone).toLocalDateTime(),
+        )
+    }
 }

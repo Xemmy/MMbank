@@ -579,7 +579,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             retentionPreview = runCatching {
                 val rows = container.transactionRepository.getAllReal()
-                val plan = TransactionRetentionPlanner.plan(rows, months, System.currentTimeMillis())
+                val plan = TransactionRetentionPlanner.plan(
+                    rows, months, System.currentTimeMillis(), protectedIds = container.retentionProtectedIds(),
+                )
                 val now = System.currentTimeMillis()
                 val last = container.preferences.lastBackupAt
                 RetentionPreview.describe(

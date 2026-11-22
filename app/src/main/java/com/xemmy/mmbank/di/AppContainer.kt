@@ -517,7 +517,7 @@ class AppContainer(context: Context) {
     }
 
     val categoryRepository: CategoryRepository by lazy {
-        CategoryRepositoryImpl(database)
+        CategoryRepositoryImpl(database, isDemoMode = { demoModeEnabled.value })
     }
 
     /**
@@ -527,7 +527,11 @@ class AppContainer(context: Context) {
      * [transactionRepository].
      */
     val merchantAccountRepository: MerchantAccountRepository by lazy {
-        MerchantAccountRepositoryImpl(database, onBalanceKept = { ledgerNotices.tryEmit(it) })
+        MerchantAccountRepositoryImpl(
+            database,
+            onBalanceKept = { ledgerNotices.tryEmit(it) },
+            isDemoMode = { demoModeEnabled.value },
+        )
     }
     val parsingRuleRepository: ParsingRuleRepository by lazy {
         ParsingRuleRepositoryImpl(database.parsingRuleDao(), demoModeEnabled)
@@ -952,6 +956,17 @@ class AppContainer(context: Context) {
                 com.xemmy.mmbank.domain.intelligence.BillAutoMatch.reassign(bills, transaction).forEach { billRepository.save(it) }
             }.onFailure { recordError("AppContainer.reassignProviderBill", it) }
         }
+    }
+
+    /** Rows the opt-in history prune keeps whatever their age (see [TransactionRetentionPlanner.protectedIds]). */
+    suspend fun retentionProtectedIds(): Set<Long> {
+        val installments = payLaterRepository.observeInstallments().first()
+        val plans = payLaterRepository.observePlans().first()
+        return com.xemmy.mmbank.domain.ai.TransactionRetentionPlanner.protectedIds(
+            subscriptionCharges = subscriptionRepository.links().map { it.transactionId },
+            payLaterRows = installments.mapNotNull { it.paymentTransactionId } + plans.mapNotNull { it.sourceTransactionId },
+            labelledRows = labelRepository.observeLinks().first().map { it.transactionId },
+        )
     }
 
     private fun refreshSubscriptionForMerchant(transaction: Transaction) {

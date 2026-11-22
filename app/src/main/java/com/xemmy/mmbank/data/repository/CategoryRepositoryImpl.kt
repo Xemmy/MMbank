@@ -15,7 +15,15 @@ import com.xemmy.mmbank.domain.repository.CategoryRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryRepository {
+class CategoryRepositoryImpl(
+    private val database: AppDatabase,
+    /**
+     * Demo mode on. A merchant rule learned from a demo row would re-categorize the user's REAL
+     * rows from that merchant (the backfill sees every row) and replace their real rule, so no
+     * rule is learned while Demo mode is on; the row itself still gets the chosen category.
+     */
+    private val isDemoMode: () -> Boolean = { false },
+) : CategoryRepository {
 
     private val categoryDao get() = database.categoryDao()
     private val mappingDao get() = database.merchantCategoryDao()
@@ -68,6 +76,15 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
         return ok
     }
 
+    override suspend fun deleteReassigning(id: Long, reassignTo: Long?) {
+        database.withTransaction {
+            database.transactionDao().reassignCategory(id, reassignTo, false)
+            database.transactionDao().reassignCategory(id, reassignTo, true)
+            repointMappings(id, reassignTo)
+            delete(id)
+        }
+    }
+
     override suspend fun repointMappings(oldCategoryId: Long, newCategoryId: Long?): Int =
         if (newCategoryId != null) {
             mappingDao.repointCategory(oldCategoryId, newCategoryId)
@@ -89,6 +106,7 @@ class CategoryRepositoryImpl(private val database: AppDatabase) : CategoryReposi
     override suspend fun findCategoryIdByName(name: String): Long? = categoryDao.getByName(name)?.id
 
     override suspend fun learnMapping(merchant: String, categoryId: Long, isExactMatch: Boolean): Int {
+        if (isDemoMode()) return 0
         mappingDao.upsert(
             MerchantCategoryMappingEntity(
                 merchantPattern = merchant,

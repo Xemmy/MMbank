@@ -41,6 +41,11 @@ class RetentionPruner(
      */
     data class Result(val deleted: Int, val accountsAdjusted: Int)
 
+    private companion object {
+        /** Well under SQLite's 999 bound-variable limit for `id IN (...)`. */
+        const val ID_CHUNK = 500
+    }
+
     /**
      * Deletes [plannedIds] and folds their net into the affected accounts'
      * opening balances. Rows belonging to no account are deleted with no fold
@@ -60,7 +65,8 @@ class RetentionPruner(
 
             // Read the rows INSIDE the transaction: the fold has to describe
             // exactly the rows the delete below removes.
-            val rawEntries = transactionDao.getLedgerEntriesByIds(plannedIds).map { row ->
+            // Chunked: the unencrypted-SQLite fallback on older Android allows 999 bound values.
+            val rawEntries = plannedIds.chunked(ID_CHUNK).flatMap { transactionDao.getLedgerEntriesByIds(it) }.map { row ->
                 AccountBalanceCalculator.LedgerEntry(
                     accountId = row.accountId,
                     amount = row.amount,
@@ -84,7 +90,7 @@ class RetentionPruner(
                     byId[adj.accountId]?.let { AccountChangeDiff.retentionFolded(it, adj, now).toEntity() }
                 },
             )
-            val deleted = transactionDao.deleteMany(plannedIds)
+            val deleted = plannedIds.chunked(ID_CHUNK).sumOf { transactionDao.deleteMany(it) }
             if (logCutoffMillis != null) database.accountChangeDao().deleteOlderThan(logCutoffMillis)
 
             Result(deleted = deleted, accountsAdjusted = adjustments.size)

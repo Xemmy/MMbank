@@ -233,10 +233,10 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun delete(category: Category, reassignTo: Long?) {
         viewModelScope.launch {
+            // Real and demo rows both move: the category is shared, so a delete made while Demo
+            // mode is on must not leave real rows pointing at a category that no longer exists.
             runCatching {
-                container.transactionRepository.reassignCategory(category.id, reassignTo)
-                container.categoryRepository.repointMappings(category.id, reassignTo)
-                container.categoryRepository.delete(category.id)
+                container.categoryRepository.deleteReassigning(category.id, reassignTo)
             }.onFailure { container.recordError("CategoriesViewModel.delete", it) }
         }
     }

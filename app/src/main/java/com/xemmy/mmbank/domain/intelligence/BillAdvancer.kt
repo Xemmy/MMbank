@@ -58,4 +58,12 @@ object BillAdvancer {
 
         return bill.copy(nextDueDateMillis = next.toInstant().toEpochMilli())
     }
+
+    /**
+     * The user tapped "Mark paid" at [nowMillis]: [advance], and remember when it was paid.
+     * [BillAutoMatch] ignores a second payment within 20 days of [Bill.lastPaidMillis]; without
+     * the stamp, the bank SMS that follows a manual "Mark paid" advanced the bill a second month.
+     */
+    fun markPaid(bill: Bill, nowMillis: Long, zone: ZoneId = ZoneId.systemDefault()): Bill? =
+        advance(bill, zone)?.copy(lastPaidMillis = nowMillis)
 }

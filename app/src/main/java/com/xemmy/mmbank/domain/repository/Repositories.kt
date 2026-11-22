@@ -250,6 +250,13 @@ interface CategoryRepository {
     suspend fun merge(fromId: Long, intoId: Long): Boolean
 
     /**
+     * Deletes category [id] in one transaction: every transaction filed under it -- real AND demo,
+     * since categories are shared by both -- moves to [reassignTo] (or becomes uncategorized when
+     * null), the learned merchant rules follow it, and its sub-categories become top-level.
+     */
+    suspend fun deleteReassigning(id: Long, reassignTo: Long?)
+
+    /**
      * Re-homes the learned merchant rules that pointed at a category being
      * deleted: onto [newCategoryId], or dropped entirely when it is null.
      * Returns the number of rules affected.

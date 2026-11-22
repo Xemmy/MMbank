@@ -113,4 +113,34 @@ class TransactionRetentionPlannerTest {
         val plan = TransactionRetentionPlanner.plan(emptyList(), retentionMonths = 12, nowMillis = now)
         assertEquals(emptyList<Long>(), plan.transactionIdsToDelete)
     }
+
+    // --- 0.140.3: rows something else points at are kept ---
+
+    @Test
+    fun `linked labelled noted and bill-line rows are kept whatever their age`() {
+        val old = monthsAgoMillis(24)
+        val transactions = listOf(
+            tx(1, "50", old),
+            tx(2, "50", old),
+            tx(3, "50", old),
+            tx(4, "50", old),
+            tx(5, "50", old).copy(note = "Birthday gift"),
+            tx(6, "50", old).copy(billRef = "4567"),
+        )
+        val protected = TransactionRetentionPlanner.protectedIds(
+            subscriptionCharges = listOf(2L),
+            payLaterRows = listOf(3L),
+            labelledRows = listOf(4L),
+        )
+        val plan = TransactionRetentionPlanner.plan(transactions, retentionMonths = 12, nowMillis = now, protectedIds = protected)
+        assertEquals(listOf(1L), plan.transactionIdsToDelete)
+    }
+
+    @Test
+    fun `a blank note does not protect a row`() {
+        val plan = TransactionRetentionPlanner.plan(
+            listOf(tx(1, "50", monthsAgoMillis(24)).copy(note = "  ")), retentionMonths = 12, nowMillis = now,
+        )
+        assertEquals(listOf(1L), plan.transactionIdsToDelete)
+    }
 }
