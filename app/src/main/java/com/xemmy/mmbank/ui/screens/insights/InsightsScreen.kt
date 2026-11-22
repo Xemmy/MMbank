@@ -145,7 +145,7 @@ fun InsightsScreen(
         item(key = "date_filter_row") {
             var customOpen by remember { mutableStateOf(false) }
             val period by viewModel.period.collectAsStateWithLifecycle()
-            val today = remember { LocalDate.now() }
+            val today = com.xemmy.mmbank.ui.util.rememberCurrentDate()
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 PeriodBar(
                     window = period,

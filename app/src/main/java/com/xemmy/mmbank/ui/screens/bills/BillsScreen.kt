@@ -62,6 +62,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -175,10 +176,20 @@ class BillsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** One "Mark paid" per bill cycle: a double tap used to advance the bill two months. */
+    private val paidCycles = com.xemmy.mmbank.util.WriteOnce<Pair<Long, Long>>()
+
     fun markPaid(billId: Long) {
         viewModelScope.launch {
+            val due = runCatching { container.billRepository.observeAll().first().firstOrNull { it.id == billId }?.nextDueDateMillis }
+                .getOrNull() ?: return@launch
+            val key = billId to due
+            if (!paidCycles.claim(key)) return@launch
             runCatching { container.billRepository.markPaid(billId) }
-                .onFailure { container.recordError("BillsViewModel.markPaid", it) }
+                .onFailure {
+                    paidCycles.release(key)
+                    container.recordError("BillsViewModel.markPaid", it)
+                }
         }
     }
 
@@ -344,7 +355,9 @@ private fun BillRow(bill: Bill, onOpen: () -> Unit, onMarkPaid: () -> Unit, onLo
             dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
         )
     }
-    val now = remember { System.currentTimeMillis() }
+    // Re-read when the date changes (midnight, or back from the background), so "due today" moves on.
+    val today = com.xemmy.mmbank.ui.util.rememberCurrentDate()
+    val now = remember(today) { System.currentTimeMillis() }
     val days = BillReminders.daysUntil(bill, now)
     val whenText = when {
         days < 0L -> "overdue by ${-days}d"

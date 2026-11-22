@@ -45,7 +45,7 @@ fun PayLaterDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     val zone = remember { ZoneId.systemDefault() }
-    val today = remember { LocalDate.now(zone) }
+    val today = com.xemmy.mmbank.ui.util.rememberCurrentDate(zone)
     val plan = state.plans.firstOrNull { it.id == planId }
     var confirmDelete by remember { mutableStateOf(false) }
     var paying by remember { mutableStateOf<PayLaterSummary.Row?>(null) }

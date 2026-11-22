@@ -119,7 +119,7 @@ fun PayLaterScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val hidden by viewModel.hideBalances.collectAsStateWithLifecycle()
     val zone = remember { ZoneId.systemDefault() }
-    val today = remember { LocalDate.now(zone) }
+    val today = com.xemmy.mmbank.ui.util.rememberCurrentDate(zone)
     var showHistory by remember { mutableStateOf(false) }
     var paying by remember { mutableStateOf<PayLaterSummary.Row?>(null) }
     var rescheduling by remember { mutableStateOf<PayLaterSummary.Row?>(null) }

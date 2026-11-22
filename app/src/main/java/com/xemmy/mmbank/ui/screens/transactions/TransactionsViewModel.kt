@@ -360,7 +360,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         uiState,
         container.ratesRepository.observeRates(),
         container.transactionRepository.observeTransactions(),
-    ) { state, rates, all ->
+        container.labelRepository.observeLinks(),
+    ) { state, rates, all, labelLinks ->
         // A bounded date filter gets a "vs the days before" comparison: the
         // same filters, shifted back one window.
         val window = TransactionFilterEngine.resolveDateWindow(
@@ -369,12 +370,16 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             java.time.LocalDate.now(),
         )
         val previous = window?.let(::priorWindow)
+        val labelsByTx = com.xemmy.mmbank.domain.label.LabelRules.byTransaction(labelLinks)
         val previousRows = previous?.let { p ->
             TransactionFilterEngine.filter(
                 transactions = all,
                 filters = state.filters.copy(dateRange = DateRangeFilter.Custom(p.start, p.end)),
                 accounts = state.accounts,
                 bankNameOf = { sender -> bankNameFor(sender, state.senderLabels) },
+                // The same label filter as the feed: without it every earlier row failed the
+                // label test and the "vs the days before" comparison vanished.
+                labelsOf = { id -> labelsByTx[id].orEmpty() },
             )
         }
         computeSpendSummary(

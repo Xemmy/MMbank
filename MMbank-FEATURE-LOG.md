@@ -4858,3 +4858,14 @@ From the code review. Fixed:
 Tests: `BillRemindersTest` / `SubscriptionRemindersTest` (calendar days, midnight due date), `SubscriptionTotalsTest` (+3), `MonthlyReportBuilderTest` (weekly 86.90), `PeriodComparisonTest` (+6), `SpendChangeLineTest` (+1), `PayLaterPaymentTest` (+3), `BillDuplicateFinderTest` (3), `SubscriptionRadarTest` (+1), `BillAdvancerTest` unchanged.
 
 Not covered by CI: the Insights caption and Bills/Plan due labels as rendered, a real Tabby installment SMS being matched and shown as a transfer or hidden on Activity, and Undo of a matched installment on a device.
+
+## Screen fixes: Undo snackbar, double taps, label comparison, stale "today" (0.140.5)
+From the code review. Fixed:
+1. **Subscriptions Undo snackbar never went away.** A Material 3 snackbar with an action label is Indefinite by default, so "Dismissed X · Undo" stayed until tapped and every later message queued behind it. It now lasts Long, has a ✕, and a newer message replaces it (`collectLatest`).
+2. **Double taps wrote twice.** Integrity "Record the difference" inserted two balance adjustments; Bills "Mark paid" advanced the bill two months; Quick add "Save" recorded two cash spends. `util/WriteOnce` claims one key per write (account + moment + bank balance; bill + its cycle) and frees it only if the write fails; Quick add disables Save while saving. Quick add also keeps the typed amount and merchant across rotation.
+3. **Activity hero card lost its comparison under a label filter.** The previous-window filter didn't get the label links, so every earlier row failed the label test and "vs the days before" disappeared.
+4. **"Today" went stale overnight** on Bills rows ("due today"), the Insights period bar and both Pay Later screens; they now use `rememberCurrentDate()` (midnight and on resume).
+
+Tests: `WriteOnceTest` (3). The rest is UI wiring with no pure logic left.
+
+Not covered by CI: the snackbar's duration and ✕, Save disabled while saving, double-tap behaviour on a device, the hero caption with a label filter, and the date rolling over at midnight with the screen open or after resume.

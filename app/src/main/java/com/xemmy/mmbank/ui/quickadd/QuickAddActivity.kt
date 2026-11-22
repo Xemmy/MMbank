@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,9 +91,12 @@ private fun QuickAddSheet(
     onCancel: () -> Unit,
     onSave: (amount: String, merchant: String, report: (String) -> Unit) -> Unit,
 ) {
-    var amount by remember { mutableStateOf("") }
-    var merchant by remember { mutableStateOf("") }
+    // Saveable: rotating the phone mid-entry keeps what was typed.
+    var amount by rememberSaveable { mutableStateOf("") }
+    var merchant by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    // True from the tap until the save fails (success closes the sheet): a double tap saved two spends.
+    var saving by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
@@ -122,7 +126,13 @@ private fun QuickAddSheet(
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onCancel) { Text("Cancel") }
-                    Button(onClick = { onSave(amount, merchant) { error = it } }) { Text("Save") }
+                    Button(
+                        enabled = !saving,
+                        onClick = {
+                            saving = true
+                            onSave(amount, merchant) { error = it; saving = false }
+                        },
+                    ) { Text("Save") }
                 }
             }
         }

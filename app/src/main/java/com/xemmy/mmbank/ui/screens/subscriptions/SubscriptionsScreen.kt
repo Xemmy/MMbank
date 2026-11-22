@@ -1,5 +1,6 @@
 package com.xemmy.mmbank.ui.screens.subscriptions
 
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -384,9 +385,16 @@ fun SubscriptionsScreen(
     var dismissedOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        viewModel.events.collect { event ->
-            snackbarHostState.currentSnackbarData?.dismiss()
-            val result = snackbarHostState.showSnackbar(event.message, actionLabel = if (event.undo != null) "Undo" else null)
+        // collectLatest: a newer message replaces the one on screen. A snackbar with an action
+        // label defaults to Indefinite in Material 3, so it never timed out and every later
+        // message queued behind it; it now lasts Long and can be closed with ✕.
+        viewModel.events.collectLatest { event ->
+            val result = snackbarHostState.showSnackbar(
+                message = event.message,
+                actionLabel = if (event.undo != null) "Undo" else null,
+                withDismissAction = event.undo != null,
+                duration = androidx.compose.material3.SnackbarDuration.Long,
+            )
             if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) event.undo?.invoke()
         }
     }

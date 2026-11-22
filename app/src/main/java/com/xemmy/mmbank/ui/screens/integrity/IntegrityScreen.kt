@@ -94,15 +94,27 @@ class IntegrityViewModel(private val container: AppContainer) : ViewModel() {
      * moment the bank stated its balance, which is exactly what makes the
      * check pass again (it compares the books as of that moment).
      */
-    fun recordDifference(issue: Issue) = launchSafely("recordDifference") {
-        val account = uiState.value.accounts.firstOrNull { it.id == issue.accountId } ?: return@launchSafely
-        val adjustment = buildBalanceAdjustment(
-            account = account,
-            computedBalance = issue.computedBalance ?: return@launchSafely,
-            targetBalance = issue.bankBalance ?: return@launchSafely,
-            nowMillis = issue.asOfMillis ?: return@launchSafely,
-        ) ?: return@launchSafely
-        container.transactionRepository.recordManual(adjustment)
+    /** One adjustment per difference, however fast the button is tapped. */
+    private val recorded = com.xemmy.mmbank.util.WriteOnce<String>()
+
+    fun recordDifference(issue: Issue) {
+        val key = "${issue.accountId}:${issue.asOfMillis}:${issue.bankBalance}"
+        if (!recorded.claim(key)) return
+        launchSafely("recordDifference") {
+            try {
+                val account = uiState.value.accounts.firstOrNull { it.id == issue.accountId } ?: return@launchSafely
+                val adjustment = buildBalanceAdjustment(
+                    account = account,
+                    computedBalance = issue.computedBalance ?: return@launchSafely,
+                    targetBalance = issue.bankBalance ?: return@launchSafely,
+                    nowMillis = issue.asOfMillis ?: return@launchSafely,
+                ) ?: return@launchSafely
+                container.transactionRepository.recordManual(adjustment)
+            } catch (t: Throwable) {
+                recorded.release(key)
+                throw t
+            }
+        }
     }
 
     /** "Yes, this really is a transfer / card payment": the user vouches for it, so it stops being flagged. */
