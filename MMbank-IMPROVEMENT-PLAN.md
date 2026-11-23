@@ -418,7 +418,7 @@ Plan debt payoff                   ›
 ## Phase 6 — Accessibility & localisation (minor bump; backlog #76–80)
 
 - **Targets:**
-  - ≥48dp everywhere. Fix `FilterBarChip` (28), `SecondaryActionChip` (24), `MetaChip` (~26), the row icon buttons (30), the clear-search icon (16), the Insights info button (32), the category edit/delete buttons (36) and the heatmap tiles (16).
+  - ≥48dp everywhere. Fix `FilterBarChip` (28), `SecondaryActionChip` (24), `MetaChip` (~26), the row icon buttons (30) ✅ 0.140.8, the clear-search icon (16), the Insights info button (32), the category edit/delete buttons (36) ✅ 0.140.8 and the heatmap tiles (16).
   - Let `minimumInteractiveComponentSize()` do this, not hand-picked sizes.
 - **Semantics:**
   - Row-level `mergeDescendants`, with a description ("Carrefour, spent 86 dirhams 40 fils, Groceries, today 2:20 pm") plus `onClickLabel`/`onLongClickLabel`.

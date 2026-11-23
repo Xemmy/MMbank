@@ -4883,3 +4883,13 @@ A keyword-less merchant notification ("AED27.60 with Tabby Cash Card ••4543"
 Tests: `CardEndingRoutingTest` (+2, one changed).
 
 Not covered by CI: a real Tabby notification on a device and a newly added card ending being picked up live.
+
+## GUI review fixes: touch targets, tab highlight, search hint (0.140.8)
+Checked `docs/gui-review.md` against the code (corrections are recorded at the end of that file). Fixed what held up:
+1. **Touch targets.** The Activity ledger's edit/delete buttons (30dp) and the Categories edit/delete/overflow buttons (36dp) are back to Material's 48dp `IconButton`; only the glyph stays small. The ledger row's top padding went from 6dp to 2dp to win back some height.
+2. **The bottom bar lit the wrong tab.** A Plan screen opened from an Insights card (Subscriptions, Bills, Goals, Splits, Budgets, Rewards) lit **Plan**, and tapping Insights there brought back the same saved screen, so the tap seemed to do nothing. The highlight now comes from the whole back stack (`TabRouting.tabForStack`: the nearest tab root below the screen), and tapping the tab you're already inside returns to its root (`TabRouting.reselectRootIndex`). This also applies to Settings opened from a tab's gear. Screens that highlighted nothing (Settings, Search, Copilot, merchant detail) still highlight nothing.
+3. **Search hint** now reads "Search transactions, merchants, or jump to a feature…". Search already found features ("Go to"), but the hint didn't say so.
+
+Tests: `AppNavigationTest` (+8).
+
+Not covered by CI: the 48dp buttons and ledger row height as rendered, the tab highlight and re-tap behaviour on a device (bottom bar and rail), and the search hint.

@@ -659,7 +659,7 @@ private fun CategoryRow(
                 if (onMerge != null) {
                     var menuOpen by remember { mutableStateOf(false) }
                     androidx.compose.foundation.layout.Box {
-                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) {
+                        IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "More actions", modifier = Modifier.size(18.dp))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -723,7 +723,7 @@ private fun CategoryRow(
 
 @Composable
 private fun RowActions(onEdit: () -> Unit, onDelete: () -> Unit) {
-    IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
+    IconButton(onClick = onEdit) {
         Icon(
             Icons.Filled.Edit,
             contentDescription = "Edit category",
@@ -731,7 +731,7 @@ private fun RowActions(onEdit: () -> Unit, onDelete: () -> Unit) {
             modifier = Modifier.size(18.dp),
         )
     }
-    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+    IconButton(onClick = onDelete) {
         Icon(
             Icons.Filled.Delete,
             contentDescription = "Delete category",

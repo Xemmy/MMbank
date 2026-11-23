@@ -128,6 +128,79 @@ class AppNavigationTest {
         assertEquals("settings", TabRouting.startRoute(recoveredFromCrash = true))
     }
 
+    // Stacks as the NavController holds them: the graph entry (null route) at the
+    // bottom, Home as the start destination, route patterns rather than built routes.
+    private fun stack(vararg routes: String?): List<String?> = listOf(null, *routes)
+
+    @Test fun planScreenOpenedFromInsightsKeepsInsightsHighlighted() {
+        listOf(Routes.SUBSCRIPTIONS, Routes.BILLS, Routes.GOALS, Routes.SPLITS, Routes.BUDGETS, Routes.CASHBACK)
+            .forEach { child ->
+                assertEquals(child, AppTab.INSIGHTS, TabRouting.tabForStack(stack(Routes.HOME, Routes.INSIGHTS, child)))
+            }
+        assertEquals(
+            AppTab.INSIGHTS,
+            TabRouting.tabForStack(stack(Routes.HOME, Routes.INSIGHTS, Routes.SPLITS, Routes.SPLITS_GROUP_PATTERN)),
+        )
+    }
+
+    @Test fun planScreenOpenedFromPlanKeepsPlanHighlighted() {
+        assertEquals(AppTab.PLAN, TabRouting.tabForStack(stack(Routes.HOME, Routes.PLAN, Routes.SUBSCRIPTIONS)))
+        assertEquals(AppTab.PLAN, TabRouting.tabForStack(stack(Routes.HOME, Routes.PLAN)))
+    }
+
+    @Test fun homeChildrenHighlightHome() {
+        assertEquals(AppTab.HOME, TabRouting.tabForStack(stack(Routes.HOME)))
+        assertEquals(AppTab.HOME, TabRouting.tabForStack(stack(Routes.HOME, Routes.CASH_FLOW_DETAIL)))
+        assertEquals(AppTab.HOME, TabRouting.tabForStack(stack(Routes.HOME, Routes.REVIEW_TRANSACTIONS)))
+    }
+
+    @Test fun tabRootOpenedFromHomeHighlightsThatTab() {
+        assertEquals(AppTab.ACCOUNTS, TabRouting.tabForStack(stack(Routes.HOME, Routes.ACCOUNTS)))
+        assertEquals(AppTab.ACTIVITY, TabRouting.tabForStack(stack(Routes.HOME, Routes.ACTIVITY_PATTERN)))
+        assertEquals(
+            AppTab.ACCOUNTS,
+            TabRouting.tabForStack(stack(Routes.HOME, Routes.ACCOUNTS, Routes.ACCOUNT_HISTORY_PATTERN)),
+        )
+    }
+
+    @Test fun unownedScreensStillHighlightNoTabWhateverTheStack() {
+        listOf(Routes.SETTINGS, Routes.SEARCH, Routes.COPILOT, Routes.MERCHANT_DETAIL_PATTERN).forEach { top ->
+            assertNull(top, TabRouting.tabForStack(stack(Routes.HOME, Routes.INSIGHTS, top)))
+        }
+    }
+
+    @Test fun stackWithoutATabRootFallsBackToTheOwner() {
+        // Crash-recovery start: Settings is the start destination, no tab root below.
+        assertNull(TabRouting.tabForStack(stack(Routes.SETTINGS)))
+        assertEquals(AppTab.PLAN, TabRouting.tabForStack(stack(Routes.SETTINGS, Routes.CATEGORIES)))
+        assertNull(TabRouting.tabForStack(emptyList()))
+    }
+
+    @Test fun reTappingTheTabYouAreInPopsToItsRoot() {
+        val insightsSubs = stack(Routes.HOME, Routes.INSIGHTS, Routes.SUBSCRIPTIONS)
+        assertEquals(2, TabRouting.reselectRootIndex(insightsSubs, AppTab.INSIGHTS))
+        // Settings opened from the Insights gear: tapping Insights goes back to it too.
+        assertEquals(2, TabRouting.reselectRootIndex(stack(Routes.HOME, Routes.INSIGHTS, Routes.SETTINGS), AppTab.INSIGHTS))
+        assertEquals(1, TabRouting.reselectRootIndex(stack(Routes.HOME, Routes.REVIEW_TRANSACTIONS), AppTab.HOME))
+        assertEquals(
+            2,
+            TabRouting.reselectRootIndex(
+                stack(Routes.HOME, Routes.ACTIVITY_PATTERN, Routes.TRANSACTION_EDITOR_PATTERN),
+                AppTab.ACTIVITY,
+            ),
+        )
+    }
+
+    @Test fun otherTabsAndTheRootItselfUseTheNormalSwitch() {
+        val insightsSubs = stack(Routes.HOME, Routes.INSIGHTS, Routes.SUBSCRIPTIONS)
+        assertNull(TabRouting.reselectRootIndex(insightsSubs, AppTab.PLAN))
+        assertNull(TabRouting.reselectRootIndex(insightsSubs, AppTab.HOME))
+        assertNull(TabRouting.reselectRootIndex(stack(Routes.HOME, Routes.INSIGHTS), AppTab.INSIGHTS))
+        assertNull(TabRouting.reselectRootIndex(stack(Routes.HOME), AppTab.HOME))
+        assertNull(TabRouting.reselectRootIndex(stack(Routes.SETTINGS), AppTab.HOME))
+        assertNull(TabRouting.reselectRootIndex(emptyList(), AppTab.HOME))
+    }
+
     @Test fun transitionKinds() {
         val k = { f: String?, t: String?, pop: Boolean, rm: Boolean -> NavTransitions.kind(f, t, pop, rm) }
         assertEquals(NavTransitionKind.TAB_SWITCH, k(Routes.HOME, Routes.ACTIVITY_PATTERN, false, false))

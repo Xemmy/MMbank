@@ -1405,7 +1405,7 @@ private fun TransactionCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp),
+                    .padding(top = 2.dp),
             ) {
                 Row(
                     modifier = Modifier
@@ -1453,7 +1453,7 @@ private fun TransactionCard(
                         onClick = onOpenCategoryPicker,
                     )
                 }
-                IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+                IconButton(onClick = onEdit) {
                     Icon(
                         Icons.Filled.Edit,
                         contentDescription = "Edit transaction",
@@ -1461,7 +1461,7 @@ private fun TransactionCard(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Filled.Delete,
                         contentDescription = "Delete transaction",

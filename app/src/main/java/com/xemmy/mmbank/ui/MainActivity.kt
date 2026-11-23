@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -297,6 +298,22 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
             restoreState = true
         }
     }
+    // The highlighted tab comes from the whole back stack, so a Plan screen
+    // opened from an Insights card keeps Insights lit (TabRouting.tabForStack).
+    val backStack by navController.currentBackStack.collectAsState()
+    val stackRoutes = backStack.map { it.destination.route }
+    val currentTab = TabRouting.tabForStack(stackRoutes)
+    // Tapping the tab you're already deep inside returns to its root; with
+    // saveState/restoreState a plain goToTab would restore the same screen.
+    val onTabClick: (AppTab) -> Unit = { dest ->
+        val rootIndex = TabRouting.reselectRootIndex(stackRoutes, dest)
+        val root = rootIndex?.let { backStack.getOrNull(it) }
+        if (root != null) {
+            navController.popBackStack(root.destination.id, inclusive = false)
+        } else {
+            goToTab(dest)
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize().ambientBackground(backgroundStyle),
@@ -312,13 +329,12 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
         bottomBar = {
             if (chrome == NavChrome.BOTTOM_BAR) {
                 NavigationBar {
-                    val currentTab = TabRouting.tabFor(currentRoute)
                     AppTab.values().forEach { dest ->
                         val visual = dest.visual()
                         val selected = currentTab == dest
                         NavigationBarItem(
                             selected = selected,
-                            onClick = { goToTab(dest) },
+                            onClick = { onTabClick(dest) },
                             icon = {
                                 Icon(
                                     if (selected) visual.selectedIcon else visual.unselectedIcon,
@@ -351,13 +367,12 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
       ) {
         if (chrome == NavChrome.RAIL) {
             NavigationRail {
-                val currentTab = TabRouting.tabFor(currentRoute)
                 AppTab.values().forEach { dest ->
                     val visual = dest.visual()
                     val selected = currentTab == dest
                     NavigationRailItem(
                         selected = selected,
-                        onClick = { goToTab(dest) },
+                        onClick = { onTabClick(dest) },
                         icon = {
                             Icon(
                                 if (selected) visual.selectedIcon else visual.unselectedIcon,
@@ -398,7 +413,7 @@ fun MMbankApp(openUncategorizedQueue: Boolean = false, backgroundStyle: Backgrou
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        TabRouting.tabFor(currentRoute)?.label.orEmpty(),
+                        currentTab?.label.orEmpty(),
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.weight(1f),
                     )

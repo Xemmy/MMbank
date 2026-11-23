@@ -93,7 +93,7 @@ fun SearchScreen(
                 onValueChange = { viewModel.query.value = it },
                 modifier = Modifier.weight(1f).focusRequester(focus),
                 singleLine = true,
-                placeholder = { Text("Search merchants, accounts, rules, settings…") },
+                placeholder = { Text("Search transactions, merchants, or jump to a feature…") },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { viewModel.query.value = "" }) {

@@ -146,6 +146,37 @@ object TabRouting {
         return ownerByBaseRoute[base]
     }
 
+    /** Index of the tab root nearest the top of [stackRoutes] (bottom first), or -1. */
+    private fun nearestTabRootIndex(stackRoutes: List<String?>): Int =
+        stackRoutes.indexOfLast { NavTransitions.isTabRoot(it) }
+
+    /**
+     * The tab to highlight for a whole back stack ([stackRoutes], bottom first,
+     * route patterns as the NavController holds them). A screen owned by some
+     * tab lights up the tab the user is actually in — the nearest tab root below
+     * it — so Insights → Subscriptions keeps Insights lit instead of jumping to
+     * Plan. Screens [tabFor] leaves unowned (Settings, Search, Copilot, merchant
+     * detail) still highlight nothing; a stack with no tab root (the crash-
+     * recovery start on Settings) falls back to [tabFor].
+     */
+    fun tabForStack(stackRoutes: List<String?>): AppTab? {
+        val owner = tabFor(stackRoutes.lastOrNull()) ?: return null
+        val rootIndex = nearestTabRootIndex(stackRoutes)
+        return if (rootIndex >= 0) tabFor(stackRoutes[rootIndex]) ?: owner else owner
+    }
+
+    /**
+     * Tapping [tapped] while deeper inside that same tab's stack returns to its
+     * root: the index in [stackRoutes] to pop back to (keeping it). Null when
+     * the tap should go through the normal tab switch instead — a different
+     * tab, or already on the root.
+     */
+    fun reselectRootIndex(stackRoutes: List<String?>, tapped: AppTab): Int? {
+        val rootIndex = nearestTabRootIndex(stackRoutes)
+        if (rootIndex < 0 || rootIndex == stackRoutes.lastIndex) return null
+        return rootIndex.takeIf { tabFor(stackRoutes[it]) == tapped }
+    }
+
     /**
      * Crash-loop breaker: after a crash, skip Home (the prime suspect) and
      * open Settings, where Diagnostics and Backup are still reachable.

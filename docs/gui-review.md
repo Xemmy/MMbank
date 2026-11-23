@@ -138,3 +138,20 @@ What actually answers "can a user find a feature by name" is `SearchDestinations
 ## Bottom line
 
 The task asks whether this has "a great GUI, and can it be improved." The honest answer: the *design system* is great — tokenized, tested for contrast, consistently adopted across real screens (not just theme files), and thoughtfully reasoned (the debit-color decision, the lock-screen's pointer-consuming gate, the PIN pad's haptic/live-region accessibility all show real UX thinking, not boilerplate). The navigation model is also more capable than a first glance at the 5-item bottom nav suggests, because feature search already exists and already covers the ~45-screen surface area. What keeps the whole app from being great is narrower than it first appears but touches more than one axis: a handful of screens quietly undercut the system's own 48dp touch-target standard on the highest-traffic list in the app, every displayed currency amount renders below the practical legibility floor, Insights' own in-screen navigation cards silently mislead the user about which tab they're on, the Settings root file conflates a router with eight full sub-screens instead of being a thin router over them, two screens (Splits, Copilot) opt out of the shared component library, and a capability that already solves the "45 screens, can I find one" problem is invisible unless a user already knows to try it. All of these are fixable without touching the token system or rebuilding navigation — which is exactly why they're worth fixing: the hard part (the foundation, the search infrastructure, the security-gate UX) is already done well.
+
+---
+
+## Verification against the code (0.140.8)
+
+Each claim above was checked against the source at 0.140.7 before acting on it.
+
+| # | Claim | Verdict |
+|---|---|---|
+| 1 | 30dp / 36dp icon buttons | **Accurate.** `TransactionsScreen.kt` edit/delete were `size(30.dp)`; `CategoriesScreen.kt` edit/delete/overflow were `size(36.dp)`. The review left out that 48dp makes each ledger card's meta row taller. **Fixed in 0.140.8.** |
+| 2 | "11sp on every displayed currency amount" | **Wrong.** `currencyFontSize` styles only the trailing ISO code of non-AED amounts (`AmountText.appendMoney`). AED amounts draw the Dirham glyph sized in em, and the numerals use each call site's style (titleMedium and up). `metaFontSize` is used only by `MetaLabel` (17 uses in 6 files, uppercase and tracked), and Material 3's own `labelSmall` is 11sp. **Not changed.** |
+| 3 | Insights cards highlight the Plan tab | **Accurate, and worse than described.** Because `goToTab` uses `saveState`/`restoreState`, tapping Insights from there restored the same saved stack, so the tap appeared to do nothing while Plan stayed lit. The suggested fixes (a `fromCrossTabLink` flag, or duplicate `insights/…` routes) weren't needed. **Fixed in 0.140.8:** the highlight comes from the back stack (`TabRouting.tabForStack`), and re-tapping the tab you're in pops to its root (`TabRouting.reselectRootIndex`). |
+| 4 | `SettingsScreen.kt` is 1614 lines with 8 screens inside | **Accurate.** Scheduled as a pure refactor. |
+| 5 | Only Splits and Copilot skip `MMScaffold` | **Understated.** Nine pushed screens use a raw `Scaffold` + `TopAppBar`: Bills, Goals, Rules, Merchant detail, Monthly report, Debt planner, Group detail, Splits, Copilot (plus Settings' Categories & people). A raw `Scaffold` also paints `colorScheme.background` over the app's ambient background. Scheduled for 0.140.9. |
+| 6 | Search doesn't say it finds features | **Accurate.** **Fixed in 0.140.8** (hint: "Search transactions, merchants, or jump to a feature…"). |
+
+Priority item 7 (move Splits/Copilot to `MMScaffold`/`MMCard`) is covered by row 5, with the corrected scope.
