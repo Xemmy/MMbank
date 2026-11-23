@@ -4916,3 +4916,10 @@ Categories → ⋮ → Merge into… listed every other category in a plain colu
 Tests: none (layout only).
 
 Not covered by CI: the dialog on a device with a long category list, and at large font sizes.
+
+## Category editor scrolls, so the Parent box is reachable (0.140.12)
+The New/Edit category dialog (name, icon grid, colors, monthly cap, then "No parent (top-level)") did not scroll, so on a normal phone everything below the cap field, including the Parent box that makes a sub-category, was cut off and could not be reached. The form now scrolls inside the dialog. The embedded copy in the category picker sheet is unchanged.
+
+Tests: none (layout only).
+
+Not covered by CI: the dialog on a device, with the keyboard open and at large font sizes.

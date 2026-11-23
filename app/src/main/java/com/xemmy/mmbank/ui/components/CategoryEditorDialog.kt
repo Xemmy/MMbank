@@ -1,5 +1,8 @@
 package com.xemmy.mmbank.ui.components
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -9,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import com.xemmy.mmbank.domain.model.Category
 import java.math.BigDecimal
 
@@ -47,12 +51,15 @@ fun CategoryEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "New category" else "Edit category", style = MaterialTheme.typography.titleLarge) },
         text = {
-            CategoryEditorFields(
-                state = state,
-                onStateChange = { state = it },
-                currency = currency,
-                candidateParents = candidateParents,
-            )
+            // The form is taller than most dialogs: scroll it so the Parent box and the rest stay reachable.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                CategoryEditorFields(
+                    state = state,
+                    onStateChange = { state = it },
+                    currency = currency,
+                    candidateParents = candidateParents,
+                )
+            }
         },
         confirmButton = {
             TextButton(
