@@ -141,7 +141,7 @@ The task asks whether this has "a great GUI, and can it be improved." The honest
 
 ---
 
-## Verification against the code (0.140.8)
+## Verification against the code (0.140.8 – 0.140.9)
 
 Each claim above was checked against the source at 0.140.7 before acting on it.
 
@@ -150,7 +150,7 @@ Each claim above was checked against the source at 0.140.7 before acting on it.
 | 1 | 30dp / 36dp icon buttons | **Accurate.** `TransactionsScreen.kt` edit/delete were `size(30.dp)`; `CategoriesScreen.kt` edit/delete/overflow were `size(36.dp)`. The review left out that 48dp makes each ledger card's meta row taller. **Fixed in 0.140.8.** |
 | 2 | "11sp on every displayed currency amount" | **Wrong.** `currencyFontSize` styles only the trailing ISO code of non-AED amounts (`AmountText.appendMoney`). AED amounts draw the Dirham glyph sized in em, and the numerals use each call site's style (titleMedium and up). `metaFontSize` is used only by `MetaLabel` (17 uses in 6 files, uppercase and tracked), and Material 3's own `labelSmall` is 11sp. **Not changed.** |
 | 3 | Insights cards highlight the Plan tab | **Accurate, and worse than described.** Because `goToTab` uses `saveState`/`restoreState`, tapping Insights from there restored the same saved stack, so the tap appeared to do nothing while Plan stayed lit. The suggested fixes (a `fromCrossTabLink` flag, or duplicate `insights/…` routes) weren't needed. **Fixed in 0.140.8:** the highlight comes from the back stack (`TabRouting.tabForStack`), and re-tapping the tab you're in pops to its root (`TabRouting.reselectRootIndex`). |
-| 4 | `SettingsScreen.kt` is 1614 lines with 8 screens inside | **Accurate.** Scheduled as a pure refactor. |
+| 4 | `SettingsScreen.kt` is 1614 lines with 8 screens inside | **Accurate.** **Done after 0.140.9** (pure refactor, no version bump): the eight screens moved to their own files next to `AppearanceSettingsScreen.kt`, each with its private helpers (People dialogs, app-lock and demo sections). `SettingsScreen.kt` now holds the menu, `SettingsSubpage` and the shared labels (~310 lines). |
 | 5 | Only Splits and Copilot skip `MMScaffold` | **Understated.** Nine pushed screens used a raw `Scaffold` + `TopAppBar`: Bills, Goals, Merchant detail, Monthly report, Debt planner, Group detail, Splits, Copilot and Settings' Categories & people. Rules used a raw `Scaffold` with no title or back arrow at all. A raw `Scaffold` also paints the opaque canvas over the app's ambient background. **Fixed in 0.140.9:** all ten use `MMScaffold` (Rules gains "Parsing rules" and a back arrow), and the plain cards on Splits and Copilot use `MMCard`. |
 | 6 | Search doesn't say it finds features | **Accurate.** **Fixed in 0.140.8** (hint: "Search transactions, merchants, or jump to a feature…"). |
 
