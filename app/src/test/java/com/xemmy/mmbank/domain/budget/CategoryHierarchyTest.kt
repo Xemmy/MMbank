@@ -7,8 +7,11 @@ import org.junit.Test
 
 class CategoryHierarchyTest {
 
-    private fun category(id: Long, name: String, parentCategoryId: Long? = null) =
-        Category(id = id, name = name, icon = "🏷️", colorHex = "#9E9E9E", parentCategoryId = parentCategoryId)
+    private fun category(id: Long, name: String, parentCategoryId: Long? = null, sortOrder: Int = 0) =
+        Category(
+            id = id, name = name, icon = "🏷️", colorHex = "#9E9E9E",
+            parentCategoryId = parentCategoryId, sortOrder = sortOrder,
+        )
 
     @Test
     fun `empty input yields empty tree`() {
@@ -20,6 +23,50 @@ class CategoryHierarchyTest {
         val categories = listOf(category(1, "Zebra"), category(2, "Apple"), category(3, "Mango"))
         val tree = CategoryHierarchy.buildTree(categories)
         assertEquals(listOf("Apple", "Mango", "Zebra"), tree.map { it.category.name })
+    }
+
+    @Test
+    fun `top-level order follows sortOrder, not the alphabet`() {
+        val categories = listOf(
+            category(1, "Apple", sortOrder = 2),
+            category(2, "Zebra", sortOrder = 0),
+            category(3, "Mango", sortOrder = 1),
+        )
+        val tree = CategoryHierarchy.buildTree(categories)
+        assertEquals(listOf("Zebra", "Mango", "Apple"), tree.map { it.category.name })
+    }
+
+    @Test
+    fun `children order follows sortOrder, not the alphabet`() {
+        val categories = listOf(
+            category(1, "Food"),
+            category(2, "Bakery", parentCategoryId = 1, sortOrder = 5),
+            category(3, "Dining", parentCategoryId = 1, sortOrder = 4),
+        )
+        val tree = CategoryHierarchy.buildTree(categories)
+        assertEquals(listOf("Dining", "Bakery"), tree.single().children.map { it.name })
+    }
+
+    @Test
+    fun `equal sortOrder falls back to name, built-in before custom`() {
+        val categories = listOf(
+            category(1, "Beta", sortOrder = 3),
+            category(2, "alpha", sortOrder = 3),
+            category(3, "Aardvark", sortOrder = 3).copy(isCustom = true),
+        )
+        val tree = CategoryHierarchy.buildTree(categories)
+        assertEquals(listOf("alpha", "Beta", "Aardvark"), tree.map { it.category.name })
+    }
+
+    @Test
+    fun `a swapped pair in the stored order shows swapped, and the shown ids match the stored order`() {
+        // What a drag does: setOrder renumbers the full list with two siblings traded.
+        val before = listOf(category(1, "A", sortOrder = 0), category(2, "B", sortOrder = 1), category(3, "C", sortOrder = 2))
+        val allIds = before.map { it.id }
+        val shown = CategoryHierarchy.buildTree(before).map { it.category.id }
+        val moved = com.xemmy.mmbank.domain.ReorderList.moveAmongSiblings(allIds, shown, 3, -1)
+        val after = before.map { it.copy(sortOrder = moved.indexOf(it.id)) }
+        assertEquals(listOf(1L, 3L, 2L), CategoryHierarchy.buildTree(after).map { it.category.id })
     }
 
     @Test

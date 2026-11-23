@@ -2,7 +2,7 @@ package com.xemmy.mmbank.domain.budget
 
 import com.xemmy.mmbank.domain.model.Category
 
-/** One top-level category plus its children, both name-sorted. */
+/** One top-level category plus its children, both in saved (dragged) order, name breaking ties. */
 data class CategoryTreeNode(
     val category: Category,
     val children: List<Category>,
@@ -28,14 +28,23 @@ object CategoryHierarchy {
         val topLevel = categories.filter { it.parentCategoryId == null || it.parentCategoryId !in idSet }
 
         return topLevel
-            .sortedBy { it.name.lowercase() }
+            .sortedWith(savedOrder)
             .map { top ->
                 CategoryTreeNode(
                     category = top,
-                    children = childrenByParent[top.id].orEmpty().sortedBy { it.name.lowercase() },
+                    children = childrenByParent[top.id].orEmpty().sortedWith(savedOrder),
                 )
             }
     }
+
+    /**
+     * The order the user dragged them into, with the same tie-breaks as
+     * `CategoryDao.observeAll` (`sortOrder, isCustom, name`) so what the list
+     * shows and what [com.xemmy.mmbank.domain.ReorderList.moveAmongSiblings]
+     * moves within the full stored order are the same sequence.
+     */
+    private val savedOrder: Comparator<Category> =
+        compareBy<Category>({ it.sortOrder }, { it.isCustom }, { it.name.lowercase() })
 
     /**
      * Every category beneath [rootId], at any depth, excluding [rootId] itself.

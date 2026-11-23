@@ -191,23 +191,17 @@ class CategoriesViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Moves [categoryId] one step up (-1) or down (+1) among [orderedIds] (the ids as currently shown). */
-    fun move(orderedIds: List<Long>, categoryId: Long, direction: Int) {
-        val next = com.xemmy.mmbank.domain.ReorderList.move(orderedIds, categoryId, direction)
-        if (next == orderedIds) return
-        viewModelScope.launch {
-            runCatching { container.categoryRepository.setOrder(next) }
-                .onFailure { container.recordError("CategoriesViewModel.move", it) }
-        }
-    }
-
-    /** Moves child [categoryId] one step among its [siblingIds]; [allIds] is the full stored order. */
-    fun moveChild(allIds: List<Long>, siblingIds: List<Long>, categoryId: Long, direction: Int) {
+    /**
+     * Moves [categoryId] one step up (-1) or down (+1) among its [siblingIds] (parents on the shown
+     * side, or one parent's children, in shown order). [allIds] is the full stored order: only the
+     * siblings trade places, every other row keeps its slot.
+     */
+    fun moveAmong(allIds: List<Long>, siblingIds: List<Long>, categoryId: Long, direction: Int) {
         val next = com.xemmy.mmbank.domain.ReorderList.moveAmongSiblings(allIds, siblingIds, categoryId, direction)
         if (next == allIds) return
         viewModelScope.launch {
             runCatching { container.categoryRepository.setOrder(next) }
-                .onFailure { container.recordError("CategoriesViewModel.moveChild", it) }
+                .onFailure { container.recordError("CategoriesViewModel.moveAmong", it) }
         }
     }
 
@@ -324,8 +318,8 @@ fun CategoriesTabContent(
                     currency = state.currency,
                     onEdit = { editing = node.category },
                     onDelete = { confirmingDelete = node.category },
-                    onMoveUp = { viewModel.move(shownIds, node.category.id, -1) },
-                    onMoveDown = { viewModel.move(shownIds, node.category.id, 1) },
+                    onMoveUp = { viewModel.moveAmong(allIds, shownIds, node.category.id, -1) },
+                    onMoveDown = { viewModel.moveAmong(allIds, shownIds, node.category.id, 1) },
                     onMerge = { mergingFrom = node.category },
                     onSwitchSide = {
                         viewModel.setFlow(node.category.id, if (showIncome) CategoryFlow.EXPENSE else CategoryFlow.INCOME)
@@ -336,8 +330,8 @@ fun CategoriesTabContent(
             val childIds = node.children.map { it.id }
             items(node.children, key = { "cat_${it.id}" }) { child ->
                 CategoryRow(
-                    onMoveUp = { viewModel.moveChild(allIds, childIds, child.id, -1) },
-                    onMoveDown = { viewModel.moveChild(allIds, childIds, child.id, 1) },
+                    onMoveUp = { viewModel.moveAmong(allIds, childIds, child.id, -1) },
+                    onMoveDown = { viewModel.moveAmong(allIds, childIds, child.id, 1) },
                     category = child,
                     status = statusByCategoryId[child.id],
                     currency = state.currency,

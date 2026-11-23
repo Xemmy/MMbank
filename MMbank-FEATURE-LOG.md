@@ -4900,3 +4900,12 @@ From `docs/gui-review.md` #5, with the corrected scope: ten pushed screens used 
 Tests: none. This is layout wiring with no logic.
 
 Not covered by CI: how the ten headers and the ambient background look on a device, the Rules back arrow, the Splits group card ripple, and the Copilot screen with the keyboard open.
+
+## Dragging categories now sticks (0.140.10)
+Dragging the ≡ grip on Settings → Categories & People looked like it did nothing. The move was saved, but the list was built by `CategoryHierarchy.buildTree`, which sorted parents and children A–Z and ignored the saved order, so every row snapped straight back. It now sorts by `sortOrder` (then built-in before custom, then name: the same order as `CategoryDao.observeAll`). Parent moves also use `moveAmongSiblings` over the full stored order, like sub-categories already did, instead of renumbering only the parents (which collided with their children's and the other side's numbers); `CategoriesViewModel.move`/`moveChild` became one `moveAmong`.
+
+Visible change: the list shows the saved order. Categories nobody has dragged now appear in creation order (defaults first, new ones last) rather than alphabetically; anything dragged before shows the order that was set. The pickers already used this order.
+
+Tests: `CategoryHierarchyTest` (+4: sortOrder beats name for parents and children, tie-breaks, a drag round trip).
+
+Not covered by CI: the drag gesture itself on a device, and how a row with sub-categories moves under the finger (the grip still moves one place per 56dp of travel).
