@@ -1,6 +1,5 @@
 package com.xemmy.mmbank.ui.screens.splits
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,21 +13,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +47,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.xemmy.mmbank.ui.designsystem.MMScaffold
+import com.xemmy.mmbank.ui.designsystem.MMCard
 
 data class SplitsUiState(
     val groups: List<SplitGroup> = emptyList(),
@@ -130,18 +126,9 @@ fun SplitsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var addGroupOpen by remember { mutableStateOf(false) }
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = { Text("Splits & groups") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
+    MMScaffold(
+        title = "Splits & groups",
+        onBack = onBack,
         floatingActionButton = {
             FloatingActionButton(onClick = { addGroupOpen = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add group")
@@ -194,7 +181,7 @@ fun SplitsScreen(
 
 @Composable
 private fun NetBalanceHeader(netOverall: BigDecimal, currency: String) {
-    Card(Modifier.fillMaxWidth().padding(16.dp)) {
+    MMCard(Modifier.fillMaxWidth().padding(16.dp)) {
         BalanceSentence(
             balance = netOverall,
             currency = currency,
@@ -203,16 +190,15 @@ private fun NetBalanceHeader(netOverall: BigDecimal, currency: String) {
             settledText = "All settled up",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(16.dp),
         )
     }
 }
 
 @Composable
 private fun GroupRow(group: SplitGroup, balance: BigDecimal, currency: String, onClick: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    MMCard(Modifier.fillMaxWidth(), onClick = onClick) {
         Row(
-            Modifier.clickable(onClick = onClick).padding(16.dp).fillMaxWidth(),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(group.icon, style = MaterialTheme.typography.titleLarge)

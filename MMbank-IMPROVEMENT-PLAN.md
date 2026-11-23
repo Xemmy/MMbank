@@ -367,7 +367,7 @@ Plan debt payoff                   ›
 ### 4.6 Lock screen, Copilot, Rules
 - **Lock:** follows the theme. 72dp round keys. Fixed-width dots (no layout shift past 4 digits). A biometric prompt that opens by itself. Scrollable in landscape.
 - **Copilot:** asymmetric bubbles; `ImeAction.Send`; `SelectionContainer` for copying figures; `liveRegion` on new answers; friendly errors with **Retry** (no `${e.message}`); a "New chat" action; suggestion chips that are always available; answer cards with mini-charts and "See transactions".
-- **Rules:** add a top bar and back arrow. Raw regex goes behind an "Advanced" disclosure. In the live tester, highlight the captured amount and merchant in place. Show plain "Money out / Money in". Don't prefill "ai.pending." into the name field.
+- **Rules:** add a top bar and back arrow (✅ 0.140.9). Raw regex goes behind an "Advanced" disclosure. In the live tester, highlight the captured amount and merchant in place. Show plain "Money out / Money in". Don't prefill "ai.pending." into the name field.
 
 ---
 

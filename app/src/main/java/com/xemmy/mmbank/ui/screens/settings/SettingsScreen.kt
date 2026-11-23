@@ -62,13 +62,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -122,6 +120,7 @@ import com.xemmy.mmbank.ui.util.asMoney
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import com.xemmy.mmbank.ui.designsystem.MMScaffold
 
 // ---------------------------------------------------------------------------
 // Root: grouped menu, modern app style — each row opens a focused subpage.
@@ -376,18 +375,9 @@ fun CategoriesAndPeopleScreen(
     var tab by remember { mutableStateOf(initialTab) }
     var creatingNewCategory by remember { mutableStateOf(false) }
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = { Text("Categories & People") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
+    MMScaffold(
+        title = "Categories & People",
+        onBack = onBack,
         floatingActionButton = {
             // Only Categories has a create action; People adds inline via its own text field.
             if (tab == 0) {

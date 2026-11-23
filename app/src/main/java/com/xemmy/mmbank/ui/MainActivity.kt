@@ -718,6 +718,7 @@ private fun AppNavHost(
             RulesScreen(
                 onEditRule = { id -> navController.navigate(Routes.ruleEditor(id)) },
                 onNewRule = { navController.navigate(Routes.NEW_RULE) },
+                onBack = { navController.popBackStack() },
             )
         }
         composable(

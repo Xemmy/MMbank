@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SmartToy
@@ -31,11 +30,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,6 +71,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.xemmy.mmbank.ui.designsystem.MMScaffold
+import com.xemmy.mmbank.ui.designsystem.MMCard
 
 /**
  * One turn of the Copilot conversation. [onDevice] marks an answer computed
@@ -235,27 +234,20 @@ fun CopilotChatScreen(
     val showChips = state.suggestions.isNotEmpty() && !state.sending &&
         (state.messages.isEmpty() || state.messages.last().isHelp)
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = { Text("Financial Copilot") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
+    MMScaffold(
+        title = "Financial Copilot",
+        onBack = onBack,
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (!state.aiConfigured) {
-                Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                MMCard(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    contentPadding = PaddingValues(12.dp),
+                ) {
                     Text(
                         "Everyday questions are answered right here on your phone. " +
                             "For open-ended ones, set up AI in Settings > Local AI parsing.",
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(12.dp),
                     )
                 }
             }

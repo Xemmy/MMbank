@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
@@ -31,10 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +65,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.xemmy.mmbank.ui.designsystem.MMScaffold
 
 data class GroupDetailUiState(
     val group: SplitGroup? = null,
@@ -175,18 +173,9 @@ fun GroupDetailScreen(
     var addExpenseOpen by remember { mutableStateOf(false) }
     var editingExpense by remember { mutableStateOf<GroupExpense?>(null) }
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = { Text(state.group?.let { "${it.icon} ${it.name}" } ?: "Group") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
+    MMScaffold(
+        title = state.group?.let { "${it.icon} ${it.name}" } ?: "Group",
+        onBack = onBack,
         floatingActionButton = {
             FloatingActionButton(onClick = { addExpenseOpen = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add expense")

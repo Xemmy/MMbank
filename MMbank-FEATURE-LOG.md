@@ -4893,3 +4893,10 @@ Checked `docs/gui-review.md` against the code (corrections are recorded at the e
 Tests: `AppNavigationTest` (+8).
 
 Not covered by CI: the 48dp buttons and ledger row height as rendered, the tab highlight and re-tap behaviour on a device (bottom bar and rail), and the search hint.
+
+## Pushed screens use the app's own scaffold (0.140.9)
+From `docs/gui-review.md` #5, with the corrected scope: ten pushed screens used Material's raw `Scaffold`, which paints the opaque canvas over the ambient background, and nine of them had a plain `TopAppBar` rather than `MMTopBar`. Bills, Goals, Merchant detail, Monthly report (keeps its "Year in review" action), Debt planner, Group detail, Splits, Copilot and Settings → Categories & People now use `MMScaffold`, with their FABs unchanged. Rules had no title or back arrow at all; it now shows "Parsing rules" with a back arrow. On Splits and Copilot the plain cards (net balance, group rows, the AI hint) use `MMCard`, and a whole group card is now the tap target.
+
+Tests: none. This is layout wiring with no logic.
+
+Not covered by CI: how the ten headers and the ambient background look on a device, the Rules back arrow, the Splits group card ripple, and the Copilot screen with the keyboard open.

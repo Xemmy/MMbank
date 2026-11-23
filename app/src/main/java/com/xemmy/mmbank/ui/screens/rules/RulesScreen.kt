@@ -20,7 +20,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +50,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.xemmy.mmbank.ui.designsystem.MMScaffold
 
 /** Learned merchant rules as (merchant, what it maps to) pairs, for display. */
 data class LearnedRules(
@@ -150,6 +150,7 @@ class RulesViewModel(private val container: AppContainer) : ViewModel() {
 fun RulesScreen(
     onEditRule: (Long) -> Unit,
     onNewRule: () -> Unit,
+    onBack: () -> Unit,
     viewModel: RulesViewModel = viewModel(factory = AppViewModelProvider.Factory),
 ) {
     val rules by viewModel.rules.collectAsStateWithLifecycle()
@@ -157,8 +158,9 @@ fun RulesScreen(
     val suggested = rules.filter { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
     val custom = rules.filterNot { it.name.startsWith(SUGGESTED_NAME_PREFIX) }
 
-    Scaffold(
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
+    MMScaffold(
+        title = "Parsing rules",
+        onBack = onBack,
         floatingActionButton = {
             FloatingActionButton(onClick = onNewRule) {
                 Icon(Icons.Filled.Add, contentDescription = "New rule")
