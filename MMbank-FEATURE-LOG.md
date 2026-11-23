@@ -4909,3 +4909,10 @@ Visible change: the list shows the saved order. Categories nobody has dragged no
 Tests: `CategoryHierarchyTest` (+4: sortOrder beats name for parents and children, tie-breaks, a drag round trip).
 
 Not covered by CI: the drag gesture itself on a device, and how a row with sub-categories moves under the finger (the grip still moves one place per 56dp of travel).
+
+## Merge-into list scrolls (0.140.11)
+Categories → ⋮ → Merge into… listed every other category in a plain column inside the dialog, so with more categories than fit the screen the rest were unreachable. The list now scrolls inside the dialog.
+
+Tests: none (layout only).
+
+Not covered by CI: the dialog on a device with a long category list, and at large font sizes.
