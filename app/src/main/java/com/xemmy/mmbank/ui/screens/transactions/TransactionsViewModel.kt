@@ -425,6 +425,116 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     val labelLinks: StateFlow<List<com.xemmy.mmbank.domain.label.LabelLink>> = container.labelRepository.observeLinks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val _exporting = MutableStateFlow(false)
+    private val _exportStatus = MutableStateFlow<String?>(null)
+
+    /** True while an export is being built and written; the menu entries ignore taps meanwhile. */
+    val exporting: StateFlow<Boolean> = _exporting
+
+    /** One-shot result line ("Exported 42 transactions") for the screen to show, then [clearExportStatus]. */
+    val exportStatus: StateFlow<String?> = _exportStatus
+
+    fun clearExportStatus() {
+        _exportStatus.value = null
+    }
+
+    /** The format last chosen in the export dialog. */
+    val lastExportFormat: com.xemmy.mmbank.domain.export.ExportFormat
+        get() = com.xemmy.mmbank.domain.export.ExportFormat.fromStored(container.preferences.activityExportFormat)
+
+    /** Suggested file name for the save dialog. */
+    fun exportFileName(format: com.xemmy.mmbank.domain.export.ExportFormat): String =
+        format.fileName(
+            java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")),
+        )
+
+    /**
+     * Writes what Activity shows (every active filter applied, same order) -- or, with
+     * [selectedOnly], just the rows ticked in bulk mode -- in [format]. [writeText] runs on IO and
+     * streams the text to the file the user picked.
+     */
+    fun exportTransactions(
+        format: com.xemmy.mmbank.domain.export.ExportFormat,
+        selectedOnly: Boolean,
+        writeText: suspend (String) -> Unit,
+    ) {
+        if (_exporting.value) return
+        val state = uiState.value
+        val source = if (selectedOnly) {
+            state.transactions.filter { it.id in state.selectedTransactionIds }
+        } else {
+            state.transactions
+        }
+        if (source.isEmpty()) {
+            _exportStatus.value = "Nothing to export"
+            return
+        }
+        container.preferences.activityExportFormat = format.name
+        _exporting.value = true
+        viewModelScope.launch {
+            runCatching {
+                val accounts = container.accountRepository.observeActive().first() +
+                    container.accountRepository.observeArchived().first()
+                val accountNames = accounts.associate { it.id to it.name }
+                val categories = container.categoryRepository.observeAll().first()
+                val labelList = container.labelRepository.observeAll().first()
+                val links = container.labelRepository.observeLinks().first()
+                val rates = container.ratesRepository.observeRates().first()
+                val base = container.preferences.defaultCurrency
+                val ratesFromBase = rates
+                    .filter { it.baseCode.equals(base, ignoreCase = true) }
+                    .associate { it.quoteCode.uppercase() to it.rate.toDouble() }
+                val labelNames = labelList.associate { it.id to it.name }
+                val tagsByTx = com.xemmy.mmbank.domain.label.LabelRules.byTransaction(links)
+                    .mapValues { (_, ids) -> ids.mapNotNull(labelNames::get).sorted() }
+                val summary = if (selectedOnly) {
+                    "Selected ${source.size} transaction${if (source.size == 1) "" else "s"}"
+                } else {
+                    com.xemmy.mmbank.domain.export.ActivityFilterSummary.describe(
+                        filters = state.filters,
+                        accountNames = accountNames,
+                        categoryNames = categories.associate { it.id to it.name },
+                        labelNames = labelNames,
+                    )
+                }
+                val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    val rows = com.xemmy.mmbank.domain.export.ExportRows.build(
+                        transactions = source,
+                        accountNames = accountNames,
+                        categories = categories,
+                        tagNamesByTransaction = tagsByTx,
+                        toBase = { amount, currency ->
+                            CurrencyMath.toBase(amount.toDouble(), currency, base, ratesFromBase)
+                                ?.takeIf { it.isFinite() }
+                                ?.let {
+                                    java.math.BigDecimal.valueOf(it)
+                                        .setScale(com.xemmy.mmbank.ui.util.fractionDigitsFor(base), java.math.RoundingMode.HALF_UP)
+                                }
+                        },
+                    )
+                    when (format) {
+                        com.xemmy.mmbank.domain.export.ExportFormat.CSV ->
+                            com.xemmy.mmbank.domain.export.TransactionCsvFormatter.format(rows)
+                        com.xemmy.mmbank.domain.export.ExportFormat.JSON ->
+                            com.xemmy.mmbank.domain.export.TransactionJsonFormatter.format(
+                                rows = rows,
+                                baseCurrency = base,
+                                filterSummary = summary,
+                                exportedAtMillis = System.currentTimeMillis(),
+                            )
+                    }
+                }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeText(text) }
+            }.onSuccess {
+                _exportStatus.value = "Exported ${source.size} transaction${if (source.size == 1) "" else "s"} as ${format.label}"
+            }.onFailure {
+                container.recordError("TransactionsViewModel.exportTransactions", it)
+                _exportStatus.value = "Export failed: ${it.message}"
+            }
+            _exporting.value = false
+        }
+    }
+
     /** One saved bill by id, for "Log payment" prefill; null when it is gone. */
     suspend fun loadBill(id: Long): com.xemmy.mmbank.domain.model.Bill? =
         container.billRepository.observeAll().first().firstOrNull { it.id == id }

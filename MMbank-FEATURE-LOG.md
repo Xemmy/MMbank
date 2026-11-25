@@ -4923,3 +4923,14 @@ The New/Edit category dialog (name, icon grid, colors, monthly cap, then "No par
 Tests: none (layout only).
 
 Not covered by CI: the dialog on a device, with the keyboard open and at large font sizes.
+
+## Export from Activity: CSV or JSON, with your filters (0.141.0)
+Activity's filter row has a new **Export** chip (and bulk mode's ⋮ menu an **Export selected…** item). It asks for a format, then opens the system save dialog. The file holds exactly the rows Activity shows, in the same order, with every active filter applied (search, date, type, account, person, tags, category, amount, source, analytics status), or only the ticked rows in bulk mode. The last format picked is remembered.
+
+Two formats: **CSV** for spreadsheets (UTF-8 with a byte-order mark so Excel reads Arabic, CRLF line ends, and text starting with `=`, `+`, `-` or `@` is prefixed with `'` so it can't run as a formula) and **JSON** for feeding an AI (named fields, real numbers and booleans, tags as an array, empty fields left out, and a header with the filter summary, base currency and how to read the signed amounts). Both come from one row builder (`ExportRows`) so they always agree: signed amount (negative = money out), amount in the base currency when a rate is known, type, merchant, category and parent, account (archived accounts keep their names), person, tags, note, source, sender, bill ref, excluded-from-stats, history-only, linked/refund ids, reported balance and id. The original SMS text is not exported. The dialog warns the file is not encrypted.
+
+The older Settings → CSV export (whole ledger, fewer columns) is unchanged.
+
+Tests: `ExportRowsTest` (+9), `TransactionCsvFormatterTest` (+11), `TransactionJsonFormatterTest` (+9), `ActivityFilterSummaryTest` (+5), `ExportFormatTest` (+2).
+
+Not covered by CI: the Export chip and dialog on a device, the save picker, opening the CSV in Excel/Sheets, and the JSON in an AI chat.

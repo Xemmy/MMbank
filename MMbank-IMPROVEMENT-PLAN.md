@@ -896,3 +896,4 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 - ✅ (0.122.0) Reordering polish: visible grip + hint, lift and slide animations, one consistent control on Categories and Manage accounts, child categories reorderable.
 - ✅ (0.123.0) Customizable Home: show/hide and reorder the Home boxes ("Customize Home").
 - ✅ (0.124.0) Customizable Insights: same for the Insights boxes and shortcut rows ("Customize Insights").
+- ✅ (0.141.0) Export from Activity: the filtered list (or bulk selection) as CSV for spreadsheets or JSON for AI, via an Export chip and dialog.

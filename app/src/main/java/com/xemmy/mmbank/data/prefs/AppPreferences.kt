@@ -33,6 +33,11 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_HIDE_ZERO_BALANCES, true)
         set(value) = prefs.edit().putBoolean(KEY_HIDE_ZERO_BALANCES, value).apply()
 
+    /** Last format picked in Activity's export dialog (ExportFormat name); "" = CSV. */
+    var activityExportFormat: String
+        get() = prefs.getString(KEY_ACTIVITY_EXPORT_FORMAT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_ACTIVITY_EXPORT_FORMAT, value).apply()
+
     /** Home screen section order/visibility, encoded by ScreenLayoutCodec; "" = default layout. */
     var homeLayoutRaw: String
         get() = prefs.getString(KEY_HOME_LAYOUT, "") ?: ""
@@ -491,6 +496,7 @@ class AppPreferences(context: Context) {
         const val KEY_CASHBACK_SPEND = "cashback_spend"
         const val KEY_HIDE_BALANCES = "hide_balances"
         const val KEY_HIDE_ZERO_BALANCES = "hide_zero_balances"
+        const val KEY_ACTIVITY_EXPORT_FORMAT = "activity_export_format"
         const val KEY_HOME_LAYOUT = "home_layout"
         const val KEY_INSIGHTS_LAYOUT = "insights_layout"
         const val KEY_BUDGET_ROLLOVER = "budget_rollover"

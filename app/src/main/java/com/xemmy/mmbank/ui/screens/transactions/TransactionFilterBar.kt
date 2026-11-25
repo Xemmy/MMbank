@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,6 +55,8 @@ internal fun TransactionFilterBar(
     onKindFilter: (com.xemmy.mmbank.domain.model.TransactionKind?) -> Unit = {},
     labels: List<com.xemmy.mmbank.domain.model.Label> = emptyList(),
     onToggleLabel: (Long) -> Unit = {},
+    /** Opens the export dialog for the rows currently shown; null hides the chip. */
+    onExport: (() -> Unit)? = null,
 ) {
     val f = state.filters
     var timeMenuOpen by remember { mutableStateOf(false) }
@@ -182,6 +185,18 @@ internal fun TransactionFilterBar(
                     label = if (secondaryCount > 0) "More filters ($secondaryCount)" else "More filters",
                     icon = Icons.Filled.FilterList,
                 )
+            }
+
+            // --- Export the rows now shown (filters applied) ---
+            if (onExport != null && state.transactions.isNotEmpty()) {
+                item {
+                    FilterBarChip(
+                        selected = false,
+                        onClick = onExport,
+                        label = "Export",
+                        icon = Icons.Filled.Share,
+                    )
+                }
             }
 
             // --- Clear all, only when something is active ---

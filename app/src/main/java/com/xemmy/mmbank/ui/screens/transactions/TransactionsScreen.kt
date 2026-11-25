@@ -265,6 +265,56 @@ fun TransactionsScreen(
     // so it's a plain flag rather than a per-transaction target.
     var bulkCategoryPickerOpen by remember { mutableStateOf(false) }
 
+    // Export: the dialog (null = closed, else "selected rows only?"), then the system save
+    // dialog. The choice is parked in saveable state because the picker is another activity.
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
+    val exportStatus by viewModel.exportStatus.collectAsStateWithLifecycle()
+    var exportDialogSelectedOnly by remember { mutableStateOf<Boolean?>(null) }
+    var pendingExportFormat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingExportSelectedOnly by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val writeExportTo: (android.net.Uri?) -> Unit = { uri ->
+        val format = pendingExportFormat?.let { com.xemmy.mmbank.domain.export.ExportFormat.fromStored(it) }
+        pendingExportFormat = null
+        if (uri != null && format != null) {
+            viewModel.exportTransactions(format, pendingExportSelectedOnly) { text ->
+                exportContext.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    ?: error("Couldn't open the selected file")
+            }
+        }
+    }
+    val csvExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv"),
+        writeExportTo,
+    )
+    val jsonExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+        writeExportTo,
+    )
+    LaunchedEffect(exportStatus) {
+        exportStatus?.let {
+            android.widget.Toast.makeText(exportContext, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearExportStatus()
+        }
+    }
+    exportDialogSelectedOnly?.let { selectedOnly ->
+        ExportDialog(
+            count = if (selectedOnly) state.selectedTransactionIds.size else state.transactions.size,
+            selectedOnly = selectedOnly,
+            initialFormat = viewModel.lastExportFormat,
+            onDismiss = { exportDialogSelectedOnly = null },
+            onConfirm = { format ->
+                exportDialogSelectedOnly = null
+                pendingExportFormat = format.name
+                pendingExportSelectedOnly = selectedOnly
+                val name = viewModel.exportFileName(format)
+                when (format) {
+                    com.xemmy.mmbank.domain.export.ExportFormat.CSV -> csvExportLauncher.launch(name)
+                    com.xemmy.mmbank.domain.export.ExportFormat.JSON -> jsonExportLauncher.launch(name)
+                }
+            },
+        )
+    }
+
     // Brand accent for a specific-account filter, reusing the same GlowTone
     // mapping every row already uses for its own origin glow — one source of
     // truth for "what color is this account", not a second hardcoded map.
@@ -348,6 +398,7 @@ fun TransactionsScreen(
                     onHistoryOnly = { viewModel.bulkSetHistoryOnly() },
                     onDelete = { viewModel.bulkDelete() },
                     onDeleteIgnoreSimilar = { viewModel.bulkDeleteAndIgnoreSimilar() },
+                    onExport = { exportDialogSelectedOnly = true },
                     onClose = { viewModel.exitBulkMode() },
                 )
             } else {
@@ -411,6 +462,7 @@ fun TransactionsScreen(
                         onKindFilter = viewModel::setKindFilter,
                         labels = labels,
                         onToggleLabel = viewModel::toggleLabelFilter,
+                        onExport = { exportDialogSelectedOnly = false },
                     )
                     // The category filter has no picker in either bar, so it
                     // is always shown here while active, with a way out.
@@ -724,6 +776,7 @@ private fun BulkModeBar(
     onHistoryOnly: () -> Unit,
     onDelete: () -> Unit,
     onDeleteIgnoreSimilar: () -> Unit,
+    onExport: () -> Unit,
     onClose: () -> Unit,
 ) {
     var accountMenuOpen by remember { mutableStateOf(false) }
@@ -797,6 +850,10 @@ private fun BulkModeBar(
                     Icon(Icons.Filled.MoreVert, contentDescription = "More bulk actions")
                 }
                 DropdownMenu(expanded = moreMenuOpen, onDismissRequest = { moreMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Export selected…") },
+                        onClick = { moreMenuOpen = false; onExport() },
+                    )
                     DropdownMenuItem(
                         text = { Text("Exclude from analytics") },
                         onClick = { moreMenuOpen = false; onExclude() },
@@ -894,6 +951,60 @@ private fun CompactFilterBar(
             )
         }
     }
+}
+
+/**
+ * Asks which format to export in, and warns the file is plain text. [count] is how many rows go
+ * out: the filtered list, or just the bulk selection.
+ */
+@Composable
+private fun ExportDialog(
+    count: Int,
+    selectedOnly: Boolean,
+    initialFormat: com.xemmy.mmbank.domain.export.ExportFormat,
+    onDismiss: () -> Unit,
+    onConfirm: (com.xemmy.mmbank.domain.export.ExportFormat) -> Unit,
+) {
+    var format by remember { mutableStateOf(initialFormat) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export $count transaction${if (count == 1) "" else "s"}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (selectedOnly) "Only the rows you ticked." else "Exactly what Activity shows now, with your filters applied.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                com.xemmy.mmbank.domain.export.ExportFormat.entries.forEach { option ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { format = option }
+                            .padding(vertical = 4.dp),
+                    ) {
+                        androidx.compose.material3.RadioButton(selected = format == option, onClick = { format = option })
+                        Column(Modifier.padding(start = 4.dp)) {
+                            Text(option.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                option.hint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "The file is NOT encrypted or password-protected. It holds your merchants, notes and amounts.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(format) }) { Text("Choose where to save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
