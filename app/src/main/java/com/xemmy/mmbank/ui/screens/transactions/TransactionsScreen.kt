@@ -258,6 +258,7 @@ fun TransactionsScreen(
         androidx.lifecycle.viewmodel.compose.viewModel(factory = AppViewModelProvider.Factory)
     val splitCandidates by splitReview.candidates.collectAsStateWithLifecycle()
     val splitAccountNames by splitReview.accountNames.collectAsStateWithLifecycle()
+    val splitPlans by splitReview.plans.collectAsStateWithLifecycle()
     var splitListOpen by remember { mutableStateOf(false) }
     var splitReviewId by remember { mutableStateOf<Long?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
@@ -629,9 +630,10 @@ fun TransactionsScreen(
         com.xemmy.mmbank.ui.screens.paylater.TabbySplitReviewDialog(
             candidate = reviewedSplit,
             accountNames = splitAccountNames,
-            onCreate = { count, mode, markMissingPaid ->
+            plans = splitPlans,
+            onCreate = { count, mode, markMissingPaid, paidFrom ->
                 splitReviewId = null
-                splitReview.create(reviewedSplit, count, mode, markMissingPaid)
+                splitReview.create(reviewedSplit, count, mode, markMissingPaid, paidFrom)
             },
             onNotASplit = { splitReviewId = null; splitReview.dismiss(reviewedSplit) },
             onDismiss = { splitReviewId = null },

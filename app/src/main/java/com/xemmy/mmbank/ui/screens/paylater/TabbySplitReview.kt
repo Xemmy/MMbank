@@ -2,6 +2,7 @@ package com.xemmy.mmbank.ui.screens.paylater
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +38,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.paylater.PayLaterSchedule
 import com.xemmy.mmbank.domain.paylater.TabbySplitDetector
 import com.xemmy.mmbank.domain.paylater.TabbySplitPlan
@@ -48,6 +52,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -79,17 +84,23 @@ class TabbySplitReviewViewModel(private val container: AppContainer) : ViewModel
         .recoverAndRetry("TabbySplitReviewViewModel.accountNames", container) { emptyMap() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** Existing plans, for the "Paid from" default (the card the last Tabby plan was paid from). */
+    val plans: StateFlow<List<PayLaterPlan>> = container.payLaterRepository.observePlans()
+        .recoverAndRetry("TabbySplitReviewViewModel.plans", container) { emptyList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun create(
         candidate: TabbySplitDetector.Candidate,
         count: Int,
         mode: TabbySplitPlan.Mode,
         markMissingPaid: Boolean,
+        paidFromAccountId: Long?,
         onDone: () -> Unit = {},
     ) {
         viewModelScope.launch {
             runCatching {
                 container.payLaterRepository.createFromSplitReview(
-                    TabbySplitPlan.build(candidate, count, mode, markMissingPaid),
+                    TabbySplitPlan.build(candidate, count, mode, markMissingPaid, paidFromAccountId),
                 )
             }.onFailure { container.recordError("TabbySplitReviewViewModel.create", it) }
             onDone()
@@ -101,8 +112,13 @@ class TabbySplitReviewViewModel(private val container: AppContainer) : ViewModel
         viewModelScope.launch {
             candidates.forEach { candidate ->
                 runCatching {
+                    // Re-read each time: the plan just created is the best guess for the next one's card.
+                    val existing = container.payLaterRepository.observePlans().first()
                     container.payLaterRepository.createFromSplitReview(
-                        TabbySplitPlan.build(candidate, candidate.count, mode, markMissingPaid = true),
+                        TabbySplitPlan.build(
+                            candidate, candidate.count, mode, markMissingPaid = true,
+                            paidFromAccountId = TabbySplitPlan.defaultPaidFrom(candidate, existing),
+                        ),
                     )
                 }.onFailure { container.recordError("TabbySplitReviewViewModel.createAll", it) }
             }
@@ -247,7 +263,8 @@ fun TabbySplitListDialog(
 fun TabbySplitReviewDialog(
     candidate: TabbySplitDetector.Candidate,
     accountNames: Map<Long, String>,
-    onCreate: (count: Int, mode: TabbySplitPlan.Mode, markMissingPaid: Boolean) -> Unit,
+    plans: List<PayLaterPlan>,
+    onCreate: (count: Int, mode: TabbySplitPlan.Mode, markMissingPaid: Boolean, paidFromAccountId: Long?) -> Unit,
     onNotASplit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -258,6 +275,9 @@ fun TabbySplitReviewDialog(
     var count by remember(candidate.purchase.id) { mutableStateOf(candidate.count) }
     var mode by remember(candidate.purchase.id) { mutableStateOf(TabbySplitPlan.Mode.PER_PAYMENT) }
     var markMissingPaid by remember(candidate.purchase.id) { mutableStateOf(true) }
+    // The card that paid. Tabby's own messages never name it, so payments with no card SMS use this.
+    var paidFrom by remember(candidate.purchase.id) { mutableStateOf(TabbySplitPlan.defaultPaidFrom(candidate, plans)) }
+    var pickerOpen by remember { mutableStateOf(false) }
 
     val match = remember(candidate, count) { TabbySplitDetector.matchFor(candidate, count, zone) }
     val firstDay = Instant.ofEpochMilli(purchase.timestampMillis).atZone(zone).toLocalDate()
@@ -288,7 +308,7 @@ fun TabbySplitReviewDialog(
                     val payment = match.payments.getOrNull(i)
                     val status = when {
                         payment != null -> "paid " + day(payment.timestampMillis, zone) +
-                            (payment.accountId?.let { accountNames[it] }?.let { " · $it" } ?: "")
+                            ((payment.accountId ?: paidFrom)?.let { accountNames[it] }?.let { " · $it" } ?: "")
                         TabbySplitPlan.isOverdue(inst, now) -> "no payment found"
                         else -> "upcoming"
                     }
@@ -302,6 +322,31 @@ fun TabbySplitReviewDialog(
                         Checkbox(checked = markMissingPaid, onCheckedChange = { markMissingPaid = it })
                         Text("Mark payments not found as paid", style = MaterialTheme.typography.bodyMedium)
                     }
+                }
+                Text("Paid from", style = MaterialTheme.typography.labelLarge)
+                Box {
+                    TextButton(onClick = { pickerOpen = true }) {
+                        Text(paidFrom?.let { accountNames[it] } ?: "Pick the card that paid")
+                    }
+                    DropdownMenu(expanded = pickerOpen, onDismissRequest = { pickerOpen = false }) {
+                        accountNames.forEach { (id, name) ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = { paidFrom = id; pickerOpen = false })
+                        }
+                    }
+                }
+                // A payment with no card of its own, and no card picked, would show up as "money in no account".
+                if (paidFrom == null && match.payments.any { it != null && it.accountId == null }) {
+                    Text(
+                        "Pick the card, or these payments stay under \"not in any account\" until you file them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Text(
+                        "Used for the plan, and for payments whose message names no card (Tabby's own never does).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 ModeChoice(
                     mode = mode,
@@ -330,7 +375,7 @@ fun TabbySplitReviewDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onCreate(count, mode, markMissingPaid) }) { Text("Create plan") } },
+        confirmButton = { TextButton(onClick = { onCreate(count, mode, markMissingPaid, paidFrom) }) { Text("Create plan") } },
         dismissButton = {
             Row {
                 TextButton(onClick = onNotASplit) { Text("Not a split") }

@@ -37,13 +37,36 @@ object TabbySplitPlan {
         val deleteIds: List<Long>,
         /** Names for rows that have none: the purchase gets the shop, each payment the provider. */
         val nameIfBlank: Map<Long, String>,
+        /**
+         * Payment rows with no card of their own (Tabby's receipt names none) -> the card that paid.
+         * A row that already has an account is never in here.
+         */
+        val assignAccountIds: Map<Long, Long>,
+        /**
+         * The purchase row, set aside as "history only": Tabby's checkout names no card, and
+         * filing 924 on one would take it off that card a second time, so it stays in no account on
+         * purpose and stays out of the "not in any account" lists.
+         */
+        val historyOnlyIds: List<Long>,
     )
+
+    /**
+     * The card to preselect as "Paid from": the card of the first charge found for the split, else the
+     * card the user's most recent plan with this provider was paid from; null when neither is known.
+     */
+    fun defaultPaidFrom(candidate: TabbySplitDetector.Candidate, plans: List<PayLaterPlan>): Long? =
+        candidate.match.payments.firstNotNullOfOrNull { it?.accountId }
+            ?: plans
+                .filter { it.payFromAccountId != null && it.provider.equals(candidate.provider, ignoreCase = true) }
+                .maxByOrNull { it.createdAt }
+                ?.payFromAccountId
 
     fun build(
         candidate: TabbySplitDetector.Candidate,
         count: Int = candidate.count,
         mode: Mode = Mode.PER_PAYMENT,
         markMissingPaid: Boolean = true,
+        paidFromAccountId: Long? = null,
         zone: ZoneId = ZoneId.systemDefault(),
         nowMillis: Long = System.currentTimeMillis(),
     ): Result {
@@ -61,6 +84,7 @@ object TabbySplitPlan {
             }
         }
         val paymentIds = match.payments.mapNotNull { it?.id }
+        val paidFrom = paidFromAccountId ?: match.payments.firstNotNullOfOrNull { it?.accountId }
         val plan = PayLaterPlan(
             merchant = candidate.merchant,
             provider = candidate.provider,
@@ -68,7 +92,7 @@ object TabbySplitPlan {
             currencyCode = purchase.currencyCode,
             installmentCount = count,
             cadence = PayLaterCadence.MONTHLY,
-            payFromAccountId = match.payments.firstNotNullOfOrNull { it?.accountId },
+            payFromAccountId = paidFrom,
             sourceTransactionId = purchase.id,
             categoryId = purchase.categoryId,
             createdAt = nowMillis,
@@ -89,6 +113,12 @@ object TabbySplitPlan {
             convertReceiptIds = match.legacyReceiptPayments.map { it.id },
             deleteIds = match.duplicateReceipts.map { it.id },
             nameIfBlank = names,
+            assignAccountIds = if (paidFrom == null) {
+                emptyMap()
+            } else {
+                match.payments.filterNotNull().filter { it.accountId == null }.associate { it.id to paidFrom }
+            },
+            historyOnlyIds = if (purchase.accountId == null) listOf(purchase.id) else emptyList(),
         )
     }
 

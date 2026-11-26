@@ -4985,3 +4985,15 @@ Not covered by CI:
 - the real order and timing of the three live SMS;
 - the actual wording of the paying bank's charge for each card (only the "Tabby" mention is relied on);
 - the Room `adoptAccount` / `setMerchantIfBlank` updates and `createFromSplitReview` on a real database.
+
+## Tabby split rows are never left "in no account" (0.142.1)
+Tabby's own SMS (the checkout, the "payment received" receipt) never names a card, so a row built from one had no account. In this app a row with no account counts as "money not in any account" (Home, Accounts, the integrity check, the unknown-account suggestions), which looked like something was missing. A reviewed Tabby split now leaves nothing in that state.
+
+- **"Paid from" picker** in the Tabby split review. It is preselected with the card of the first card charge found for the split, else the card the last Tabby plan was paid from. It is used as the plan's "pay from" account, and for any payment whose only record is Tabby's receipt (including old +income receipts turned into payments). A payment that already has a card (e.g. ADIB CB from the bank SMS) is never changed. With no card picked and such a payment present, the dialog says so; the payment then stays unfiled, as before.
+- **The purchase row** (e.g. Shory 924) is set aside as "history only": it must not go on a card, because balances count it and the card would drop by 924 a second time, but it no longer shows under "not in any account". It is the existing "before I started tracking" flag; no schema change.
+- **Later months:** a charge auto-matched to a plan installment with no account of its own takes the plan's "pay from" card.
+- "Create all" uses each split's default card.
+
+Tests: `TabbySplitPlanTest` (+4: picker on receipt-only payments and not on ones with a card, plan follows picker then first charge, purchase set aside in both modes, default card order).
+
+Not covered by CI: the picker on a device, and the `assignAccountIfNull` / `setHistoryOnly` updates and the auto-match account assignment on a real database.

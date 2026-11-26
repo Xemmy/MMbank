@@ -612,6 +612,11 @@ class PayLaterRepositoryImpl(
             }
             // A bank charge the parser could not name ("ADIB") reads as the provider it paid.
             plan?.provider?.takeIf { it.isNotBlank() }?.let { transactionDao.setMerchantIfBlank(transactionId, it) }
+            // Tabby's receipt names no card: a payment with none takes the card the plan is paid from.
+            val payFrom = plan?.payFromAccountId
+            if (payFrom != null && matched != null && matched.accountId == null) {
+                transactionDao.assignAccountIfNull(listOf(transactionId), payFrom)
+            }
             dao.updateInstallment(
                 com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, transactionId, paidAtMillis).toEntity(),
             )
@@ -664,6 +669,13 @@ class PayLaterRepositoryImpl(
             )
             if (result.excludeIds.isNotEmpty()) transactionDao.bulkSetExcludeFromStats(result.excludeIds, true)
             result.nameIfBlank.forEach { (id, name) -> transactionDao.setMerchantIfBlank(id, name) }
+            // Nothing from a reviewed split may be left looking like "money in no account": payments
+            // with no card of their own take the card that paid, and the purchase (which must stay
+            // off every card) is set aside on purpose.
+            result.assignAccountIds.entries
+                .groupBy({ it.value }, { it.key })
+                .forEach { (accountId, ids) -> transactionDao.assignAccountIfNull(ids, accountId) }
+            if (result.historyOnlyIds.isNotEmpty()) transactionDao.setHistoryOnly(result.historyOnlyIds, true)
             if (result.deleteIds.isNotEmpty()) transactions.deleteMany(result.deleteIds)
             planId
         }

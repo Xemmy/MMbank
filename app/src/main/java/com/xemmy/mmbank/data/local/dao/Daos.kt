@@ -265,6 +265,10 @@ interface TransactionDao {
     )
     suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int
 
+    /** Files the rows in [ids] that are in no account into [accountId]; a row that already has one is left alone. */
+    @Query("UPDATE transactions SET accountId = :accountId, historyOnly = 0 WHERE id IN (:ids) AND accountId IS NULL")
+    suspend fun assignAccountIfNull(ids: List<Long>, accountId: Long): Int
+
     /**
      * Sets or clears "history only" on the rows in [ids] that are in no account
      * (see `Transaction.historyOnly`). A row that has an account is left alone:

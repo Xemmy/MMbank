@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.paylater
 
 import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -116,6 +117,67 @@ class TabbySplitPlanTest {
         assertEquals(listOf(2L), result.convertReceiptIds)
         assertTrue(result.deleteIds.isEmpty())
         assertEquals("Tabby", result.nameIfBlank[2L])
+    }
+
+    // --- Which account everything lands on: nothing from a reviewed split may sit in "no account" ---
+
+    @Test fun `the picked card goes on a payment that names none and never replaces one that does`() {
+        val receiptOnly = TabbySplitPlan.build(
+            candidate(checkout(today), receipt(today)), paidFromAccountId = 9, zone = zone, nowMillis = now,
+        )
+        assertEquals(mapOf(2L to 9L), receiptOnly.assignAccountIds)
+        assertEquals(9L, receiptOnly.plan.payFromAccountId)
+
+        // The ADIB charge already carries its card (5): nothing is reassigned, the plan follows the picker.
+        val withCharge = TabbySplitPlan.build(
+            candidate(checkout(today), receipt(today), charge(today)), paidFromAccountId = 9, zone = zone, nowMillis = now,
+        )
+        assertTrue(withCharge.assignAccountIds.isEmpty())
+        assertEquals(9L, withCharge.plan.payFromAccountId)
+    }
+
+    @Test fun `with no card picked the plan follows the first card charge and a receipt-only payment stays unfiled`() {
+        val withCharge = TabbySplitPlan.build(
+            candidate(checkout(today), receipt(today), charge(today)), zone = zone, nowMillis = now,
+        )
+        assertEquals(5L, withCharge.plan.payFromAccountId)
+        assertTrue(withCharge.assignAccountIds.isEmpty())
+
+        val receiptOnly = TabbySplitPlan.build(candidate(checkout(today), receipt(today)), zone = zone, nowMillis = now)
+        assertNull(receiptOnly.plan.payFromAccountId)
+        assertTrue(receiptOnly.assignAccountIds.isEmpty())
+    }
+
+    @Test fun `the purchase row is set aside on purpose in both modes, unless it already has a card`() {
+        listOf(TabbySplitPlan.Mode.PER_PAYMENT, TabbySplitPlan.Mode.FULL_PRICE).forEach { mode ->
+            val result = TabbySplitPlan.build(
+                candidate(checkout(today), receipt(today), charge(today)), mode = mode, zone = zone, nowMillis = now,
+            )
+            assertEquals(listOf(1L), result.historyOnlyIds)
+        }
+        val filed = TabbySplitPlan.build(
+            candidate(checkout(today).copy(accountId = 4), charge(today)), zone = zone, nowMillis = now,
+        )
+        assertTrue(filed.historyOnlyIds.isEmpty())
+    }
+
+    private fun plan(id: Long, provider: String, from: Long?, createdAt: Long) = PayLaterPlan(
+        id = id, merchant = "x", provider = provider, totalAmount = BigDecimal("100"), currencyCode = "AED",
+        installmentCount = 4, payFromAccountId = from, createdAt = createdAt,
+    )
+
+    @Test fun `the default card is the first charge's, else the last Tabby plan's, else none`() {
+        val plans = listOf(
+            plan(1, "Tabby", from = 7, createdAt = 10),
+            plan(2, "Tabby", from = 8, createdAt = 20),
+            plan(3, "Tamara", from = 6, createdAt = 30),
+            plan(4, "Tabby", from = null, createdAt = 40),
+        )
+        val withCharge = candidate(checkout(today), charge(today))
+        assertEquals(5L, TabbySplitPlan.defaultPaidFrom(withCharge, plans))
+        val noCharge = candidate(checkout(today))
+        assertEquals(8L, TabbySplitPlan.defaultPaidFrom(noCharge, plans))
+        assertNull(TabbySplitPlan.defaultPaidFrom(noCharge, emptyList()))
     }
 
     @Test fun `another count builds that many payments and drops charges that no longer fit`() {
