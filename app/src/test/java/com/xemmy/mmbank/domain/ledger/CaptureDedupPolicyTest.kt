@@ -134,4 +134,56 @@ class CaptureDedupPolicyTest {
     @Test fun theUsualBankThenReceiptPairStillMergesAfterHours() {
         assertTrue(CaptureDedupPolicy.isDuplicate(bank.copy(sender = "ADCB"), 0L, receipt.copy(sender = "du"), 5 * hour))
     }
+
+    // --- Tabby installment: Tabby's receipt + the paying card's charge (any bank) ---
+
+    private val tabbyReceipt = Side(
+        SMS, "We received your first payment of AED 231.00. To pay ahead, open the Tabby app.", null,
+        merchant = "Tabby", sender = "Tabby",
+    )
+    private val cardCharge = Side(
+        SMS, "Trx. of AED231.00 on your card ending *876 at Tabby, 8001234 UAE is Approved.", "876",
+        merchant = null, sender = "ADIB",
+    )
+
+    @Test fun tabbyReceiptAndTheCardChargeAreOnePaymentInEitherOrder() {
+        assertTrue(same(tabbyReceipt, cardCharge))
+        assertTrue(same(cardCharge, tabbyReceipt))
+        assertTrue(CaptureDedupPolicy.isDuplicate(cardCharge, 0L, tabbyReceipt, 3 * hour))
+        assertTrue(CaptureDedupPolicy.isDuplicate(tabbyReceipt, 0L, cardCharge, 3 * hour))
+    }
+
+    @Test fun anotherBanksWordingForTheTabbyChargeAlsoPairs() {
+        val enbd = Side(SMS, "Purchase of AED 231.00 with card ending 4321 at TABBY FZ LLC", "4321", merchant = "TABBY FZ LLC", sender = "ENBD")
+        assertTrue(CaptureDedupPolicy.isPayLaterReceiptPair(tabbyReceipt, enbd))
+    }
+
+    @Test fun twoTabbyReceiptsOrTwoCardChargesAreTwoPayments() {
+        val second = tabbyReceipt.copy(rawMessage = "We received your second payment of AED 231.00.")
+        assertFalse(CaptureDedupPolicy.isPayLaterReceiptPair(tabbyReceipt, second))
+        assertFalse(same(tabbyReceipt, second))
+        val otherCharge = cardCharge.copy(rawMessage = "Trx. of AED231.00 on your card ending *876 at Tabby, 8009999 UAE is Approved.")
+        assertFalse(CaptureDedupPolicy.isPayLaterReceiptPair(cardCharge, otherCharge))
+        assertFalse(same(cardCharge, otherCharge))
+    }
+
+    @Test fun aReceiptThatAlreadyTookACardChargeDoesNotTakeAnother() {
+        val merged = tabbyReceipt.copy(cardEnding = "876")
+        assertFalse(CaptureDedupPolicy.isPayLaterReceiptPair(merged, cardCharge))
+        assertFalse(same(merged, cardCharge))
+    }
+
+    @Test fun aChargeAtAnotherShopIsNotTabbysPayment() {
+        val noon = Side(SMS, "Trx. of AED231.00 on your card ending *876 at NOON, UAE is Approved.", "876", merchant = "NOON", sender = "ADIB")
+        assertFalse(CaptureDedupPolicy.isPayLaterReceiptPair(tabbyReceipt, noon))
+    }
+
+    @Test fun theSameTextFromABankIsNotATabbyReceipt() {
+        val bankText = tabbyReceipt.copy(sender = "ADIB")
+        assertFalse(CaptureDedupPolicy.isPayLaterReceiptPair(bankText, cardCharge))
+    }
+
+    @Test fun aTabbyReceiptHalfADayAwayIsAnotherPayment() {
+        assertFalse(CaptureDedupPolicy.isDuplicate(cardCharge, 0L, tabbyReceipt, 13 * hour))
+    }
 }

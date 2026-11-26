@@ -131,6 +131,25 @@ interface TransactionDao {
     suspend fun setBillRef(id: Long, ref: String)
 
     /**
+     * A merged duplicate's card fills in what the kept row lacked: a Tabby receipt (no card)
+     * that arrived before the bank's charge takes the bank's account and card ending, so the
+     * card balance moves. Never overwrites an account or ending already stored.
+     */
+    @Query(
+        """
+        UPDATE transactions
+        SET accountId = COALESCE(accountId, :accountId),
+            accountNumberSuffix = COALESCE(accountNumberSuffix, :suffix)
+        WHERE id = :id
+        """
+    )
+    suspend fun adoptAccount(id: Long, accountId: Long?, suffix: String)
+
+    /** Names a row that has none ("Tabby" on a bank charge matched to a Pay Later plan). */
+    @Query("UPDATE transactions SET merchant = :merchant WHERE id = :id AND (merchant IS NULL OR TRIM(merchant) = '')")
+    suspend fun setMerchantIfBlank(id: Long, merchant: String)
+
+    /**
      * The row already captured from this exact message text, if any. Backs the
      * paste importer's "already imported" check: re-pasting the same backlog
      * must not double-record it, and unlike

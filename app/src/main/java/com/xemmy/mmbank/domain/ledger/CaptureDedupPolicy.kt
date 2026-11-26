@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.ledger
 
 import com.xemmy.mmbank.domain.intelligence.BillDetector
 import com.xemmy.mmbank.domain.model.TransactionSource
+import com.xemmy.mmbank.domain.paylater.PayLaterProviders
 import com.xemmy.mmbank.util.Digits
 
 /**
@@ -19,8 +20,10 @@ import com.xemmy.mmbank.util.Digits
  * [isDuplicate] is the single entry point the repository uses: within
  * [NEAR_WINDOW_MILLIS] the rules above apply; further apart only a bill
  * payment's bank SMS + provider receipt ([isBillPair], up to
- * [BILL_WINDOW_MILLIS]) or an SMS and the messaging app's notification copy of
- * that same SMS ([isSmsMirror], up to [MIRROR_WINDOW_MILLIS]) can merge.
+ * [BILL_WINDOW_MILLIS]), a Tabby installment's receipt + card charge
+ * ([isPayLaterReceiptPair], up to [MIRROR_WINDOW_MILLIS]) or an SMS and the
+ * messaging app's notification copy of that same SMS ([isSmsMirror], up to
+ * [MIRROR_WINDOW_MILLIS]) can merge.
  */
 object CaptureDedupPolicy {
 
@@ -56,6 +59,7 @@ object CaptureDedupPolicy {
         val gap = kotlin.math.abs(existingAt - incomingAt)
         if (gap <= NEAR_WINDOW_MILLIS) return isSameTransaction(existing, incoming)
         if (gap <= BILL_WINDOW_MILLIS && isBillPair(existing, incoming)) return true
+        if (gap <= MIRROR_WINDOW_MILLIS && isPayLaterReceiptPair(existing, incoming)) return true
         return isSmsMirror(existing, existingAt, incoming, incomingAt)
     }
 
@@ -64,6 +68,7 @@ object CaptureDedupPolicy {
         // A telecom / utility payment arrives as the bank's deduction SMS AND the provider's
         // receipt SMS: same channel, different text, same payment -- unless they name different lines.
         if (isBillPair(existing, incoming)) return true
+        if (isPayLaterReceiptPair(existing, incoming)) return true
         if (existing.source == incoming.source) {
             val a = existing.rawMessage?.trim()
             val b = incoming.rawMessage?.trim()
@@ -96,6 +101,26 @@ object CaptureDedupPolicy {
         }
         // Two number-less bank SMS are two payments (two lines); one numbered + one plain is the pair.
         return existingRef != null || incomingRef != null
+    }
+
+    /**
+     * A Tabby installment arrives as Tabby's receipt ("We received your first payment of AED
+     * 231.00") AND the paying card's charge ("... AED231.00 ... at Tabby"), from whichever bank
+     * the card belongs to. One payment when:
+     *  - exactly one side is Tabby's receipt (two receipts, or two bank charges, are two payments);
+     *  - the other side paid Tabby ([PayLaterProviders.providerOf]);
+     *  - the card endings don't conflict;
+     *  - a kept receipt has not already absorbed a charge: the repository then copies the card's
+     *    ending onto it, and a receipt's own text never names one.
+     */
+    fun isPayLaterReceiptPair(existing: Side, incoming: Side): Boolean {
+        val existingReceipt = PayLaterProviders.isReceipt(existing.rawMessage, existing.sender)
+        val incomingReceipt = PayLaterProviders.isReceipt(incoming.rawMessage, incoming.sender)
+        if (existingReceipt == incomingReceipt) return false
+        val charge = if (existingReceipt) incoming else existing
+        if (PayLaterProviders.providerOf(charge.merchant, charge.rawMessage, charge.sender) == null) return false
+        if (existingReceipt && !existing.cardEnding.isNullOrBlank()) return false
+        return !endingsConflict(existing.cardEnding, incoming.cardEnding)
     }
 
     /**

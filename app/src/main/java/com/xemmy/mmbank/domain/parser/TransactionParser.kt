@@ -114,6 +114,7 @@ class TransactionParser(
                 ?.trimEnd('.', ',', '-', ':')
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
+                ?: rule.fixedMerchant
 
             val accountNumberSuffix = match.groupOrNull(RuleCompiler.ACCOUNT_NUMBER_GROUP)
                 ?.trim()
@@ -129,7 +130,7 @@ class TransactionParser(
             // like "...processed after next statement is paid" in cashback credits,
             // so we never demote a CREDIT rule here — only rescue a mislabeled credit.
             val direction =
-                if (builtIn && rule.direction == TransactionDirection.DEBIT &&
+                if (builtIn && !rule.keepDirection && rule.direction == TransactionDirection.DEBIT &&
                     GenericExtractors.detectDirectionOverride(text) == TransactionDirection.CREDIT
                 ) {
                     TransactionDirection.CREDIT

@@ -253,6 +253,13 @@ fun TransactionsScreen(
     }
     val spendSummary by viewModel.spendSummaryState.collectAsStateWithLifecycle()
     val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
+    // Tabby split checkouts waiting for "Create plan" (see TabbySplitReview).
+    val splitReview: com.xemmy.mmbank.ui.screens.paylater.TabbySplitReviewViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel(factory = AppViewModelProvider.Factory)
+    val splitCandidates by splitReview.candidates.collectAsStateWithLifecycle()
+    val splitAccountNames by splitReview.accountNames.collectAsStateWithLifecycle()
+    var splitListOpen by remember { mutableStateOf(false) }
+    var splitReviewId by remember { mutableStateOf<Long?>(null) }
     var selectedTransaction by remember { mutableStateOf<Transaction?>(null) }
     var deleteTarget by remember { mutableStateOf<Transaction?>(null) }
     var splitTarget by remember { mutableStateOf<Transaction?>(null) }
@@ -413,6 +420,10 @@ fun TransactionsScreen(
                 )
                 if (uncategorizedCount > 0) {
                     UncategorizedBanner(count = uncategorizedCount, onClick = onOpenUncategorizedQueue)
+                }
+                com.xemmy.mmbank.ui.screens.paylater.TabbySplitBanner(splitCandidates) {
+                    val single = splitCandidates.singleOrNull()
+                    if (single != null) splitReviewId = single.purchase.id else splitListOpen = true
                 }
                 // Premium-only hero spend summary, directly above the filter bar.
                 if (heroVisible) {
@@ -611,6 +622,27 @@ fun TransactionsScreen(
     }
     subscriptionTarget?.let { tx ->
         com.xemmy.mmbank.ui.screens.subscriptions.SubscriptionPickerDialog(charge = tx, onDismiss = { subscriptionTarget = null })
+    }
+
+    val reviewedSplit = splitReviewId?.let { id -> splitCandidates.firstOrNull { it.purchase.id == id } }
+    if (reviewedSplit != null) {
+        com.xemmy.mmbank.ui.screens.paylater.TabbySplitReviewDialog(
+            candidate = reviewedSplit,
+            accountNames = splitAccountNames,
+            onCreate = { count, mode, markMissingPaid ->
+                splitReviewId = null
+                splitReview.create(reviewedSplit, count, mode, markMissingPaid)
+            },
+            onNotASplit = { splitReviewId = null; splitReview.dismiss(reviewedSplit) },
+            onDismiss = { splitReviewId = null },
+        )
+    } else if (splitListOpen && splitCandidates.isNotEmpty()) {
+        com.xemmy.mmbank.ui.screens.paylater.TabbySplitListDialog(
+            candidates = splitCandidates,
+            onOpen = { splitReviewId = it.purchase.id },
+            onCreateAll = { mode -> splitListOpen = false; splitReview.createAll(splitCandidates, mode) },
+            onDismiss = { splitListOpen = false },
+        )
     }
 
     selectedTransaction?.let { tx ->

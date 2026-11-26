@@ -760,8 +760,10 @@ data class PayLaterPlan(
     val createdAt: Long,
     val isDemo: Boolean = false,
     /**
-     * The captured purchase was itself one installment (e.g. a Tabby x4 SMS for 1/4): only that
-     * share was counted as spending, so later payments must count as ordinary spending too.
+     * Installment payments count as ordinary spending. Either the captured purchase was itself one
+     * installment (e.g. a Tabby x4 SMS for 1/4, so only that share was counted), or the user chose
+     * "each payment when paid" for a full-price checkout, whose purchase row is then hidden from
+     * spending (see [com.xemmy.mmbank.domain.paylater.TabbySplitPlan]).
      */
     val sourceIsInstallment: Boolean = false,
 )

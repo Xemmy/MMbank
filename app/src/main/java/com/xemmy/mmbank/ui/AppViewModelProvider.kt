@@ -79,6 +79,7 @@ object AppViewModelProvider {
         initializer { PayLaterViewModel(mmBankApp().container) }
         initializer { SubscriptionLinkViewModel(mmBankApp().container) }
         initializer { com.xemmy.mmbank.ui.screens.paylater.QuickSplitViewModel(mmBankApp().container) }
+        initializer { com.xemmy.mmbank.ui.screens.paylater.TabbySplitReviewViewModel(mmBankApp().container) }
     }
 
     private fun CreationExtras.mmBankApp(): MMBankApp =

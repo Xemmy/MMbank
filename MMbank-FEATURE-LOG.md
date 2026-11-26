@@ -4934,3 +4934,54 @@ The older Settings → CSV export (whole ledger, fewer columns) is unchanged.
 Tests: `ExportRowsTest` (+9), `TransactionCsvFormatterTest` (+11), `TransactionJsonFormatterTest` (+9), `ActivityFilterSummaryTest` (+5), `ExportFormatTest` (+2).
 
 Not covered by CI: the Export chip and dialog on a device, the save picker, opening the CSV in Excel/Sheets, and the JSON in an AI chat.
+
+## Tabby split-in-4: one purchase, not three rows (0.142.0)
+One Tabby checkout used to land as three unrelated rows. For example Shory AED 924 split ×4:
+- Tabby's "Your AED 924.00 purchase at Shory is confirmed" came in as −924 with no merchant name.
+- Tabby's "We received your first payment of AED 231.00" came in as **+231 income**.
+- The paying card's own "… AED231.00 … at Tabby" came in as −231, also with no name.
+
+Spending counted 1,155 instead of 924, plus a fake 231 of income.
+
+**Capture**
+- The checkout SMS now keeps the shop as merchant ("Shory"), via rule `builtin.en.debit.paylater.purchase`.
+- Tabby's receipt is a debit named "Tabby" (rule `builtin.en.debit.paylater.receipt`). It only applies to messages from Tabby's own sender; the same wording from a bank stays a credit. Two new `CompiledRule` fields make this work: `keepDirection` and `fixedMerchant`.
+- Tabby's receipt and the card's charge are merged into one row, whichever arrives first, up to 12 h apart (`CaptureDedupPolicy.isPayLaterReceiptPair`). The paying card can be any bank's: the charge is recognised by "Tabby" in its merchant or text (`PayLaterProviders.providerOf`), but not "Tabby Card/Cash" or "Tabby+".
+- When the receipt arrives first, the bank's copy now gives the row its account and card ending (`adoptAccount`, also for bill pairs).
+
+**Review prompt (nothing is created without it)**
+- Activity shows "Tabby split found · Shory AED 924 · Review", or "N Tabby splits found" for several.
+- `TabbySplitDetector` searches the whole history, so earlier splits are found too. It recognises older rows by their text.
+- The number of payments is worked out from the first payment's share of the total (231 of 924 → 4), and defaults to 4.
+- Payments are matched monthly on the purchase day (±7 days), from any bank, and each charge belongs to one split only. Old "+income" receipts are recognised as well.
+- The dialog shows each payment found ("paid 26 Nov · ADIB CB" / "upcoming" / "no payment found"). It also has count chips and a "Mark payments not found as paid" box, on by default.
+- It offers two ways to count the purchase:
+  - **Each payment when paid** (default): the purchase row is hidden from spending. The plan has `sourceIsInstallment`, so the charges count as spending, including later ones that auto-match.
+  - **Full price on the purchase day**: the purchase counts once, and every installment charge is hidden from spending. Card balances are right either way.
+- Create plan, in one transaction:
+  - saves the plan;
+  - links the found charges;
+  - deletes the duplicate receipts;
+  - turns an old receipt that is the only record of a payment into that payment's debit;
+  - names nameless rows ("Shory", "Tabby").
+- "Not a split" remembers the purchase (preferences, not backups). The list dialog has "Create all".
+
+**Later months**
+- `PayLaterAutoMatch` also matches a charge that names Tabby only in its text.
+- A matched charge with no merchant is named after the provider.
+- Tabby/Tamara/Postpay/Spotii charges are never suggested as subscriptions. Tabby+ and Tamara Smart, the paid memberships, still can be.
+
+Tests:
+- `TransactionParserTest` (+5)
+- `CaptureDedupPolicyTest` (+7)
+- `PayLaterProvidersTest` (5)
+- `TabbySplitDetectorTest` (9)
+- `TabbySplitPlanTest` (6)
+- `PayLaterAutoMatchTest` (+2)
+- `NeverSubscriptionTest` (+1)
+
+Not covered by CI:
+- the banner and both dialogs on a device;
+- the real order and timing of the three live SMS;
+- the actual wording of the paying bank's charge for each card (only the "Tabby" mention is relied on);
+- the Room `adoptAccount` / `setMerchantIfBlank` updates and `createFromSplitReview` on a real database.

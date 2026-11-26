@@ -610,6 +610,8 @@ class PayLaterRepositoryImpl(
                     }
                 }
             }
+            // A bank charge the parser could not name ("ADIB") reads as the provider it paid.
+            plan?.provider?.takeIf { it.isNotBlank() }?.let { transactionDao.setMerchantIfBlank(transactionId, it) }
             dao.updateInstallment(
                 com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, transactionId, paidAtMillis).toEntity(),
             )
@@ -639,4 +641,30 @@ class PayLaterRepositoryImpl(
         }
         dao.updateInstallment(com.xemmy.mmbank.domain.paylater.PayLaterPayment.markUnpaid(installment).toEntity())
     }
+
+    override suspend fun createFromSplitReview(result: com.xemmy.mmbank.domain.paylater.TabbySplitPlan.Result): Long =
+        database.withTransaction {
+            // An old Tabby receipt stored as +income is the only record of that payment: it becomes
+            // the payment's debit (what capture records for it since 0.142).
+            result.convertReceiptIds.forEach { id ->
+                val row = transactionDao.getById(id) ?: return@forEach
+                if (row.linkedTransactionId != null) return@forEach
+                transactionDao.update(
+                    row.copy(
+                        direction = com.xemmy.mmbank.domain.model.TransactionDirection.DEBIT,
+                        kind = com.xemmy.mmbank.domain.model.TransactionKind.SPEND,
+                        kindUserSet = false,
+                        refundOfId = null,
+                    ),
+                )
+            }
+            val planId = dao.insertPlanWithInstallments(
+                result.plan.copy(id = 0).toEntity(),
+                result.installments.map { it.copy(id = 0).toEntity() },
+            )
+            if (result.excludeIds.isNotEmpty()) transactionDao.bulkSetExcludeFromStats(result.excludeIds, true)
+            result.nameIfBlank.forEach { (id, name) -> transactionDao.setMerchantIfBlank(id, name) }
+            if (result.deleteIds.isNotEmpty()) transactions.deleteMany(result.deleteIds)
+            planId
+        }
 }

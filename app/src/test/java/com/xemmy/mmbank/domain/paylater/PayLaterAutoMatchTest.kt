@@ -48,6 +48,23 @@ class PayLaterAutoMatchTest {
         assertNotNull(PayLaterAutoMatch.match(listOf(plan), installments, tx(merchant = "Tabby")))
     }
 
+    // The paying card can be any bank's: its charge names Tabby in its own words, often with no
+    // merchant the parser could read.
+    private fun bankCharge(merchant: String?, raw: String, sender: String = "ADIB") =
+        tx(merchant = merchant).copy(rawMessage = raw, sender = sender)
+
+    @Test fun `a bank charge that only names Tabby in its text matches the next installment`() {
+        val adib = bankCharge(null, "Trx. of AED100.00 on your card ending *876 at Tabby, 8001234 UAE is Approved.")
+        assertEquals(11L, PayLaterAutoMatch.match(listOf(plan), installments, adib)?.installment?.id)
+        val enbd = bankCharge("TABBY FZ LLC", "Purchase of AED 100.00 at TABBY FZ LLC", sender = "ENBD")
+        assertEquals(11L, PayLaterAutoMatch.match(listOf(plan), installments, enbd)?.installment?.id)
+    }
+
+    @Test fun `a nameless charge that does not mention Tabby does not match`() {
+        assertNull(PayLaterAutoMatch.match(listOf(plan), installments, bankCharge(null, "Trx. of AED100.00 on your card ending *876 is Approved.")))
+        assertNull(PayLaterAutoMatch.match(listOf(plan), installments, bankCharge(null, "AED 100.00 with Tabby Card ••4543")))
+    }
+
     @Test fun `the plan's own source charge and an already linked charge never match`() {
         assertNull(PayLaterAutoMatch.match(listOf(plan), installments, tx(id = 7)))
         val linked = installments.map { if (it.id == 11L) it.copy(paymentTransactionId = 50) else it }

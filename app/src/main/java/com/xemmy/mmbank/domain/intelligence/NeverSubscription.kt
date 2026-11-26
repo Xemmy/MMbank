@@ -27,6 +27,9 @@ object NeverSubscription {
         rule("Beauty or retail", "sephora|beauty|salon|\\bspa\\b|pharmacy"),
         rule("Healthcare visit", "clinic|medical|hospital|dental|\\bdr\\.? "),
         rule("Ride-hailing", "\\bubr\\b"),
+        // Monthly Tabby installments repeat to the day and amount, yet are a split purchase
+        // (see Pay Later). Tabby+ / Tamara Smart, the paid memberships, are let through.
+        rule("Pay Later installment", "\\btabby\\b(?!\\s*(?:\\+|plus\\b))|\\btamara\\b(?!\\s*(?:\\+|plus\\b|smart\\b))|\\bpostpay\\b|\\bspotii\\b"),
     )
 
     /** "Ride-hailing, not a subscription" style text, or null when the merchant may be a subscription. */

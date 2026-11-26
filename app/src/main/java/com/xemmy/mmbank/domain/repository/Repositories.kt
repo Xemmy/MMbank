@@ -538,4 +538,10 @@ interface PayLaterRepository {
      * recording nothing new. Undo then only unmarks it; the captured transaction stays.
      */
     suspend fun matchInstallment(installmentId: Long, transactionId: Long, paidAtMillis: Long)
+
+    /**
+     * Saves a reviewed Tabby split ([com.xemmy.mmbank.domain.paylater.TabbySplitPlan.Result]) and
+     * applies its row changes, all or nothing; returns the plan id.
+     */
+    suspend fun createFromSplitReview(result: com.xemmy.mmbank.domain.paylater.TabbySplitPlan.Result): Long
 }

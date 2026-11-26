@@ -57,6 +57,15 @@ class NeverSubscriptionTest {
         assertEquals("Ride-hailing, not a subscription", NeverSubscription.reasonFor("UBR"))
     }
 
+    @Test fun `monthly tabby installments are not a subscription but Tabby+ is allowed`() {
+        assertEquals("Pay Later installment, not a subscription", NeverSubscription.reasonFor("Tabby"))
+        assertEquals("Pay Later installment, not a subscription", NeverSubscription.reasonFor("TABBY FZ LLC"))
+        assertEquals("Pay Later installment, not a subscription", NeverSubscription.reasonFor("Tamara"))
+        assertNull(NeverSubscription.reasonFor("Tabby+"))
+        assertNull(NeverSubscription.reasonFor("Tabby Plus"))
+        assertNull(NeverSubscription.reasonFor("Tamara Smart"))
+    }
+
     private fun unhinted(day1: LocalDate, day2: LocalDate) =
         listOf(tx(1, "Hulu", day1, "29.00"), tx(2, "Hulu", day2, "29.00"))
 

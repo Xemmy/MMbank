@@ -193,6 +193,12 @@ class TransactionRepositoryImpl(
                 dao.setBillRef(existing.id, incomingBillRef)
                 onRefLearned(existing.copy(billRef = incomingBillRef).toDomain())
             }
+            // The kept row came without a card (a Tabby receipt that beat the bank's SMS):
+            // take the card the bank's copy names, so that account's balance moves.
+            val incomingSuffix = parsed.accountNumberSuffix?.takeIf { it.isNotBlank() }
+            if (existing.accountId == null && incomingSuffix != null) {
+                dao.adoptAccount(existing.id, detectAccountByNumber(incomingSuffix, parsed.currencyCode), incomingSuffix)
+            }
             IngestResult.Duplicate(existing.id)
         } else {
             // Rule pin > account number printed in the message > learned

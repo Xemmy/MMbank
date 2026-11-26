@@ -105,22 +105,33 @@ object BuiltInRules {
     // at a higher priority.
     private const val ACC_AR = "حساب\\S*\\s*رقم\\s*(?<accountNumberSuffix>[Xx]*\\d{3,20})"
 
+    /** Tabby's "Your AED 924.00 purchase at Shory is confirmed" -- a split-in-4 checkout. */
+    const val PAY_LATER_PURCHASE_RULE = "builtin.en.debit.paylater.purchase"
+
+    /** Tabby's "We received your first payment of AED 231.00" -- one installment, paid by the user. */
+    const val PAY_LATER_RECEIPT_RULE = "builtin.en.debit.paylater.receipt"
+
     private fun rule(
         name: String,
         pattern: String,
         direction: TransactionDirection,
         priority: Int,
         category: TransactionCategory = TransactionCategory.NORMAL,
+        senderPattern: String? = null,
+        keepDirection: Boolean = false,
+        fixedMerchant: String? = null,
     ) =
         CompiledRule(
             ruleId = null,
             name = name,
             pattern = Regex(pattern, RegexOption.IGNORE_CASE),
-            senderPattern = null,
+            senderPattern = senderPattern?.let { Regex(it, RegexOption.IGNORE_CASE) },
             direction = direction,
             defaultCurrency = null,
             priority = priority,
             category = category,
+            keepDirection = keepDirection,
+            fixedMerchant = fixedMerchant,
         )
 
     val all: List<CompiledRule> = listOf(
@@ -158,6 +169,37 @@ object BuiltInRules {
         // and lets them grab the *remaining card limit* as the amount instead
         // of the real purchase amount.
         rule("builtin.en.debit.tabby.purchase", "Transaction\\s+of\\s+$CUR\\s?$AMT\\s+At\\s+$MERCHANT_TABBY$ACCTAIL", TransactionDirection.DEBIT, 10),
+
+        // --- Pay Later split checkout (priority 12) ---
+        // Tabby "Your AED 924.00 purchase at Shory is confirmed. To pay as low as
+        // 77.00/month, extend your payment plan in the app". The generic amount-first
+        // rule (priority 8) read the amount but has no merchant group, so the row had
+        // no name. The lazy capture stops before "is confirmed". The name deliberately
+        // has no "tabby" in it: QuickSplitDialog reads that as "this SMS was ONE
+        // installment", and this one is the full price.
+        rule(
+            PAY_LATER_PURCHASE_RULE,
+            "\\bYour\\s+$CUR\\s?$AMT\\s+purchase\\s+at\\s+(?<merchant>[^.,;\\n*]{2,40}?)\\s+is\\s+confirmed\\b",
+            TransactionDirection.DEBIT,
+            12,
+        ),
+
+        // --- Pay Later installment receipt (priority 20) ---
+        // Tabby "We received your first payment of AED 231.00. To pay ahead ...": Tabby
+        // confirming money the user PAID, not money in. "payment of" made it a debit
+        // and the parser's "received" rescue then flipped it into a +231 income, next to
+        // the card's own -231 for the same payment. Kept a debit named "Tabby", so
+        // CaptureDedupPolicy merges it with the bank's charge. Tabby's sender only: a card
+        // issuer's "We received your payment of AED 3,600" is a credit to the card.
+        rule(
+            PAY_LATER_RECEIPT_RULE,
+            "\\bwe\\s+(?:have\\s+)?received\\s+your\\s+(?:\\w+\\s+){0,2}?payment\\s+of\\s+$CUR\\s?$AMT",
+            TransactionDirection.DEBIT,
+            20,
+            senderPattern = "tabby",
+            keepDirection = true,
+            fixedMerchant = "Tabby",
+        ),
 
         // --- Purchases with a trailing cashback line (priority 12) ---
         // Kah-ching (KAST): "$27.71 spent at SHABIK ELECTRIC VEHICL ⏎ $0.42

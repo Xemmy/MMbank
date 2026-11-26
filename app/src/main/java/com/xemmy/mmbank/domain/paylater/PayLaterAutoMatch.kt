@@ -27,11 +27,15 @@ object PayLaterAutoMatch {
         if (tx.direction != TransactionDirection.DEBIT || tx.kind != TransactionKind.SPEND || tx.excludeFromStats) return null
         if (tx.id != 0L && installments.any { it.paymentTransactionId == tx.id }) return null
         val txKey = key(tx.merchant)
-        if (txKey.isEmpty()) return null
+        // The card's charge names Tabby however its bank words it ("at Tabby", "TABBY FZ LLC"),
+        // even when the parser found no merchant -- the paying card can be any bank's.
+        val paidProvider = PayLaterProviders.providerOf(tx.merchant, tx.rawMessage, tx.sender)?.let(::key)
+        if (txKey.isEmpty() && paidProvider == null) return null
         val candidates = plans.mapNotNull { plan ->
             if (plan.sourceTransactionId == tx.id && tx.id != 0L) return@mapNotNull null
             if (!plan.currencyCode.equals(tx.currencyCode, ignoreCase = true)) return@mapNotNull null
-            if (txKey != key(plan.merchant) && txKey != key(plan.provider)) return@mapNotNull null
+            val sameName = txKey.isNotEmpty() && (txKey == key(plan.merchant) || txKey == key(plan.provider))
+            if (!sameName && paidProvider != key(plan.provider)) return@mapNotNull null
             val next = installments.filter { it.planId == plan.id && !it.isPaid }.minByOrNull { it.number }
                 ?: return@mapNotNull null
             val expected = next.amount.toDouble()

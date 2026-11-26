@@ -30,6 +30,14 @@ data class CompiledRule(
      * and extraction-failure rules.
      */
     val signatures: List<String> = emptyList(),
+    /**
+     * Built-ins only: the rule's [direction] is final. Skips the parser's DEBIT→CREDIT rescue
+     * for messages whose first direction word is "received" -- needed when "we received your
+     * payment" is the provider confirming money the user PAID (a Tabby installment receipt).
+     */
+    val keepDirection: Boolean = false,
+    /** Merchant recorded when the pattern captures none (e.g. "Tabby" for Tabby's own receipts). */
+    val fixedMerchant: String? = null,
 )
 
 object RuleCompiler {

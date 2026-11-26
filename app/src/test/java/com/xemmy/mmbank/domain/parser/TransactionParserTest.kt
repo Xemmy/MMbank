@@ -281,6 +281,70 @@ class TransactionParserTest {
         assertEquals(BigDecimal("2575.63"), r!!.amount)
         assertEquals("AED", r.currencyCode)
         assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("SHEIN", r.merchant)
+    }
+
+    // A Tabby split-in-4 checkout: the purchase names the shop (it used to have no merchant), and
+    // Tabby's receipt for the first payment is money the user paid, not a +231 income.
+    @Test
+    fun `tabby split checkout keeps the shop as merchant`() {
+        val r = parser.parse(
+            sms(
+                "Your AED 924.00 purchase at Shory is confirmed. To pay as low as 77.00/month, extend your payment plan in the app",
+                sender = "Tabby",
+            )
+        )
+        assertNotNull(r)
+        assertEquals(0, BigDecimal("924.00").compareTo(r!!.amount))
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("Shory", r.merchant)
+        assertEquals(BuiltInRules.PAY_LATER_PURCHASE_RULE, r.matchedRuleName)
+    }
+
+    @Test
+    fun `tabby installment receipt is a payment made, named Tabby`() {
+        val r = parser.parse(
+            sms("We received your first payment of AED 231.00. To pay ahead, open the Tabby app.", sender = "Tabby")
+        )
+        assertNotNull(r)
+        assertEquals(0, BigDecimal("231.00").compareTo(r!!.amount))
+        assertEquals(TransactionDirection.DEBIT, r.direction)
+        assertEquals("Tabby", r.merchant)
+        assertEquals(BuiltInRules.PAY_LATER_RECEIPT_RULE, r.matchedRuleName)
+    }
+
+    @Test
+    fun `tabby app receipt with ordinal payment parses too`() {
+        val r = parser.parse(
+            sms("We have received your 2nd payment of AED 231.00. Thank you!", sender = "com.tabby.customer")
+        )
+        assertEquals(TransactionDirection.DEBIT, r!!.direction)
+        assertEquals("Tabby", r.merchant)
+    }
+
+    @Test
+    fun `payment received from any other sender stays a credit`() {
+        val r = parser.parse(sms("We received your first payment of AED 231.00. Thank you.", sender = "BANK"))
+        assertNotNull(r)
+        assertEquals(TransactionDirection.CREDIT, r!!.direction)
+        assertNotEquals(BuiltInRules.PAY_LATER_RECEIPT_RULE, r.matchedRuleName)
+    }
+
+    @Test
+    fun `keepDirection and fixedMerchant apply only to the rule that sets them`() {
+        val amount = "(?<amount>\\d+(?:\\.\\d+)?)"
+        fun rule(keep: Boolean, fixed: String?) = CompiledRule(
+            ruleId = null, name = "builtin.test", pattern = Regex("payment of (?<currency>AED) $amount", RegexOption.IGNORE_CASE),
+            senderPattern = null, direction = TransactionDirection.DEBIT, defaultCurrency = "AED", priority = 10,
+            keepDirection = keep, fixedMerchant = fixed,
+        )
+        val text = sms("We received your payment of AED 50.00")
+        val flipped = TransactionParser(listOf(rule(keep = false, fixed = null))).parse(text)!!
+        assertEquals(TransactionDirection.CREDIT, flipped.direction)
+        assertNull(flipped.merchant)
+        val kept = TransactionParser(listOf(rule(keep = true, fixed = "Tabby"))).parse(text)!!
+        assertEquals(TransactionDirection.DEBIT, kept.direction)
+        assertEquals("Tabby", kept.merchant)
     }
 
     @Test

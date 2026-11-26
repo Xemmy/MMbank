@@ -356,6 +356,12 @@ class AppPreferences(context: Context) {
         get() = prefs.getStringSet(KEY_NEVER_SUBSCRIPTION, emptySet()) ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_NEVER_SUBSCRIPTION, value).apply()
 
+    /** Tabby split purchases (transaction ids) the user said are "Not a split"; not in backups. */
+    var dismissedPayLaterSplitIds: Set<Long>
+        get() = (prefs.getStringSet(KEY_DISMISSED_PAY_LATER_SPLITS, emptySet()) ?: emptySet())
+            .mapNotNull { it.toLongOrNull() }.toSet()
+        set(value) = prefs.edit().putStringSet(KEY_DISMISSED_PAY_LATER_SPLITS, value.map { it.toString() }.toSet()).apply()
+
     /**
      * Months of transaction history to keep before the opt-in retention job
      * (see [com.xemmy.mmbank.data.retention.TransactionRetentionWorker]) prunes
@@ -530,6 +536,7 @@ class AppPreferences(context: Context) {
         const val KEY_SUBSCRIPTION_REMINDERS = "subscription_reminders_enabled"
         const val KEY_SUBSCRIPTION_REMINDERS_SENT = "subscription_reminders_sent"
         const val KEY_NEVER_SUBSCRIPTION = "never_subscription_keys"
+        const val KEY_DISMISSED_PAY_LATER_SPLITS = "dismissed_pay_later_split_ids"
         const val KEY_NOT_BILL = "not_bill_ids"
         const val KEY_INTEGRITY_MUTED = "integrity_muted_keys"
         const val KEY_TRANSACTION_RETENTION_MONTHS = "transaction_retention_months"
