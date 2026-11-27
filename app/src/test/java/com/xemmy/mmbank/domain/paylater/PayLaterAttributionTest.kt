@@ -195,7 +195,7 @@ class PayLaterAttributionTest {
         assertTrue(PayLaterAttribution.learnsMerchantRule(tx(1, merchant = "Tabby+"), inSplit = false))
     }
 
-    @Test fun `a row of a split teaches no merchant rule: the split is re-filed instead`() {
+    @Test fun `a row of a split teaches no merchant rule because the split is re-filed instead`() {
         assertFalse(PayLaterAttribution.learnsMerchantRule(tx(1, merchant = "Noon"), inSplit = true))
     }
 }
