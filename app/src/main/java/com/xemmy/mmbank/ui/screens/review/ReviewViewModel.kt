@@ -6,6 +6,7 @@ import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.Account
 import com.xemmy.mmbank.domain.model.Category
 import com.xemmy.mmbank.domain.model.Transaction
+import com.xemmy.mmbank.domain.paylater.PayLaterAttribution
 import com.xemmy.mmbank.domain.parser.CategorySuggestion
 import com.xemmy.mmbank.domain.parser.CategorySuggestionEngine
 import java.math.BigDecimal
@@ -109,9 +110,9 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
     fun assignSuggestion(transaction: Transaction, suggestion: CategorySuggestion) {
         viewModelScope.launch {
             runCatching {
-                val categoryId = suggestion.categoryId
-                    ?: createAndLearnCategory(transaction, suggestion.name, suggestion.icon, suggestion.colorHex)
-                container.transactionRepository.setCategory(transaction.id, categoryId)
+                val created = suggestion.categoryId == null
+                val categoryId = suggestion.categoryId ?: createCategory(suggestion.name, suggestion.icon, suggestion.colorHex)
+                file(transaction, categoryId, learn = created)
             }.onFailure { container.recordError("ReviewViewModel.assignSuggestion", it) }
         }
     }
@@ -119,7 +120,7 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
     /** "More Categories…" bottom-sheet pick. */
     fun assignCategory(transaction: Transaction, category: Category) {
         viewModelScope.launch {
-            runCatching { container.transactionRepository.setCategory(transaction.id, category.id) }
+            runCatching { file(transaction, category.id, learn = false) }
                 .onFailure { container.recordError("ReviewViewModel.assignCategory", it) }
         }
     }
@@ -145,7 +146,7 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
                         parentCategoryId = parentCategoryId,
                     )
                 )
-                container.transactionRepository.setCategory(transaction.id, categoryId)
+                file(transaction, categoryId, learn = false)
             }.onFailure { container.recordError("ReviewViewModel.createAndAssignCategory", it) }
         }
     }
@@ -164,20 +165,30 @@ class ReviewViewModel(private val container: AppContainer) : ViewModel() {
                 val approvable = highConfidenceApprovable(container.transactionRepository.observeUncategorized().first())
                 approvable.forEach { transaction ->
                     val name = transaction.suggestedCategoryName ?: return@forEach
-                    val categoryId = createAndLearnCategory(
-                        transaction, name,
+                    val categoryId = createCategory(
+                        name,
                         transaction.suggestedCategoryIcon ?: "🏷️",
                         transaction.suggestedCategoryColorHex ?: "#9E9E9E",
                     )
-                    container.transactionRepository.setCategory(transaction.id, categoryId)
+                    file(transaction, categoryId, learn = true)
                 }
             }.onFailure { container.recordError("ReviewViewModel.approveAllHighConfidence", it) }
         }
     }
 
-    private suspend fun createAndLearnCategory(transaction: Transaction, name: String, icon: String, colorHex: String): Long {
-        val categoryId = container.categoryRepository.save(Category(name = name, icon = icon, colorHex = colorHex, isCustom = true))
-        transaction.merchant?.takeIf { it.isNotBlank() }?.let { container.categoryRepository.learnMapping(it, categoryId) }
-        return categoryId
+    private suspend fun createCategory(name: String, icon: String, colorHex: String): Long =
+        container.categoryRepository.save(Category(name = name, icon = icon, colorHex = colorHex, isCustom = true))
+
+    /**
+     * Files [transaction] under [categoryId]. A row of a Pay Later split re-files the whole split;
+     * any other row teaches its merchant when [learn], unless it paid a provider like Tabby
+     * ([PayLaterAttribution.learnsMerchantRule]).
+     */
+    private suspend fun file(transaction: Transaction, categoryId: Long, learn: Boolean) {
+        container.transactionRepository.setCategory(transaction.id, categoryId)
+        val inSplit = container.payLaterRepository.refileSplitOf(transaction.id, categoryChanged = true, personChanged = false)
+        if (learn && PayLaterAttribution.learnsMerchantRule(transaction, inSplit)) {
+            transaction.merchant?.takeIf { it.isNotBlank() }?.let { container.categoryRepository.learnMapping(it, categoryId) }
+        }
     }
 }

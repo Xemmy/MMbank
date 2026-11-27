@@ -56,10 +56,7 @@ object TabbySplitPlan {
      */
     fun defaultPaidFrom(candidate: TabbySplitDetector.Candidate, plans: List<PayLaterPlan>): Long? =
         candidate.match.payments.firstNotNullOfOrNull { it?.accountId }
-            ?: plans
-                .filter { it.payFromAccountId != null && it.provider.equals(candidate.provider, ignoreCase = true) }
-                .maxByOrNull { it.createdAt }
-                ?.payFromAccountId
+            ?: PayLaterSplit.lastPayFrom(candidate.provider, plans)
 
     fun build(
         candidate: TabbySplitDetector.Candidate,

@@ -2,6 +2,7 @@ package com.xemmy.mmbank.domain.paylater
 
 import com.xemmy.mmbank.domain.ledger.TransferLegs
 import com.xemmy.mmbank.domain.model.AccountType
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.PayLaterInstallment
 import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.TransactionDirection
@@ -112,6 +113,41 @@ class PayLaterPaymentTest {
     fun `an installment SMS stays spending when only one installment was counted`() {
         assertEquals(Shape.SPEND, PayLaterPayment.matchedShape(plan(source = 7).copy(sourceIsInstallment = true), matchedAccountId = 1))
         assertEquals(Shape.SPEND, PayLaterPayment.matchedShape(plan(source = null), matchedAccountId = 1))
+    }
+
+    // --- 0.143.0: a recorded payment is filed like the rest of its split ---
+
+    @Test
+    fun `a recorded payment takes the purchase's category and person as the plan's`() {
+        val attribution = PayLaterAttribution.Attribution(categoryId = 3, person = "Sara")
+        val spend = PayLaterPayment.build(plan(source = null), installment, from, null, 5, attribution, defaultPerson = "Me").paying
+        assertEquals(3L, spend.categoryId)
+        assertEquals(AssignmentSource.PLAN, spend.categorySource)
+        assertEquals("Sara", spend.person)
+        assertEquals(AssignmentSource.PLAN, spend.personSource)
+        // Hidden from spending, it is still filed the same way.
+        val hidden = PayLaterPayment.build(plan(source = 99), installment, from, null, 5, attribution).paying
+        assertTrue(hidden.excludeFromStats)
+        assertEquals(3L, hidden.categoryId)
+        assertEquals("Sara", hidden.person)
+    }
+
+    @Test
+    fun `with no person to follow a recorded payment takes the default person, as a default`() {
+        val attribution = PayLaterAttribution.Attribution(categoryId = null, person = null)
+        val tx = PayLaterPayment.build(plan(source = null), installment, from, null, 5, attribution, defaultPerson = " Me ").paying
+        assertEquals("Me", tx.person)
+        assertEquals(AssignmentSource.DEFAULT, tx.personSource)
+        assertNull(tx.categoryId)
+        assertEquals(AssignmentSource.DEFAULT, tx.categorySource)
+    }
+
+    @Test
+    fun `without an attribution a recorded payment still follows the plan's own category`() {
+        val tx = PayLaterPayment.build(plan(source = null), installment, from, null, paidAtMillis = 5).paying
+        assertEquals(6L, tx.categoryId)
+        assertEquals(AssignmentSource.PLAN, tx.categorySource)
+        assertNull(tx.person)
     }
 
     @Test

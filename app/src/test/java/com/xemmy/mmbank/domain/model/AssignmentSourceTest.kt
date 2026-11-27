@@ -17,6 +17,19 @@ class AssignmentSourceTest {
     }
 
     @Test
+    fun `a value copied from a Pay Later plan is not a merchant guess to replace`() {
+        // Merchant learning (backfillCategoryByMerchant, PersonLearner) must leave it to the plan.
+        assertFalse(AssignmentSource.PLAN.isReassignable)
+        assertEquals("Follows its Pay Later plan", AssignmentSource.PLAN.explain("category"))
+    }
+
+    @Test
+    fun `afterEdit keeps a plan's value when unchanged and makes a changed one the user's`() {
+        assertEquals(AssignmentSource.PLAN, AssignmentSource.afterEdit(AssignmentSource.PLAN, 5L, 5L))
+        assertEquals(AssignmentSource.USER, AssignmentSource.afterEdit(AssignmentSource.PLAN, 5L, 6L))
+    }
+
+    @Test
     fun `each source explains itself in plain words`() {
         assertEquals("Chosen by you", AssignmentSource.USER.explain("category"))
         assertEquals("Learned from your earlier choices", AssignmentSource.LEARNED.explain("person"))

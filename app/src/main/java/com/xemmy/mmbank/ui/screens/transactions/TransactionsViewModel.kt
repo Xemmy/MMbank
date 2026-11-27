@@ -144,6 +144,7 @@ import com.xemmy.mmbank.domain.ai.AiTransactionPrompt
 import com.xemmy.mmbank.domain.parser.GenericExtractors
 import com.xemmy.mmbank.domain.parser.IgnoreKeywordSuggester
 import com.xemmy.mmbank.domain.parser.MerchantCategorizer
+import com.xemmy.mmbank.domain.paylater.PayLaterAttribution
 import com.xemmy.mmbank.domain.usecase.BulkTransactionPatch
 import com.xemmy.mmbank.domain.usecase.FieldUpdate
 import com.xemmy.mmbank.ui.AppViewModelProvider
@@ -755,6 +756,8 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             // A newly typed name joins the saved list so it's reusable and exported.
             person?.let(container.preferences::addPerson)
             container.transactionRepository.setPerson(transactionId, person)
+            // A Pay Later split is one purchase: its other rows follow.
+            container.payLaterRepository.refileSplitOf(transactionId, categoryChanged = false, personChanged = true)
         }
 
     /** Swipe-to-flag: quick toggle of the analytics-exclusion flag without opening the edit dialog. */
@@ -782,7 +785,7 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
     fun setCategoryId(transaction: Transaction, categoryId: Long?) =
         safeWrite("setCategoryId") {
             container.transactionRepository.setCategory(transaction.id, categoryId)
-            learnCategory(transaction, categoryId)
+            learnCategory(transaction, categoryId, refileSplit(transaction))
         }
 
     fun createAndAssignCategory(
@@ -804,15 +807,27 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
             )
         )
         container.transactionRepository.setCategory(transaction.id, categoryId)
-        learnCategory(transaction, categoryId)
+        learnCategory(transaction, categoryId, refileSplit(transaction))
     }
+
+    /**
+     * A category picked on a row of a Pay Later split re-files the whole split (the purchase and
+     * every payment follow); true when [transaction] is in one.
+     */
+    private suspend fun refileSplit(transaction: Transaction): Boolean =
+        container.payLaterRepository.refileSplitOf(transaction.id, categoryChanged = true, personChanged = false)
 
     /**
      * Teaches merchant -> category from a manual correction. Clearing a
      * category ([categoryId] null) teaches nothing: "not this" is not a rule.
+     * Nor does a row of a split ([inSplit]) or a payment to Tabby: "Tabby"
+     * names who collected the money, not what was bought, and a rule would
+     * file every other purchase's payments the same way
+     * ([PayLaterAttribution.learnsMerchantRule]).
      */
-    private suspend fun learnCategory(transaction: Transaction, categoryId: Long?) {
+    private suspend fun learnCategory(transaction: Transaction, categoryId: Long?, inSplit: Boolean) {
         if (categoryId == null) return
+        if (!PayLaterAttribution.learnsMerchantRule(transaction, inSplit)) return
         val merchant = transaction.merchant?.takeIf { it.isNotBlank() } ?: return
         container.categoryRepository.learnMapping(merchant, categoryId)
     }
@@ -977,6 +992,12 @@ class TransactionsViewModel(private val container: AppContainer) : ViewModel() {
         // A new kind goes through the ledger so transfer links are made or
         // released consistently.
         if (kind != original.kind) container.ledgerRepository.setKind(original.id, kind, rememberForMerchant = false)
+        // A Pay Later split is one purchase: a new category or person here reaches its other rows.
+        val categoryChanged = original.categoryId != categoryId
+        val personChanged = original.person?.trim().orEmpty() != person?.trim().orEmpty()
+        if (categoryChanged || personChanged) {
+            container.payLaterRepository.refileSplitOf(original.id, categoryChanged, personChanged)
+        }
         labelIds?.let { container.labelRepository.setLabels(original.id, it) }
     }
 

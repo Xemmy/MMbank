@@ -897,3 +897,4 @@ Every batch above is verified by a green CI run (unit tests, the design-lint rat
 - ✅ (0.123.0) Customizable Home: show/hide and reorder the Home boxes ("Customize Home").
 - ✅ (0.124.0) Customizable Insights: same for the Insights boxes and shortcut rows ("Customize Insights").
 - ✅ (0.141.0) Export from Activity: the filtered list (or bulk selection) as CSV for spreadsheets or JSON for AI, via an Export chip and dialog.
+- ✅ (0.143.0) Split ×X / Pay Later payments follow their purchase: category and person come from the purchase, not from the "Tabby" name; editing any row of a split re-files the whole split; Tabby rows no longer teach merchant category rules; existing splits fixed once on update; quick split preselects the provider's last "Paid from" card.

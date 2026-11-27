@@ -33,6 +33,7 @@ object PayLaterSplit {
         zone: ZoneId = ZoneId.systemDefault(),
         provider: String = "Tabby",
         nowMillis: Long = System.currentTimeMillis(),
+        plans: List<PayLaterPlan> = emptyList(),
     ): Split {
         require(count in PayLaterSchedule.MIN_COUNT..PayLaterSchedule.MAX_COUNT) { "count out of range" }
         val total = total(charge, count, chargeIsInstallment)
@@ -55,7 +56,8 @@ object PayLaterSplit {
             currencyCode = charge.currencyCode,
             installmentCount = count,
             cadence = cadence,
-            payFromAccountId = charge.accountId,
+            // A charge with no card (Tabby's own SMS) is paid from the card this provider's last plan used.
+            payFromAccountId = charge.accountId ?: lastPayFrom(provider, plans),
             sourceTransactionId = charge.id,
             categoryId = charge.categoryId,
             createdAt = nowMillis,
@@ -63,6 +65,13 @@ object PayLaterSplit {
         )
         return Split(plan, installments)
     }
+
+    /** The card the user's most recent plan with [provider] is paid from; null when no plan names one. */
+    fun lastPayFrom(provider: String, plans: List<PayLaterPlan>): Long? =
+        plans
+            .filter { it.payFromAccountId != null && it.provider.trim().equals(provider.trim(), ignoreCase = true) }
+            .maxByOrNull { it.createdAt }
+            ?.payFromAccountId
 
     /** Whether later payments of a split count as spending, for the sheet's one-line explanation. */
     fun laterPaymentsCountAsSpending(chargeIsInstallment: Boolean): Boolean = chargeIsInstallment

@@ -544,4 +544,19 @@ interface PayLaterRepository {
      * applies its row changes, all or nothing; returns the plan id.
      */
     suspend fun createFromSplitReview(result: com.xemmy.mmbank.domain.paylater.TabbySplitPlan.Result): Long
+
+    /**
+     * The user just changed the category ([categoryChanged]) and/or person ([personChanged]) of
+     * [transactionId]. When that row is the purchase or a payment of a Pay Later split, the whole
+     * split follows ([com.xemmy.mmbank.domain.paylater.PayLaterAttribution.refileFromEdit]) and this
+     * returns true, so the caller learns no merchant rule from it. False when the row is in no split.
+     */
+    suspend fun refileSplitOf(transactionId: Long, categoryChanged: Boolean, personChanged: Boolean): Boolean
+
+    /**
+     * Files every plan's payments under its purchase's category and person (the one-time fix for
+     * splits made before payments followed their purchase). Rows the user filed by hand are kept.
+     * Returns how many row fields changed.
+     */
+    suspend fun refileAll(): Int
 }

@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.paylater.PayLaterSchedule
 import com.xemmy.mmbank.domain.paylater.PayLaterSplit
@@ -35,10 +37,22 @@ import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** Saves the plan the quick split dialog builds. */
 class QuickSplitViewModel(private val container: AppContainer) : ViewModel() {
+    /** Existing plans, for the "Paid from" default of a charge that names no card. */
+    val plans: StateFlow<List<PayLaterPlan>> = container.payLaterRepository.observePlans()
+        .catch { e ->
+            container.recordError("QuickSplitViewModel.plans", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun create(split: PayLaterSplit.Split, onDone: () -> Unit) {
         viewModelScope.launch {
             runCatching { container.payLaterRepository.createPlan(split.plan, split.installments) }
@@ -70,9 +84,10 @@ fun QuickSplitDialog(
     var oneInstallment by remember { mutableStateOf(looksLikeTabby) }
     var cadence by remember { mutableStateOf(if (looksLikeTabby) PayLaterCadence.BIWEEKLY else PayLaterCadence.MONTHLY) }
     val zone = ZoneId.systemDefault()
+    val plans by viewModel.plans.collectAsState()
 
     val valid = count in PayLaterSchedule.MIN_COUNT..PayLaterSchedule.MAX_COUNT
-    val split = if (valid) PayLaterSplit.fromCharge(charge, count, oneInstallment, cadence, zone, provider) else null
+    val split = if (valid) PayLaterSplit.fromCharge(charge, count, oneInstallment, cadence, zone, provider, plans = plans) else null
 
     AlertDialog(
         onDismissRequest = onDismiss,

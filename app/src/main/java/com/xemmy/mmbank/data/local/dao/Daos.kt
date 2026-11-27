@@ -315,6 +315,27 @@ interface TransactionDao {
     )
     suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int
 
+    /**
+     * Files a Pay Later plan's payment rows under its purchase's category (see PayLaterAttribution):
+     * source `PLAN`, or back to `DEFAULT` when [categoryId] is null. A row the user filed by hand is
+     * kept unless [overrideUser] (the user just re-filed the whole split).
+     */
+    @Query(
+        "UPDATE transactions SET categoryId = :categoryId, needsCategoryApproval = 0, " +
+            "categorySource = CASE WHEN :categoryId IS NULL THEN 'DEFAULT' ELSE 'PLAN' END, " +
+            "suggestedCategoryName = NULL, suggestedCategoryIcon = NULL, suggestedCategoryColorHex = NULL " +
+            "WHERE id IN (:ids) AND (:overrideUser OR categorySource != 'USER')"
+    )
+    suspend fun stampPlanCategory(ids: List<Long>, categoryId: Long?, overrideUser: Boolean): Int
+
+    /** As [stampPlanCategory], for the person. */
+    @Query(
+        "UPDATE transactions SET person = :person, " +
+            "personSource = CASE WHEN :person IS NULL THEN 'DEFAULT' ELSE 'PLAN' END " +
+            "WHERE id IN (:ids) AND (:overrideUser OR personSource != 'USER')"
+    )
+    suspend fun stampPlanPerson(ids: List<Long>, person: String?, overrideUser: Boolean): Int
+
     /** Dismisses a pending AI suggestion without assigning a category -- the row stays uncategorized. */
     @Query(
         "UPDATE transactions SET needsCategoryApproval = 0, suggestedCategoryName = NULL, " +

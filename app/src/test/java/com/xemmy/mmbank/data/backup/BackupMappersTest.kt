@@ -307,6 +307,17 @@ class BackupMappersTest {
     }
 
     @Test
+    fun `a value copied from a Pay Later plan keeps its source through a backup`() {
+        val planned = fullTransaction.copy(
+            categorySource = com.xemmy.mmbank.domain.model.AssignmentSource.PLAN,
+            personSource = com.xemmy.mmbank.domain.model.AssignmentSource.PLAN,
+        )
+        val restored = planned.toBackup().toEntity()
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.PLAN, restored.categorySource)
+        assertEquals(com.xemmy.mmbank.domain.model.AssignmentSource.PLAN, restored.personSource)
+    }
+
+    @Test
     fun `an unknown source name from a newer build is treated like an absent one`() {
         val restored = fullTransaction.toBackup().copy(categorySource = "FROM_THE_FUTURE", personSource = "FROM_THE_FUTURE").toEntity()
         // fullTransaction has a category and a person, so the absent-source rule gives USER.

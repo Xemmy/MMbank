@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.paylater
 
 import com.xemmy.mmbank.domain.model.PayLaterCadence
+import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
@@ -54,5 +55,35 @@ class PayLaterSplitTest {
         assertEquals(5L, plan.payFromAccountId)
         assertEquals(3L, plan.categoryId)
         assertEquals(9L, plan.createdAt)
+    }
+
+    // --- 0.143.0: a charge with no card is paid from the provider's last card ---
+
+    private fun planOf(provider: String, payFrom: Long?, createdAt: Long) = PayLaterPlan(
+        merchant = "Shop", provider = provider, totalAmount = BigDecimal("400.00"), currencyCode = "AED",
+        installmentCount = 4, payFromAccountId = payFrom, createdAt = createdAt,
+    )
+
+    private val earlier = listOf(
+        planOf("Tabby", payFrom = 11, createdAt = 1),
+        planOf(" tabby ", payFrom = 12, createdAt = 5),
+        planOf("Tabby", payFrom = null, createdAt = 9),
+        planOf("Tamara", payFrom = 13, createdAt = 8),
+    )
+
+    @Test fun `a charge with no card is paid from the card the provider's latest plan used`() {
+        val cardless = charge.copy(accountId = null)
+        val plan = PayLaterSplit.fromCharge(cardless, 4, true, PayLaterCadence.MONTHLY, utc, provider = "Tabby", nowMillis = 1, plans = earlier).plan
+        assertEquals(12L, plan.payFromAccountId)
+    }
+
+    @Test fun `the charge's own card wins over any earlier plan`() {
+        val plan = PayLaterSplit.fromCharge(charge, 4, true, PayLaterCadence.MONTHLY, utc, provider = "Tabby", nowMillis = 1, plans = earlier).plan
+        assertEquals(5L, plan.payFromAccountId)
+    }
+
+    @Test fun `no earlier plan with that provider leaves the card unset`() {
+        assertNull(PayLaterSplit.lastPayFrom("Postpay", earlier))
+        assertEquals(13L, PayLaterSplit.lastPayFrom("Tamara", earlier))
     }
 }

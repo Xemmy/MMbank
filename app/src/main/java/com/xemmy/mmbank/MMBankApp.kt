@@ -20,6 +20,8 @@ class MMBankApp : Application() {
         // One-time re-read of old messages for ATM/refund/card-payment wording
         // after the transaction-kind upgrade. A no-op once it has run.
         container.reclassifyLedgerOnce()
+        // One-time: existing Pay Later payments take their purchase's category and person.
+        container.refileSplitsOnce()
         // Re-arms the opt-in subscription reminder if it's on. Idempotent
         // (unique work, KEEP), and a no-op entirely while the toggle is off.
         container.ensureSubscriptionReminderWork()

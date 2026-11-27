@@ -102,6 +102,14 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_TABBY_RULES_SEEDED, value).apply()
 
     /**
+     * The one-time pass that filed existing Pay Later payments under their purchase's category and
+     * person has run (see AppContainer.refileSplitsOnce).
+     */
+    var splitAttributionRefiled: Boolean
+        get() = prefs.getBoolean(KEY_SPLIT_ATTRIBUTION_REFILED, false)
+        set(value) = prefs.edit().putBoolean(KEY_SPLIT_ATTRIBUTION_REFILED, value).apply()
+
+    /**
      * "Demo mode" is on: real accounts/transactions are hidden and disposable
      * sample data is shown instead. Persisted so the state survives a restart;
      * the demo rows themselves live in the DB tagged isDemo=1.
@@ -516,6 +524,7 @@ class AppPreferences(context: Context) {
         const val KEY_PERSONS = "persons"
         const val KEY_INACTIVE_PERSONS = "inactive_persons"
         const val KEY_TABBY_RULES_SEEDED = "tabby_rules_seeded"
+        const val KEY_SPLIT_ATTRIBUTION_REFILED = "split_attribution_refiled"
         const val KEY_DEMO_MODE_ENABLED = "demo_mode_enabled"
         const val KEY_DEMO_PERSONS_BACKUP = "demo_persons_backup"
         const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"

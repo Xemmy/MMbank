@@ -4997,3 +4997,28 @@ Tabby's own SMS (the checkout, the "payment received" receipt) never names a car
 Tests: `TabbySplitPlanTest` (+4: picker on receipt-only payments and not on ones with a card, plan follows picker then first charge, purchase set aside in both modes, default card order).
 
 Not covered by CI: the picker on a device, and the `assignAccountIfNull` / `setHistoryOnly` updates and the auto-match account assignment on a real database.
+
+## Split ×X / Pay Later payments follow their purchase (0.143.0)
+Account, category and person are decided at capture from the merchant name, and every Tabby payment is named "Tabby" (Tabby's receipt, the bank's "at Tabby" charge). So a laptop's payments and a pair of shoes' payments were all filed under whatever "Tabby" had been taught. In "Each payment when paid" mode those payments are the rows that count as spending, so budgets, the category breakdown and per-person totals showed the "Tabby" guess instead of the shop's category and person. Picking a category on one Tabby payment also taught "Tabby → that category" and re-filed every other split's payments.
+
+**A split is one purchase** (`PayLaterAttribution`):
+- Every payment of a plan takes the category and person of the purchase it splits (`sourceTransactionId`); a plan with no purchase row uses its own category. The new `AssignmentSource.PLAN` marks them ("Follows its Pay Later plan" in the editor). Merchant learning never overwrites a PLAN value (`backfillCategoryByMerchant` touches only KEYWORD/LEARNED/AI) and never learns from it (`PersonLearner` reads USER rows only).
+- Applied when an installment SMS is matched (`matchInstallment`), when a reviewed Tabby split is created (`createFromSplitReview`), when a plan is created (quick split / editor), and to a payment recorded with **Pay** (`PayLaterPayment.build`, which also gives it the default person when there is none to follow; it used to have no person at all).
+- **Editing any row of a split re-files the whole split** (`refileSplitOf`): a new category or person on a payment becomes the purchase's (as your choice) and the plan's, then every payment follows, including ones filed by hand before. Wired into the Activity category/person picks, the full editor and the Review queue.
+- **No merchant rule from Tabby rows**: a category picked on a row of a split, or on any row that paid a Pay Later provider (`PayLaterProviders.providerOf`), no longer becomes a merchant rule. An AI category for "Tabby" is ignored too. "Tabby Card" / "Tabby+" purchases still learn as normal shops. Account learning is unchanged (the card that pays Tabby is the same whatever was bought).
+- **Existing splits are fixed once** on the first start of this version (`refileSplitsOnce`, preference `split_attribution_refiled`); rows you filed by hand are kept.
+- **Quick split** ("Split with Tabby ×X"): a charge that names no card preselects the card this provider's last plan was paid from (`PayLaterSplit.lastPayFrom`, now shared with the Tabby review's `defaultPaidFrom`).
+
+No schema change: the new source is stored by name in the existing TEXT column.
+
+Tests:
+- `PayLaterAttributionTest` (19, new)
+- `PayLaterPaymentTest` (+3)
+- `PayLaterSplitTest` (+3)
+- `AssignmentSourceTest` (+2)
+- `BackupMappersTest` (+1)
+
+Not covered by CI:
+- the new Room updates (`stampPlanCategory` / `stampPlanPerson`) and the repository re-file paths on a real database (KSP only checks the SQL compiles);
+- the one-time pass at startup on real data;
+- the Activity / editor / Review flows calling the re-file, and the editor's "Follows its Pay Later plan" line on a device.

@@ -373,6 +373,14 @@ enum class AssignmentSource {
 
     /** The user picked it. Never overridden automatically. */
     USER,
+
+    /**
+     * Copied from the purchase a Pay Later plan splits, onto that plan's payment rows (every
+     * Tabby payment is named "Tabby", so its merchant says nothing about what was bought; see
+     * [com.xemmy.mmbank.domain.paylater.PayLaterAttribution]). Merchant learning neither
+     * overwrites it nor learns from it; the plan re-stamps it when the purchase changes.
+     */
+    PLAN,
     ;
 
     /** True for values the app guessed and may replace when it learns better. */
@@ -399,6 +407,7 @@ enum class AssignmentSource {
         AI -> "Suggested by AI"
         LEARNED -> "Learned from your earlier choices"
         USER -> "Chosen by you"
+        PLAN -> "Follows its Pay Later plan"
     }
 }
 

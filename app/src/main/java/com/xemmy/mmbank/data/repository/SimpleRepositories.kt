@@ -508,6 +508,8 @@ class PayLaterRepositoryImpl(
     private val transactionDao: com.xemmy.mmbank.data.local.dao.TransactionDao,
     private val accountDao: com.xemmy.mmbank.data.local.dao.AccountDao,
     private val transactions: com.xemmy.mmbank.domain.repository.TransactionRepository,
+    /** Person a recorded payment takes when its split has none to follow (Settings > Default person). */
+    private val defaultPersonProvider: () -> String? = { null },
 ) : com.xemmy.mmbank.domain.repository.PayLaterRepository {
 
     override fun observePlans(): Flow<List<com.xemmy.mmbank.domain.model.PayLaterPlan>> =
@@ -523,7 +525,11 @@ class PayLaterRepositoryImpl(
     override suspend fun createPlan(
         plan: com.xemmy.mmbank.domain.model.PayLaterPlan,
         installments: List<com.xemmy.mmbank.domain.model.PayLaterInstallment>,
-    ): Long = dao.insertPlanWithInstallments(plan.copy(id = 0).toEntity(), installments.map { it.copy(id = 0).toEntity() })
+    ): Long = database.withTransaction {
+        val planId = dao.insertPlanWithInstallments(plan.copy(id = 0).toEntity(), installments.map { it.copy(id = 0).toEntity() })
+        stampPayments(planId)
+        planId
+    }
 
     override suspend fun updatePlan(plan: com.xemmy.mmbank.domain.model.PayLaterPlan) = dao.updatePlan(plan.toEntity())
 
@@ -547,7 +553,12 @@ class PayLaterRepositoryImpl(
         }
         val from = endpoint(fromAccountId) ?: return PayResult.NO_ACCOUNT
         val to = endpoint(plan.payToAccountId)?.takeIf { it.accountId != from.accountId }
-        val legs = com.xemmy.mmbank.domain.paylater.PayLaterPayment.build(plan, installment, from, to, paidAtMillis)
+        val source = plan.sourceTransactionId?.let { transactionDao.getById(it) }?.toDomain()
+        val legs = com.xemmy.mmbank.domain.paylater.PayLaterPayment.build(
+            plan, installment, from, to, paidAtMillis,
+            attribution = com.xemmy.mmbank.domain.paylater.PayLaterAttribution.of(plan, source),
+            defaultPerson = defaultPersonProvider(),
+        )
         database.withTransaction {
             val payingId = transactionDao.insert(legs.paying.copy(isDemo = plan.isDemo).toEntity())
             if (legs.counterpart != null) {
@@ -620,6 +631,8 @@ class PayLaterRepositoryImpl(
             dao.updateInstallment(
                 com.xemmy.mmbank.domain.paylater.PayLaterPayment.markPaid(installment, transactionId, paidAtMillis).toEntity(),
             )
+            // Named "Tabby", the SMS was filed under whatever "Tabby" was taught: it takes the purchase's.
+            stampPayments(installment.planId)
         }
     }
 
@@ -677,6 +690,57 @@ class PayLaterRepositoryImpl(
                 .forEach { (accountId, ids) -> transactionDao.assignAccountIfNull(ids, accountId) }
             if (result.historyOnlyIds.isNotEmpty()) transactionDao.setHistoryOnly(result.historyOnlyIds, true)
             if (result.deleteIds.isNotEmpty()) transactions.deleteMany(result.deleteIds)
+            // Every payment found for the split is filed like the purchase, not like "Tabby".
+            stampPayments(planId)
             planId
         }
+
+    override suspend fun refileSplitOf(transactionId: Long, categoryChanged: Boolean, personChanged: Boolean): Boolean =
+        database.withTransaction {
+            val plans = dao.getAllPlans().map { it.toDomain() }
+            val installments = dao.getAllInstallments().map { it.toDomain() }
+            val plan = com.xemmy.mmbank.domain.paylater.PayLaterAttribution.planOf(transactionId, plans, installments)
+                ?: return@withTransaction false
+            if (!categoryChanged && !personChanged) return@withTransaction true
+            val edited = transactionDao.getById(transactionId)?.toDomain() ?: return@withTransaction true
+            val sourceId = plan.sourceTransactionId?.takeIf { transactionDao.getById(it) != null }
+            val refile = com.xemmy.mmbank.domain.paylater.PayLaterAttribution.refileFromEdit(
+                edited, plan, sourceId, categoryChanged, personChanged,
+            )
+            if (sourceId != null) {
+                refile.sourceCategory?.let { transactionDao.setCategory(sourceId, it.value) }
+                refile.sourcePerson?.let { transactionDao.setPerson(sourceId, it.value) }
+            }
+            if (refile.planCategoryId != plan.categoryId) dao.updatePlan(plan.copy(categoryId = refile.planCategoryId).toEntity())
+            stampPayments(plan.id, overrideCategory = categoryChanged, overridePerson = personChanged)
+            true
+        }
+
+    override suspend fun refileAll(): Int = database.withTransaction {
+        var changed = 0
+        dao.getAllPlans().forEach { changed += stampPayments(it.id) }
+        changed
+    }
+
+    /**
+     * Files [planId]'s payment rows under its purchase's category and person
+     * ([com.xemmy.mmbank.domain.paylater.PayLaterAttribution]); run inside the caller's transaction.
+     * Rows the user filed by hand are kept unless the user just re-filed the split ([overrideCategory],
+     * [overridePerson]). Returns how many row fields changed.
+     */
+    private suspend fun stampPayments(planId: Long, overrideCategory: Boolean = false, overridePerson: Boolean = false): Int {
+        val attribution = com.xemmy.mmbank.domain.paylater.PayLaterAttribution
+        val plan = dao.getPlan(planId)?.toDomain() ?: return 0
+        val ids = attribution.paymentIds(plan, dao.getInstallments(planId).map { it.toDomain() })
+        if (ids.isEmpty()) return 0
+        val source = plan.sourceTransactionId?.let { transactionDao.getById(it) }?.toDomain()
+        val values = attribution.of(plan, source)
+        val rows = transactionDao.getByIds(ids).map { it.toDomain() }
+        val categoryIds = attribution.idsToStampCategory(rows, values, overrideCategory)
+        val personIds = attribution.idsToStampPerson(rows, values, overridePerson)
+        var changed = 0
+        if (categoryIds.isNotEmpty()) changed += transactionDao.stampPlanCategory(categoryIds, values.categoryId, overrideCategory)
+        if (personIds.isNotEmpty()) changed += transactionDao.stampPlanPerson(personIds, values.person, overridePerson)
+        return changed
+    }
 }

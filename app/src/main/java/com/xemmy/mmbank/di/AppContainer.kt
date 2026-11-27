@@ -567,6 +567,7 @@ class AppContainer(context: Context) {
             transactionDao = database.transactionDao(),
             accountDao = database.accountDao(),
             transactions = transactionRepository,
+            defaultPersonProvider = { preferences.defaultPerson },
         )
     }
     val billRepository: BillRepository by lazy {
@@ -771,6 +772,8 @@ class AppContainer(context: Context) {
      */
     private fun onAiCategorySuggested(result: AiParseResult) {
         val merchant = result.merchant?.takeIf { it.isNotBlank() } ?: return
+        // "Tabby" names who collected a split's payment, not what was bought: no rule for it.
+        if (com.xemmy.mmbank.domain.paylater.PayLaterProviders.providerOf(merchant, null, null) != null) return
         applicationScope.launch {
             runCatching {
                 when {
@@ -1228,6 +1231,21 @@ class AppContainer(context: Context) {
                 }
                 preferences.ledgerKindBackfillVersion = LEDGER_KIND_BACKFILL_VERSION
             }.onFailure { recordError("AppContainer.reclassifyLedgerOnce", it) }
+        }
+    }
+
+    /**
+     * One-time pass for splits made before 0.143.0: their payments (named "Tabby") were filed under
+     * whatever "Tabby" was taught. Each plan's payments now take the purchase's category and person
+     * ([com.xemmy.mmbank.domain.paylater.PayLaterAttribution]); rows the user filed by hand are kept.
+     */
+    fun refileSplitsOnce() {
+        if (preferences.splitAttributionRefiled) return
+        applicationScope.launch {
+            runCatching {
+                payLaterRepository.refileAll()
+                preferences.splitAttributionRefiled = true
+            }.onFailure { recordError("AppContainer.refileSplitsOnce", it) }
         }
     }
 

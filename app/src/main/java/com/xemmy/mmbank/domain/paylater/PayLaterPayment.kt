@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.domain.paylater
 
 import com.xemmy.mmbank.domain.ledger.TransferLegs
+import com.xemmy.mmbank.domain.model.AssignmentSource
 import com.xemmy.mmbank.domain.model.PayLaterInstallment
 import com.xemmy.mmbank.domain.model.PayLaterPlan
 import com.xemmy.mmbank.domain.model.SpendingCategory
@@ -53,6 +54,10 @@ object PayLaterPayment {
     /**
      * The transactions for paying [installment] of [plan] from [from] on [paidAtMillis]. [to] is the provider's
      * account (used only for the transfer shape, and only when the plan names one).
+     *
+     * A recorded payment is filed like the rest of its split ([PayLaterAttribution]): [attribution]'s
+     * category and person, marked [AssignmentSource.PLAN] so they follow the purchase if it changes.
+     * Without a person to follow it takes [defaultPerson], like any capture.
      */
     fun build(
         plan: PayLaterPlan,
@@ -60,9 +65,12 @@ object PayLaterPayment {
         from: TransferLegs.Endpoint,
         to: TransferLegs.Endpoint?,
         paidAtMillis: Long,
+        attribution: PayLaterAttribution.Attribution = PayLaterAttribution.of(plan, source = null),
+        defaultPerson: String? = null,
     ): Legs {
         val shape = shapeOf(plan, hasProviderAccount = to != null)
         val note = describe(plan, installment)
+        val person = attribution.person ?: defaultPerson?.trim()?.takeIf { it.isNotEmpty() }
         return when (shape) {
             Shape.TRANSFER_PAIR -> {
                 val (out, inn) = TransferLegs.build(
@@ -84,7 +92,10 @@ object PayLaterPayment {
                     timestampMillis = paidAtMillis,
                     excludeFromStats = shape == Shape.EXCLUDED_DEBIT,
                     spendingCategory = if (shape == Shape.EXCLUDED_DEBIT) SpendingCategory.TRANSFERS else SpendingCategory.UNCATEGORIZED,
-                    categoryId = plan.categoryId,
+                    categoryId = attribution.categoryId,
+                    categorySource = if (attribution.categoryId != null) AssignmentSource.PLAN else AssignmentSource.DEFAULT,
+                    person = person,
+                    personSource = if (attribution.person != null) AssignmentSource.PLAN else AssignmentSource.DEFAULT,
                     kind = TransactionKind.SPEND,
                     kindUserSet = true,
                     note = note,
