@@ -167,7 +167,17 @@ object DatabaseEncryptionMigrator {
         bakFile.delete()
     }
 
+    /** True when [dbName] exists on disk and is not plaintext SQLite (see [SqliteFileFormat.isEncryptedFile]). */
+    fun isEncryptedOnDisk(context: Context, dbName: String): Boolean {
+        val file = context.getDatabasePath(dbName)
+        if (!file.exists()) return false
+        return SqliteFileFormat.isEncryptedFile(true, readHeader(file))
+    }
+
     private fun isPlaintextFile(file: File): Boolean =
+        SqliteFileFormat.isPlaintextHeader(readHeader(file))
+
+    private fun readHeader(file: File): ByteArray =
         FileInputStream(file).use { input ->
             val header = ByteArray(SqliteFileFormat.HEADER_LENGTH)
             var read = 0
@@ -176,6 +186,6 @@ object DatabaseEncryptionMigrator {
                 if (n < 0) break
                 read += n
             }
-            SqliteFileFormat.isPlaintextHeader(header.copyOf(read))
+            header.copyOf(read)
         }
 }

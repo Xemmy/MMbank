@@ -33,6 +33,8 @@ import com.xemmy.mmbank.util.LogRedactor
 class TransactionParser(
     rules: List<CompiledRule>,
     private val fallbackCurrency: String = DEFAULT_CURRENCY,
+    /** Digits of the user's own card endings; a keyword-less message with one of them is captured (see [CardEndingRegistry]). */
+    private val trustedCardEndings: Set<String> = emptySet(),
     /** Sink for non-fatal diagnostics (signature-collision ties). Redacted: rule names can echo message fragments. */
     private val onWarning: (String) -> Unit = { println("TransactionParser: ${LogRedactor.redactSensitiveData(it)}") },
 ) {
@@ -44,14 +46,32 @@ class TransactionParser(
         rules.withIndex().filter { it.value.signatures.isNotEmpty() }
 
     fun parse(message: CapturedMessage): ParsedTransaction? {
-        val text = TextNormalizer.normalize(
-            listOfNotNull(message.title, message.body)
-                .filter { it.isNotBlank() }
-                .joinToString(" ")
-        )
+        val parsed = parseCore(message) ?: return null
+        // The balance the bank printed alongside the transaction. Added after
+        // the amount is settled and independent of every rule, so it can only
+        // add information, never change what was parsed.
+        val balance = BalanceExtractor.extract(normalizedText(message), parsed.currencyCode) ?: return parsed
+        return parsed.copy(reportedBalance = balance.value, reportedBalanceKind = balance.kind)
+    }
+
+    private fun normalizedText(message: CapturedMessage): String = TextNormalizer.normalize(
+        listOfNotNull(message.title, message.body)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+    )
+
+    private fun parseCore(message: CapturedMessage): ParsedTransaction? {
+        val text = normalizedText(message)
         if (text.isBlank()) return null
 
         routeBySignature(message, text)?.let { return it }
+
+        // A built-in match whose direction word only names a card product
+        // ("Credit Card", "Cr Limit", "Debit Card") is kept aside: the real
+        // verb is usually read by a lower rule ("AED 75.00 spent on your
+        // Credit Card. Avl Cr Limit: AED 9,925.00" must be a 75 debit, not a
+        // 9,925 credit). It is used only when nothing else matches.
+        var deferred: ParsedTransaction? = null
 
         for (rule in orderedRules) {
             val pattern = rule.pattern ?: continue // signature-only rule
@@ -61,20 +81,40 @@ class TransactionParser(
             }
             val match = pattern.find(text) ?: continue
 
+            val builtIn = rule.name.startsWith("builtin.")
+            if (builtIn && ParseGuards.isNonTransaction(text)) continue
+
             val amountRaw = match.groupOrNull(RuleCompiler.AMOUNT_GROUP) ?: continue
             val amount = amountRaw.replace(",", "").toBigDecimalOrNull() ?: continue
             if (amount.signum() <= 0) continue
 
-            val currency = match.groupOrNull(RuleCompiler.CURRENCY_GROUP)
+            val matchedCurrency = match.groupOrNull(RuleCompiler.CURRENCY_GROUP)
                 ?.let(CurrencyNormalizer::normalize)
+            // A built-in rule that found no currency must not guess one when the
+            // "amount" is really a card ending, or the real currency is a code
+            // the rules don't know ("THB 1,500.00" would otherwise save as the
+            // default currency).
+            if (builtIn && matchedCurrency == null) {
+                val range = match.groups[RuleCompiler.AMOUNT_GROUP]?.range
+                if (range != null &&
+                    (ParseGuards.isIdentifierAmount(text, range) ||
+                        ParseGuards.hasUnrecognisedCurrencyBefore(text, range) ||
+                        ParseGuards.isTimeOfDay(text, range))
+                ) {
+                    continue
+                }
+            }
+            val currency = matchedCurrency
                 ?: rule.defaultCurrency
                 ?: fallbackCurrency
 
             val merchant = match.groupOrNull(RuleCompiler.MERCHANT_GROUP)
                 ?.trim()
+                ?.let(MerchantTail::trim)
                 ?.trimEnd('.', ',', '-', ':')
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
+                ?: rule.fixedMerchant
 
             val accountNumberSuffix = match.groupOrNull(RuleCompiler.ACCOUNT_NUMBER_GROUP)
                 ?.trim()
@@ -90,7 +130,7 @@ class TransactionParser(
             // like "...processed after next statement is paid" in cashback credits,
             // so we never demote a CREDIT rule here — only rescue a mislabeled credit.
             val direction =
-                if (rule.direction == TransactionDirection.DEBIT &&
+                if (builtIn && !rule.keepDirection && rule.direction == TransactionDirection.DEBIT &&
                     GenericExtractors.detectDirectionOverride(text) == TransactionDirection.CREDIT
                 ) {
                     TransactionDirection.CREDIT
@@ -98,7 +138,7 @@ class TransactionParser(
                     rule.direction
                 }
 
-            return ParsedTransaction(
+            val result = ParsedTransaction(
                 amount = amount,
                 currencyCode = currency,
                 direction = direction,
@@ -107,10 +147,26 @@ class TransactionParser(
                 accountNumberSuffix = accountNumberSuffix,
                 category = rule.category,
                 assignAccountId = rule.assignAccountId,
+                kindOverride = rule.assignKind,
             )
+            if (builtIn && keywordNamesCardProduct(match, text)) {
+                if (deferred == null) deferred = result
+                continue
+            }
+            return result
         }
 
-        return routeByCardEnding(text)
+        return deferred ?: routeByCardEnding(text)
+    }
+
+    /** True when the match's direction word ([KEYWORD_GROUP]) is followed by "card", "limit" or "lmt". */
+    private fun keywordNamesCardProduct(match: MatchResult, text: String): Boolean {
+        val range = try {
+            (match.groups as? MatchNamedGroupCollection)?.get(KEYWORD_GROUP)?.range
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return false
+        return CARD_PRODUCT_AFTER.containsMatchIn(text.substring(range.last + 1))
     }
 
     /**
@@ -121,15 +177,13 @@ class TransactionParser(
      */
     private fun routeByCardEnding(text: String): ParsedTransaction? {
         val ending = CardEndingExtractor.extract(text) ?: return null
-        val route = CardEndingRegistry.lookup(ending) ?: return null
+        val route = CardEndingRegistry.lookup(ending, text, trustedCardEndings) ?: return null
 
         val extracted = GenericExtractors.extractAmount(text) ?: return null
 
         return ParsedTransaction(
             amount = extracted.amount,
-            currencyCode = extracted.currencyCode
-                ?: route.defaultCurrency
-                ?: fallbackCurrency,
+            currencyCode = extracted.currencyCode ?: fallbackCurrency,
             direction = route.direction,
             merchant = GenericExtractors.extractMerchant(text),
             matchedRuleName = route.label,
@@ -201,11 +255,18 @@ class TransactionParser(
             accountNumberSuffix = GenericExtractors.extractAccountSuffix(text),
             category = winner.rule.category,
             assignAccountId = winner.rule.assignAccountId,
+            kindOverride = winner.rule.assignKind,
         )
     }
 
     companion object {
         const val DEFAULT_CURRENCY = "USD"
+
+        /** Named group the English built-in rules put their direction word in. */
+        const val KEYWORD_GROUP = "kw"
+
+        /** "Credit Card", "Cr. Limit", "credit lmt", "Debit Card": the word names a product, not a direction. */
+        private val CARD_PRODUCT_AFTER = Regex("^\\.?\\s*(?:cards?|limit|lmt)\\b", RegexOption.IGNORE_CASE)
     }
 }
 

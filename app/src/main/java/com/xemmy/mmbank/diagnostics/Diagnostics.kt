@@ -1,6 +1,7 @@
 package com.xemmy.mmbank.diagnostics
 
 import android.content.Context
+import com.xemmy.mmbank.domain.parser.CaptureLogFormatter
 import com.xemmy.mmbank.util.LogRedactor
 import java.io.File
 import java.io.PrintWriter
@@ -78,6 +79,29 @@ object Diagnostics {
         }
     }
 
+    /**
+     * Appends one line to the rolling capture log (what happened to each
+     * captured notification/SMS). Newest first, bounded, already redacted by
+     * [com.xemmy.mmbank.domain.parser.CaptureLogFormatter]. Never throws.
+     */
+    fun recordCapture(context: Context, entry: String) {
+        runCatching {
+            synchronized(captureLock) {
+                val file = captureFile(context)
+                val existing = if (file.exists()) file.readText() else ""
+                file.writeText(CaptureLogFormatter.prepend(existing, entry))
+            }
+        }
+    }
+
+    fun readCaptureLog(context: Context): String? = synchronized(captureLock) {
+        captureFile(context).takeIf { it.exists() }?.readText()?.take(12_000)
+    }
+
+    fun clearCaptureLog(context: Context) {
+        synchronized(captureLock) { captureFile(context).delete() }
+    }
+
     fun readCrash(context: Context): String? =
         crashFile(context).takeIf { it.exists() }?.readText()?.take(6000)
 
@@ -92,6 +116,8 @@ object Diagnostics {
         errorsFile(context).delete()
     }
 
+    private val captureLock = Any()
+    private fun captureFile(context: Context) = File(context.filesDir, "capture_log.txt")
     private fun crashFile(context: Context) = File(context.filesDir, CRASH_FILE)
     private fun errorsFile(context: Context) = File(context.filesDir, ERRORS_FILE)
 }

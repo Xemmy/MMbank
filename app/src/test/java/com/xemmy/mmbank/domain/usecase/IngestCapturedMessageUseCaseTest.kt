@@ -1,6 +1,10 @@
 package com.xemmy.mmbank.domain.usecase
 
+import com.xemmy.mmbank.domain.ledger.TransactionKindDetector
+import com.xemmy.mmbank.domain.model.TransactionKind
+import com.xemmy.mmbank.domain.account.AccountBalanceCalculator
 import com.xemmy.mmbank.domain.model.CapturedMessage
+import com.xemmy.mmbank.domain.model.IgnoredMessagePattern
 import com.xemmy.mmbank.domain.model.IngestResult
 import com.xemmy.mmbank.domain.model.ParsedTransaction
 import com.xemmy.mmbank.domain.model.ParsingRule
@@ -8,6 +12,9 @@ import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionDirection
 import com.xemmy.mmbank.domain.model.TransactionSource
 import com.xemmy.mmbank.domain.parser.CompiledRuleCache
+import com.xemmy.mmbank.domain.parser.IgnoredMessageCache
+import com.xemmy.mmbank.domain.parser.MessageSimilarity
+import com.xemmy.mmbank.domain.repository.IgnoredMessageRepository
 import com.xemmy.mmbank.domain.repository.ParsingRuleRepository
 import com.xemmy.mmbank.domain.repository.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
@@ -37,14 +44,22 @@ class IngestCapturedMessageUseCaseTest {
 
     private class RecordingTransactionRepository : TransactionRepository {
         var lastParsed: ParsedTransaction? = null
-        override suspend fun recordParsed(parsed: ParsedTransaction, message: CapturedMessage): IngestResult {
+        var lastDedupWindow: Boolean? = null
+        override suspend fun recordParsed(
+            parsed: ParsedTransaction,
+            message: CapturedMessage,
+            dedupWindow: Boolean,
+        ): IngestResult {
             lastParsed = parsed
+            lastDedupWindow = dedupWindow
             return IngestResult.Inserted(1L)
         }
 
+        override suspend fun findIdByRawMessage(rawMessage: String): Long? = null
+
         override fun observeTransactions(): Flow<List<Transaction>> = flowOf(emptyList())
         override fun observeRecent(limit: Int): Flow<List<Transaction>> = flowOf(emptyList())
-        override fun observeNetByAccount(): Flow<Map<Long, Double>> = flowOf(emptyMap())
+        override fun observeLedgerEntries(): Flow<List<AccountBalanceCalculator.LedgerEntry>> = flowOf(emptyList())
         override suspend fun recordManual(transaction: Transaction): Long = 1L
         override suspend fun update(transaction: Transaction) = Unit
         override suspend fun assignAccount(transactionId: Long, accountId: Long?) = Unit
@@ -62,18 +77,60 @@ class IngestCapturedMessageUseCaseTest {
         ): Int = 0
         override suspend fun bulkSetExcludeFromStats(ids: List<Long>, excluded: Boolean): Int = 0
         override suspend fun deleteMany(ids: List<Long>): Int = 0
+        override suspend fun bulkAssignAccount(ids: List<Long>, accountId: Long?): Int = 0
+        override suspend fun bulkSetPerson(ids: List<Long>, person: String?): Int = 0
+        override suspend fun getAllReal(): List<Transaction> = emptyList()
+        override fun observeUncategorized(): Flow<List<Transaction>> = flowOf(emptyList())
+        override suspend fun setCategory(transactionId: Long, categoryId: Long?) = Unit
+        override suspend fun bulkSetCategoryId(ids: List<Long>, categoryId: Long?): Int = 0
+        override suspend fun dismissCategorySuggestion(transactionId: Long) = Unit
+        override suspend fun reassignCategory(oldCategoryId: Long, newCategoryId: Long?): Int = 0
+    }
+
+    private class FakeIgnoredMessageRepository(
+        private val patterns: List<IgnoredMessagePattern>,
+    ) : IgnoredMessageRepository {
+        override fun observeAll(): Flow<List<IgnoredMessagePattern>> = flowOf(patterns)
+        override suspend fun add(sample: String, now: Long): Boolean = true
+        override suspend fun delete(id: Long) = Unit
     }
 
     private val recorder = RecordingTransactionRepository()
     private val ruleFlow = MutableStateFlow<List<ParsingRule>>(emptyList())
 
-    private fun useCase(): IngestCapturedMessageUseCase {
+    private fun useCase(
+        onGate1Miss: (CapturedMessage) -> Unit = {},
+        ignoredSamples: List<String> = emptyList(),
+        ignoredKeywords: List<String> = emptyList(),
+    ): IngestCapturedMessageUseCase {
         // Unconfined scope: the cache's stateIn collects the fake flow synchronously.
-        val cache = CompiledRuleCache(
-            FakeRuleRepository(ruleFlow),
-            CoroutineScope(Dispatchers.Unconfined),
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val cache = CompiledRuleCache(FakeRuleRepository(ruleFlow), scope)
+        val ignored = ignoredSamples
+            .mapIndexed { index, sample ->
+                IgnoredMessagePattern(
+                    id = index + 1L,
+                    fingerprint = MessageSimilarity.fingerprint(sample),
+                    sample = sample,
+                    createdAt = 0L,
+                )
+            }
+        return IngestCapturedMessageUseCase(
+            customRules = cache,
+            transactionRepository = recorder,
+            onGate1Miss = onGate1Miss,
+            fallbackCurrencyProvider = { "USD" },
+            ignoredMessages = IgnoredMessageCache(
+                FakeIgnoredMessageRepository(ignored),
+                scope,
+                object : com.xemmy.mmbank.domain.repository.IgnoredKeywordRepository {
+                    override fun observeAll(): Flow<List<com.xemmy.mmbank.domain.model.IgnoredKeyword>> =
+                        flowOf(ignoredKeywords.mapIndexed { i, w -> com.xemmy.mmbank.domain.model.IgnoredKeyword(i + 1L, w, 0L) })
+                    override suspend fun add(keyword: String, now: Long) = true
+                    override suspend fun delete(id: Long) = Unit
+                },
+            ),
         )
-        return IngestCapturedMessageUseCase(cache, recorder) { "USD" }
     }
 
     private fun push(sender: String, body: String, title: String? = null) = CapturedMessage(
@@ -141,7 +198,7 @@ class IngestCapturedMessageUseCaseTest {
     }
 
     @Test
-    fun `tabby decreased adjustment is a credit excluded from stats`() = runBlocking {
+    fun `tabby decreased adjustment is a credit classified as a refund`() = runBlocking {
         val result = useCase().invoke(
             push(
                 sender = "com.tabby.customer",
@@ -153,11 +210,12 @@ class IngestCapturedMessageUseCaseTest {
         val parsed = recorder.lastParsed!!
         assertEquals("builtin.en.adjust.decrease", parsed.matchedRuleName)
         assertEquals(TransactionDirection.CREDIT, parsed.direction)
-        assertTrue(parsed.excludeFromStats)
+        // A partial refund now lowers spending instead of vanishing from it.
+        assertEquals(TransactionKind.REFUND, kindOf(parsed))
     }
 
     @Test
-    fun `tabby increased adjustment is a debit excluded from stats`() = runBlocking {
+    fun `tabby increased adjustment is a debit classified as spend`() = runBlocking {
         val result = useCase().invoke(
             push(
                 sender = "com.tabby.customer",
@@ -169,7 +227,7 @@ class IngestCapturedMessageUseCaseTest {
         val parsed = recorder.lastParsed!!
         assertEquals("builtin.en.adjust.increase", parsed.matchedRuleName)
         assertEquals(TransactionDirection.DEBIT, parsed.direction)
-        assertTrue(parsed.excludeFromStats)
+        assertEquals(TransactionKind.SPEND, kindOf(parsed))
     }
 
     @Test
@@ -177,6 +235,42 @@ class IngestCapturedMessageUseCaseTest {
         val result = useCase().invoke(push("com.adcb.bank", bankStyleBody))
         assertTrue(result is IngestResult.Inserted)
         assertFalse(recorder.lastParsed!!.excludeFromStats)
+    }
+
+    @Test
+    fun `card payment credited message is a card payment tagged as a transfer`() = runBlocking {
+        val result = useCase().invoke(
+            push(
+                "com.adcb.bank",
+                "Dear Customer, your payment of AED3600.00 on 7/20/2026 for card ending with *876 has been credited. Thank you",
+            )
+        )
+        assertTrue(result is IngestResult.Inserted)
+        val parsed = recorder.lastParsed!!
+        assertEquals("builtin.en.transfer.card-payment-credit", parsed.matchedRuleName)
+        assertEquals(TransactionDirection.CREDIT, parsed.direction)
+        assertEquals(TransactionKind.CARD_PAYMENT, kindOf(parsed))
+        assertEquals(
+            com.xemmy.mmbank.domain.model.SpendingCategory.TRANSFERS,
+            parsed.spendingCategoryOverride,
+        )
+    }
+
+    @Test
+    fun `the funding debit side of a card payment is not itself tagged as a transfer`() = runBlocking {
+        // Only TransferMatcher (in TransactionRepositoryImpl, once it finds
+        // the matching credit) retags this side -- the parser/ingest layer
+        // alone can't distinguish it from any other ordinary debit.
+        val result = useCase().invoke(
+            push(
+                "com.adcb.bank",
+                "Dear Customer, AED 3600.00 was debited from your account *963. Your available account balance is AED 5529.95",
+            )
+        )
+        assertTrue(result is IngestResult.Inserted)
+        val parsed = recorder.lastParsed!!
+        assertFalse(parsed.excludeFromStats)
+        assertNull(parsed.spendingCategoryOverride)
     }
 
     @Test
@@ -196,4 +290,159 @@ class IngestCapturedMessageUseCaseTest {
         assertTrue(uc.invoke(push("com.adcb.bank", body)) is IngestResult.Inserted)
         assertEquals("EUR", recorder.lastParsed?.currencyCode)
     }
+
+    @Test
+    fun `gate1 miss hook fires when rules were tried but none matched and an amount is plausible`() = runBlocking {
+        var missed: CapturedMessage? = null
+        val result = useCase(onGate1Miss = { missed = it }).invoke(
+            push("com.adcb.bank", "AED 42.00 in an unusual new message format we don't recognize")
+        )
+        assertEquals(IngestResult.NoMatch, result)
+        assertEquals("com.adcb.bank", missed?.sender)
+    }
+
+    @Test
+    fun `order confirmation with a long order-id number is not recorded and never reaches gate 2`() = runBlocking {
+        // Regression: this used to mis-parse as a credit of the 16-digit
+        // order id (see BuiltInRules.AMT). Confirms end-to-end that it's
+        // NoMatch, nothing was recorded, and -- since there's no
+        // currency-adjacent amount anywhere in the text -- it doesn't even
+        // reach Gate 2's AI engine.
+        var fired = false
+        val result = useCase(onGate1Miss = { fired = true }).invoke(
+            push(
+                "ASWAT",
+                "Great News 🎉 We received your order 7840200018688161! It's being prepared with care " +
+                    "and we'll let you know as soon as it's on the way. Thanks for shopping with us!",
+            )
+        )
+        assertEquals(IngestResult.NoMatch, result)
+        assertNull(recorder.lastParsed)
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire when no currency-adjacent amount is present`() = runBlocking {
+        // A bare digit with no financial shape (AiForwardGate) must never reach
+        // Gate 2 -- this is the "Download complete - 26.96 MB" case: it clears
+        // the digit gate and has no matching rule, but isn't plausibly a
+        // transaction, so it must not be forwarded to the AI engine (online or
+        // local).
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(
+            push("com.adcb.bank", "Something with a number 42 but no known shape")
+        )
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire on the digit-free short-circuit`() = runBlocking {
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(push("com.adcb.bank", "Your statement is ready"))
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire on the social-app short-circuit`() = runBlocking {
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(push("org.telegram.messenger", bankStyleBody))
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `gate1 miss hook does not fire when gate1 matches`() = runBlocking {
+        var fired = false
+        useCase(onGate1Miss = { fired = true }).invoke(push("com.adcb.bank", bankStyleBody))
+        assertFalse(fired)
+    }
+
+    // --- the ignore list ---
+
+    @Test
+    fun `a message matching an ignored template never reaches the ledger`() = runBlocking {
+        val uc = useCase(ignoredSamples = listOf("Your OTP is 483920. Valid for 5 minutes."))
+        val result = uc.invoke(push("com.adcb.bank", "Your OTP is 112233. Valid for 9 minutes."))
+        assertEquals(IngestResult.Ignored, result)
+        assertNull(recorder.lastParsed)
+    }
+
+    @Test
+    fun `a message containing an ignored keyword never reaches the ledger`() = runBlocking {
+        val uc = useCase(ignoredKeywords = listOf("carrefour"))
+        assertEquals(IngestResult.Ignored, uc.invoke(push("com.adcb.bank", bankStyleBody)))
+        assertNull(recorder.lastParsed)
+    }
+
+    @Test
+    fun `an ignored keyword in the title alone also mutes the message`() = runBlocking {
+        val uc = useCase(ignoredKeywords = listOf("promo"))
+        val result = uc.invoke(push("com.adcb.bank", bankStyleBody, title = "Promo"))
+        assertEquals(IngestResult.Ignored, result)
+    }
+
+    @Test
+    fun `an unrelated ignore pattern leaves real transactions alone`() = runBlocking {
+        val uc = useCase(ignoredSamples = listOf("Your OTP is 483920. Valid for 5 minutes."))
+        assertTrue(uc.invoke(push("com.adcb.bank", bankStyleBody)) is IngestResult.Inserted)
+    }
+
+    @Test
+    fun `an ignored template does not fire the gate1 AI hook`() = runBlocking {
+        // Muting a message means "stop spending anything on this", including
+        // the Gate-2 round trip it would otherwise earn.
+        var fired = false
+        val uc = useCase(
+            onGate1Miss = { fired = true },
+            ignoredSamples = listOf("Spend AED 500 and get 20% cashback this month, T&C apply"),
+        )
+        uc.invoke(push("com.adcb.bank", "Spend AED 900 and get 30% cashback this month, T&C apply"))
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `the digit-free short-circuit still wins over the ignore check`() = runBlocking {
+        // Ordering matters for battery: a digit-free message is already leaving
+        // as NoMatch, so it must never pay for a fingerprint pass.
+        val uc = useCase(ignoredSamples = listOf("Your statement is ready"))
+        assertEquals(IngestResult.NoMatch, uc.invoke(push("com.adcb.bank", "Your statement is ready")))
+    }
+
+    @Test
+    fun `forwardOnMiss false suppresses the gate1 AI hand-off`() = runBlocking {
+        // What the paste importer passes: a deliberate batch must not drain
+        // the day's AI budget behind the user's back.
+        var fired = false
+        val uc = useCase(onGate1Miss = { fired = true })
+        val result = uc.invoke(
+            push("com.adcb.bank", "Some AED 42.00 shaped text no rule matches"),
+            forwardOnMiss = false,
+        )
+        assertEquals(IngestResult.NoMatch, result)
+        assertFalse(fired)
+    }
+
+    @Test
+    fun `forwardOnMiss defaults to true so live capture still reaches gate2`() = runBlocking {
+        var fired = false
+        val uc = useCase(onGate1Miss = { fired = true })
+        uc.invoke(push("com.adcb.bank", "Some AED 42.00 shaped text no rule matches"))
+        assertTrue(fired)
+    }
+
+    @Test
+    fun `an empty ignore list changes nothing`() = runBlocking {
+        assertTrue(useCase(ignoredSamples = emptyList()).invoke(push("com.adcb.bank", bankStyleBody)) is IngestResult.Inserted)
+    }
+
+    /** The kind the repository will give [parsed] (see TransactionRepositoryImpl.recordParsed). */
+    private fun kindOf(parsed: com.xemmy.mmbank.domain.model.ParsedTransaction): TransactionKind =
+        TransactionKindDetector.detect(
+            TransactionKindDetector.Input(
+                direction = parsed.direction,
+                matchedRuleName = parsed.matchedRuleName,
+                merchant = parsed.merchant,
+                category = parsed.category,
+                ruleKind = parsed.kindOverride,
+            ),
+        )
 }

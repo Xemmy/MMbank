@@ -18,15 +18,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xemmy.mmbank.di.AppContainer
 import com.xemmy.mmbank.domain.cashback.CashbackCatalog
@@ -36,9 +36,9 @@ import com.xemmy.mmbank.domain.model.BankNames
 import com.xemmy.mmbank.domain.model.Transaction
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.ui.AppViewModelProvider
+import com.xemmy.mmbank.ui.designsystem.moneyLabel
 import com.xemmy.mmbank.ui.theme.LedgerColors
 import com.xemmy.mmbank.ui.util.asDate
-import com.xemmy.mmbank.ui.util.asMoney
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.YearMonth
@@ -115,7 +115,7 @@ fun CashbackScreen(
                     )
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            plan.netMonthly.asMoney("AED"),
+                            moneyLabel(plan.netMonthly, "AED"),
                             style = MaterialTheme.typography.titleMedium,
                             color = if (plan.netMonthly.signum() < 0) LedgerColors.debit else MaterialTheme.colorScheme.onPrimaryContainer,
                         )
@@ -126,7 +126,7 @@ fun CashbackScreen(
                         )
                     }
                     Text(
-                        "${plan.netAnnual.asMoney("AED")} /year · gross ${plan.grossMonthly.asMoney("AED")} − fees ${plan.monthlyFees.asMoney("AED")}",
+                        "${moneyLabel(plan.netAnnual, "AED")} /year · gross ${moneyLabel(plan.grossMonthly, "AED")} − fees ${moneyLabel(plan.monthlyFees, "AED")}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                     )
@@ -140,11 +140,11 @@ fun CashbackScreen(
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("Real cashback earned", style = MaterialTheme.typography.bodySmall)
                         real.totalsByCurrencyAllTime.forEach { (cur, total) ->
-                            Text("All-time: ${total.asMoney(cur)}", style = MaterialTheme.typography.labelSmall)
+                            Text("All-time: ${moneyLabel(total, cur)}", style = MaterialTheme.typography.labelSmall)
                         }
                         real.totalsByCurrencyThisMonth.forEach { (cur, total) ->
                             Text(
-                                "This month: ${total.asMoney(cur)}",
+                                "This month: ${moneyLabel(total, cur)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -169,7 +169,7 @@ fun CashbackScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text(tx.amount.asMoney(tx.currencyCode), style = MaterialTheme.typography.bodySmall)
+                        Text(moneyLabel(tx.amount, tx.currencyCode), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -225,7 +225,7 @@ fun CashbackScreen(
                     }
                     if (routing.card != null && routing.spend.signum() > 0) {
                         Text(
-                            "→ ${routing.card.name} · ${formatRate(routing.rate)} · ${routing.cashback.asMoney("AED")}/mo",
+                            "→ ${routing.card.name} · ${formatRate(routing.rate)} · ${moneyLabel(routing.cashback, "AED")}/mo",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 4.dp),
@@ -249,8 +249,8 @@ fun CashbackScreen(
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
-                                    s.cappedCashback.asMoney("AED") +
-                                        (if (s.monthlyFee.signum() > 0) " − fee ${s.monthlyFee.asMoney("AED")}" else ""),
+                                    moneyLabel(s.cappedCashback, "AED") +
+                                        (if (s.monthlyFee.signum() > 0) " − fee ${moneyLabel(s.monthlyFee, "AED")}" else ""),
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }

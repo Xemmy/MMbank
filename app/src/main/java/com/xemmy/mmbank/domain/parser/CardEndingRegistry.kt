@@ -2,43 +2,43 @@ package com.xemmy.mmbank.domain.parser
 
 import com.xemmy.mmbank.domain.model.TransactionCategory
 import com.xemmy.mmbank.domain.model.TransactionDirection
+import com.xemmy.mmbank.util.Digits
 
 /**
- * The set of card endings the parser trusts enough to route on, and the
- * direction each implies. This is the gate for the card-ending routing tier
- * (see [TransactionParser]): a message that carries only a card ending — no
- * verb keyword, no signature — is captured **only** if its ending is listed
- * here, so a stray "••1234" from an unknown card never fabricates a transaction.
+ * What the card-ending routing tier (see [TransactionParser]) trusts. A message that
+ * carries only a card ending -- no verb keyword, no signature -- is captured **only**
+ * when the ending is one the user already owns ([trustedEndings], read from their card
+ * accounts) or the text itself names a cash / pay-later card ([MARKER]); a stray
+ * "••1234" from an unknown card never fabricates a transaction.
  *
- * The registry deliberately holds **no account id**. The Tabby account is bound
- * downstream by the existing suffix→account lookup
- * (`TransactionRepositoryImpl.detectAccountByNumber`): the router copies the
- * ending onto `ParsedTransaction.accountNumberSuffix`, and account resolution
- * happens against the live accounts table. That keeps this a pure,
- * JVM-testable domain object with no database coupling.
+ * No digits are hard-coded: the account is bound downstream by the suffix->account
+ * lookup (`TransactionRepositoryImpl.detectAccountByNumber`), and an unknown card is
+ * offered to the user by `UnknownAccountSuggestions`. Pure and JVM-testable.
  */
 object CardEndingRegistry {
 
-    /** How a matched card ending should be recorded. */
+    /** How a trusted card ending is recorded. */
     data class CardRoute(
         val direction: TransactionDirection,
         /** Written to `ParsedTransaction.matchedRuleName` for provenance. */
         val label: String,
-        /** Used only when the message text itself carries no currency token. */
-        val defaultCurrency: String? = null,
         val category: TransactionCategory = TransactionCategory.NORMAL,
     )
 
-    // Tabby Cash Card ••4543: merchant-side spend notifications ("AED27.60 with
-    // Tabby Cash Card ••4543") carry no keyword, so they route here as a DEBIT.
-    private val routes: Map<String, CardRoute> = mapOf(
-        "4543" to CardRoute(
-            direction = TransactionDirection.DEBIT,
-            label = "cardending.tabby.cash",
-            defaultCurrency = "AED",
-        ),
-    )
+    /** "Tabby Cash Card", "Tamara cash card", "Spotii Card"... : a pay-later / cash card named in the text. */
+    private val MARKER = Regex("""(?i)\b(?:tabby|tamara|postpay|spotii)\b.{0,12}\bcard\b|\bcash\s*card\b""")
 
-    /** The route for a card ending, or null when the ending isn't trusted/known. */
-    fun lookup(ending: String?): CardRoute? = ending?.let { routes[it] }
+    /**
+     * The route for [ending] found in [text], or null when the ending isn't trusted: it is
+     * (a suffix of / ends with) one of [trustedEndings], or [text] carries the card marker.
+     */
+    fun lookup(ending: String?, text: String, trustedEndings: Set<String>): CardRoute? {
+        val digits = Digits.only(ending)
+        if (digits.isEmpty()) return null
+        if (trustedEndings.any { it.isNotEmpty() && (it.endsWith(digits) || digits.endsWith(it)) }) {
+            return CardRoute(TransactionDirection.DEBIT, "cardending.account")
+        }
+        if (MARKER.containsMatchIn(text)) return CardRoute(TransactionDirection.DEBIT, "cardending.marker")
+        return null
+    }
 }

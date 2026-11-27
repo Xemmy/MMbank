@@ -6,12 +6,14 @@ package com.xemmy.mmbank.domain.parser
  *  - Arabic-Indic (٠١٢٣٤٥٦٧٨٩) and Eastern Arabic-Indic (۰۱۲۳۴۵۶۷۸۹) digits -> ASCII
  *  - Arabic decimal (٫) -> '.' and Arabic thousands separator (٬) -> ','
  *  - Strips bidi control characters that banks embed in RTL messages
- *  - Collapses runs of whitespace
+ *  - Collapses runs of whitespace, including non-breaking and other Unicode spaces
  */
 object TextNormalizer {
 
     private val BIDI_CONTROLS = Regex("[\\u200e\\u200f\\u061c\\u202a-\\u202e\\u2066-\\u2069]")
-    private val WHITESPACE = Regex("\\s+")
+    // Java's \s misses NBSP and the other Unicode spaces banks put between
+    // "AED" and the amount, which broke every "AED\s*123" pattern.
+    private val WHITESPACE = Regex("[\\s\\u00a0\\u1680\\u2000-\\u200a\\u202f\\u205f\\u3000]+")
 
     fun normalize(input: String): String {
         val sb = StringBuilder(input.length)

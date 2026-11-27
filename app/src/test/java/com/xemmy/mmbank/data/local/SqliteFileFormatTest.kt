@@ -48,4 +48,12 @@ class SqliteFileFormatTest {
         val wrongTerminator = "SQLite format 3 ".toByteArray(Charsets.ISO_8859_1)
         assertFalse(SqliteFileFormat.isPlaintextHeader(wrongTerminator))
     }
+
+    @Test
+    fun encryptedFileNeedsToExistAndLackThePlaintextMagic() {
+        val encrypted = ByteArray(16) { 0x7F }
+        assertTrue(SqliteFileFormat.isEncryptedFile(true, encrypted))
+        assertFalse(SqliteFileFormat.isEncryptedFile(true, plaintextHeader))
+        assertFalse(SqliteFileFormat.isEncryptedFile(false, encrypted))
+    }
 }
